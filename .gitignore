@@ -1,0 +1,88 @@
+#####################################
+# SIGNING / SECRETS (CRITICAL)
+#####################################
+
+# Your custom signing file
+signing.props
+
+# Android keystore (DO NOT EVER COMMIT)
+*.keystore
+*.jks
+
+# Signing certs
+*.pfx
+*.snk
+
+#####################################
+# BUILD OUTPUT (MAUI / .NET)
+#####################################
+bin/
+obj/
+artifacts/
+
+#####################################
+# VISUAL STUDIO
+#####################################
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+#####################################
+# EDITORS
+#####################################
+.vscode/
+.idea/
+
+#####################################
+# OS FILES
+#####################################
+.DS_Store
+Thumbs.db
+
+#####################################
+# LOGS
+#####################################
+*.log
+
+#####################################
+# NUGET
+#####################################
+*.nupkg
+packages/
+!packages/build/
+
+#####################################
+# MAUI / ANDROID
+#####################################
+
+# Android intermediates
+**/bin/Debug/net*-android/
+**/bin/Release/net*-android/
+**/obj/Debug/net*-android/
+**/obj/Release/net*-android/
+
+# Gradle / Android build system leftovers
+**/.gradle/
+**/build/
+
+# Local SDK config
+local.properties
+
+#####################################
+# PUBLISH / ARCHIVE MANAGER OUTPUT
+#####################################
+
+publish/
+**/publish/
+
+# App packages
+*.apk
+*.aab
+
+#####################################
+# TEMP FILES
+#####################################
+*.tmp
+*.temp

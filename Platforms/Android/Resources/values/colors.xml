@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <color name="maui_background">#F7F7F7</color>
+  <color name="primary">#8B0000</color>
+  <color name="accent">#4CAF50</color>
+</resources>

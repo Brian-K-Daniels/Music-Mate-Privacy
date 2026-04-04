@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="musicmate.Pages.SettingsPage"
+             x:Name="SettingsPageRoot"
+             Title="Settings"
+             Shell.NavBarIsVisible="True"
+             BackgroundColor="{Binding PanelBackgroundColor}">
+
+  <ContentPage.Resources>
+    <Style TargetType="Label">
+      <Setter Property="TextColor" Value="{Binding ContrastingTextColor}" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+    <Style x:Key="BrownSlider" TargetType="Slider">
+      <Setter Property="ThumbColor" Value="#8B4513" />
+      <Setter Property="MinimumTrackColor" Value="#8B4513" />
+      <Setter Property="MaximumTrackColor" Value="#CCCCCC" />
+    </Style>
+    <Style TargetType="Button">
+      <Setter Property="TextColor" Value="{Binding ContrastingTextColor}" />
+      <Setter Property="BackgroundColor" Value="#8B4513" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="FontAttributes" Value="Bold" />
+      <Setter Property="Padding" Value="12,4" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+    <Style TargetType="Border">
+      <Setter Property="Stroke" Value="#8B4513" />
+    </Style>
+    <Style TargetType="Picker">
+      <Setter Property="TextColor" Value="Black" />
+      <Setter Property="BackgroundColor" Value="White" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+    <Style x:Key="PremiumButtonStyle" TargetType="Button">
+      <Setter Property="BackgroundColor" Value="#8B4513" />
+      <Setter Property="TextColor" Value="White" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="FontAttributes" Value="Bold" />
+      <Setter Property="Padding" Value="12,4" />
+    </Style>
+  </ContentPage.Resources>
+  
+  <Shell.TitleView>
+    <Grid ColumnDefinitions="*,Auto" HeightRequest="30" VerticalOptions="Center">
+      <HorizontalStackLayout Spacing="10" VerticalOptions="Center" Grid.Column="0">
+        <Button Text="←"
+                Clicked="OnNavigateHomeClicked"
+                BackgroundColor="Transparent"
+                TextColor="White"
+                FontSize="18"
+                Padding="0"
+                WidthRequest="32" />
+        <Label Text="Settings"
+               FontAttributes="Bold"
+               FontSize="18"               
+               TextColor="White"
+               VerticalOptions="Center" />
+      </HorizontalStackLayout>
+      <Image Source="logo.png"
+             HeightRequest="32"
+             WidthRequest="32"
+             VerticalOptions="Center"
+             HorizontalOptions="End"
+             Grid.Column="1" />
+    </Grid>
+  </Shell.TitleView>
+
+  <ScrollView>
+    <VerticalStackLayout x:Name="SettingsMainLayout" Spacing="16">
+
+      <!-- Scale/Range -->
+      <ScrollView Orientation="Horizontal">
+        <HorizontalStackLayout Spacing="2" VerticalOptions="Center">
+          <Label Text="Scale" FontSize="13" VerticalOptions="Center" />
+          <Border Stroke="#8B4513" StrokeThickness="2" BackgroundColor="Transparent">
+                    <Picker x:Name="ScalePicker"
+                    ItemsSource="{Binding AvailableScalesForBinding}"
+                    SelectedItem="{Binding SelectedScale, Mode=TwoWay}"
+                    WidthRequest="240"
+                    TextColor="Black"
+                    BackgroundColor="Transparent"
+                    FontSize="12" />
+          </Border>
+          <Label Text="Lowest" FontSize="13" VerticalOptions="Center" />
+          <Border StrokeThickness="2" Stroke="#8B4513" BackgroundColor="Transparent">
+            <Picker x:Name="LowestNotePicker"
+                    ItemsSource="{Binding WhiteKeyNoteNames}"
+                    SelectedItem="{Binding LowestNote, Mode=TwoWay}"
+                    WidthRequest="50"
+                    TextColor="Black"
+                    BackgroundColor="Transparent"
+                    FontSize="12" />
+          </Border>
+          <Label Text="Highest" FontSize="13" VerticalOptions="Center" />
+          <Border StrokeThickness="2" StrokeShape="RoundRectangle 4" Padding="0" BackgroundColor="Transparent">
+            <Picker x:Name="HighestNotePicker"
+                    ItemsSource="{Binding WhiteKeyNoteNames}"
+                    SelectedItem="{Binding HighestNote, Mode=TwoWay}"
+                    WidthRequest="50"
+                    TextColor="Black"
+                    BackgroundColor="Transparent"
+                    FontSize="12" />
+          </Border>
+        </HorizontalStackLayout>
+      </ScrollView>
+      <!-- Uniform slider rows -->
+      <VerticalStackLayout Spacing="12">
+        <Grid ColumnDefinitions="140,*,50" ColumnSpacing="8" VerticalOptions="Center">
+          <Label Text="Playback BPM" VerticalOptions="Center" Grid.Column="0" />
+          <Slider Minimum="30" Maximum="200"
+                  Value="{Binding PlaybackBpm, Mode=TwoWay}"
+                  HorizontalOptions="Fill" Style="{StaticResource BrownSlider}" Grid.Column="1" />
+          <Label Text="{Binding PlaybackBpm}" VerticalOptions="Center" HorizontalTextAlignment="Center" Grid.Column="2" />
+        </Grid>
+
+        <Grid ColumnDefinitions="140,*,50" ColumnSpacing="8" VerticalOptions="Center">
+          <Label Text="Accidental %" VerticalOptions="Center" Grid.Column="0" />
+          <Slider Minimum="0" Maximum="100"
+                  Value="{Binding AccidentalPercent, Mode=TwoWay}"
+                  HorizontalOptions="Fill" Style="{StaticResource BrownSlider}" Grid.Column="1" />
+          <Label Text="{Binding AccidentalPercent}" VerticalOptions="Center" HorizontalTextAlignment="Center" Grid.Column="2" />
+        </Grid>
+
+        <Grid ColumnDefinitions="140,*,50" ColumnSpacing="8" VerticalOptions="Center">
+          <Label Text="Omit notes at/above % correct" VerticalOptions="Center" Grid.Column="0" />
+          <Slider Minimum="0" Maximum="100"
+                  Value="{Binding CorrectThreshold, Mode=TwoWay}"
+                  HorizontalOptions="Fill" Style="{StaticResource BrownSlider}" Grid.Column="1" />
+          <Label Text="{Binding CorrectThreshold}" VerticalOptions="Center" HorizontalTextAlignment="Center" Grid.Column="2" />
+        </Grid>
+
+        <Grid ColumnDefinitions="140,*,50" ColumnSpacing="8" VerticalOptions="Center">
+          <Label Text="Minimum Correct Count" VerticalOptions="Center" Grid.Column="0" />
+          <Slider Minimum="1" Maximum="20"
+                  Value="{Binding MinCorrectCount, Mode=TwoWay}"
+                  HorizontalOptions="Fill" Style="{StaticResource BrownSlider}" Grid.Column="1" />
+          <Label Text="{Binding MinCorrectCount}" VerticalOptions="Center" HorizontalTextAlignment="Center" Grid.Column="2" />
+        </Grid>
+
+        <Grid ColumnDefinitions="140,*,50" ColumnSpacing="8" VerticalOptions="Center">
+          <Label Text="Omit notes below MsAvg =" VerticalOptions="Center" Grid.Column="0" />
+          <Slider Minimum="0" Maximum="5000"
+                  Value="{Binding OmitMsAvgThreshold, Mode=TwoWay}"
+                  HorizontalOptions="Fill" Style="{StaticResource BrownSlider}" Grid.Column="1" />
+          <Label Text="{Binding OmitMsAvgThreshold}" VerticalOptions="Center" HorizontalTextAlignment="Center" LineBreakMode="NoWrap" Grid.Column="2" />
+        </Grid>
+      </VerticalStackLayout>
+
+      <!-- Auto-start with custom styling -->
+      <HorizontalStackLayout Spacing="12" VerticalOptions="Center">
+        <Label Text="Auto start on appear" />
+        <Border Stroke="#8B4513"
+                StrokeThickness="2"
+                StrokeShape="RoundRectangle 15"
+                Padding="0"
+                BackgroundColor="Transparent"
+                WidthRequest="52"
+                HeightRequest="32">
+        <Switch IsToggled="{Binding AutoStart, Mode=TwoWay}"
+                  OnColor="#8B4513"
+                  ThumbColor="#8B4513"
+                  HorizontalOptions="Center"
+                  VerticalOptions="Center" />
+        </Border>
+      </HorizontalStackLayout>
+    </VerticalStackLayout>
+  </ScrollView>
+</ContentPage>

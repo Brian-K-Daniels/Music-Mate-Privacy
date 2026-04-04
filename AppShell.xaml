@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Shell
+    x:Class="musicmate.AppShell"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:local="clr-namespace:musicmate.Pages"
+    x:Name="AppShellInstance"
+    Title="MusicMate"
+    FlyoutBehavior="Flyout"
+    FlyoutWidth="240"
+    Shell.BackgroundColor="Transparent"
+    Shell.FlyoutBackgroundColor="#000000"
+    Shell.TitleColor="White"
+    Shell.ForegroundColor="White"
+    Shell.UnselectedColor="#DDDDDD"
+    Shell.DisabledColor="#888888"
+    Shell.NavBarIsVisible="False">
+
+  <FlyoutItem Title="Home">
+    <ShellContent
+        Route="MainPage"
+        ContentTemplate="{DataTemplate local:MainPage}" />
+  </FlyoutItem>
+  
+  <FlyoutItem Title="Settings" >
+    <ShellContent
+        Route="SettingsPage"
+        ContentTemplate="{DataTemplate local:SettingsPage}" />
+  </FlyoutItem>
+  
+  <FlyoutItem Title="Statistics" >
+    <ShellContent
+        Route="StatisticsPages"
+        ContentTemplate="{DataTemplate local:StatisticsPages}" />
+  </FlyoutItem>
+  
+  <FlyoutItem Title="Advanced">
+    <ShellContent
+        Route="AdvancedPage"
+        ContentTemplate="{DataTemplate local:AdvancedPage}" />
+  </FlyoutItem>
+  <FlyoutItem Title="About" >
+    <ShellContent
+        Route="AboutPage"
+        ContentTemplate="{DataTemplate local:AboutPage}" />
+  </FlyoutItem>
+
+
+</Shell>

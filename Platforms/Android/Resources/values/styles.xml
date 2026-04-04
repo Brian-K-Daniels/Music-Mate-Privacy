@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- Base application theme -->
+  <style name="MainTheme" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+    <!-- Primary brand color -->
+    <item name="colorPrimary">#8B0000</item>
+    <item name="colorPrimaryVariant">#5D0000</item>
+    <item name="colorOnPrimary">#FFFFFF</item>
+    
+    <!-- Secondary brand color -->
+    <item name="colorSecondary">#4CAF50</item>
+    <item name="colorSecondaryVariant">#388E3C</item>
+    <item name="colorOnSecondary">#FFFFFF</item>
+    
+    <!-- Status bar color -->
+    <item name="android:statusBarColor">@android:color/transparent</item>
+    
+    <!-- Background colors -->
+    <item name="android:windowBackground">@color/maui_background</item>
+    <item name="colorSurface">#FFFFFF</item>
+    <item name="colorOnSurface">#000000</item>
+  </style>
+  
+  <!-- Splash screen theme -->
+  <style name="Maui.SplashTheme" parent="Theme.MaterialComponents.Light.NoActionBar">
+	  <item name="android:windowBackground">@drawable/splash</item>
+	  <item name="android:windowNoTitle">true</item>
+    <item name="android:windowFullscreen">false</item>
+    <item name="android:windowActionBar">false</item>
+  </style>
+</resources>
