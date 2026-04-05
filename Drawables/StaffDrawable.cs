@@ -417,18 +417,19 @@ namespace musicmate.Drawables
             var middleLineY = top + spacing * 2f;
 
             var sharpNotes = new[] { "F#5", "C#5", "G#5", "D#5", "A#4", "E#5", "B#4" };
-            var flatNotes  = new[] { "Bb4", "Eb5", "Ab4", "Db5", "Gb4", "Cb5", "Fb4" };
+            var flatNotes = new[] { "Bb4", "Eb5", "Ab4", "Db5", "Gb4", "Cb5", "Fb4" };
             var notes = count > 0 ? sharpNotes : flatNotes;
+            bool isFlat = count < 0;
 
-            // Use the caller-supplied symbolWidth for glyph sizing so key sig glyphs match layout
-            glyphW = symbolWidth * correctionFactor;  //  2026.04.04 1600  
-            var glyphSharp = "♯";
-            var glyphFlat  = "♭";
+            // Sharp size is correct at symbolWidth * correctionFactor.
+            // Flat (♭) has a smaller visual footprint in most fonts — scale it up to match.
+            const float flatSizeBoost = 1.25f;
+            var glyphSize = symbolWidth * correctionFactor * (isFlat ? flatSizeBoost : 1.0f);
 
-            canvas.FontColor   = strokeColor;
-            canvas.FillColor   = fillColor;
+            canvas.FontColor = strokeColor;
+            canvas.FillColor = fillColor;
             canvas.StrokeColor = strokeColor;
-            canvas.FontSize    = glyphW;
+            canvas.FontSize = glyphSize;
 
             var verticalAdjust = spacing / 2f;
 
@@ -442,11 +443,11 @@ namespace musicmate.Drawables
                 float x = startX + i * (symbolSpacing + 2f);
 
                 canvas.DrawString(
-                    count > 0 ? glyphSharp : glyphFlat,
+                    isFlat ? "♭" : "♯",
                     x,
-                    yCenter - glyphW / 2f,
-                    glyphW,
-                    glyphW,
+                    yCenter - glyphSize / 2f,
+                    glyphSize,
+                    glyphSize,
                     HorizontalAlignment.Center,
                     VerticalAlignment.Center);
             }
@@ -540,12 +541,9 @@ namespace musicmate.Drawables
             canvas.FillColor = strokeColor;
             canvas.FillEllipse(xLeft, noteY - headH / 2f, headW, headH);
 
-            // Per-note accidental: size relative to headW so it visually matches key signature sizing
+            // Per-note accidental — sized and positioned to match key-signature glyphs
             if (drawAccidental && (note.Name.Contains('#') || note.Name.Contains('b')))
             {
-                var glyphSharp = "♯";
-                var glyphFlat = "♭";
-
                 var raw = note.Name.Trim();
                 char letter = char.ToUpperInvariant(raw[0]);
                 var sigAcc = GetSignatureAccidentalForLetter(letter, accidentalCount);
@@ -559,14 +557,22 @@ namespace musicmate.Drawables
 
                 if (!redundant)
                 {
-                   // var accSize = headW * correctionFactor; // same visual scale as a note head
-                      //  2026.04.04 1607  canvas.FontSize = glyphW;  //  2026.04.04 1603  accSize;
+                    // Match key-signature sizing: symbolWidth = headW * 1.5, same correctionFactor.
+                    // Flat (♭) gets the same boost applied in DrawKeySignature.
+                    const float flatSizeBoost = 1.25f;
+                    var accSize = headW * 1.5f * correctionFactor * (wantsFlat ? flatSizeBoost : 1.0f);
+                    canvas.FontSize = accSize;
+
+                    // Same upward shift used in DrawKeySignature to compensate for
+                    // the font-metric baseline offset of ♯/♭ glyphs.
+                    var verticalAdjust = spacing / 2f;
                     var accX = xLeft - headW * 1.1f;
-                    canvas.DrawString(wantsSharp ? glyphSharp : glyphFlat,
+
+                    canvas.DrawString(wantsSharp ? "♯" : "♭",
                         accX,
-                        noteY - glyphW / 2f,
-                        glyphW,
-                        glyphW,
+                        noteY - verticalAdjust - accSize / 2f,
+                        accSize,
+                        accSize,
                         HorizontalAlignment.Center,
                         VerticalAlignment.Center);
                 }
