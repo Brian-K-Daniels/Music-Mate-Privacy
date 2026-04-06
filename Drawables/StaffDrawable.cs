@@ -475,7 +475,7 @@ namespace musicmate.Drawables
 
         // Draw a regular note (not tuner-centered) with ledger lines, accidental and stem.
         private void DrawNoteWithLedger(ICanvas canvas, NoteInfo note, float staffTop, float staffBottom, float spacing,
-                         float headH, float headW, float centerX, int accidentalCount, Color fillColor, Color strokeColor, bool drawAccidental)
+                 float headH, float headW, float centerX, int accidentalCount, Color fillColor, Color strokeColor, bool drawAccidental)
         {
             canvas.SaveState();
             canvas.FillColor = fillColor;
@@ -493,15 +493,9 @@ namespace musicmate.Drawables
             canvas.StrokeSize = baseThickness;
             var stemLength = spacing * 3f;
             if (noteY < middleLineY)
-            {
-                // stem down
                 canvas.DrawLine(xLeft, noteY, xLeft, noteY + stemLength);
-            }
             else
-            {
-                // stem up
                 canvas.DrawLine(xLeft + headW, noteY, xLeft + headW, noteY - stemLength);
-            }
 
             // Ledger lines where necessary
             DrawLedgerLines(canvas, centerX, noteY, staffTop, staffTop + 4 * spacing, spacing, headW, fillColor, strokeColor);
@@ -523,18 +517,11 @@ namespace musicmate.Drawables
                 bool wantsFlat    = raw.Contains('b');
                 bool wantsNatural = !wantsSharp && !wantsFlat;
 
-                // Determine the glyph to draw and whether it is a flat (for size/offset math).
-                // null means no accidental should be shown.
                 string? accidentalGlyph = null;
                 bool isAccFlat = false;
 
                 if (_session.Tune == "Random")
                 {
-                    // Music-theory rules for Random mode:
-                    //  • note wants ♯ and key sig does NOT already sharpen that letter → show ♯
-                    //  • note wants ♭ and key sig does NOT already flatten that letter → show ♭
-                    //  • note is natural but key sig alters that letter                → show ♮ (cancel)
-                    //  • otherwise (accidental matches key sig, or natural with no key sig effect) → nothing
                     if (wantsSharp && sigAcc != "#")
                     {
                         accidentalGlyph = "♯";
@@ -547,15 +534,12 @@ namespace musicmate.Drawables
                     }
                     else if (wantsNatural && sigAcc != null)
                     {
-                        // The key signature alters this letter, but the note is natural → show ♮
                         accidentalGlyph = "♮";
                         isAccFlat = false;
                     }
-                    // else: redundant (key sig covers it) or no alteration needed — draw nothing
                 }
                 else
                 {
-                    // Non-Random modes: show accidental only when NOT already covered by key sig
                     if (wantsSharp && sigAcc != "#")
                     {
                         accidentalGlyph = "♯";
@@ -570,12 +554,10 @@ namespace musicmate.Drawables
 
                 if (accidentalGlyph != null)
                 {
-                    // Match key-signature sizing: symbolWidth = headW * 1.5, same correctionFactor.
                     var accSize = headW * 1.5f * correctionFactor * (isAccFlat ? flatSizeBoost : 1.0f);
                     canvas.FontSize = accSize;
                     canvas.FontColor = strokeColor;
 
-                    // Vertical alignment: baseline compensation + extra offset for flats
                     var verticalAdjust = spacing / 2f;
                     var flatDY = -spacing * 0.25f;
 
@@ -583,7 +565,13 @@ namespace musicmate.Drawables
                     if (isAccFlat)
                         drawY += flatDY;
 
-                    var accX = xLeft - headW * 1.1f;
+                    // Per-glyph horizontal clearance from the note head, converted from mm to dp (160 dpi baseline).
+                    // Flats are wider glyphs and need more clearance; sharps/naturals need a smaller extra gap.
+                    const float mmToDp = 160f / 25.4f;
+                    var accX = isAccFlat
+                        ? xLeft - headW * 1.1f - 1.5f * mmToDp   // flats: 2 mm extra clearance 2.0->1.5
+                        : xLeft - headW * 1.1f - 0.7f * mmToDp;  // sharps / naturals: 0.5 mm extra clearance 0.5 -> 0.7
+
                     canvas.DrawString(accidentalGlyph,
                         accX,
                         drawY,
