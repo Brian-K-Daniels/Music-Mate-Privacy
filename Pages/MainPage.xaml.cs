@@ -600,6 +600,26 @@ namespace musicmate.Pages
                 Debug.WriteLine($"[LAYOUT DEBUG] ERROR: {ex}");
             }
 #endif
+            // If notes haven't been generated yet, generate them so the staff isn't empty initially.
+            try
+            {
+                if (_session != null && _session.NotesToDraw.Count == 0)
+                {
+                    // Allow layout to settle so StaffGraphicsView has a valid Width where possible.
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    while (StaffGraphicsView != null && StaffGraphicsView.Width <= 0 && sw.ElapsedMilliseconds < 1000)
+                    {
+                        await Task.Delay(40);
+                    }
+
+                    // Regenerate notes and refresh view
+                    await RegenerateNotesAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[OnAppearing] ERROR regenerating notes: {ex}");
+            }
         }
         protected override void OnDisappearing()
         {

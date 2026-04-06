@@ -11,14 +11,14 @@ namespace musicmate.Drawables
         float glyphH = 10f;
         float glyphW = 10f;  //  2026.04.04 1123 
         private readonly NoteSessionService _session;
-        private readonly ThemeService _themeService;
+        private readonly ThemeService _theme_service;
         // Cached computed height for the staff band (measured outside of Draw)
         private float _computedStaffHeight = 220f;
 
         public StaffDrawable(NoteSessionService session, ThemeService themeService)
         {
             _session = session;
-            _themeService = themeService;
+            _theme_service = themeService;
         }
 
         // Draw a simple vector approximation of a treble clef using only primitive drawing
@@ -78,8 +78,8 @@ namespace musicmate.Drawables
             canvas.SaveState();
 
             // Colors
-            var backgroundColor = _themeService.PanelBackgroundColor;
-            var contrastColor = _themeService.ContrastingTextColor;
+            var backgroundColor = _theme_service.PanelBackgroundColor;
+            var contrastColor = _theme_service.ContrastingTextColor;
 
             // Position the staff band vertically so it fits within dirtyRect (centered by default)
             var staffBandHeight = requiredHeight;
@@ -190,7 +190,14 @@ namespace musicmate.Drawables
             var accWidth = headW * accScale;
             var accSpacing = headW * 0.33f * accScale;
             var accStartX = clefX + clefW + 6f;
-            var leftMargin = accStartX + Math.Abs(accidentalCount) * accSpacing + 32f;
+
+            // Ensure first note is at least ~3 note-head widths to the right of the key signature.
+            // This gives room for any staff accidental and avoids overlap.
+            var desiredHeadPadding = 3f * headW;                 // 3 head widths
+            var fallbackPadding = 32f;                           // keep existing minimum
+            var extraLeftPadding = Math.Max(fallbackPadding, desiredHeadPadding);
+
+            var leftMargin = accStartX + Math.Abs(accidentalCount) * accSpacing + extraLeftPadding;
             var rightMargin = headW + 16f;
             try
             {
@@ -346,58 +353,6 @@ namespace musicmate.Drawables
             return _computedStaffHeight;
         }
 
-        // Major vs. Minor accidental count
-        private static int GetAccidentalCountForScale(string key, string selectedScale)
-        {
-            var isMinorLike = selectedScale is "Natural Minor" or "Harmonic Minor" or "Melodic Minor" or "Aeolian" or "Jazz Melodic Minor"
-                              || selectedScale.Contains("Minor", StringComparison.OrdinalIgnoreCase)
-                              || selectedScale.Contains("Melodic", StringComparison.OrdinalIgnoreCase);
-            if (!isMinorLike)
-            {
-                // Major keys (Ionian/major-like)
-                return key switch
-                {
-                    "C" => 0,
-                    "G" => 1,
-                    "D" => 2,
-                    "A" => 3,
-                    "E" => 4,
-                    "B" => 5,
-                    "F#" => 6,
-                    "C#" => 7,
-                    "F" => -1,
-                    "Bb" => -2,
-                    "Eb" => -3,
-                    "Ab" => -4,
-                    "Db" => -5,
-                    "Gb" => -6,
-                    "Cb" => -7,
-                    _ => 0
-                };
-            }
-
-            // Natural minor (relative minor) key signatures
-            return key switch
-            {
-                "A" => 0,
-                "E" => 1,
-                "B" => 2,
-                "F#" => 3,
-                "C#" => 4,
-                "G#" => 5,
-                "D#" => 6,
-                "A#" => 7,
-                "D" => -1,
-                "G" => -2,
-                "C" => -3,
-                "F" => -4,
-                "Bb" => -5,
-                "Eb" => -6,
-                "Ab" => -7,
-                _ => 0
-            };
-        }
-
         private void DrawKeySignature(
             ICanvas canvas,
             float top,
@@ -422,8 +377,7 @@ namespace musicmate.Drawables
             var notes = count > 0 ? sharpNotes : flatNotes;
             bool isFlat = count < 0;
 
-            // Sharp size is correct at symbolWidth * correctionFactor.
-            // Flat (♭) has a smaller visual footprint in most fonts — scale it up to match.
+            // Size: adjust flats upward in glyph size to visually match sharps
             var glyphSize = symbolWidth * correctionFactor * (isFlat ? flatSizeBoost : 1.0f);
 
             canvas.FontColor   = strokeColor;
@@ -431,21 +385,19 @@ namespace musicmate.Drawables
             canvas.StrokeColor = strokeColor;
             canvas.FontSize    = glyphSize;
 
-            // baseline compensation used previously
-            var verticalAdjust = spacing / 2f;
-            // additional upward shift for flats (0.5 staff spaces)
-            var flatExtraUp = spacing * 0.5f;
+            // baseline compensation  for flats 
+            var flatDY = -spacing * 0.25f;
 
             for (int i = 0; i < abs && i < notes.Length; i++)
             {
                 var note = notes[i];
 
                 // Center on the correct staff line/space, then apply baseline compensation.
-                float yCenter = GetYForSpelledNote(note, middleLineY, spacing) - verticalAdjust;
+                float yCenter = GetYForSpelledNote(note, middleLineY, spacing) - 0.5f * spacing;
 
-                // Move flats up by 0.5 spaces
+                // Move flats down by 0.5 spaces (they were too high previously).
                 if (isFlat)
-                    yCenter -= flatExtraUp;
+                    yCenter += flatDY; 
 
                 float x = startX + i * (symbolSpacing + 2f);
 
@@ -523,87 +475,127 @@ namespace musicmate.Drawables
 
         // Draw a regular note (not tuner-centered) with ledger lines, accidental and stem.
         private void DrawNoteWithLedger(ICanvas canvas, NoteInfo note, float staffTop, float staffBottom, float spacing,
-    float headH, float headW, float centerX, int accidentalCount, Color fillColor, Color strokeColor, bool drawAccidental)
-{
-    canvas.SaveState();
-    canvas.FillColor = fillColor;
-    canvas.StrokeColor = strokeColor;
-
-    var middleLineY = staffTop + spacing * 2;
-    var noteY = GetYForSpelledNote(note.Name, middleLineY, spacing);
-    var xLeft = centerX - headW / 2f;
-
-    // Draw base head (background layer) so ledger/stem can be drawn on top
-    canvas.FillEllipse(xLeft, noteY - headH / 2f, headW, headH);
-
-    // Stem
-    var baseThickness = Math.Max(1f, headW * 0.06f);
-    canvas.StrokeSize = baseThickness;
-    var stemLength = spacing * 3f;
-    if (noteY < middleLineY)
-    {
-        // stem down
-        canvas.DrawLine(xLeft, noteY, xLeft, noteY + stemLength);
-    }
-    else
-    {
-        // stem up
-        canvas.DrawLine(xLeft + headW, noteY, xLeft + headW, noteY - stemLength);
-    }
-
-    // Ledger lines where necessary
-    DrawLedgerLines(canvas, centerX, noteY, staffTop, staffTop + 4 * spacing, spacing, headW, fillColor, strokeColor);
-
-    // Outline/fill the head with strokeColor for visibility (final pass)
-    canvas.FillColor = strokeColor;
-    canvas.FillEllipse(xLeft, noteY - headH / 2f, headW, headH);
-
-    // Optional accidental glyph (simple rendering)
-    if (drawAccidental && (note.Name.Contains('#') || note.Name.Contains('b')))
-    {
-        var raw = note.Name.Trim();
-        char letter = char.ToUpperInvariant(raw[0]);
-
-        // What does the key signature do for this letter?
-        var sigAcc = GetSignatureAccidentalForLetter(letter, accidentalCount);
-
-        // What does the note spelling request?
-        bool wantsSharp = raw.Contains('#');
-        bool wantsFlat  = raw.Contains('b');
-
-        bool redundant =
-            (wantsSharp && sigAcc == "#") ||
-            (wantsFlat  && sigAcc == "b");
-
-        if (!redundant)
+                         float headH, float headW, float centerX, int accidentalCount, Color fillColor, Color strokeColor, bool drawAccidental)
         {
-            // Match key-signature sizing: symbolWidth = headW * 1.5, same correctionFactor.
-            // Apply same flat boost as key signature.
-            var accSize = headW * 1.5f * correctionFactor * (wantsFlat ? flatSizeBoost : 1.0f);
-            canvas.FontSize = accSize;
+            canvas.SaveState();
+            canvas.FillColor = fillColor;
+            canvas.StrokeColor = strokeColor;
 
-            // baseline compensation used previously
-            var verticalAdjust = spacing / 2f;
-            // additional upward shift for flats (0.5 staff spaces)
-            var flatExtraUp = spacing * 0.5f;
+            var middleLineY = staffTop + spacing * 2;
+            var noteY = GetYForSpelledNote(note.Name, middleLineY, spacing);
+            var xLeft = centerX - headW / 2f;
 
-            var drawY = noteY - verticalAdjust - accSize / 2f;
-            if (wantsFlat)
-                drawY -= flatExtraUp;
+            // Draw base head (background layer) so ledger/stem can be drawn on top
+            canvas.FillEllipse(xLeft, noteY - headH / 2f, headW, headH);
 
-            var accX = xLeft - headW * 1.1f;
-            canvas.DrawString(wantsSharp ? "♯" : "♭",
-                accX,
-                drawY,
-                accSize,
-                accSize,
-                HorizontalAlignment.Center,
-                VerticalAlignment.Center);
+            // Stem
+            var baseThickness = Math.Max(1f, headW * 0.06f);
+            canvas.StrokeSize = baseThickness;
+            var stemLength = spacing * 3f;
+            if (noteY < middleLineY)
+            {
+                // stem down
+                canvas.DrawLine(xLeft, noteY, xLeft, noteY + stemLength);
+            }
+            else
+            {
+                // stem up
+                canvas.DrawLine(xLeft + headW, noteY, xLeft + headW, noteY - stemLength);
+            }
+
+            // Ledger lines where necessary
+            DrawLedgerLines(canvas, centerX, noteY, staffTop, staffTop + 4 * spacing, spacing, headW, fillColor, strokeColor);
+
+            // Outline/fill the head with strokeColor for visibility (final pass)
+            canvas.FillColor = strokeColor;
+            canvas.FillEllipse(xLeft, noteY - headH / 2f, headW, headH);
+
+            // --- Accidental display with proper music-theory rules ---
+            if (drawAccidental)
+            {
+                var raw = note.Name.Trim();
+                char letter = char.ToUpperInvariant(raw[0]);
+
+                // What the key signature already implies for this letter (null = nothing)
+                var sigAcc = GetSignatureAccidentalForLetter(letter, accidentalCount);
+
+                bool wantsSharp   = raw.Contains('#');
+                bool wantsFlat    = raw.Contains('b');
+                bool wantsNatural = !wantsSharp && !wantsFlat;
+
+                // Determine the glyph to draw and whether it is a flat (for size/offset math).
+                // null means no accidental should be shown.
+                string? accidentalGlyph = null;
+                bool isAccFlat = false;
+
+                if (_session.Tune == "Random")
+                {
+                    // Music-theory rules for Random mode:
+                    //  • note wants ♯ and key sig does NOT already sharpen that letter → show ♯
+                    //  • note wants ♭ and key sig does NOT already flatten that letter → show ♭
+                    //  • note is natural but key sig alters that letter                → show ♮ (cancel)
+                    //  • otherwise (accidental matches key sig, or natural with no key sig effect) → nothing
+                    if (wantsSharp && sigAcc != "#")
+                    {
+                        accidentalGlyph = "♯";
+                        isAccFlat = false;
+                    }
+                    else if (wantsFlat && sigAcc != "b")
+                    {
+                        accidentalGlyph = "♭";
+                        isAccFlat = true;
+                    }
+                    else if (wantsNatural && sigAcc != null)
+                    {
+                        // The key signature alters this letter, but the note is natural → show ♮
+                        accidentalGlyph = "♮";
+                        isAccFlat = false;
+                    }
+                    // else: redundant (key sig covers it) or no alteration needed — draw nothing
+                }
+                else
+                {
+                    // Non-Random modes: show accidental only when NOT already covered by key sig
+                    if (wantsSharp && sigAcc != "#")
+                    {
+                        accidentalGlyph = "♯";
+                        isAccFlat = false;
+                    }
+                    else if (wantsFlat && sigAcc != "b")
+                    {
+                        accidentalGlyph = "♭";
+                        isAccFlat = true;
+                    }
+                }
+
+                if (accidentalGlyph != null)
+                {
+                    // Match key-signature sizing: symbolWidth = headW * 1.5, same correctionFactor.
+                    var accSize = headW * 1.5f * correctionFactor * (isAccFlat ? flatSizeBoost : 1.0f);
+                    canvas.FontSize = accSize;
+                    canvas.FontColor = strokeColor;
+
+                    // Vertical alignment: baseline compensation + extra offset for flats
+                    var verticalAdjust = spacing / 2f;
+                    var flatDY = -spacing * 0.25f;
+
+                    var drawY = noteY - verticalAdjust - accSize / 2f;
+                    if (isAccFlat)
+                        drawY += flatDY;
+
+                    var accX = xLeft - headW * 1.1f;
+                    canvas.DrawString(accidentalGlyph,
+                        accX,
+                        drawY,
+                        accSize,
+                        accSize,
+                        HorizontalAlignment.Center,
+                        VerticalAlignment.Center);
+                }
+            }
+
+            canvas.RestoreState();
         }
-    }
-
-    canvas.RestoreState();
-}
 
         // Draw a centered tuner-style note (used in Tuner mode)
         private static void DrawCenteredNote(ICanvas canvas, string noteName, float centerX, float staffTop, float spacing, float headH, float headW,
@@ -642,6 +634,7 @@ namespace musicmate.Drawables
 
             canvas.RestoreState();
         }
+
         private static void DrawLedgerLines(ICanvas canvas, float centerX, float noteY, float staffTop, float staffBottom, float spacing, float headW,
                         Color fillColor, Color strokeColor)
         {
@@ -817,7 +810,7 @@ namespace musicmate.Drawables
             return _computedStaffHeight;
         }
 
-        private static int GetAccidentalCountForScaleOld(string key, string selectedScale)
+        private static int GetAccidentalCountForScale(string key, string selectedScale)
         {
             var isMinorLike = selectedScale is "Natural Minor" or "Harmonic Minor" or "Melodic Minor" or "Aeolian" or "Jazz Melodic Minor"
                               || selectedScale.Contains("Minor", StringComparison.OrdinalIgnoreCase)
