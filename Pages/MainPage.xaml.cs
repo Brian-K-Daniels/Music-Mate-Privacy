@@ -24,6 +24,8 @@ namespace musicmate.Pages
         private bool _isRunning = false;
         private bool _isBelowThreshold = true;
         private bool _isProgrammaticColorConfirm = false;
+        private string? _savedInstrumentForPlayback = null;
+        private int _savedInstrumentIndexForPlayback = -1;
 
         // fields for inactivity tracking
         private DateTime _lastHeardTime = DateTime.UtcNow;
@@ -637,6 +639,10 @@ namespace musicmate.Pages
             if (_isPlaying)
                 return;
 
+            // Save the user's instrument so it can be restored after auto-play ends
+            _savedInstrumentForPlayback = _session.Instrument;
+            _savedInstrumentIndexForPlayback = InstrumentPicker.SelectedIndex;
+
             // When user taps auto-play and playback is not already running,
             // set the instrument short name to C (leave the tune/key signature unchanged).
             try
@@ -660,7 +666,6 @@ namespace musicmate.Pages
             _isPlaying = true;
             PlayEvaluateButton.Text = "■";
             PlayEvaluateButton.TextColor = Color.FromArgb("#E04040");
-            SetButtonStates(false);
             await StartListeningAndEvaluatingAsync(playBack: true);
         }
 
@@ -754,6 +759,10 @@ namespace musicmate.Pages
 
                 MainThread.BeginInvokeOnMainThread(() =>
                 {
+                    // Don't interfere with PlayDisplayedAsync's direct feedback updates
+                    if (_isPlaying)
+                        return;
+
                     // Only accept the note as correct if it matches the expected note (including octave) at the current index
                     if (_session.Tune == "Random" && _session.CurrentNoteIndex < _session.NotesToDraw.Count)
                     {
@@ -843,6 +852,7 @@ namespace musicmate.Pages
             catch (Exception ex)
             {
                 Debug.WriteLine($"[Start] ERROR: {ex}");
+                _isPlaying = false;
                 SetButtonStates(false);
                 StatusService.Instance.StatusMessage = "Could not start microphone.";
                 await MainThread.InvokeOnMainThreadAsync(async () =>
@@ -887,24 +897,53 @@ namespace musicmate.Pages
 
         private async Task PlayDisplayedAsync(CancellationToken ct)
         {
-            if (_session.NotesToDraw.Count == 0)
-                return;
-
-            var freqs = _session.NotesToDraw.Select(n => n.TargetFreq);
-            var bpm = Math.Clamp(_session.PlaybackBpm, 30, 200);
-            var beatSeconds = 60.0 / bpm;
-            var gapSeconds = Math.Min(0.02, beatSeconds * 0.05);
-            var noteSeconds = Math.Max(0.05, beatSeconds - gapSeconds);
-
-            await _player.PlayAsync(freqs, noteSeconds, gapSeconds, 0.22f, ct);
-
-            MainThread.BeginInvokeOnMainThread(() =>
+            var cancelled = false;
+            try
             {
-                _isPlaying = false;
-                PlayEvaluateButton.Text = "▶";
-                PlayEvaluateButton.TextColor = Color.FromArgb("#008000");
-                SetButtonStates(false);
-            });
+                if (_session.NotesToDraw.Count == 0)
+                    return;
+
+                var bpm = Math.Clamp(_session.PlaybackBpm, 30, 200);
+                var beatSeconds = 60.0 / bpm;
+                var gapSeconds = Math.Min(0.02, beatSeconds * 0.05);
+                var noteSeconds = Math.Max(0.05, beatSeconds - gapSeconds);
+
+                for (int i = 0; i < _session.NotesToDraw.Count; i++)
+                {
+                    ct.ThrowIfCancellationRequested();
+
+                    var note = _session.NotesToDraw[i];
+
+                    // Mark the note green before playing so the rectangle lights up in sync
+                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    {
+                        if (i < _session.FeedbackViewModels.Count)
+                            _session.FeedbackViewModels[i] = new FeedbackItem(i, 0, 0, true);
+                        StaffGraphicsView.Invalidate();
+                    });
+
+                    await _player.PlayAsync(new[] { note.TargetFreq }, noteSeconds, gapSeconds, 0.22f, ct);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                cancelled = true;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[PlayDisplayedAsync] ERROR: {ex}");
+            }
+            finally
+            {
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    _isPlaying = false;
+                    PlayEvaluateButton.Text = "▶";
+                    PlayEvaluateButton.TextColor = Color.FromArgb("#008000");
+                    if (!cancelled)
+                        SetButtonStates(false);
+                });
+            }
         }
 
         private async Task UpdateNoteStatsDatabaseAsync()
@@ -1143,14 +1182,6 @@ namespace musicmate.Pages
             await StopListeningAndEvaluatingAsync();
             ColorPickerDialog.Show(_themeService.PanelBackgroundColor);
         }
-
-        //private void OnResetClicked(object? sender, EventArgs e)
-        //{
-        //    ColorPickerDialog.ResetToDefaults();
-        //    var color = ColorPickerDialog.PreviewColor;
-        //    _themeService.PanelBackgroundColor = color;
-        //    Preferences.Default.Set("StaffPanelColor", color.ToHex());
-        //    StaffBorder.Background = new SolidColorBrush(color);
-        //}
     }
 }
+

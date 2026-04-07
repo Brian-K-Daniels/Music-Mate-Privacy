@@ -70,10 +70,10 @@
   </ContentPage.Resources>
 
   
-    <Grid ColumnDefinitions="*">
+    <Grid ColumnDefinitions="8,*">
     <!-- Main content -->
     <!-- Add a left-margin column with fixed width so the left empty space can be controlled precisely -->
-    <ScrollView x:Name="MainScrollView" Grid.Column="0" HorizontalScrollBarVisibility="Never" Padding="0" Margin="0" HorizontalOptions="Fill">
+    <ScrollView x:Name="MainScrollView" Grid.Column="1" HorizontalScrollBarVisibility="Never" Padding="0" Margin="0" HorizontalOptions="Fill">
         <VerticalStackLayout x:Name="MainPageMainLayout" Spacing="16" Padding="0" Margin="0" HorizontalOptions="Fill">
         <!-- Add a container with left padding to align with staff -->
         <VerticalStackLayout x:Name="PickersContainer" Padding="0" Margin="0">
@@ -261,18 +261,10 @@
                 HorizontalOptions="Center"
                 Margin="0,0,0,0"
                 Clicked="OnColorButtonClicked" />
-          <!--<Button Text="Reset"
-              Clicked="OnResetClicked"
-              WidthRequest="32"
-              HeightRequest="18"
-              BackgroundColor="Orange"
-              FontSize="8"
-              Padding="0"
-              HorizontalOptions="Center" />-->
         </VerticalStackLayout>
       </VerticalStackLayout>
     </ScrollView>
     <!-- Color picker dialog overlay -->
-      <controls:ColorPickerDialog x:Name="ColorPickerDialog" IsVisible="False" Grid.Column="1" />
+      <controls:ColorPickerDialog x:Name="ColorPickerDialog" IsVisible="False" Grid.Column="0" Grid.ColumnSpan="2" />
     </Grid>
 </ContentPage>
