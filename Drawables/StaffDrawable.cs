@@ -6,10 +6,10 @@ namespace musicmate.Drawables
     public class StaffDrawable : IDrawable
     {
         private float correctionFactor = 1.3f;  //  2026.04.04 1131  1.5f too big;
-        private float correctionConstantY = 0f;
+       // private float correctionConstantY = 0f;
         private const float flatSizeBoost = 1.5f;  //  2026.04.05 0916  1.25f;
-        float glyphH = 10f;
-        float glyphW = 10f;  //  2026.04.04 1123 
+       // float glyphH = 10f;
+       // float glyphW = 10f;  //  2026.04.04 1123 
         private readonly NoteSessionService _session;
         private readonly ThemeService _theme_service;
         // Cached computed height for the staff band (measured outside of Draw)

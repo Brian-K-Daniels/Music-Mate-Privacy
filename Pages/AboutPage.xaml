@@ -54,75 +54,108 @@
     </Grid>
   </Shell.TitleView>
 
-   <ScrollView x:Name="AboutScrollView">
-     <VerticalStackLayout x:Name="AboutMainLayout">
+  <!-- Root: pinned toolbar at top, scrollable content fills the rest -->
+  <Grid RowDefinitions="Auto,*">
 
-      <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
-        <Label Text="Font Size" FontSize="16" VerticalOptions="Center" />
-        <Border Stroke="#8B4513" StrokeThickness="2" BackgroundColor="Transparent"
-                Padding="8,4" MinimumHeightRequest="44" MinimumWidthRequest="80">
+    <!-- ── Pinned toolbar (never scrolls) ─────────────────────────────── -->
+    <VerticalStackLayout Grid.Row="0" Spacing="6" Padding="8,8,8,4"
+                         BackgroundColor="{Binding PanelBackgroundColor}">
+
+      <!-- Font size row -->
+      <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="10" VerticalOptions="Center">
+        <Label Grid.Column="0" Text="Font Size" FontSize="14" VerticalOptions="Center" />
+        <Border Grid.Column="1" Stroke="#8B4513" StrokeThickness="2"
+                BackgroundColor="Transparent" Padding="8,4"
+                MinimumHeightRequest="44" MinimumWidthRequest="80">
           <Picker x:Name="FontSizePicker"
-                  FontSize="16"
+                  FontSize="14"
                   ItemsSource="{Binding FontSizeOptions}"
                   SelectedItem="{Binding SelectedFontSize, Mode=TwoWay}"
                   VerticalOptions="Center" />
         </Border>
-      </HorizontalStackLayout>
+      </Grid>
 
-      <!-- Search field: type text to find and scroll to matching content in the About WebView -->
-      <HorizontalStackLayout Spacing="8" Margin="0,6,0,6" VerticalOptions="Center">
-        <!-- brown magnifier glyph -->
-        <Label Text="🔍"
-               FontSize="18"
+      <!-- Search row: Grid gives the SearchBar all remaining width -->
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto"
+            ColumnSpacing="8" VerticalOptions="Center">
+
+        <Label Grid.Column="0"
+               Text="🔍"
+               FontSize="22"
                TextColor="#8B4513"
                VerticalOptions="Center"
-               Margin="4,0" />
+               Margin="2,0" />
 
-        <!-- thin brown outline around search box -->
-        <Border Stroke="#8B4513" StrokeThickness="1" StrokeShape="RoundRectangle 6" Padding="2" VerticalOptions="Center" HorizontalOptions="FillAndExpand">
+        <Border Grid.Column="1"
+                Stroke="#8B4513" StrokeThickness="1"
+                StrokeShape="RoundRectangle 8"
+                Padding="4,0"
+                VerticalOptions="Center">
           <SearchBar x:Name="AboutSearchBar"
-                     Placeholder="Search About..."
+                     Placeholder="Search About…"
                      TextColor="{Binding ContrastingTextColor}"
                      PlaceholderColor="{Binding ContrastingTextColor}"
                      BackgroundColor="Transparent"
-                     HorizontalOptions="FillAndExpand"
+                     HorizontalOptions="Fill"
+                     MinimumHeightRequest="52"
+                     FontSize="16"
                      TextChanged="OnAboutSearchTextChanged"
                      SearchButtonPressed="OnAboutSearchButtonPressed" />
         </Border>
 
-        <Button x:Name="AboutFindNextButton"
+        <Button Grid.Column="2"
+                x:Name="AboutFindNextButton"
                 Text="Next"
                 IsEnabled="False"
                 Clicked="OnAboutFindNextClicked"
+                MinimumHeightRequest="44"
                 VerticalOptions="Center" />
-        <Label x:Name="AboutFindPositionLabel"
+
+        <Label Grid.Column="3"
+               x:Name="AboutFindPositionLabel"
                Text=""
+               FontSize="13"
+               MinimumWidthRequest="52"
                VerticalOptions="Center"
-               HorizontalOptions="End" />
-      </HorizontalStackLayout>
-
-      <!-- Premium purchase controls -->
-      <HorizontalStackLayout Spacing="10" VerticalOptions="Center" Padding="0,8,0,8">
-        <Button Text="Get Premium"
-                Command="{Binding BuyPremiumCommand}"
-                TextColor="White"
-                MinimumHeightRequest="44"
-                Padding="12,8" />
-        <Button Text="Restore"
-                Command="{Binding RestorePurchasesCommand}"
-                IsVisible="{Binding IsPremium}"
-                TextColor="White"
-                MinimumHeightRequest="44"
-                Padding="12,8" />
-        <Label Text="Premium"
-               IsVisible="{Binding IsPremium}"
-               VerticalOptions="Center" HorizontalOptions="EndAndExpand" />
-      </HorizontalStackLayout>
-
-      <WebView x:Name="AboutWebView"
-               Margin="0,8,0,0" />
+               HorizontalOptions="Center" />
+      </Grid>
 
     </VerticalStackLayout>
-  </ScrollView>
+
+    <!-- ── Scrollable content ──────────────────────────────────────────── -->
+    <ScrollView x:Name="AboutScrollView" Grid.Row="1">
+      <VerticalStackLayout x:Name="AboutMainLayout">
+
+        <!-- Premium purchase controls -->
+        <Grid ColumnDefinitions="Auto,Auto,*" 
+              ColumnSpacing="10" 
+              VerticalOptions="Center" 
+              Padding="8,8,8,4">
+          <Button Grid.Column="0"
+                  Text="Get Premium"
+                  Command="{Binding BuyPremiumCommand}"
+                  TextColor="White"
+                  MinimumHeightRequest="44"
+                  Padding="12,8" />
+          <Button Grid.Column="1"
+                  Text="Restore"
+                  Command="{Binding RestorePurchasesCommand}"
+                  IsVisible="{Binding IsPremium}"
+                  TextColor="White"
+                  MinimumHeightRequest="44"
+                  Padding="12,8" />
+          <Label Grid.Column="2"
+                 Text="Premium"
+                 IsVisible="{Binding IsPremium}"
+                 VerticalOptions="Center"
+                 HorizontalOptions="End" />
+        </Grid>
+
+        <WebView x:Name="AboutWebView" Margin="0,4,0,0" />
+
+      </VerticalStackLayout>
+    </ScrollView>
+
+  </Grid>
 
 </ContentPage>

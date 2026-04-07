@@ -254,21 +254,21 @@
 
         <!-- Color and Reset buttons -->
         <VerticalStackLayout Spacing="4" HorizontalOptions="Center">
-          <Button Text="Click to select background color of music and the About page"
+          <Button Text="Select background color"
                 FontSize="10"
                 Style="{StaticResource CompactBrownButton}"
                 WidthRequest="200"
                 HorizontalOptions="Center"
                 Margin="0,0,0,0"
                 Clicked="OnColorButtonClicked" />
-          <Button Text="Reset"
+          <!--<Button Text="Reset"
               Clicked="OnResetClicked"
               WidthRequest="32"
               HeightRequest="18"
               BackgroundColor="Orange"
               FontSize="8"
               Padding="0"
-              HorizontalOptions="Center" />
+              HorizontalOptions="Center" />-->
         </VerticalStackLayout>
       </VerticalStackLayout>
     </ScrollView>

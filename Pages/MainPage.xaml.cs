@@ -1,9 +1,10 @@
-using musicmate.Services;
-using System.ComponentModel;
-using Microsoft.Maui.Controls.PlatformConfiguration;
+using CommunityToolkit.Maui.Alerts;
 using musicmate.Controls;
+using musicmate.Services;
 using musicmate.Utilities;
+using System.ComponentModel;
 using System.Diagnostics;
+
 namespace musicmate.Pages
 {
     public partial class MainPage : ContentPage
@@ -293,7 +294,7 @@ namespace musicmate.Pages
                             if (meanBpm.HasValue && meanBpm.Value != 0 && stdBpm.HasValue)
                                 cv = 100.0 * stdBpm.Value / meanBpm.Value;
                             StatusService.Instance.StatusMessage =
-                                $"Correct = {apc:F1}%, Tempo = {meanBpm?.ToString("F1") ?? "N/A"} +/- {stdBpm?.ToString("F1") ?? "N/A"} (cv {((cv.HasValue) ? cv.Value.ToString("F1") : "N/A")}%)                 (raw {percent:F1})";
+                                $"Correct = {apc:F1}%, Tempo = {meanBpm?.ToString("F1") ?? "N/A"} +/- {stdBpm?.ToString("F1") ?? "N/A"} (cv {((cv.HasValue) ? cv.Value.ToString("F1") : "N/A")}%)  (raw {percent:F1})";
                         }
 #else
                                 {
@@ -843,6 +844,14 @@ namespace musicmate.Pages
             {
                 Debug.WriteLine($"[Start] ERROR: {ex}");
                 SetButtonStates(false);
+                StatusService.Instance.StatusMessage = "Could not start microphone.";
+                await MainThread.InvokeOnMainThreadAsync(async () =>
+                {
+                    var snack = Snackbar.Make(
+                        "Microphone unavailable — check app permissions.",
+                        duration: TimeSpan.FromSeconds(4));
+                    await snack.Show();
+                });
             }
         }
 
@@ -864,6 +873,15 @@ namespace musicmate.Pages
             catch (Exception ex)
             {
                 Debug.WriteLine($"[Restart] ERROR: {ex}");
+                SetButtonStates(false);
+                StatusService.Instance.StatusMessage = "Listening stopped — tap ● to restart.";
+                await MainThread.InvokeOnMainThreadAsync(async () =>
+                {
+                    var snack = Snackbar.Make(
+                        "Audio stream dropped. Tap ● to restart listening.",
+                        duration: TimeSpan.FromSeconds(5));
+                    await snack.Show();
+                });
             }
         }
 
@@ -1120,6 +1138,19 @@ namespace musicmate.Pages
                 // best-effort
             }
         }
+        private async void OnColorButtonClicked(object? sender, EventArgs e)
+        {
+            await StopListeningAndEvaluatingAsync();
+            ColorPickerDialog.Show(_themeService.PanelBackgroundColor);
+        }
 
+        //private void OnResetClicked(object? sender, EventArgs e)
+        //{
+        //    ColorPickerDialog.ResetToDefaults();
+        //    var color = ColorPickerDialog.PreviewColor;
+        //    _themeService.PanelBackgroundColor = color;
+        //    Preferences.Default.Set("StaffPanelColor", color.ToHex());
+        //    StaffBorder.Background = new SolidColorBrush(color);
+        //}
     }
 }

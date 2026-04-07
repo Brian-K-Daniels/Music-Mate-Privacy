@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using musicmate.Services;
 using Plugin.Maui.Audio;
 using SkiaSharp.Views.Maui.Controls.Hosting;
+using CommunityToolkit.Maui;
 
 namespace musicmate
 {
@@ -12,6 +13,7 @@ namespace musicmate
             var builder = MauiApp.CreateBuilder();
             builder
                 .UseMauiApp<App>()
+                .UseMauiCommunityToolkit()
                 .UseSkiaSharp()
                 .ConfigureFonts(fonts =>
                 {

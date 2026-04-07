@@ -1,13 +1,11 @@
-using Microsoft.Maui.Storage;
+using CommunityToolkit.Maui.Alerts;
+using CommunityToolkit.Maui.Core;
 using musicmate.Services;
-using musicmate.Utilities;
-using Microsoft.Maui.Graphics;
 using musicmate.ViewModels;
-using System.Text;
-using System.Text.Json;
 using System.Globalization;
 using System.Net;
-using System.Linq;
+using System.Text;
+using System.Text.Json;
 
 namespace musicmate.Pages
 {
@@ -335,13 +333,21 @@ namespace musicmate.Pages
             catch
             {
                 // best-effort; ignore errors
+                await MainThread.InvokeOnMainThreadAsync(async () =>
+                    await Toast.Make("Search unavailable.", ToastDuration.Short).Show());
             }
         }
 
         private void OnAboutSearchButtonPressed(object sender, EventArgs e)
         {
-            // Dismiss keyboard when user presses search
+            // Dismiss the software keyboard
             AboutSearchBar.Unfocus();
+
+            // Advance to the next match — same behaviour as tapping "Next".
+            // TextChanged already ran the search as the user typed, so results
+            // are ready; pressing the keyboard search key should cycle through them.
+            if (_aboutMatchCount > 0)
+                OnAboutFindNextClicked(sender, e);
         }
 
         private async void OnAboutFindNextClicked(object sender, EventArgs e)

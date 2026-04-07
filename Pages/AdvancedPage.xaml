@@ -57,7 +57,7 @@
   <ScrollView>
     <VerticalStackLayout x:Name="AdvancedMainLayount" Spacing="16">
         <VerticalStackLayout Spacing="10">
-          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
             <!-- Pitch Tolerance -->
             <Label Grid.Row="0" Grid.Column="0" Text="Pitch Tolerance (cents)" FontSize="12" VerticalOptions="Center"/>
             <Slider Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Tolerance, Mode=TwoWay}"/>
@@ -102,6 +102,15 @@
             <Label Grid.Row="8" Grid.Column="0" Text="Pitch Confidence" FontSize="12" VerticalOptions="Center"/>
             <Slider Grid.Row="8" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding PitchConfidenceThreshold, Mode=TwoWay}"/>
             <Label Grid.Row="8" Grid.Column="2" Text="{Binding PitchConfidenceThreshold, StringFormat='{0:F2}'}" FontSize="12" VerticalOptions="Center" TextColor="{Binding ContrastingTextColor}"/>
+            
+            <!-- Reset to defaults button -->
+            <Button Grid.Row="9" Grid.Column="1"
+                    Text="Reset all to defaults"
+                    FontSize="12"
+                    VerticalOptions="Center"
+                    HorizontalOptions="Center"
+                    BackgroundColor="Orange"
+                    Clicked="OnResetClicked" />
           </Grid>
         </VerticalStackLayout>
     </VerticalStackLayout>

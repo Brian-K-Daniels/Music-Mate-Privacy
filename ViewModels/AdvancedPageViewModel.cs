@@ -71,7 +71,11 @@ namespace musicmate.ViewModels
 
         public Color PanelBackgroundColor => _themeService.PanelBackgroundColor;
         public Color ContrastingTextColor => _themeService.ContrastingTextColor;
-
+        public int AccidentalPercent
+        {
+            get => _session.AccidentalPercent;
+            set { _session.AccidentalPercent = value; OnPropertyChanged(nameof(AccidentalPercent));}
+        }
         public int AudioBufferSize
         {
             get => _session.AudioBufferSize;
@@ -146,6 +150,7 @@ namespace musicmate.ViewModels
 
         public void ResetToDefaults()
         {
+            AccidentalPercent = 0;
             AudioBufferSize = 1024;
             PitchWindowSize = 4096;
             MinFrequency = 60;
