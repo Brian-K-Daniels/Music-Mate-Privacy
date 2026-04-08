@@ -157,7 +157,7 @@ namespace musicmate.ViewModels
             MaxFrequency = 8000;
             SmoothingWindowSize = 3;
             PitchConfidenceThreshold = 0.5;
-            Tolerance = 20;
+            Tolerance = 50;
             RmsThreshold = 0.025f;
             CooldownMs = 50;
             PitchOffsetCents = 0;

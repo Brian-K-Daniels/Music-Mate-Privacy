@@ -241,7 +241,7 @@ namespace musicmate.Services
         private string _selectedScale = Preferences.Get(PrefSelectedScaleKey, "Major");
         private string? _tune = Preferences.Get(PrefTuneKey, "Selected Scale");
         private int _playbackBpm = Preferences.Get(PrefPlaybackBpmKey, 100);
-        private int _tolerance = Preferences.Get(PrefToleranceKey, 20);
+        private int _tolerance = Preferences.Get(PrefToleranceKey, 50);
         private int _accidentalPercent = Preferences.Get(PrefAccidentalPercentKey, 0);
         private int _correctThreshold = Preferences.Get(PrefCorrectThresholdKey, 50);
         private double _pitchOffsetCents = Preferences.Get(PrefPitchOffsetCentsKey, 0.0);
@@ -1563,6 +1563,23 @@ namespace musicmate.Services
         {
             return 440.0 * Math.Pow(2, (midi - 69) / 12.0);
         }
+        public static double MidiToFreqPublic(int midi) => MidiToFreq(midi);
+        /// <summary>
+        /// Returns the pitch-detection window size (in samples) that gives at least
+        /// <paramref name="minPeriods"/> complete periods at <paramref name="targetFreq"/>.
+        /// Result is rounded up to the next power of two and clamped to [512, PitchWindowSize]
+        /// so the user-configured ceiling is respected.
+        /// </summary>
+        public int ComputeWindowSizeForFreq(double targetFreq, int minPeriods = 8)
+        {
+            if (targetFreq <= 0) return PitchWindowSize;
+            int periodsNeeded = (int)Math.Ceiling(SampleRate / targetFreq * minPeriods);
+            // Round up to next power of 2 for autocorrelation-friendly sizing
+            int p = 512;
+            while (p < periodsNeeded) p <<= 1;
+            // User-configured PitchWindowSize is the ceiling; floor is 512
+            return Math.Clamp(p, 512, PitchWindowSize);
+        }
         public static string MidiToNoteName(int midi, bool flats)
         {
             var namesSharp = new[] { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
@@ -1915,5 +1932,7 @@ namespace musicmate.Services
                 }
             }
         }
+
+       
     }
 }
