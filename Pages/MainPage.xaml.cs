@@ -9,6 +9,7 @@ namespace musicmate.Pages
 {
     public partial class MainPage : ContentPage
     {
+       
         private readonly NoteSessionService _session = null!;
         private readonly IAudioCaptureService _audio = null!;
         private readonly IAudioPlaybackService _player = null!;
@@ -362,7 +363,7 @@ namespace musicmate.Pages
 
                 KeyPicker.ItemsSource = new[]
                 {
-                            "C", "F", "Bb", "G", "D", "A", "E", "B", "F#", "C#",
+                            "C", "F", "Bb", "G", "D", "A", "E", "B", "F#" , "C#",
                             "Eb", "Ab", "Db", "Gb", "Cb"
                         };
                 KeyPicker.SelectedIndex = Array.IndexOf((string[])KeyPicker.ItemsSource, _session.Key);
@@ -634,27 +635,28 @@ namespace musicmate.Pages
             DeviceDisplay.Current.KeepScreenOn = false;
             StatusService.Instance.StatusMessage = "Stopped listening.";
         }
+       
+
+      
+
         private async void OnPlayEvaluateClicked(object? sender, EventArgs e)
         {
             if (_isPlaying)
                 return;
 
-            // Save the user's instrument so it can be restored after auto-play ends
+            // Save user's instrument selection to restore after playback
             _savedInstrumentForPlayback = _session.Instrument;
-            _savedInstrumentIndexForPlayback = InstrumentPicker.SelectedIndex;
+            _savedInstrumentIndexForPlayback = InstrumentPicker?.SelectedIndex ?? -1;
 
-            // When user taps auto-play and playback is not already running,
-            // set the instrument short name to C (leave the tune/key signature unchanged).
             try
             {
                 var instrumentOptions = NoteSessionService.InstrumentOptions.Cast<string>().ToArray();
                 var instIdx = Array.FindIndex(instrumentOptions, s => s.Split(',')[0].Trim() == "C");
                 if (instIdx >= 0)
                 {
-                    InstrumentPicker.SelectedIndex = instIdx;
+                    InstrumentPicker?.SelectedIndex = instIdx;
                     _session.Instrument = instrumentOptions[instIdx];
                     SelectedInstrumentShort = instrumentOptions[instIdx].Split(',')[0].Trim();
-                    // Show overlay label instead of picker after selection
                     UpdateInstrumentPickerVisibility();
                 }
             }
@@ -822,48 +824,7 @@ namespace musicmate.Pages
             }
         }
 
-        public async Task StartListeningAndEvaluatingAsync(bool playBack = false)
-        {
-            try
-            {
-                StatusService.Instance.StatusMessage = "Listening";
-                Debug.WriteLine($"[Start] Starting listening, playBack={playBack}");
-                SetButtonStates(true);
-
-                _lastProcess = DateTime.MinValue;
-                _isBelowThreshold = true;
-                _pitchBufferPos = 0;
-                _session.Reset();
-                await RegenerateNotesAsync();
-
-                Debug.WriteLine("[Start] Requesting audio permission...");
-                await _audio.EnsurePermissionAsync();
-                Debug.WriteLine("[Start] Starting audio capture...");
-                _audio.StartCapture(OnAudioBlock);
-                Debug.WriteLine("[Start] Audio capture started");
-
-                if (playBack)
-                {
-                    _playCts?.Cancel();
-                    _playCts = new CancellationTokenSource();
-                    _ = PlayDisplayedAsync(_playCts.Token);
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[Start] ERROR: {ex}");
-                _isPlaying = false;
-                SetButtonStates(false);
-                StatusService.Instance.StatusMessage = "Could not start microphone.";
-                await MainThread.InvokeOnMainThreadAsync(async () =>
-                {
-                    var snack = Snackbar.Make(
-                        "Microphone unavailable — check app permissions.",
-                        duration: TimeSpan.FromSeconds(4));
-                    await snack.Show();
-                });
-            }
-        }
+       
 
         /// <summary>
         /// Restarts only the audio capture stream without resetting session state,
@@ -895,56 +856,7 @@ namespace musicmate.Pages
             }
         }
 
-        private async Task PlayDisplayedAsync(CancellationToken ct)
-        {
-            var cancelled = false;
-            try
-            {
-                if (_session.NotesToDraw.Count == 0)
-                    return;
-
-                var bpm = Math.Clamp(_session.PlaybackBpm, 30, 200);
-                var beatSeconds = 60.0 / bpm;
-                var gapSeconds = Math.Min(0.02, beatSeconds * 0.05);
-                var noteSeconds = Math.Max(0.05, beatSeconds - gapSeconds);
-
-                for (int i = 0; i < _session.NotesToDraw.Count; i++)
-                {
-                    ct.ThrowIfCancellationRequested();
-
-                    var note = _session.NotesToDraw[i];
-
-                    // Mark the note green before playing so the rectangle lights up in sync
-                    await MainThread.InvokeOnMainThreadAsync(() =>
-                    {
-                        if (i < _session.FeedbackViewModels.Count)
-                            _session.FeedbackViewModels[i] = new FeedbackItem(i, 0, 0, true);
-                        StaffGraphicsView.Invalidate();
-                    });
-
-                    await _player.PlayAsync(new[] { note.TargetFreq }, noteSeconds, gapSeconds, 0.22f, ct);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                cancelled = true;
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[PlayDisplayedAsync] ERROR: {ex}");
-            }
-            finally
-            {
-                MainThread.BeginInvokeOnMainThread(() =>
-                {
-                    _isPlaying = false;
-                    PlayEvaluateButton.Text = "▶";
-                    PlayEvaluateButton.TextColor = Color.FromArgb("#008000");
-                    if (!cancelled)
-                        SetButtonStates(false);
-                });
-            }
-        }
+        
 
         private async Task UpdateNoteStatsDatabaseAsync()
         {
@@ -995,7 +907,154 @@ namespace musicmate.Pages
                 Debug.WriteLine($"[Stats] UpdateNoteStatsDatabaseAsync error: {ex.Message}");
             }
         }
+        // Replace duplicate method implementations with these single canonical versions.
 
+        private async Task StartListeningAndEvaluatingAsync(bool playBack = false)
+        {
+            try
+            {
+                StatusService.Instance.StatusMessage = "Listening";
+                Debug.WriteLine($"[Start] Starting listening, playBack={playBack}");
+                SetButtonStates(true);
+
+                _lastProcess = DateTime.MinValue;
+                _isBelowThreshold = true;
+                _pitchBufferPos = 0;
+                _session.Reset();
+                await RegenerateNotesAsync();
+
+                if (!playBack)
+                {
+                    Debug.WriteLine("[Start] Requesting audio permission...");
+                    await _audio.EnsurePermissionAsync();
+                    Debug.WriteLine("[Start] Starting audio capture...");
+                    _audio.StartCapture(OnAudioBlock);
+                    Debug.WriteLine("[Start] Audio capture started");
+                }
+                else
+                {
+                    // Stop capture while auto-play runs to avoid mic ↔ speaker races.
+                    try { _audio.StopCapture(); } catch { }
+                }
+
+                if (playBack)
+                {
+                    _playCts?.Cancel();
+                    _playCts = new CancellationTokenSource();
+                    _ = PlayDisplayedAsync(_playCts.Token);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Start] ERROR: {ex}");
+                _isPlaying = false;
+                SetButtonStates(false);
+                StatusService.Instance.StatusMessage = "Could not start microphone.";
+                await MainThread.InvokeOnMainThreadAsync(async () =>
+                {
+                    var snack = Snackbar.Make(
+                        "Microphone unavailable — check app permissions.",
+                        duration: TimeSpan.FromSeconds(4));
+                    await snack.Show();
+                });
+            }
+        }
+        private async Task PlayDisplayedAsync(CancellationToken ct)
+        {
+            var cancelled = false;
+            try
+            {
+                if (_session.NotesToDraw.Count == 0)
+                    return;
+
+                var bpm = Math.Clamp(_session.PlaybackBpm, 30, 200);
+                var beatSeconds = 60.0 / bpm;
+                var gapSeconds = Math.Min(0.02, beatSeconds * 0.05);
+                var noteSeconds = Math.Max(0.05, beatSeconds - gapSeconds);
+
+                for (int i = 0; i < _session.NotesToDraw.Count; i++)
+                {
+                    ct.ThrowIfCancellationRequested();
+
+                    var note = _session.NotesToDraw[i];
+
+                    // Visual-only highlight (doesn't modify evaluation state)
+                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    {
+                        // property added to NoteSessionService; used only for drawing
+                        _session.PlaybackHighlightIndex = i;
+                        StaffGraphicsView.Invalidate();
+                    });
+
+                    try
+                    {
+                        await _player.PlayAsync(new[] { note.TargetFreq }, noteSeconds, gapSeconds, 0.22f, ct);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    finally
+                    {
+                        // Clear transient highlight
+                        await MainThread.InvokeOnMainThreadAsync(() =>
+                        {
+                            _session.PlaybackHighlightIndex = null;
+                            StaffGraphicsView.Invalidate();
+                        });
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                cancelled = true;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[PlayDisplayedAsync] ERROR: {ex}");
+            }
+            finally
+            {
+                // Update UI and restore instrument selection on UI thread
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    _isPlaying = false;
+                    PlayEvaluateButton.Text = "▶";
+                    PlayEvaluateButton.TextColor = Color.FromArgb("#008000");
+
+                    if (_savedInstrumentIndexForPlayback >= 0)
+                    {
+                        InstrumentPicker.SelectedIndex = _savedInstrumentIndexForPlayback;
+                        // InstrumentPicker_SelectedIndexChanged will restore _session.Instrument and SelectedInstrumentShort
+                    }
+                    _savedInstrumentForPlayback = null;
+                    _savedInstrumentIndexForPlayback = -1;
+                });
+
+                // When playback finishes normally, restart capture so manual detection resumes.
+                if (!cancelled)
+                {
+                    try
+                    {
+                        await _audio.EnsurePermissionAsync();
+                        _audio.StartCapture(OnAudioBlock);
+                        SetButtonStates(true);
+                     }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[PlayDisplayedAsync] restart capture ERROR: {ex}");
+                        SetButtonStates(false);
+                    }
+                }
+                else
+                {
+                    // on cancellation, leave capture stopped; UI already updated.
+                    SetButtonStates(false);
+                }
+            }
+        }
+
+        
         private async Task SaveSessionStatAsync()
         {
             if (_sessionDb == null) return;

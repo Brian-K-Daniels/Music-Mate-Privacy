@@ -15,30 +15,27 @@ namespace musicmate.Services
         public Color BoxColor => IsCorrect ? Colors.Green : Colors.DarkRed;
     }
 
+    // Replace the NoteInfo class in Services\NoteSessionService.cs with this (remove PlaybackHighlightIndex from NoteInfo)
     public class NoteInfo
     {
         public int Midi { get; set; }
-        public string Name { get; set; } = "";     //  2026.01.20 2230  
+        public string Name { get; set; } = "";
         public double TargetFreq { get; set; }
         public float X { get; set; }
-
 
         // Returns all enharmonic names for this note (including itself)
         public IEnumerable<string> EnharmonicNames
         {
             get
             {
-                // Use the static method from NoteSessionService
                 var midis = musicmate.Services.NoteSessionService.GetEnharmonicMidis(Midi);
                 foreach (var midi in midis)
                 {
-                    // Use both sharp and flat spellings
                     yield return musicmate.Services.NoteSessionService.MidiToNoteName(midi, false);
                     yield return musicmate.Services.NoteSessionService.MidiToNoteName(midi, true);
                 }
             }
         }
-
     }
 
     public partial class NoteSessionService : INotifyPropertyChanged
@@ -75,6 +72,21 @@ namespace musicmate.Services
 
         public int SampleRate { get; set; } = 44100;
         public int BufferSize { get; set; } = 4096;
+
+        // Add this property to NoteSessionService (near other public properties)  //  2026.04.07 1216  
+        private int? _playbackHighlightIndex = null;
+        public int? PlaybackHighlightIndex
+        {
+            get => _playbackHighlightIndex;
+            set
+            {
+                if (_playbackHighlightIndex != value)
+                {
+                    _playbackHighlightIndex = value;
+                    OnPropertyChanged(nameof(PlaybackHighlightIndex));
+                }
+            }
+        }
 
         private float _rmsThreshold = 0.025f;
         public int AccidentalPercent
@@ -963,30 +975,53 @@ namespace musicmate.Services
 
             StatusService.Instance.StatusMessage = $"Expected: {expectedNote}, Heard: {heardNote}, {result.cents}¢, Notes: {NotesToDraw.Count}";
 
+            var curFeedback = NoteFeedbacks.TryGetValue(idx, out var v2) ? v2 : (Wrong: 0, Cents: 0);
+
             // Only match if the detected pitch class matches the current note's pitch class
             if (Mod12(targetNote.Midi) != detectedPcWritten)
             {
-                // Debounce wrong counts per note index to avoid spurious increments
-                var now = DateTime.UtcNow;
-                if (_lastWrongTimePerIndex.TryGetValue(idx, out var last) && (now - last).TotalMilliseconds < _wrongDebounceMs)
-                {
-                    Utils.Log($"[Feedback] Debounced wrong increment for index={idx}, note={targetNote.Name}, last={last:O}, windowMs={_wrongDebounceMs}");
-                    return false; // skip update
-                }
+                //// Debounce wrong counts per note index to avoid spurious increments
+                //var now = DateTime.UtcNow;
+                //if (_lastWrongTimePerIndex.TryGetValue(idx, out var last) && (now - last).TotalMilliseconds < _wrongDebounceMs)
+                //{
+                //    Utils.Log($"[Feedback] Debounced wrong increment for index={idx}, note={targetNote.Name}, last={last:O}, windowMs={_wrongDebounceMs}");
+                //    return false; // skip update
+                //}
 
-                _lastWrongTimePerIndex[idx] = now;
+                //_lastWrongTimePerIndex[idx] = now;
+
+                //// Update feedback for incorrect attempt: only increment wrong, do not update cents
+                //var cur = NoteFeedbacks.TryGetValue(idx, out var v) ? v : (Wrong: 0, Cents: 0);
+                //Utils.Log($"[Feedback] Incrementing wrong for index={idx}, note={targetNote.Name} (before={cur.Wrong})");
+                //cur = (Wrong: cur.Wrong + 1, Cents: cur.Cents);
+                //NoteFeedbacks[idx] = cur;
+                //FeedbackViewModels[idx] = new FeedbackItem(idx, cur.Wrong, cur.Cents, false);
+                //Utils.Log($"[Feedback] Updated wrong for index={idx}, note={targetNote.Name} (after={cur.Wrong})");
+                //return true;
+
+                // Replace this block at the bottom of UpdateFeedbackForCurrent:
+
+
+                // Debounce trailing wrong increments (pitch class matched but out of tolerance)
+                var nowTrailing = DateTime.UtcNow;
+                if (_lastWrongTimePerIndex.TryGetValue(idx, out var lastTrailing)
+                    && (nowTrailing - lastTrailing).TotalMilliseconds < _wrongDebounceMs)
+                {
+                    Utils.Log($"[Feedback] Debounced trailing wrong for index={idx}, note={targetNote.Name}");
+                    return false;
+                }
+                _lastWrongTimePerIndex[idx] = nowTrailing;
 
                 // Update feedback for incorrect attempt: only increment wrong, do not update cents
-                var cur = NoteFeedbacks.TryGetValue(idx, out var v) ? v : (Wrong: 0, Cents: 0);
-                Utils.Log($"[Feedback] Incrementing wrong for index={idx}, note={targetNote.Name} (before={cur.Wrong})");
-                cur = (Wrong: cur.Wrong + 1, Cents: cur.Cents);
-                NoteFeedbacks[idx] = cur;
-                FeedbackViewModels[idx] = new FeedbackItem(idx, cur.Wrong, cur.Cents, false);
-                Utils.Log($"[Feedback] Updated wrong for index={idx}, note={targetNote.Name} (after={cur.Wrong})");
+                Utils.Log($"[Feedback] Incrementing trailing wrong for index={idx}, note={targetNote.Name} (before={curFeedback.Wrong})");
+                curFeedback = (Wrong: curFeedback.Wrong + 1, Cents: curFeedback.Cents);
+                NoteFeedbacks[idx] = curFeedback;
+                FeedbackViewModels[idx] = new FeedbackItem(idx, curFeedback.Wrong, curFeedback.Cents, false);
+                Utils.Log($"[Feedback] Updated trailing wrong for index={idx}, note={targetNote.Name} (after={curFeedback.Wrong})");
                 return true;
             }
 
-            var curFeedback = NoteFeedbacks.TryGetValue(idx, out var v2) ? v2 : (Wrong: 0, Cents: 0);
+            
 
             if (result.correct)
             {

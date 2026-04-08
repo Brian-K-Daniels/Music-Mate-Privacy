@@ -705,12 +705,24 @@ namespace musicmate.Drawables
                 var boxX = noteCenterX - boxWidth / 2f;
                 var boxY = rowY;
 
-                // If all correct, mark all green; otherwise, only first contiguous group
-                var fill = allCorrect
-                    ? Colors.Lime.WithAlpha(0.95f)
-                    : (stillContiguous && fb.IsCorrect)
+                // In DrawSmallFeedback, use PlaybackHighlightIndex to draw a transient visual highlight.
+                // Replace the fill selection block with this variant (inside the loop where `fb` is available):
+
+                // If playback is highlighting this index, force highlight visually (visual-only; session state unchanged).
+                var fill = Colors.DarkRed.WithAlpha(0.80f);
+                if (_session.PlaybackHighlightIndex.HasValue && _session.PlaybackHighlightIndex.Value == i)
+                {
+                    fill = Colors.Lime.WithAlpha(0.95f);
+                }
+                else
+                {
+                    // Existing logic: If all correct, mark all green; otherwise, only first contiguous group
+                    fill = allCorrect
                         ? Colors.Lime.WithAlpha(0.95f)
-                        : Colors.DarkRed.WithAlpha(0.80f);
+                        : (stillContiguous && fb.IsCorrect)
+                            ? Colors.Lime.WithAlpha(0.95f)
+                            : Colors.DarkRed.WithAlpha(0.80f);
+                }
 
                 if (!fb.IsCorrect && !allCorrect)
                 {
