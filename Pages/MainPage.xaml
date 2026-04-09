@@ -98,7 +98,6 @@
             <VerticalStackLayout Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Spacing="4" VerticalOptions="Start">
               <Button x:Name="AutoRepeatToggleButton"
                       Text="Repeat"
-                      Style="{StaticResource CompactBrownButton}"
                       WidthRequest="80"
                       MinimumWidthRequest="80"
                       MinimumHeightRequest="36"

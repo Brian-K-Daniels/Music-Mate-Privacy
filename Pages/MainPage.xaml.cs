@@ -83,7 +83,6 @@ namespace musicmate.Pages
                 if (_autoRepeat != value)
                 {
                     _autoRepeat = value;
-                    UpdateAutoRepeatButton();
                     if (!_autoRepeat)
                     {
                         _ = StopListeningAndEvaluatingAsync();
@@ -161,21 +160,7 @@ namespace musicmate.Pages
             IsInstrumentLabelVisible = true;
         }
 
-        private void UpdateAutoRepeatButton()
-        {
-            var btn = AutoRepeatToggleButton;
-            if (btn == null) return;
-            if (AutoRepeat)
-            {
-                btn.BackgroundColor = Colors.Green;
-                btn.TextColor = Colors.White;
-            }
-            else
-            {
-                btn.BackgroundColor = Color.FromArgb("#8B4513");
-                btn.TextColor = Colors.White;
-            }
-        }
+        
 
         private void AutoRepeatToggleButtonClicked(object sender, EventArgs e)
         {
@@ -470,23 +455,24 @@ namespace musicmate.Pages
             }
         }
 
-        private async void SetButtonStates(bool isRunning)
+        private void SetButtonStates(bool isRunning)
         {
             _isRunning = isRunning;
-            if (isRunning)
+            MainThread.BeginInvokeOnMainThread(() =>
             {
-                StartStopButton.Text = "■";
-                StartStopButton.TextColor = Color.FromArgb("#E04040");
-                PlayEvaluateButton.TextColor = Color.FromArgb("#CCCCCC");
-                PlayEvaluateButton.IsEnabled = false;
-            }
-            else
-            {
-                StartStopButton.Text = "●";
-                StartStopButton.TextColor = Color.FromArgb("#008000");
-                PlayEvaluateButton.TextColor = Color.FromArgb("#555555");
-                PlayEvaluateButton.IsEnabled = true;
-            }
+                if (isRunning)
+                {
+                    StartStopButton.Text = "■";
+                    StartStopButton.TextColor = Color.FromArgb("#E04040");
+                    PlayEvaluateButton.IsEnabled = false;
+                }
+                else
+                {
+                    StartStopButton.Text = "●";
+                    StartStopButton.TextColor = Color.FromArgb("#008000");
+                    PlayEvaluateButton.IsEnabled = true;
+                }
+            });
         }
 
         private async void OnStartStopToggleClicked(object? sender, EventArgs e)
@@ -525,15 +511,8 @@ namespace musicmate.Pages
             var mainLayout = this.FindByName<VerticalStackLayout>("MainPageMainLayout");
             var mainScroll = this.FindByName<ScrollView>("MainScrollView");
 
-            // Programmatic left gutter/padding removed — layout now uses explicit gutter column in XAML.
-
-            Dispatcher.Dispatch(UpdateAutoRepeatButton);
-
             Debug.WriteLine($"[DEBUG] OnAppearing: IsAutoRepeatVisible={IsAutoRepeatVisible}, Tune={_session.Tune}");
             var grid = this.FindByName<Grid>(""); // root Grid if named, or use this.Content as Grid
-            Debug.WriteLine($"MainPage padding: {this.Padding}");
-            Debug.WriteLine($"MainLayout margin: {MainPageMainLayout.Margin}");
-            Debug.WriteLine($"Device density: {DeviceDisplay.MainDisplayInfo.Density}, width: {DeviceDisplay.MainDisplayInfo.Width}");
             IsAutoRepeatVisible = _session.Tune == "Random";
             DeviceDisplay.Current.KeepScreenOn = true;
 

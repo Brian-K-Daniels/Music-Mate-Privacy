@@ -60,24 +60,24 @@
     <!-- ── Pinned toolbar (never scrolls) ─────────────────────────────── -->
     <Grid Grid.Row="0"
           ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto"
-          ColumnSpacing="8"
-          Padding="8,6,8,6"
+          ColumnSpacing="6"
+          Padding="8,4,8,4"
           VerticalOptions="Center"
           BackgroundColor="{Binding PanelBackgroundColor}">
 
       <!-- Font label -->
       <Label Grid.Column="0"
              Text="Font"
-             FontSize="14"
+             FontSize="{Binding SelectedFontSize}"
              VerticalOptions="Center" />
 
       <!-- Font picker -->
       <Border Grid.Column="1"
               Stroke="#8B4513" StrokeThickness="2"
-              BackgroundColor="Transparent" Padding="8,2"
-              MinimumHeightRequest="44" MinimumWidthRequest="80">
+              BackgroundColor="Transparent" Padding="4,2"
+              VerticalOptions="Center">
         <Picker x:Name="FontSizePicker"
-                FontSize="14"
+                FontSize="{Binding SelectedFontSize}"
                 ItemsSource="{Binding FontSizeOptions}"
                 SelectedItem="{Binding SelectedFontSize, Mode=TwoWay}"
                 VerticalOptions="Center" />
@@ -86,10 +86,10 @@
       <!-- Search icon -->
       <Label Grid.Column="2"
              Text="🔍"
-             FontSize="22"
+             FontSize="{Binding SelectedFontSize}"
              TextColor="#8B4513"
              VerticalOptions="Center"
-             Margin="6,0,2,0" />
+             Margin="4,0,2,0" />
 
       <!-- Search bar: fills remaining space -->
       <Border Grid.Column="3"
@@ -103,8 +103,7 @@
                    PlaceholderColor="{Binding ContrastingTextColor}"
                    BackgroundColor="Transparent"
                    HorizontalOptions="Fill"
-                   MinimumHeightRequest="44"
-                   FontSize="16"
+                   FontSize="{Binding SelectedFontSize}"
                    TextChanged="OnAboutSearchTextChanged"
                    SearchButtonPressed="OnAboutSearchButtonPressed" />
       </Border>
@@ -115,15 +114,15 @@
               Text="Next"
               IsEnabled="False"
               Clicked="OnAboutFindNextClicked"
-              MinimumHeightRequest="44"
+              FontSize="{Binding SelectedFontSize}"
+              Padding="8,4"
               VerticalOptions="Center" />
 
       <!-- Match position label -->
       <Label Grid.Column="5"
              x:Name="AboutFindPositionLabel"
              Text=""
-             FontSize="13"
-             MinimumWidthRequest="52"
+             FontSize="{Binding SelectedFontSize}"
              VerticalOptions="Center"
              HorizontalOptions="Center" />
 
@@ -134,26 +133,27 @@
       <VerticalStackLayout x:Name="AboutMainLayout">
 
         <!-- Premium purchase controls -->
-        <Grid ColumnDefinitions="Auto,Auto,*" 
-              ColumnSpacing="10" 
-              VerticalOptions="Center" 
-              Padding="8,8,8,4">
+        <Grid ColumnDefinitions="Auto,Auto,*"
+              ColumnSpacing="10"
+              VerticalOptions="Center"
+              Padding="8,6,8,4">
           <Button Grid.Column="0"
                   Text="Get Premium"
                   Command="{Binding BuyPremiumCommand}"
                   TextColor="White"
-                  MinimumHeightRequest="44"
-                  Padding="12,8" />
+                  FontSize="{Binding SelectedFontSize}"
+                  Padding="8,4" />
           <Button Grid.Column="1"
                   Text="Restore"
                   Command="{Binding RestorePurchasesCommand}"
                   IsVisible="{Binding IsPremium}"
                   TextColor="White"
-                  MinimumHeightRequest="44"
-                  Padding="12,8" />
+                  FontSize="{Binding SelectedFontSize}"
+                  Padding="8,4" />
           <Label Grid.Column="2"
                  Text="Premium"
                  IsVisible="{Binding IsPremium}"
+                 FontSize="{Binding SelectedFontSize}"
                  VerticalOptions="Center"
                  HorizontalOptions="End" />
         </Grid>
