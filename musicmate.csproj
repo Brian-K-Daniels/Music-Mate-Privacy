@@ -52,12 +52,6 @@
     <Compile Remove="MainPage-safety.xaml.cs" />
   </ItemGroup>
 
-
-  <!--<ItemGroup>
-    <None Remove="Design.docx" />
-    <None Remove="Resources\Images\logo.png" />
-  </ItemGroup>-->
-
   <ItemGroup>
     <PackageReference Include="Anjoxam.BillingClient.Droid" Version="7.1.1" />
     <PackageReference Include="CommunityToolkit.Maui" Version="14.1.0" />

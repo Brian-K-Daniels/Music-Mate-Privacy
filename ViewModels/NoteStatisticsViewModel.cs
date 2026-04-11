@@ -21,6 +21,21 @@ namespace musicmate.ViewModels
 
         public ObservableCollection<NoteStat> NoteStats { get; } = new();
         public ObservableCollection<SessionStat> SessionStats { get; } = new();
+
+        private bool _isLoading = false;
+        public bool IsLoading
+        {
+            get => _isLoading;
+            private set
+            {
+                if (_isLoading != value)
+                {
+                    _isLoading = value;
+                    OnPropertyChanged(nameof(IsLoading));
+                }
+            }
+        }
+
         private double _averageWrong = 0.0;
         public double AverageWrong
         {
@@ -59,6 +74,7 @@ namespace musicmate.ViewModels
         public async Task LoadAsync()
         {
             Utils.Log($"[NoteStatisticsViewModel] LoadAsync started. IsNoteDatabase={IsNoteDatabase}");
+            IsLoading = true;
             try
             {
                 if (IsNoteDatabase)
@@ -101,6 +117,10 @@ namespace musicmate.ViewModels
             {
                 Utils.Log($"[NoteStatisticsViewModel] LoadAsync exception: {ex}");
             }
+            finally
+            {
+                IsLoading = false;
+            }
         }        
 
         private string _selectedDatabase = Preferences.Get("musicmate.SelectedStatsDb", "Note");
@@ -136,6 +156,7 @@ namespace musicmate.ViewModels
                 System.Diagnostics.Debug.WriteLine($"[NoteStatisticsViewModel] Error loading stats: {ex}");
             }
         }
+
         protected void OnPropertyChanged(string propertyName)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));

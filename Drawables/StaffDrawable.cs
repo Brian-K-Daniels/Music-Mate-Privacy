@@ -5,15 +5,13 @@ namespace musicmate.Drawables
 {
     public class StaffDrawable : IDrawable
     {
-        private float correctionFactor = 1.3f;  //  2026.04.04 1131  1.5f too big;
-       // private float correctionConstantY = 0f;
-        private const float flatSizeBoost = 1.5f;  //  2026.04.05 0916  1.25f;
-       // float glyphH = 10f;
-       // float glyphW = 10f;  //  2026.04.04 1123 
-        private readonly NoteSessionService _session;
-        private readonly ThemeService _theme_service;
+        private float                           correctionFactor = 1.3f;  //  2026.04.04 1131  1.5f too big;
+        private const float                     flatSizeBoost = 1.5f;  //  2026.04.05 0916  1.25f;
+        private readonly NoteSessionService     _session;
+        private readonly ThemeService           _theme_service;
         // Cached computed height for the staff band (measured outside of Draw)
-        private float _computedStaffHeight = 220f;
+        private float                           _computedStaffHeight = 220f;
+
 
         public StaffDrawable(NoteSessionService session, ThemeService themeService)
         {
@@ -66,38 +64,29 @@ namespace musicmate.Drawables
 
         public void Draw(ICanvas canvas, RectF dirtyRect)
         {
-            // Measure required height first, based on notes, clef and feedback, then draw into that rectangle.
             // Basic primitives
             var noteHeadH = 8f;
             var headW = noteHeadH * 1.5f;
             var staffSpacing = noteHeadH + 2f;
 
-            // Compute required height (cached) using numeric-only method
-            var requiredHeight = ComputeRequiredHeight(dirtyRect.Width);
-
+            canvas.SaveState();
             canvas.SaveState();
 
             // Colors
             var backgroundColor = _theme_service.PanelBackgroundColor;
             var contrastColor = _theme_service.ContrastingTextColor;
 
-            // Position the staff band vertically so it fits within dirtyRect (centered by default)
-            var staffBandHeight = requiredHeight;
-            var staffBandTop = Math.Max(0f, (dirtyRect.Height - staffBandHeight) / 2f);
-
-            // Note: the tuner vertical offset is applied to the computed required height
-            // (via ComputeRequiredHeight) so the GraphicsView is given extra space and
-            // the staff/notes can be positioned lower. Do not apply an additional runtime
-            // shift here.
-
-            // Fill background for the full dirty area to avoid gaps
+            // Fill background
             canvas.FillColor = backgroundColor;
             canvas.FillRectangle(dirtyRect.X, 0f, dirtyRect.Width, dirtyRect.Height);
 
             canvas.StrokeColor = contrastColor;
             canvas.FontColor = contrastColor;
 
-            // Determine extremes (diatonic steps) to place the core 5-line staff inside the band
+            // Calculate content layout from the top with exact 8px margin
+            const float topMargin = 8f;
+
+            // Determine extremes (same as ComputeRequiredHeight)
             int maxStepsAbove = 0, maxStepsBelow = 0;
             foreach (var note in _session.NotesToDraw)
             {
@@ -114,8 +103,7 @@ namespace musicmate.Drawables
                     maxStepsBelow = Math.Max(maxStepsBelow, stepsFromB4);
             }
 
-            // Also include tuner last note in extents when in tuner mode so very high tuner notes
-            // are accounted for in the vertical layout.
+            // Include tuner last note
             if (_session.Tune == "Tuner" && !string.IsNullOrEmpty(_session.TunerLastNoteName))
             {
                 try
@@ -131,24 +119,31 @@ namespace musicmate.Drawables
                             maxStepsBelow = Math.Max(maxStepsBelow, stepsFromB4);
                     }
                 }
-                catch
-                {
-                    // ignore malformed tuner name
-                }
+                catch { }
             }
 
-            // Include clef center (G4) in extents
+            // Include clef center (G4)
             var clefSteps = StaffStepsFromB4('G', 4);
-            if (clefSteps < 0) maxStepsAbove = Math.Max(maxStepsAbove, -clefSteps); else maxStepsBelow = Math.Max(maxStepsBelow, clefSteps);
+            if (clefSteps < 0) maxStepsAbove = Math.Max(maxStepsAbove, -clefSteps);
+            else maxStepsBelow = Math.Max(maxStepsBelow, clefSteps);
 
             var stepSize = staffSpacing / 2f;
-
-            // Compute extra space above and below the 5-line staff to accommodate ledger lines and glyph extents
             var extraTop = maxStepsAbove * stepSize + noteHeadH * 1.5f;
             var extraBottom = maxStepsBelow * stepSize + noteHeadH * 2.5f;
 
-            // Position core staff (5 lines) inside the band
-            var staffCoreTop = staffBandTop + extraTop;
+            if (_session.Tune == "Tuner")
+            {
+                try
+                {
+                    var mmToDp = 160.0 / 25.4;
+                    var shift = (float)(30.0 * mmToDp);
+                    extraTop += shift;
+                }
+                catch { }
+            }
+
+            // Position everything from the top with exact margins - no shifting needed
+            var staffCoreTop = topMargin + extraTop;
             var staffCoreBottom = staffCoreTop + 4f * staffSpacing;
 
             // Draw staff lines
@@ -160,8 +155,7 @@ namespace musicmate.Drawables
                 canvas.DrawLine(staffLineLeftMargin, y, dirtyRect.Width - staffLineRightMargin, y);
             }
 
-            // Draw clef (prefer text glyph, but protect against exceptions). If text rendering fails,
-            // fallback to the embedded vector path drawing which avoids Java/text APIs.
+            // Draw clef
             var middleLineY = staffCoreTop + 2f * staffSpacing;
             var clefCenterY = GetYForSpelledNote("G4", middleLineY, staffSpacing);
             var clefX = 16f;
@@ -170,16 +164,12 @@ namespace musicmate.Drawables
             var clefY = clefCenterY - (clefH / 2f) - 1.5f * staffSpacing;
             try
             {
-                // Try to render the original beautiful glyph
-                // Protect against the clef being drawn off the top of the canvas by ensuring a
-                // small top margin. This prevents the top of the treble clef glyph from being clipped.
                 if (clefY < 6f) clefY = 6f;
                 canvas.FontSize = 18.666f * 3f;
                 canvas.DrawString("𝄞", clefX, clefY, clefW, clefH, HorizontalAlignment.Left, VerticalAlignment.Center);
             }
             catch
             {
-                // If DrawString throws (platform font issue), draw the vector fallback instead.
                 if (clefY < 6f) clefY = 6f;
                 DrawTrebleClef(canvas, clefX, clefY, clefW, clefH, contrastColor);
             }
@@ -191,10 +181,8 @@ namespace musicmate.Drawables
             var accSpacing = headW * 0.33f * accScale;
             var accStartX = clefX + clefW + 6f;
 
-            // Ensure first note is at least ~3 note-head widths to the right of the key signature.
-            // This gives room for any staff accidental and avoids overlap.
-            var desiredHeadPadding = 3f * headW;                 // 3 head widths
-            var fallbackPadding = 32f;                           // keep existing minimum
+            var desiredHeadPadding = 3f * headW;
+            var fallbackPadding = 32f;
             var extraLeftPadding = Math.Max(fallbackPadding, desiredHeadPadding);
 
             var leftMargin = accStartX + Math.Abs(accidentalCount) * accSpacing + extraLeftPadding;
@@ -203,12 +191,9 @@ namespace musicmate.Drawables
             {
                 DrawKeySignature(canvas, staffCoreTop, staffSpacing, _session.Key, accStartX, accWidth, accSpacing, headW, accidentalCount, backgroundColor, contrastColor);
             }
-            catch
-            {
-                // Swallow platform font/rendering exceptions so notes are still drawn
-            }
+            catch { }
 
-            // Horizontal scaling of source positions into available width
+            // Horizontal scaling
             float minSrcX = float.MaxValue, maxSrcX = float.MinValue;
             foreach (var n in _session.NotesToDraw)
             {
@@ -221,24 +206,20 @@ namespace musicmate.Drawables
             var srcRange = Math.Max(1f, maxSrcX - minSrcX);
             var scale = targetRange / srcRange;
 
-            // If in Tuner mode, draw the last detected tuner note centered in the view.
+            // Draw notes
             if (_session.Tune == "Tuner")
             {
                 var tunerName = _session.TunerLastNoteName;
                 if (!string.IsNullOrEmpty(tunerName))
                 {
                     var centerX = dirtyRect.Width / 2f;
-                    // Make the tuner note head half the previous size for a cleaner tuner display
-                    var tunerHeadH = noteHeadH * 1.2f; // previously 2.4x, now half that
+                    var tunerHeadH = noteHeadH * 1.2f;
                     var tunerHeadW = tunerHeadH * 1.5f;
                     DrawCenteredNote(canvas, tunerName, centerX, staffCoreTop, staffSpacing, tunerHeadH, tunerHeadW, contrastColor, contrastColor);
-
-                    // (Intentionally omitted) Do not draw cents on the graphics panel in tuner mode.
                 }
             }
             else
             {
-                // Draw notes for normal session modes
                 foreach (var n in _session.NotesToDraw)
                 {
                     var scaledX = leftMargin + (n.X - minSrcX) * scale;
@@ -246,9 +227,10 @@ namespace musicmate.Drawables
                 }
             }
 
-            // Draw feedback boxes below the lowest notes
+            // Draw feedback boxes - no shifting, just positioned naturally
             DrawSmallFeedback(canvas, staffCoreTop, staffCoreBottom, staffSpacing, noteHeadH, headW, leftMargin, minSrcX, scale, dirtyRect.Height);
 
+            canvas.RestoreState();
             canvas.RestoreState();
         }
 
@@ -258,24 +240,19 @@ namespace musicmate.Drawables
         /// (no platform text measurement) so it is safe to call from non-UI threads and
         /// does not invoke platform font subsystems.
         /// </summary>
-        public float ComputeRequiredHeight(float width)
+        public float ComputeRequiredHeight(float canvasWidth)
         {
-            // Basic glyph geometry (kept in sync with Draw)
-            var noteHeadH = 8f;
-            var headW = noteHeadH * 1.5f;
-            var staffSpacing = noteHeadH + 2f;
+            // Use the EXACT same constants as the Draw method for consistency
+            const float topMargin = 8f;  // Match Draw method exactly
+            var noteHeadH = 8f;           // Match Draw method exactly
+            var staffSpacing = noteHeadH + 2f;  // Match Draw method calculation
 
-            // Core staff area (4 spaces = 4 * spacing between lines)
-            var staffCoreHeight = 4f * staffSpacing;
+            // Calculate staff dimensions exactly as Draw method does
+            int maxStepsAbove = 0, maxStepsBelow = 0;
 
-            // Determine extreme note positions in diatonic steps relative to B4 (middle line reference)
-            int maxStepsAbove = 0; // number of steps above middle line
-            int maxStepsBelow = 0; // number of steps below middle line
             foreach (var note in _session.NotesToDraw)
             {
                 var s = note.Name.Trim();
-                if (string.IsNullOrEmpty(s))
-                    continue;
                 var letter = char.ToUpperInvariant(s[0]);
                 if (!int.TryParse(s[^1].ToString(), out var octave))
                     continue;
@@ -286,8 +263,7 @@ namespace musicmate.Drawables
                     maxStepsBelow = Math.Max(maxStepsBelow, stepsFromB4);
             }
 
-            // Also include tuner last note in extents when in tuner mode so very high tuner notes
-            // are accounted for when computing required height.
+            // Include tuner last note
             if (_session.Tune == "Tuner" && !string.IsNullOrEmpty(_session.TunerLastNoteName))
             {
                 try
@@ -303,53 +279,61 @@ namespace musicmate.Drawables
                             maxStepsBelow = Math.Max(maxStepsBelow, stepsFromB4);
                     }
                 }
-                catch
-                {
-                    // ignore malformed tuner name
-                }
+                catch { }
             }
 
-            // Ensure clef glyph is also accounted for (G4 center)
-            var clefLetter = 'G';
-            var clefOctave = 4;
-            var clefSteps = StaffStepsFromB4(clefLetter, clefOctave);
-            if (clefSteps < 0)
-                maxStepsAbove = Math.Max(maxStepsAbove, -clefSteps);
-            else
-                maxStepsBelow = Math.Max(maxStepsBelow, clefSteps);
+            // Include clef center (G4)
+            var clefSteps = StaffStepsFromB4('G', 4);
+            if (clefSteps < 0) maxStepsAbove = Math.Max(maxStepsAbove, -clefSteps);
+            else maxStepsBelow = Math.Max(maxStepsBelow, clefSteps);
 
-            var stepSize = staffSpacing / 2f; // same as GetYForSpelledNote
-
-            // Extra vertical space to allow ledger lines and note heads beyond the 5-line staff
+            var stepSize = staffSpacing / 2f;
             var extraTop = maxStepsAbove * stepSize + noteHeadH * 1.5f;
-            var extraBottom = maxStepsBelow * stepSize + noteHeadH * 2.5f; // room for feedback below
+            var extraBottom = maxStepsBelow * stepSize + noteHeadH * 2.5f;
 
-            // If in tuner mode, bias the extra space towards the top so high notes have room
-            // above the core staff. This shifts the staff lower in the graphics area.
             if (_session.Tune == "Tuner")
             {
                 try
                 {
                     var mmToDp = 160.0 / 25.4;
                     var shift = (float)(30.0 * mmToDp);
-                    extraTop += shift; // add extra space above the staff
+                    extraTop += shift;
                 }
-                catch
-                {
-                    // ignore
-                }
+                catch { }
             }
 
-            // Feedback boxes underneath lowest notes
-            var feedbackBoxHeight = noteHeadH * 2.4f + 4f;
+            // Calculate staff positions exactly as Draw method does
+            var staffCoreTop = topMargin + extraTop;
+            var staffCoreBottom = staffCoreTop + 4f * staffSpacing;
 
-            // Padding to keep content from touching edges
-            var padding = 8f;
+            // Calculate feedback position using EXACT same logic as DrawSmallFeedback
+            var lowestNoteY = staffCoreBottom; // Default to bottom staff line
+            var middleLineY = staffCoreTop + 2f * staffSpacing;
 
-            var computed = staffCoreHeight + extraTop + extraBottom + feedbackBoxHeight + padding;
+            foreach (var note in _session.NotesToDraw)
+            {
+                var noteY = GetYForSpelledNote(note.Name, middleLineY, staffSpacing);
+                if (noteY > lowestNoteY)
+                    lowestNoteY = noteY;
+            }
 
-            // Keep a sensible minimum (matches earlier hard-coded value)
-            _computedStaffHeight = Math.Max(220f, computed);
+            // Exact same feedback calculation as DrawSmallFeedback
+            var boxHeight = noteHeadH * 2.4f;
+            var feedbackRowY = lowestNoteY + noteHeadH * 2f;
+            var feedbackBottom = feedbackRowY + boxHeight;
+
+            // Use more negative bottom margin to achieve the tight 8px spacing
+            // Layout has multiple spacing elements, so we need to compensate more aggressively
+            const float bottomMargin = 8f;//-16f; // More negative to pull graphics view smaller
+            var totalHeight = feedbackBottom + bottomMargin;
+
+            // DEBUG: Log all the calculations
+            System.Diagnostics.Debug.WriteLine($"[ComputeRequiredHeight] staffCoreTop={staffCoreTop:F1}, staffCoreBottom={staffCoreBottom:F1}");
+            System.Diagnostics.Debug.WriteLine($"[ComputeRequiredHeight] lowestNoteY={lowestNoteY:F1}, feedbackRowY={feedbackRowY:F1}, feedbackBottom={feedbackBottom:F1}");
+           // System.Diagnostics.Debug.WriteLine($"[ComputeRequiredHeight] totalHeight={totalHeight:F1}, bottomMargin={bottomMargin:F1}");
+
+            // Cache and return the computed height with aggressive negative margin
+            _computedStaffHeight = totalHeight;
             return _computedStaffHeight;
         }
 
@@ -671,6 +655,12 @@ namespace musicmate.Drawables
             var boxHeight = headH * 2.4f;
             var rowY = lowestNoteY + headH * 2f; // 2 note head heights below
             var gap = 1f; // Reduced from 1.5f
+            var feedbackBottom = rowY + boxHeight;
+
+            // DEBUG: Log feedback positioning
+            System.Diagnostics.Debug.WriteLine($"[DrawSmallFeedback] top={top:F1}, bottom={bottom:F1}, canvasHeight={canvasHeight:F1}");
+            System.Diagnostics.Debug.WriteLine($"[DrawSmallFeedback] lowestNoteY={lowestNoteY:F1}, rowY={rowY:F1}, feedbackBottom={feedbackBottom:F1}");
+            System.Diagnostics.Debug.WriteLine($"[DrawSmallFeedback] bottomMargin={(canvasHeight - feedbackBottom):F1}");
 
             // Check if all notes are correct (session complete)
             bool allCorrect = _session.FeedbackViewModels.Count == _session.NotesToDraw.Count &&
@@ -732,6 +722,17 @@ namespace musicmate.Drawables
                 canvas.FillColor = fill;
                 canvas.StrokeColor = Colors.Black.WithAlpha(0.1f);
                 canvas.FillRoundedRectangle(boxX, boxY, boxWidth, boxHeight, 3f);
+
+                // Show cents deviation inside the box once the note has been played correctly
+                if (fb.IsCorrect || fb.CentsDeviation != 0)
+                {
+                    canvas.FontSize = Math.Max(8f, boxHeight * 0.42f);  //  2026.04.09 1103  6f->8f
+                    canvas.FontColor = Colors.Black;
+                    canvas.DrawString(
+                        fb.CentsText,
+                        boxX, boxY, boxWidth, boxHeight,
+                        HorizontalAlignment.Center, VerticalAlignment.Center);
+                }
             }
         }
 
@@ -741,74 +742,7 @@ namespace musicmate.Drawables
         /// (no platform text measurement) so it is safe to call from non-UI threads and
         /// does not invoke platform font subsystems.
         /// </summary>
-        public float ComputeRequiredHeightOld(float width)
-        {
-            // Basic glyph geometry (kept in sync with Draw)
-            var noteHeadH = 8f;
-            var headW = noteHeadH * 1.5f;
-            var staffSpacing = noteHeadH + 2f;
-
-            // Core staff area (4 spaces = 4 * spacing between lines)
-            var staffCoreHeight = 4f * staffSpacing;
-
-            // Determine extreme note positions in diatonic steps relative to B4 (middle line reference)
-            int maxStepsAbove = 0; // number of steps above middle line
-            int maxStepsBelow = 0; // number of steps below middle line
-            foreach (var note in _session.NotesToDraw)
-            {
-                var s = note.Name.Trim();
-                if (string.IsNullOrEmpty(s))
-                    continue;
-                var letter = char.ToUpperInvariant(s[0]);
-                if (!int.TryParse(s[^1].ToString(), out var octave))
-                    continue;
-                int stepsFromB4 = StaffStepsFromB4(letter, octave);
-                if (stepsFromB4 < 0)
-                    maxStepsAbove = Math.Max(maxStepsAbove, -stepsFromB4);
-                else
-                    maxStepsBelow = Math.Max(maxStepsBelow, stepsFromB4);
-            }
-
-            // Ensure clef glyph is also accounted for (G4 center)
-            var clefLetter = 'G';
-            var clefOctave = 4;
-            var clefSteps = (clefOctave - 4) * 7 + (LetterIndex(clefLetter) - LetterIndex('B'));
-            if (clefSteps < 0)
-                maxStepsAbove = Math.Max(maxStepsAbove, -clefSteps);
-            else
-                maxStepsBelow = Math.Max(maxStepsBelow, clefSteps);
-
-            var stepSize = staffSpacing / 2f; // same as GetYForSpelledNote
-
-            // Extra vertical space to allow ledger lines and note heads beyond the 5-line staff
-            var extraTop = maxStepsAbove * stepSize + noteHeadH * 1.5f;
-            var extraBottom = maxStepsBelow * stepSize + noteHeadH * 2.5f; // room for feedback below
-
-            // Bias the extra space towards the top so high notes have room above the core staff.
-            // This shifts the staff lower in the graphics area.
-            try
-            {
-                var mmToDp = 160.0 / 25.4;
-                var shift = (float)(30.0 * mmToDp);
-                extraTop += shift; // add extra space above the staff
-            }
-            catch
-            {
-                // ignore
-            }
-
-            // Feedback boxes underneath lowest notes
-            var feedbackBoxHeight = noteHeadH * 2.4f + 4f;
-
-            // Padding to keep content from touching edges
-            var padding = 8f;
-
-            var computed = staffCoreHeight + extraTop + extraBottom + feedbackBoxHeight + padding;
-
-            // Keep a sensible minimum (matches earlier hard-coded value)
-            _computedStaffHeight = Math.Max(220f, computed);
-            return _computedStaffHeight;
-        }
+       
 
         private static int GetAccidentalCountForScale(string key, string selectedScale)
         {
@@ -885,5 +819,25 @@ namespace musicmate.Drawables
             var abs = Math.Abs(signatureCount);
             return flatsOrder.Take(abs).Contains(letter) ? "b" : null;
         }
+
+        // Recomputes lowest note Y and feedback extents for the provided staff core placement.
+        private void RecomputeFeedbackPositions(float staffCoreTop, float staffCoreBottom, float spacing, float noteHeadH,
+                                                out float lowestNoteY, out float feedbackRowY, out float feedbackBottom)
+        {
+            lowestNoteY = staffCoreBottom;
+            var middleLineY = staffCoreTop + 2f * spacing;
+
+            foreach (var note in _session.NotesToDraw)
+            {
+                var noteY = GetYForSpelledNote(note.Name, middleLineY, spacing);
+                if (noteY > lowestNoteY)
+                    lowestNoteY = noteY;
+            }
+
+            var boxHeight = noteHeadH * 2.4f;
+            feedbackRowY = lowestNoteY + noteHeadH * 2f;
+            feedbackBottom = feedbackRowY + boxHeight;
+        }
     }
+
 }

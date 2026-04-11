@@ -1014,7 +1014,7 @@ namespace musicmate.Services
 
                 // Update feedback for incorrect attempt: only increment wrong, do not update cents
                 Utils.Log($"[Feedback] Incrementing trailing wrong for index={idx}, note={targetNote.Name} (before={curFeedback.Wrong})");
-                curFeedback = (Wrong: curFeedback.Wrong + 1, Cents: curFeedback.Cents);
+                curFeedback = (Wrong: curFeedback.Wrong + 1, Cents: result.cents);
                 NoteFeedbacks[idx] = curFeedback;
                 FeedbackViewModels[idx] = new FeedbackItem(idx, curFeedback.Wrong, curFeedback.Cents, false);
                 Utils.Log($"[Feedback] Updated trailing wrong for index={idx}, note={targetNote.Name} (after={curFeedback.Wrong})");
@@ -1210,69 +1210,71 @@ namespace musicmate.Services
             currentIdx = chosenIdx;
           }
 
-          // --- Accidental logic ---
-          // Get all unadorned (natural) note MIDIs in the scale for this range
-          var unadornedNoteMidis = GetUnadornedNoteMidis(availableNotes);
-          // Only add random accidentals for free users
-          // Only add random accidentals for premium users
-          if (StatusService.Instance.IsPremiumUser && AccidentalPercent > 0 && result.Count > 0)
-          {
-            int count = (int)Math.Round(result.Count * AccidentalPercent / 100.0);
-            var indices = Enumerable.Range(0, result.Count).OrderBy(_ => rand.Next()).Take(count).ToList();
+            // --- Accidental logic ---
+            // Use all scale-note MIDIs (not just unadorned ones) to detect enharmonic collisions.
+            var allScaleNoteMidis = new HashSet<int>(availableNotes.Select(n => NoteNameToMidi(n)));
 
-            var (flats, sharps) = GetAccidentalSetsForScale(Key, SelectedScale);
-
-            for (int i = 0; i < result.Count; i++)
+            if (StatusService.Instance.IsPremiumUser && AccidentalPercent > 0 && result.Count > 0)
             {
-              if (!indices.Contains(i))
-                continue;
+                int count = (int)Math.Round(result.Count * AccidentalPercent / 100.0);
+                var indices = Enumerable.Range(0, result.Count).OrderBy(_ => rand.Next()).Take(count).ToList();
 
-              var note = result[i];
-              var midi = NoteNameToMidi(note);
-              var pc = Mod12(midi);
-              var baseName = new string(note.TakeWhile(c => !char.IsDigit(c)).ToArray());
-              var octave = new string(note.SkipWhile(c => !char.IsDigit(c)).ToArray());
+                var (flatPcs, sharpPcs) = GetAccidentalSetsForScale(Key, SelectedScale);
 
-              // Only add accidental if not already present
-              if (baseName.Contains('#') || baseName.Contains('b'))
-              {
-                continue;
-              }
-
-              string accidental = "";
-              string candidateNote = "";
-
-              if (flats.Contains(pc))
-              {
-                accidental = rand.Next(2) == 0 ? "" : "#"; // natural or sharp
-              }
-              else if (sharps.Contains(pc))
-              {
-                accidental = rand.Next(2) == 0 ? "" : "b"; // natural or flat
-              }
-              else
-              {
-                accidental = rand.Next(2) == 0 ? "#" : "b";
-              }
-
-              if (!string.IsNullOrEmpty(accidental))
-              {
-                candidateNote = baseName + accidental + octave;
-                int candidateMidi = NoteNameToMidi(candidateNote);
-                int minMidi = NoteNameToMidi(LowestNote);
-                int maxMidi = NoteNameToMidi(HighestNote);
-                // Skip if candidate is enharmonic to any unadorned note in the scale
-                // or if candidate is outside the allowed range
-                if (unadornedNoteMidis.Contains(candidateMidi) || candidateMidi < minMidi || candidateMidi > maxMidi)
+                for (int i = 0; i < result.Count; i++)
                 {
-                  continue;
-                }
+                    if (!indices.Contains(i))
+                        continue;
 
-                result[i] = candidateNote;
-              }
+                    var note = result[i];
+                    var baseName = new string(note.TakeWhile(c => !char.IsDigit(c)).ToArray());
+                    var octave = new string(note.SkipWhile(c => !char.IsDigit(c)).ToArray());
+                    var letter = char.ToUpperInvariant(baseName[0]).ToString();
+
+                    string candidateNote;
+
+                    if (baseName.Contains('#'))
+                    {
+                        // Scale tone is sharped (from key sig or already altered).
+                        // Naturalize it → displayed with ♮ because key expects this letter to be sharp.
+                        candidateNote = letter + octave;
+                    }
+                    else if (baseName.Contains('b'))
+                    {
+                        // Scale tone is flatted (from key sig or already altered).
+                        // Naturalize it → displayed with ♮ because key expects this letter to be flat.
+                        candidateNote = letter + octave;
+                    }
+                    else
+                    {
+                        // Natural scale tone — add a chromatic accidental.
+                        // Prefer the direction away from the key-sig tendency for this pitch class.
+                        var pc = Mod12(NoteNameToMidi(note));
+                        string accidental;
+                        if (flatPcs.Contains(pc))
+                            accidental = "#";          // pc is flat-flavoured in this key → go sharp
+                        else if (sharpPcs.Contains(pc))
+                            accidental = "b";          // pc is sharp-flavoured in this key → go flat
+                        else
+                            accidental = rand.Next(2) == 0 ? "#" : "b";
+                        candidateNote = letter + accidental + octave;
+                    }
+
+                    if (string.IsNullOrEmpty(candidateNote) || candidateNote == note)
+                        continue;
+
+                    int candidateMidi = NoteNameToMidi(candidateNote);
+                    int minMidi = NoteNameToMidi(LowestNote);
+                    int maxMidi = NoteNameToMidi(HighestNote);
+
+                    // Reject if the candidate sounds identical to any existing scale tone or is out of range.
+                    if (allScaleNoteMidis.Contains(candidateMidi) || candidateMidi < minMidi || candidateMidi > maxMidi)
+                        continue;
+
+                    result[i] = candidateNote;
+                }
             }
-          }
-          return result.ToArray();
+            return result.ToArray();
         }
         public bool ShouldIgnoreAudio(DateTime utcNow)
         {
@@ -1932,7 +1934,15 @@ namespace musicmate.Services
                 }
             }
         }
-
-       
+        /// <summary>
+        /// Triggers session completion manually (e.g., after autoplay finishes).
+        /// </summary>
+        public async Task TriggerSessionCompletionAsync()
+        {
+            if (SessionCompletedAsync != null)
+            {
+                await SessionCompletedAsync.Invoke();
+            }
+        }
     }
 }

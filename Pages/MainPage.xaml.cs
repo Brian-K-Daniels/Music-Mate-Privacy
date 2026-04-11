@@ -16,7 +16,7 @@ namespace musicmate.Pages
         private readonly Drawables.StaffDrawable _drawable = null!;
         private readonly SessionDatabase _sessionDb = null!;
         private readonly IOrientationService _orientation = null!;
-        private readonly ThemeService _themeService = null!;
+        private readonly ThemeService _theme_service = null!;
 
         private readonly object _processLock = new();
         private DateTime _lastProcess = DateTime.MinValue;
@@ -46,7 +46,7 @@ namespace musicmate.Pages
                 if (!string.IsNullOrEmpty(savedColorHex))
                 {
                     var savedColor = Color.FromArgb(savedColorHex);
-                    _themeService.PanelBackgroundColor = savedColor;
+                    _theme_service.PanelBackgroundColor = savedColor;
                     StaffBorder.Background = new SolidColorBrush(savedColor);
                     return;
                 }
@@ -56,7 +56,7 @@ namespace musicmate.Pages
                 {
                     dialog.ResetToDefaults();
                     var preview = dialog.PreviewColor;
-                    _themeService?.PanelBackgroundColor = preview;
+                    _theme_service?.PanelBackgroundColor = preview;
                     Preferences.Default.Set("StaffPanelColor", preview.ToHex());
                     StaffBorder.Background = new SolidColorBrush(preview);
                 }
@@ -168,11 +168,18 @@ namespace musicmate.Pages
             AutoRepeat = !AutoRepeat;
         }
 
+        
         public MainPage()
         {
             try
             {
                 InitializeComponent();
+
+                // Ensure ThemeService is available so we can deploy saved/default panel background
+                _theme_service = ServiceHelper.GetService<ThemeService>()!;
+
+                // Apply saved panel background (or default) before the Home page is shown
+                DeploySavedPanelBackground();
 
                 // disable iOS safe area for this page (use per-edge API available on this MAUI version)
                 // Use reflection helper so the project compiles on non-iOS targets
@@ -184,10 +191,10 @@ namespace musicmate.Pages
                 _sessionDb = ServiceHelper.GetService<SessionDatabase>()!;
                 _audio = ServiceHelper.GetService<IAudioCaptureService>()!;
                 _player = ServiceHelper.GetService<IAudioPlaybackService>()!;
-                _themeService = ServiceHelper.GetService<ThemeService>()!;
+
                 BindingContext = _session;
-                StaffBorder.BindingContext = _themeService;
-                StaffGraphicsView.BindingContext = _themeService;
+                StaffBorder.BindingContext = _theme_service;
+                StaffGraphicsView.BindingContext = _theme_service;
 
                 // Subscribe to MaxBlocksReached event to gracefully restart capture
                 _audio.MaxBlocksReached += async () =>
@@ -211,7 +218,7 @@ namespace musicmate.Pages
                 _orientation.AllowAutorotate();
 
                 // Staff graphics setup
-                _drawable = new Drawables.StaffDrawable(_session, _themeService);
+                _drawable = new Drawables.StaffDrawable(_session, _theme_service);
                 StaffGraphicsView.Drawable = _drawable;
 
                 // Ensure the GraphicsView reserves computed height. Update when width or notes change.
@@ -219,8 +226,8 @@ namespace musicmate.Pages
                 // When notes are regenerated, RegenerateNotesAsync will call UpdateStaffHeight indirectly.
 
                 // Ensure visuals reflect ThemeService value applied at app startup.
-                // Do not re-deploy saved color here (handled in App startup) — just apply current ThemeService value to visual properties.
-                var panelColor = _themeService?.PanelBackgroundColor ?? Colors.White;
+                // Do not re-deploy saved color here (handled above in DeploySavedPanelBackground) — just apply current ThemeService value to visual properties.
+                var panelColor = _theme_service?.PanelBackgroundColor ?? Colors.White;
                 try
                 {
                     StaffBorder.Background = new SolidColorBrush(panelColor);
@@ -236,15 +243,15 @@ namespace musicmate.Pages
                 StaffGraphicsView.SetBinding(GraphicsView.BackgroundColorProperty, new Binding("PanelBackgroundColor"));
 
                 // Tuner graphics setup
-                TunerBorder.BindingContext = _themeService;
-                TunerGraphicsView.BindingContext = _themeService;
+                TunerBorder.BindingContext = _theme_service;
+                TunerGraphicsView.BindingContext = _theme_service;
                 TunerGraphicsView.Drawable = _drawable;
                 TunerGraphicsView.SetBinding(GraphicsView.BackgroundColorProperty, new Binding("PanelBackgroundColor"));
 
                 // ColorPickerDialog event: update theme color for all pages
                 ColorPickerDialog.ColorPicked += async (s, color) =>
                 {
-                    _themeService?.PanelBackgroundColor = color;
+                    _theme_service?.PanelBackgroundColor = color;
                     Preferences.Default.Set("StaffPanelColor", color.ToHex());
                     StaffBorder.Background = new SolidColorBrush(color);
                     if (!_isProgrammaticColorConfirm)
@@ -254,7 +261,7 @@ namespace musicmate.Pages
                 };
 
                 // High-contrast drawing update
-                _themeService?.PropertyChanged += (s, e) =>
+                _theme_service?.PropertyChanged += (s, e) =>
                 {
                     if (e.PropertyName == nameof(ThemeService.PanelBackgroundColor))
                     {
@@ -285,13 +292,13 @@ namespace musicmate.Pages
                                 $"Correct = {apc:F1}%, Tempo = {meanBpm?.ToString("F1") ?? "N/A"} +/- {stdBpm?.ToString("F1") ?? "N/A"} (cv {((cv.HasValue) ? cv.Value.ToString("F1") : "N/A")}%)  (raw {percent:F1})";
                         }
 #else
-                                {
-                                    double? cv = null;
-                                    if (meanBpm.HasValue && meanBpm.Value != 0 && stdBpm.HasValue)
-                                        cv = 100.0 * stdBpm.Value / meanBpm.Value;
-                                    StatusService.Instance.StatusMessage =
-                                        $"Correct = {apc:F1}%, Tempo = {meanBpm?.ToString("F1") ?? "N/A"} +/- {stdBpm?.ToString("F1") ?? "N/A"} (cv {((cv.HasValue)?cv.Value.ToString("F1"):"N/A")}%)";
-                                }
+                        {
+                            double? cv = null;
+                            if (meanBpm.HasValue && meanBpm.Value != 0 && stdBpm.HasValue)
+                                cv = 100.0 * stdBpm.Value / meanBpm.Value;
+                            StatusService.Instance.StatusMessage =
+                                $"Correct = {apc:F1}%, Tempo = {meanBpm?.ToString("F1") ?? "N/A"} +/- {stdBpm?.ToString("F1") ?? "N/A"} (cv {((cv.HasValue)?cv.Value.ToString("F1"):"N/A")}%)";
+                        }
 #endif
                         _session.SessionCompleted = true;
 
@@ -348,9 +355,9 @@ namespace musicmate.Pages
 
                 KeyPicker.ItemsSource = new[]
                 {
-                            "C", "F", "Bb", "G", "D", "A", "E", "B", "F#" , "C#",
-                            "Eb", "Ab", "Db", "Gb", "Cb"
-                        };
+                    "C", "F", "Bb", "G", "D", "A", "E", "B", "F#" , "C#",
+                    "Eb", "Ab", "Db", "Gb", "Cb"
+                };
                 KeyPicker.SelectedIndex = Array.IndexOf((string[])KeyPicker.ItemsSource, _session.Key);
                 if (KeyPicker.SelectedIndex < 0)
                     KeyPicker.SelectedIndex = 0;
@@ -436,16 +443,18 @@ namespace musicmate.Pages
                 if (StaffGraphicsView == null || _drawable == null)
                     return;
 
-                // Need a valid width to compute height; if not ready, skip
                 if (StaffGraphicsView.Width <= 0)
                     return;
 
-                var needed = _drawable.ComputeRequiredHeight((float)StaffGraphicsView.Width);
-                // Add safety margin for glyph ascenders/descenders and feedback
-                var margin = 12f;
-                var heightReq = needed + margin;
+                // Use exact computed height - no extra margins
+                var heightReq = _drawable.ComputeRequiredHeight((float)StaffGraphicsView.Width);
+                // DEBUG: Log height calculations and current sizes
+                Debug.WriteLine($"[UpdateStaffHeight] Computed height: {heightReq:F1}");
+                Debug.WriteLine($"[UpdateStaffHeight] StaffGraphicsView current: Width={StaffGraphicsView.Width:F1}, Height={StaffGraphicsView.Height:F1}");
+                Debug.WriteLine($"[UpdateStaffHeight] StaffBorder current: Width={StaffBorder.Width:F1}, Height={StaffBorder.Height:F1}");
+                Debug.WriteLine($"[UpdateStaffHeight] StaffBorder Padding: {StaffBorder.Padding}");
+                Debug.WriteLine($"[UpdateStaffHeight] StaffBorder Margin: {StaffBorder.Margin}");
 
-                // Apply to GraphicsView and containing Border so layout gives the space
                 StaffGraphicsView.HeightRequest = heightReq;
                 StaffBorder.HeightRequest = heightReq;
             }
@@ -613,8 +622,7 @@ namespace musicmate.Pages
             SetButtonStates(false);
             DeviceDisplay.Current.KeepScreenOn = false;
             StatusService.Instance.StatusMessage = "Stopped listening.";
-        }
-       
+        }   
 
       
 
@@ -906,6 +914,7 @@ namespace musicmate.Pages
                 {
                     Debug.WriteLine("[Start] Requesting audio permission...");
                     await _audio.EnsurePermissionAsync();
+                    try { _audio.StopCapture(); } catch { }  // ensure no lingering capture
                     Debug.WriteLine("[Start] Starting audio capture...");
                     _audio.StartCapture(OnAudioBlock);
                     Debug.WriteLine("[Start] Audio capture started");
@@ -957,17 +966,21 @@ namespace musicmate.Pages
 
                     var note = _session.NotesToDraw[i];
 
+                    // Show current note being played
+                    StatusService.Instance.StatusMessage = $"Playing note {i + 1}/{_session.NotesToDraw.Count}: {note.Name}";
+
                     // Visual-only highlight (doesn't modify evaluation state)
                     await MainThread.InvokeOnMainThreadAsync(() =>
                     {
-                        // property added to NoteSessionService; used only for drawing
                         _session.PlaybackHighlightIndex = i;
                         StaffGraphicsView.Invalidate();
                     });
 
+                    bool notePlayed = false;
                     try
                     {
                         await _player.PlayAsync(new[] { note.TargetFreq }, noteSeconds, gapSeconds, 0.22f, ct);
+                        notePlayed = true;
                     }
                     catch (OperationCanceledException)
                     {
@@ -975,9 +988,15 @@ namespace musicmate.Pages
                     }
                     finally
                     {
-                        // Clear transient highlight
                         await MainThread.InvokeOnMainThreadAsync(() =>
                         {
+                            // Persist green feedback with cents (0 = in tune) for notes that finished playing
+                            if (notePlayed && i < _session.FeedbackViewModels.Count)
+                            {
+                                var cur = _session.FeedbackViewModels[i];
+                                _session.FeedbackViewModels[i] = new FeedbackItem(i, cur.WrongAttempts, 0, true);
+                            }
+                            // Clear transient highlight
                             _session.PlaybackHighlightIndex = null;
                             StaffGraphicsView.Invalidate();
                         });
@@ -995,7 +1014,7 @@ namespace musicmate.Pages
             finally
             {
                 // Update UI and restore instrument selection on UI thread
-                await MainThread.InvokeOnMainThreadAsync(() =>
+                await MainThread.InvokeOnMainThreadAsync(async () =>
                 {
                     _isPlaying = false;
                     PlayEvaluateButton.Text = "▶";
@@ -1004,10 +1023,17 @@ namespace musicmate.Pages
                     if (_savedInstrumentIndexForPlayback >= 0)
                     {
                         InstrumentPicker.SelectedIndex = _savedInstrumentIndexForPlayback;
-                        // InstrumentPicker_SelectedIndexChanged will restore _session.Instrument and SelectedInstrumentShort
                     }
                     _savedInstrumentForPlayback = null;
                     _savedInstrumentIndexForPlayback = -1;
+
+                    // Trigger session completion to show summary if all notes were played
+                    if (!cancelled && _session.NotesToDraw.Count > 0)
+                    {
+                        // Force session completion for autoplay
+                        _session.SessionCompleted = true;
+                        await _session.TriggerSessionCompletionAsync();
+                    }
                 });
 
                 // When playback finishes normally, restart capture so manual detection resumes.
@@ -1017,8 +1043,8 @@ namespace musicmate.Pages
                     {
                         await _audio.EnsurePermissionAsync();
                         _audio.StartCapture(OnAudioBlock);
-                        SetButtonStates(true);
-                     }
+                        SetButtonStates(false);
+                    }
                     catch (Exception ex)
                     {
                         Debug.WriteLine($"[PlayDisplayedAsync] restart capture ERROR: {ex}");
@@ -1033,7 +1059,7 @@ namespace musicmate.Pages
             }
         }
 
-        
+
         private async Task SaveSessionStatAsync()
         {
             if (_sessionDb == null) return;
@@ -1218,7 +1244,7 @@ namespace musicmate.Pages
         private async void OnColorButtonClicked(object? sender, EventArgs e)
         {
             await StopListeningAndEvaluatingAsync();
-            ColorPickerDialog.Show(_themeService.PanelBackgroundColor);
+            ColorPickerDialog.Show(_theme_service.PanelBackgroundColor);
         }
     }
 }
