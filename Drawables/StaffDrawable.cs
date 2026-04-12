@@ -131,18 +131,7 @@ namespace musicmate.Drawables
             var extraTop = maxStepsAbove * stepSize + noteHeadH * 1.5f;
             var extraBottom = maxStepsBelow * stepSize + noteHeadH * 2.5f;
 
-            if (_session.Tune == "Tuner")
-            {
-                try
-                {
-                    var mmToDp = 160.0 / 25.4;
-                    var shift = (float)(30.0 * mmToDp);
-                    extraTop += shift;
-                }
-                catch { }
-            }
-
-            // Position everything from the top with exact margins - no shifting needed
+            // Calculate staff positions exactly as Draw method does
             var staffCoreTop = topMargin + extraTop;
             var staffCoreBottom = staffCoreTop + 4f * staffSpacing;
 
@@ -175,7 +164,10 @@ namespace musicmate.Drawables
             }
 
             // Key signature and note horizontal layout
-            var accidentalCount = GetAccidentalCountForScale(_session.Key, _session.SelectedScale);
+            // Key signature: Tuner always shows C (no accidentals); other modes use the selected key/scale.
+            var accidentalCount = _session.Tune == "Tuner"
+                ? 0
+                : GetAccidentalCountForScale(_session.Key, _session.SelectedScale);
             var accScale = 1.5f;
             var accWidth = headW * accScale;
             var accSpacing = headW * 0.33f * accScale;
@@ -291,18 +283,7 @@ namespace musicmate.Drawables
             var extraTop = maxStepsAbove * stepSize + noteHeadH * 1.5f;
             var extraBottom = maxStepsBelow * stepSize + noteHeadH * 2.5f;
 
-            if (_session.Tune == "Tuner")
-            {
-                try
-                {
-                    var mmToDp = 160.0 / 25.4;
-                    var shift = (float)(30.0 * mmToDp);
-                    extraTop += shift;
-                }
-                catch { }
-            }
-
-            // Calculate staff positions exactly as Draw method does
+            // Position everything from the top with exact margins - no shifting needed
             var staffCoreTop = topMargin + extraTop;
             var staffCoreBottom = staffCoreTop + 4f * staffSpacing;
 
@@ -569,8 +550,8 @@ namespace musicmate.Drawables
             canvas.RestoreState();
         }
 
-        // Draw a centered tuner-style note (used in Tuner mode)
-        private static void DrawCenteredNote(ICanvas canvas, string noteName, float centerX, float staffTop, float spacing, float headH, float headW,
+        // Draw a centered tuner-style note (used in Tuner mode), including ♯/♭ when appropriate.
+        private void DrawCenteredNote(ICanvas canvas, string noteName, float centerX, float staffTop, float spacing, float headH, float headW,
                         Color fillColor, Color strokeColor)
         {
             canvas.SaveState();
@@ -590,19 +571,47 @@ namespace musicmate.Drawables
 
             var stemLength = spacing * 3f;
             if (noteY < middleLineY)
-            {
                 canvas.DrawLine(xLeft, noteY, xLeft, noteY + stemLength);
-            }
             else
-            {
                 canvas.DrawLine(xLeft + headW, noteY, xLeft + headW, noteY - stemLength);
-            }
 
             DrawLedgerLines(canvas, centerX, noteY, staffTop, staffTop + 4 * spacing, spacing, headW, fillColor, strokeColor);
 
             // Outline/fill for visibility
             canvas.FillColor = strokeColor;
             canvas.FillEllipse(xLeft, noteY - headH / 2f, headW, headH);
+
+            // Accidental: Tuner uses C key signature (no accidentals), so every ♯/♭ in the
+            // note name must be shown. Letter names are uppercase; 'b' is always the flat sign.
+            var raw = noteName.Trim();
+            bool wantsSharp = raw.Contains('#');
+            bool wantsFlat = raw.Contains('b');
+
+            string? accidentalGlyph = wantsSharp ? "♯" : wantsFlat ? "♭" : null;
+            bool isAccFlat = wantsFlat && !wantsSharp;
+
+            if (accidentalGlyph != null)
+            {
+                var accSize = headW * 1.5f * correctionFactor * (isAccFlat ? flatSizeBoost : 1.0f);
+                canvas.FontSize = accSize;
+                canvas.FontColor = strokeColor;
+
+                var verticalAdjust = spacing / 2f;
+                var flatDY = -spacing * 0.25f;
+
+                var drawY = noteY - verticalAdjust - accSize / 2f;
+                if (isAccFlat)
+                    drawY += flatDY;
+
+                const float mmToDp = 160f / 25.4f;
+                var accX = isAccFlat
+                    ? xLeft - headW * 1.1f - 1.5f * mmToDp   // ♭ needs slightly more clearance
+                    : xLeft - headW * 1.1f - 0.7f * mmToDp;  // ♯ / ♮
+
+                canvas.DrawString(accidentalGlyph,
+                    accX, drawY, accSize, accSize,
+                    HorizontalAlignment.Center, VerticalAlignment.Center);
+            }
 
             canvas.RestoreState();
         }

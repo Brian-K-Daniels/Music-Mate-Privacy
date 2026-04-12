@@ -72,7 +72,7 @@
                     TextColor="{Binding ContrastingTextColor}" />
           </Border>
           <Button x:Name="ClearAllButton" Text="Clear All" Clicked="OnDeleteDataInSelectedDatabase" WidthRequest="120" />
-          <Button x:Name="DeleteAllButton" Text="Delete Selected Database" Clicked="OnDeleteAllDataInSelectedDatabase" WidthRequest="200" IsVisible="True" />
+          <Button x:Name="DeleteAllButton" Text="Delete Selected Database" Clicked="OnDeleteAllDataInSelectedDatabase" WidthRequest="250" IsVisible="True" />
         </HorizontalStackLayout>
       </ScrollView>
 

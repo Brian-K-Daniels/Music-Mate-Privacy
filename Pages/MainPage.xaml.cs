@@ -83,12 +83,21 @@ namespace musicmate.Pages
                 if (_autoRepeat != value)
                 {
                     _autoRepeat = value;
-                    if (!_autoRepeat)
-                    {
-                        _ = StopListeningAndEvaluatingAsync();
-                    }
+                    UpdateAutoRepeatButton();
                 }
             }
+        }
+        private void UpdateAutoRepeatButton()
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                if (AutoRepeatToggleButton != null)
+                {
+                    AutoRepeatToggleButton.BackgroundColor = _autoRepeat
+                        ? Color.FromArgb("#008000")  // green  = repeat on
+                        : Color.FromArgb("#8B4513"); // brown = repeat off
+                }
+            });
         }
 
         private bool _isAutoRepeatVisible;
@@ -771,33 +780,34 @@ namespace musicmate.Pages
                             || detectedNoteInfo.EnharmonicNames.Contains(expectedName)
                             || expectedInfo.EnharmonicNames.Contains(detectedNote);
 
-                        if (isMatch)
-                        {
-                            // If this is the first correct note heard in the session,
-                            // clear accumulated wrong counts so the display/metrics start fresh.
-                            if (_session.CorrectNoteIndices.Count == 0)
-                            {
-                                var keys = _session.NoteFeedbacks.Keys.ToList();
-                                foreach (var k in keys)
-                                {
-                                    var v = _session.NoteFeedbacks[k];
-                                    _session.NoteFeedbacks[k] = (0, v.Cents);
-                                }
-                            }
+                        
 
-                            var result = _session.Evaluate(freq);
-                            var advanced = _session.UpdateFeedbackForCurrent(freq, result);
-                            if (advanced)
+                        // Only clear noise-accumulated wrongs when the FIRST correct note
+                        // is detected — keeps the "clean start" behaviour without blocking
+                        // wrong-note tracking for completely different pitch classes.
+                        if (isMatch && _session.CorrectNoteIndices.Count == 0)
+                        {
+                            var keys = _session.NoteFeedbacks.Keys.ToList();
+                            foreach (var k in keys)
                             {
-                                _session.RecordRandomSessionNoteResult(expectedName, result.correct);
-                                Debug.WriteLine($"[Random] Recorded result for {expectedName}");
-                                StaffGraphicsView.Invalidate();
+                                var v = _session.NoteFeedbacks[k];
+                                _session.NoteFeedbacks[k] = (0, v.Cents);
                             }
                         }
-                        else
+
+                        // Always evaluate — UpdateFeedbackForCurrent handles both
+                        // wrong-pitch-class and correct/in-tolerance notes internally,
+                        // ensuring NoteFeedbacks is updated for all outcomes.
+                        // Previously the isMatch gate caused wrong-pitch-class notes to
+                        // bypass NoteFeedbacks entirely, making GetSessionCorrectWrongTotals
+                        // report 0 wrongs → 100% correct.
+                        var result = _session.Evaluate(freq);
+                        var advanced = _session.UpdateFeedbackForCurrent(freq, result);
+                        if (advanced)
                         {
-                            _session.RecordRandomSessionNoteResult(expectedName, false);
-                            Debug.WriteLine($"[Random] Recorded wrong for {expectedName} (heard {detectedNote})");
+                            _session.RecordRandomSessionNoteResult(expectedName, result.correct);
+                            Debug.WriteLine($"[Random] Recorded {(result.correct ? "correct" : "wrong")} for {expectedName} (heard {detectedNote})");
+                            StaffGraphicsView.Invalidate();
                         }
                     }
                     else if (_session.Tune != "Random")
@@ -1205,11 +1215,11 @@ namespace musicmate.Pages
 
         // Use base BindableObject.OnPropertyChanged so XAML bindings receive change notifications
 
-        private async Task StopListeningAndEvaluatingAsync()
+        private async Task StopListeningAndEvaluatingAsync(string statusMessage = "Stopped.")
         {
             _playCts?.Cancel();
             _audio.StopCapture();
-            StatusService.Instance.StatusMessage = "Paused for color selection.";
+            StatusService.Instance.StatusMessage = statusMessage;
             SetButtonStates(false);
         }
         // show the picker when overlay label is tapped and focus it
@@ -1243,7 +1253,7 @@ namespace musicmate.Pages
         }
         private async void OnColorButtonClicked(object? sender, EventArgs e)
         {
-            await StopListeningAndEvaluatingAsync();
+            await StopListeningAndEvaluatingAsync("Paused for color selection.");
             ColorPickerDialog.Show(_theme_service.PanelBackgroundColor);
         }
     }

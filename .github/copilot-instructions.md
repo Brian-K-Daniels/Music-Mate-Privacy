@@ -6,6 +6,7 @@
 - Remove programmatic left margin and ScrollView padding from MainPage.xaml.cs; prefer explicit gutter Grid column in XAML instead of programmatic padding.
 - When searching in AboutPage, pause audio capture by calling IAudioCaptureService.StopCapture directly from AboutPage; do not use MessagingCenter or CommunityToolkit messenger; no automatic restart required. Note that playback silence may occur due to volume settings during rehearsal; do not assume missing audio always indicates playback failure.
 - Approve automatic single-file replacement to remove duplicate method definitions in Pages\MainPage.xaml.cs; prefer automated fixes applied when asked.
+- Do not put passwords or IDs into the code; avoid storing credentials or secrets in source files.
 
 ## Development Environment
 - Preferred terminal shell: pwsh.exe

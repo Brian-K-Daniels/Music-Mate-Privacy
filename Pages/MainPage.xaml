@@ -4,13 +4,13 @@
              xmlns:services="clr-namespace:musicmate.Services"
              xmlns:controls="clr-namespace:musicmate.Controls"
              xmlns:converters="clr-namespace:musicmate.Converters"
-             
              x:Class="musicmate.Pages.MainPage"
              x:DataType="services:NoteSessionService"
              x:Name="mainPage"
              Shell.NavBarIsVisible="True"
              Padding="0"
              BackgroundColor="#F7F7F7">
+
   <Shell.TitleView>
     <Grid ColumnDefinitions="Auto,*,Auto" HeightRequest="30" VerticalOptions="Center"
           BackgroundColor="#8B0000">
@@ -69,13 +69,12 @@
     <converters:InverseBoolConverter x:Key="InverseBoolConverter" />
   </ContentPage.Resources>
 
-
   <Grid ColumnDefinitions="8,*">
-    <!-- Main content -->
-    <!-- Add a left-margin column with fixed width so the left empty space can be controlled precisely -->
+    <!-- Left gutter column (8 px) keeps left margin without programmatic padding -->
     <ScrollView x:Name="MainScrollView" Grid.Column="1" HorizontalScrollBarVisibility="Never" Padding="0" Margin="0" HorizontalOptions="Fill">
       <VerticalStackLayout x:Name="MainPageMainLayout" Spacing="16" Padding="0" Margin="0" HorizontalOptions="Fill">
-        <!-- Add a container with left padding to align with staff -->
+
+        <!-- Pickers + labels row -->
         <VerticalStackLayout x:Name="PickersContainer" Padding="0" Margin="0">
           <Grid ColumnSpacing="12" RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*, Auto">
             <!-- Concert/Scale text -->
@@ -85,7 +84,7 @@
                       TextColor="#000000"
                       FontAttributes="Bold"
                       FontSize="13" />
-              <Label Text="•" 
+              <Label Text="•"
                       TextColor="#000000"
                       FontSize="13" />
               <Label x:Name="SelectedScaleLabel"
@@ -94,7 +93,7 @@
                       FontSize="13" />
             </HorizontalStackLayout>
 
-            <!-- Buttons in right column, vertically stacked -->
+            <!-- Repeat button (right column) -->
             <VerticalStackLayout Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Spacing="4" VerticalOptions="Start">
               <Button x:Name="AutoRepeatToggleButton"
                       Text="Repeat"
@@ -111,7 +110,7 @@
 
             <!-- Pickers row -->
             <Grid Grid.Row="1" Grid.Column="0"
-                  ColumnSpacing="2" 
+                  ColumnSpacing="2"
                   Margin="0,2,0,0"
                   ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
 
@@ -121,30 +120,30 @@
                       FontSize="11"
                       TextColor="#333333"
                       VerticalOptions="Center"/>
-
               <Border Grid.Column="1" Style="{StaticResource CompactBrownBox}">
                 <Grid>
                   <Picker x:Name="InstrumentPicker"
-                  SelectedIndexChanged="InstrumentPicker_SelectedIndexChanged"
-                  Unfocused="InstrumentPicker_Unfocused"
-                  HeightRequest="28"
-                  FontSize="11"
-                  TextColor="White"
-                  BackgroundColor="#2C2C2C"
-                  VerticalOptions="Fill"
-                  HorizontalOptions="Fill"
-                  IsEnabled="True"
-                  InputTransparent="False"
-                  IsVisible="{Binding Source={x:Reference mainPage}, Path=IsInstrumentPickerVisible}" />
-                  <!--WidthRequest="320"-->
-                  <Border BackgroundColor="White" Stroke="#8B4513" StrokeThickness="2" StrokeShape="RoundRectangle 8" Padding="8,2" HeightRequest="28" VerticalOptions="Center" HorizontalOptions="Fill" IsVisible="{Binding Source={x:Reference mainPage}, Path=IsInstrumentLabelVisible}">
+                          SelectedIndexChanged="InstrumentPicker_SelectedIndexChanged"
+                          Unfocused="InstrumentPicker_Unfocused"
+                          HeightRequest="28"
+                          FontSize="11"
+                          TextColor="White"
+                          BackgroundColor="#2C2C2C"
+                          VerticalOptions="Fill"
+                          HorizontalOptions="Fill"
+                          IsEnabled="True"
+                          InputTransparent="False"
+                          IsVisible="{Binding Source={x:Reference mainPage}, Path=IsInstrumentPickerVisible}" />
+                  <Border BackgroundColor="White" Stroke="#8B4513" StrokeThickness="2" StrokeShape="RoundRectangle 8"
+                          Padding="8,2" HeightRequest="28" VerticalOptions="Center" HorizontalOptions="Fill"
+                          IsVisible="{Binding Source={x:Reference mainPage}, Path=IsInstrumentLabelVisible}">
                     <Label x:Name="InstrumentPickerOverlay"
-                        Text="{Binding SelectedInstrumentShort, Source={x:Reference mainPage}}"
-                        VerticalOptions="Center"
-                        HorizontalOptions="Fill"
-                        Padding="10,0"
-                        FontSize="11"
-                        TextColor="Black">
+                           Text="{Binding SelectedInstrumentShort, Source={x:Reference mainPage}}"
+                           VerticalOptions="Center"
+                           HorizontalOptions="Fill"
+                           Padding="10,0"
+                           FontSize="11"
+                           TextColor="Black">
                       <Label.GestureRecognizers>
                         <TapGestureRecognizer Tapped="OnInstrumentLabelTapped" />
                       </Label.GestureRecognizers>
@@ -192,13 +191,11 @@
           </Grid>
         </VerticalStackLayout>
 
-        <!-- Staff area with buttons and staff panel -->
-        <!-- Use Auto for the left control column so it only takes the width it needs;
-             left margin is applied programmatically (9 mm) in OnAppearing. -->
-        <!-- Wrapped staff + color button in a local stack with Spacing=8 to ensure 8px between graphics and button -->
+        <!-- Staff area: control buttons + staff/tuner panel + color button -->
         <VerticalStackLayout Spacing="0" HorizontalOptions="Fill">
           <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" HorizontalOptions="Fill">
-            <!-- Control buttons - far left -->
+
+            <!-- Play / Start-Stop buttons (far left) -->
             <VerticalStackLayout Grid.Column="0" Spacing="0" Margin="0,0,0,0" HorizontalOptions="Start">
               <Label x:Name="PlayEvaluateButton"
                       Text="▶"
@@ -225,8 +222,10 @@
                 </Label.GestureRecognizers>
               </Label>
             </VerticalStackLayout>
+
             <!-- Staff panel and Tuner panel share column 1 -->
             <Grid Grid.Column="1">
+              <!-- Selected Scale / Random mode -->
               <Border x:Name="StaffBorder"
                       Stroke="Green"
                       StrokeShape="RoundRectangle 8"
@@ -237,39 +236,53 @@
                 <GraphicsView x:Name="StaffGraphicsView"
                               BackgroundColor="{Binding PanelBackgroundColor}"
                               Margin="0"
-                              Grid.Row="0"
                               VerticalOptions="Start"/>
               </Border>
-              <!-- Tuner combined mode: staff on left half, tuner info on right half -->
+
+              <!-- Tuner mode: staff canvas centred on left, note/freq info on right -->
               <Grid x:Name="TunerGrid" ColumnDefinitions="*,*" IsVisible="False">
-                <Border x:Name="TunerBorder" Grid.Column="0" Stroke="Green" StrokeShape="RoundRectangle 8" Padding="0">
+                <Border x:Name="TunerBorder"
+                        Grid.Column="0"
+                        Stroke="Green"
+                        StrokeShape="RoundRectangle 8"
+                        Padding="0"
+                        VerticalOptions="Center">
                   <GraphicsView x:Name="TunerGraphicsView" HeightRequest="200" />
                 </Border>
-                <VerticalStackLayout Grid.Column="1" Padding="12" Spacing="8" HorizontalOptions="Center" VerticalOptions="Center">
-                  <Label Text="Tuner" FontSize="24" FontAttributes="Bold" HorizontalOptions="Center" TextColor="#000000" />
-                  <Label Text="{Binding TunerDisplay}" FontSize="48" FontAttributes="Bold" HorizontalOptions="Center" TextColor="#000000" />
-                  <Label Text="{Binding TunerLastDetectedFreq, StringFormat='Heard: {0:F2} Hz'}" FontSize="14" HorizontalOptions="Center" TextColor="#000000" />
-                  <Label Text="{Binding TunerLastNearestFreq, StringFormat='Nearest: {0:F2} Hz'}" FontSize="14" HorizontalOptions="Center" TextColor="#000000" />
+                <VerticalStackLayout Grid.Column="1" Padding="12" Spacing="8"
+                                     HorizontalOptions="Center" VerticalOptions="Center">
+                  <Label Text="Tuner" FontSize="24" FontAttributes="Bold"
+                         HorizontalOptions="Center" TextColor="#000000" />
+                  <Label Text="{Binding TunerDisplay}" FontSize="48" FontAttributes="Bold"
+                         HorizontalOptions="Center" TextColor="#000000" />
+                  <Label Text="{Binding TunerLastDetectedFreq, StringFormat='Heard: {0:F2} Hz'}"
+                         FontSize="14" HorizontalOptions="Center" TextColor="#000000" />
+                  <Label Text="{Binding TunerLastNearestFreq, StringFormat='Nearest: {0:F2} Hz'}"
+                         FontSize="14" HorizontalOptions="Center" TextColor="#000000" />
                 </VerticalStackLayout>
               </Grid>
             </Grid>
           </Grid>
 
-          <!-- Color and Reset buttons -->
-          <VerticalStackLayout Spacing="0" HorizontalOptions="Center">
+          <!-- 8 px gap then the background-color button — consistent across all tune modes -->
+          <VerticalStackLayout Spacing="0" HorizontalOptions="Center" Margin="0,8,0,0">
             <Button Text="Select background color"
-                  FontSize="10"
-                  WidthRequest="200"
-                  Style="{StaticResource CompactBrownButton}"
-                  VerticalOptions="Start"
-                  HorizontalOptions="Center"
-                  Margin="0,0,0,0"
-                  Clicked="OnColorButtonClicked" />
+                    FontSize="10"
+                    WidthRequest="200"
+                    Style="{StaticResource CompactBrownButton}"
+                    VerticalOptions="Start"
+                    HorizontalOptions="Center"
+                    Clicked="OnColorButtonClicked" />
           </VerticalStackLayout>
         </VerticalStackLayout>
+
       </VerticalStackLayout>
     </ScrollView>
-    <!-- Color picker dialog overlay -->
-    <controls:ColorPickerDialog x:Name="ColorPickerDialog" IsVisible="False" Grid.Column="0" Grid.ColumnSpan="2" />
+
+    <!-- Color picker dialog overlay (full-page, above everything) -->
+    <controls:ColorPickerDialog x:Name="ColorPickerDialog"
+                                IsVisible="False"
+                                Grid.Column="0"
+                                Grid.ColumnSpan="2" />
   </Grid>
 </ContentPage>

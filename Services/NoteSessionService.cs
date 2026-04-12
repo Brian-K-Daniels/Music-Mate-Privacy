@@ -856,6 +856,8 @@ namespace musicmate.Services
             OmitMsAvgThreshold = 500;
             _lastWrongTimePerIndex.Clear();
             _lastRandomWrongUtc.Clear();
+            _randomSessionNoteStats.Clear();
+            _tunerPrevWrittenMidi = null;// reset direction tracking for next session
             // ensure persisted value is reloaded
             _wrongDebounceMs = Preferences.Get(PrefWrongDebounceMsKey, DefaultDebounceMs);
             _noteStopwatch.Reset();
@@ -1342,6 +1344,7 @@ namespace musicmate.Services
         }
 
         private double _tunerLastNearestFreq;
+        private int? _tunerPrevWrittenMidi = null;   // direction-based enharmonic spelling
         public double TunerLastNearestFreq
         {
             get => _tunerLastNearestFreq;
@@ -1357,16 +1360,33 @@ namespace musicmate.Services
 
         public void UpdateTunerLastNote(double freq)
         {
-            var (name, cents) = MapPitch(freq);
-            TunerLastNoteName = name == "-" ? null : name;
-            TunerLastCents = cents;
-
-            // Store detected frequency and the nearest standard-note frequency
-            TunerLastDetectedFreq = freq;
+            if (freq <= 0) return;
             try
             {
-                var midi = (int)Math.Round(69 + 12 * Math.Log(freq / 440.0, 2));
-                TunerLastNearestFreq = MidiToFreq(midi);
+                var concertMidi = (int)Math.Round(69 + 12 * Math.Log(freq / 440.0, 2));
+                var writtenMidi = ApplyInstrumentTranspose(concertMidi);
+                var nearestFreq = MidiToFreq(concertMidi);
+                var cents = (int)Math.Round(1200 * Math.Log(freq / nearestFreq, 2));
+
+                // Direction-based enharmonic spelling:
+                //   descending (new MIDI < prev) → prefer flats
+                //   ascending  (new MIDI > prev) → prefer sharps
+                //   same pitch                   → preserve current spelling (avoids flicker)
+                //   no prior note                → fall back to key preference
+                bool preferFlats;
+                if (_tunerPrevWrittenMidi.HasValue && writtenMidi != _tunerPrevWrittenMidi.Value)
+                    preferFlats = writtenMidi < _tunerPrevWrittenMidi.Value;
+                else if (_tunerPrevWrittenMidi.HasValue)
+                    preferFlats = TunerLastNoteName?.Contains('b') == true;
+                else
+                    preferFlats = KeyUsesFlats(Key);
+
+                _tunerPrevWrittenMidi = writtenMidi;
+
+                TunerLastNoteName = MidiToNoteName(writtenMidi, preferFlats);
+                TunerLastCents = cents;
+                TunerLastDetectedFreq = freq;
+                TunerLastNearestFreq = nearestFreq;
             }
             catch
             {
