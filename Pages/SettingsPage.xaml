@@ -41,7 +41,7 @@
       <Setter Property="Padding" Value="12,4" />
     </Style>
   </ContentPage.Resources>
-  
+
   <Shell.TitleView>
     <Grid ColumnDefinitions="*,Auto" HeightRequest="30" VerticalOptions="Center">
       <HorizontalStackLayout Spacing="10" VerticalOptions="Center" Grid.Column="0">
@@ -54,7 +54,7 @@
                 WidthRequest="32" />
         <Label Text="Settings"
                FontAttributes="Bold"
-               FontSize="18"               
+               FontSize="18"
                TextColor="White"
                VerticalOptions="Center" />
       </HorizontalStackLayout>
@@ -68,14 +68,14 @@
   </Shell.TitleView>
 
   <ScrollView>
-    <VerticalStackLayout x:Name="SettingsMainLayout" Spacing="16">
+    <VerticalStackLayout x:Name="SettingsMainLayout" Spacing="16" HorizontalOptions="Fill" Padding="16,8">
 
       <!-- Scale/Range -->
       <ScrollView Orientation="Horizontal">
         <HorizontalStackLayout Spacing="2" VerticalOptions="Center">
           <Label Text="Scale" FontSize="13" VerticalOptions="Center" />
           <Border Stroke="#8B4513" StrokeThickness="2" BackgroundColor="Transparent">
-                    <Picker x:Name="ScalePicker"
+            <Picker x:Name="ScalePicker"
                     ItemsSource="{Binding AvailableScalesForBinding}"
                     SelectedItem="{Binding SelectedScale, Mode=TwoWay}"
                     WidthRequest="240"
@@ -105,8 +105,10 @@
           </Border>
         </HorizontalStackLayout>
       </ScrollView>
+
       <!-- Uniform slider rows -->
-      <VerticalStackLayout Spacing="12">
+      <VerticalStackLayout Spacing="12" HorizontalOptions="Fill">
+
         <Grid ColumnDefinitions="140,*,50" ColumnSpacing="8" VerticalOptions="Center">
           <Label Text="Playback BPM" VerticalOptions="Center" Grid.Column="0" />
           <Slider Minimum="30" Maximum="200"
@@ -117,9 +119,11 @@
 
         <Grid ColumnDefinitions="140,*,50" ColumnSpacing="8" VerticalOptions="Center">
           <Label Text="Accidental %" VerticalOptions="Center" Grid.Column="0" />
-          <Slider Minimum="0" Maximum="100"
+          <Slider x:Name="AccidentalPercentSlider"
+                  Minimum="0" Maximum="100"
                   Value="{Binding AccidentalPercent, Mode=TwoWay}"
-                  HorizontalOptions="Fill" Style="{StaticResource BrownSlider}" Grid.Column="1" />
+                  HorizontalOptions="Fill" Style="{StaticResource BrownSlider}" Grid.Column="1"
+                  DragCompleted="OnAccidentalPercentDragCompleted" />
           <Label Text="{Binding AccidentalPercent}" VerticalOptions="Center" HorizontalTextAlignment="Center" Grid.Column="2" />
         </Grid>
 
@@ -146,6 +150,7 @@
                   HorizontalOptions="Fill" Style="{StaticResource BrownSlider}" Grid.Column="1" />
           <Label Text="{Binding OmitMsAvgThreshold}" VerticalOptions="Center" HorizontalTextAlignment="Center" LineBreakMode="NoWrap" Grid.Column="2" />
         </Grid>
+
       </VerticalStackLayout>
 
       <!-- Auto-start with custom styling -->
@@ -158,13 +163,15 @@
                 BackgroundColor="Transparent"
                 WidthRequest="52"
                 HeightRequest="32">
-        <Switch IsToggled="{Binding AutoStart, Mode=TwoWay}"
+          <Switch IsToggled="{Binding AutoStart, Mode=TwoWay}"
                   OnColor="#8B4513"
                   ThumbColor="#8B4513"
                   HorizontalOptions="Center"
                   VerticalOptions="Center" />
         </Border>
       </HorizontalStackLayout>
+
     </VerticalStackLayout>
   </ScrollView>
+
 </ContentPage>

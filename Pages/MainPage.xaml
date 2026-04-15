@@ -75,120 +75,108 @@
       <VerticalStackLayout x:Name="MainPageMainLayout" Spacing="16" Padding="0" Margin="0" HorizontalOptions="Fill">
 
         <!-- Pickers + labels row -->
+        <!-- Pickers row: Instrument [Bb] Key [F#] [Major] (Concert E) Tune [Selected Scale] -->
         <VerticalStackLayout x:Name="PickersContainer" Padding="0" Margin="0">
-          <Grid ColumnSpacing="12" RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*, Auto">
-            <!-- Concert/Scale text -->
-            <HorizontalStackLayout Grid.Row="0" Grid.Column="0" Spacing="6" HeightRequest="32" HorizontalOptions="Start" VerticalOptions="Center">
-              <Label x:Name="ConcertKeyLabel"
-                      Text="Concert Key: C"
-                      TextColor="#000000"
-                      FontAttributes="Bold"
-                      FontSize="13" />
-              <Label Text="•"
-                      TextColor="#000000"
-                      FontSize="13" />
-              <Label x:Name="SelectedScaleLabel"
-                      Text="Selected Scale: -"
-                      TextColor="#000000"
-                      FontSize="13" />
-            </HorizontalStackLayout>
+          <HorizontalStackLayout Spacing="6" VerticalOptions="Center" Margin="0,4,0,4">
 
-            <!-- Repeat button (right column) -->
-            <VerticalStackLayout Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Spacing="4" VerticalOptions="Start">
-              <Button x:Name="AutoRepeatToggleButton"
-                      Text="Repeat"
-                      Style="{StaticResource CompactBrownButton}"
-                      WidthRequest="80"
-                      MinimumWidthRequest="80"
-                      MinimumHeightRequest="36"
-                      Margin="4,4,4,0"
-                      HorizontalOptions="Start"
-                      VerticalOptions="Start"
-                      Clicked="AutoRepeatToggleButtonClicked"
-                      IsVisible="{Binding Source={x:Reference mainPage}, Path=IsAutoRepeatVisible}"/>
-            </VerticalStackLayout>
-
-            <!-- Pickers row -->
-            <Grid Grid.Row="1" Grid.Column="0"
-                  ColumnSpacing="2"
-                  Margin="0,2,0,0"
-                  ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
-
-              <!-- Instrument -->
-              <Label Grid.Column="0"
-                      Text="Instrument"
-                      FontSize="11"
-                      TextColor="#333333"
-                      VerticalOptions="Center"/>
-              <Border Grid.Column="1" Style="{StaticResource CompactBrownBox}">
-                <Grid>
-                  <Picker x:Name="InstrumentPicker"
-                          SelectedIndexChanged="InstrumentPicker_SelectedIndexChanged"
-                          Unfocused="InstrumentPicker_Unfocused"
-                          HeightRequest="28"
-                          FontSize="11"
-                          TextColor="White"
-                          BackgroundColor="#2C2C2C"
-                          VerticalOptions="Fill"
-                          HorizontalOptions="Fill"
-                          IsEnabled="True"
-                          InputTransparent="False"
-                          IsVisible="{Binding Source={x:Reference mainPage}, Path=IsInstrumentPickerVisible}" />
-                  <Border BackgroundColor="White" Stroke="#8B4513" StrokeThickness="2" StrokeShape="RoundRectangle 8"
-                          Padding="8,2" HeightRequest="28" VerticalOptions="Center" HorizontalOptions="Fill"
-                          IsVisible="{Binding Source={x:Reference mainPage}, Path=IsInstrumentLabelVisible}">
-                    <Label x:Name="InstrumentPickerOverlay"
-                           Text="{Binding SelectedInstrumentShort, Source={x:Reference mainPage}}"
-                           VerticalOptions="Center"
-                           HorizontalOptions="Fill"
-                           Padding="10,0"
-                           FontSize="11"
-                           TextColor="Black">
-                      <Label.GestureRecognizers>
-                        <TapGestureRecognizer Tapped="OnInstrumentLabelTapped" />
-                      </Label.GestureRecognizers>
-                    </Label>
-                  </Border>
-                </Grid>
-              </Border>
-
-              <!-- Key -->
-              <Label x:Name="KeyLabel" Grid.Column="2"
-                      Text="Key"
-                      FontSize="11"
-                      TextColor="#333333"
-                      VerticalOptions="Center"/>
-              <Border x:Name="KeyBorder" Grid.Column="3" Style="{StaticResource CompactBrownBox}">
-                <Picker x:Name="KeyPicker"
-                        WidthRequest="30"
+            <!-- Instrument -->
+            <Label Text="Instrument"
+                   FontSize="11"
+                   TextColor="#333333"
+                   VerticalOptions="Center" />
+            <Border Style="{StaticResource CompactBrownBox}">
+              <Grid WidthRequest="70">
+                <Picker x:Name="InstrumentPicker"
+                        SelectedIndexChanged="InstrumentPicker_SelectedIndexChanged"
+                        Unfocused="InstrumentPicker_Unfocused"
                         HeightRequest="28"
                         FontSize="11"
-                        TextColor="#000000"
-                        BackgroundColor="White"
-                        VerticalOptions="Fill"
-                        HorizontalOptions="Fill"/>
-              </Border>
-
-              <!-- Tune -->
-              <Label Grid.Column="4"
-                      Text="Tune"
-                      FontSize="11"
-                      TextColor="#333333"
-                      VerticalOptions="Center"/>
-              <Border Grid.Column="5" Style="{StaticResource CompactBrownBox}">
-                <Picker x:Name="TunePicker"
-                        WidthRequest="120"
-                        HeightRequest="28"
-                        FontSize="11"
-                        TextColor="#000000"
-                        BackgroundColor="White"
+                        TextColor="White"
+                        BackgroundColor="#2C2C2C"
                         VerticalOptions="Fill"
                         HorizontalOptions="Fill"
-                        ItemsSource="{Binding TuneOptions}"
-                        SelectedItem="{Binding Tune, Mode=TwoWay}" />
-              </Border>
-            </Grid>
-          </Grid>
+                        IsEnabled="True"
+                        InputTransparent="False"
+                        IsVisible="{Binding Source={x:Reference mainPage}, Path=IsInstrumentPickerVisible}" />
+                <Border BackgroundColor="White" Stroke="#8B4513" StrokeThickness="2"
+                        StrokeShape="RoundRectangle 8"
+                        Padding="8,2" HeightRequest="28"
+                        VerticalOptions="Center" HorizontalOptions="Fill"
+                        IsVisible="{Binding Source={x:Reference mainPage}, Path=IsInstrumentLabelVisible}">
+                  <Label x:Name="InstrumentPickerOverlay"
+                         Text="{Binding SelectedInstrumentShort, Source={x:Reference mainPage}}"
+                         VerticalOptions="Center"
+                         HorizontalOptions="Fill"
+                         Padding="10,0"
+                         FontSize="11"
+                         TextColor="Black">
+                    <Label.GestureRecognizers>
+                      <TapGestureRecognizer Tapped="OnInstrumentLabelTapped" />
+                    </Label.GestureRecognizers>
+                  </Label>
+                </Border>
+              </Grid>
+            </Border>
+
+            <!-- Key (hidden in Tuner mode) -->
+            <Label x:Name="KeyLabel"
+                   Text="Key"
+                   FontSize="11"
+                   TextColor="#333333"
+                   VerticalOptions="Center" />
+            <Border x:Name="KeyBorder" Style="{StaticResource CompactBrownBox}">
+              <Picker x:Name="KeyPicker"
+                      WidthRequest="30"
+                      HeightRequest="28"
+                      FontSize="11"
+                      TextColor="#000000"
+                      BackgroundColor="White"
+                      VerticalOptions="Fill"
+                      HorizontalOptions="Fill" />
+            </Border>
+
+            <!-- Scale name e.g. "Major" (hidden in Tuner mode) -->
+            <Label x:Name="SelectedScaleLabel"
+                   FontSize="11"
+                   TextColor="#333333"
+                   VerticalOptions="Center" />
+
+            <!-- Concert key e.g. "(Concert E)" (hidden in Tuner mode) -->
+            <Label x:Name="ConcertKeyLabel"
+                   FontSize="11"
+                   TextColor="#333333"
+                   VerticalOptions="Center" />
+
+            <!-- Tune -->
+            <Label Text="Tune"
+                   FontSize="11"
+                   TextColor="#333333"
+                   VerticalOptions="Center" />
+            <Border Style="{StaticResource CompactBrownBox}">
+              <Picker x:Name="TunePicker"
+                      WidthRequest="120"
+                      HeightRequest="28"
+                      FontSize="11"
+                      TextColor="#000000"
+                      BackgroundColor="White"
+                      VerticalOptions="Fill"
+                      HorizontalOptions="Fill" />
+            </Border>
+
+            <!-- Auto-repeat toggle (visible only when Tune == Random) -->
+            <Button x:Name="AutoRepeatToggleButton"
+                    Text="Repeat"
+                    Style="{StaticResource CompactBrownButton}"
+                    WidthRequest="80"
+                    MinimumWidthRequest="80"
+                    MinimumHeightRequest="36"
+                    Margin="4,0,4,0"
+                    HorizontalOptions="Start"
+                    VerticalOptions="Center"
+                    Clicked="AutoRepeatToggleButtonClicked"
+                    IsVisible="{Binding Source={x:Reference mainPage}, Path=IsAutoRepeatVisible}" />
+
+          </HorizontalStackLayout>
         </VerticalStackLayout>
 
         <!-- Staff area: control buttons + staff/tuner panel + color button -->

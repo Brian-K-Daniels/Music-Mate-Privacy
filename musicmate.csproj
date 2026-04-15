@@ -16,8 +16,8 @@
     <ApplicationId>com.bkdaniels.musicmate</ApplicationId>
 
     <!-- Versions -->
-    <ApplicationDisplayVersion>2.0</ApplicationDisplayVersion>
-    <ApplicationVersion>2</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <ApplicationVersion>3</ApplicationVersion>
 
     <WindowsPackageType>None</WindowsPackageType>
 
@@ -50,6 +50,7 @@
 
   <ItemGroup>
     <Compile Remove="MainPage-safety.xaml.cs" />
+    <Compile Remove="Resources\About.cs" />
   </ItemGroup>
 
   <ItemGroup>

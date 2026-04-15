@@ -115,11 +115,11 @@ namespace musicmate.ViewModels
             "Major",  "Harmonic Minor", "Melodic Minor", "Natural Minor", "Dorian", "Phrygian",
             "Lydian", "Mixolydian", "Locrian", "Major Pentatonic", "Minor Pentatonic", "Blues"
         };
-        public string[] WhiteKeyNoteNames => _session?.WhiteKeyNoteNames ??
+        public string[] WhiteKeyNoteNames => (_session?.WhiteKeyNoteNames ??
             Enumerable.Range(21, 88)
                 .Select(midi => MidiToNoteName(midi, false))
                 .Where(name => !name.Contains('#') && !name.Contains('b'))
-                .ToArray();
+                .ToArray()).Reverse().ToArray();  //  2026.04.14 1656  
 
         private string _selectedScale = Preferences.Get("musicmate.SelectedScale", "Major");
         public string SelectedScale

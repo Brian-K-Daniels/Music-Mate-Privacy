@@ -853,7 +853,7 @@ namespace musicmate.Services
             _meanBpm = null;
             _stddevBpm = null;
             _lastCorrectNoteUtc = null;
-            OmitMsAvgThreshold = 500;
+            OmitMsAvgThreshold = Preferences.Get(PrefOmitMsAvgThresholdKey, 500);
             _lastWrongTimePerIndex.Clear();
             _lastRandomWrongUtc.Clear();
             _randomSessionNoteStats.Clear();
@@ -1067,160 +1067,151 @@ namespace musicmate.Services
         }
         private async Task<string[]> BuildRandomSequenceAsync()
         {
-          // 1. Get the pitch class sequence for the selected scale (e.g., C, D, E, F, G, A, B for C Major)
-          // 2. Get MIDI numbers for the selected lowest and highest notes
-          // 3. Build all notes in the scale between lowMidi and highMidi (inclusive)
-          var availableNotes = new List<string>();
-          for (int midi = NoteNameToMidi(LowestNote); midi <= NoteNameToMidi(HighestNote); midi++)
-          {
-            string noteName = MidiToNoteName(midi, KeyUsesFlats(Key));
-            if (noteName.Length > 0 && BuildScaleDegrees(Key, SelectedScale).Contains(noteName.TrimEnd('0', '1', '2', '3', '4', '5', '6', '7', '8', '9')))
-            {
-              availableNotes.Add(noteName);
-            }
-          }
-
-          availableNotes = availableNotes.Distinct().ToList();
-
-          if (availableNotes.Count < 2)
-            return availableNotes.ToArray();
-
-          // Get stats from database asynchronously
-          var db = ServiceHelper.GetService<NoteDatabase>();
-          if (db == null)
-          {
-             Utils.Log("NoteDatabase service is not registered.");
-             return Array.Empty<string>();
-          }
-          await db.InitializeAsync();
-
-          var statsList = await db.GetAllAsync();
-          var stats = statsList.ToDictionary(s => s.WrittenName, s => s);
-
-          // Exclude notes with percentCorrect >= CorrectThreshold and note has been played correctly at least MinCorrectCount times
-          // Also exclude notes whose MsAverage is below OmitMsAvgThreshold (fast = already mastered)
-          availableNotes = availableNotes
-          .Where(note =>
-          {
-            if (stats.TryGetValue(note, out var stat))
-            {
-                  if (stat.PercentCorrect >= CorrectThreshold && stat.Correct >= MinCorrectCount)
-                      return false;
-                  if (OmitMsAvgThreshold > 0 && stat.MsCount > 0 && stat.MsAverage < OmitMsAvgThreshold)
-                      return false;
-              }
-            return true;
-          })
-          .ToList();
-
-          // If filtering removed all notes, fall back to including all notes
-          if (availableNotes.Count == 0)
-          {
-            availableNotes = new List<string>();
+            // 1. Build all notes in the scale between LowestNote and HighestNote (inclusive)
+            var availableNotes = new List<string>();
             for (int midi = NoteNameToMidi(LowestNote); midi <= NoteNameToMidi(HighestNote); midi++)
             {
-              string noteName = MidiToNoteName(midi, KeyUsesFlats(Key));
-              if (noteName.Length > 0 && BuildScaleDegrees(Key, SelectedScale).Contains(noteName.TrimEnd('0', '1', '2', '3', '4', '5', '6', '7', '8', '9')))
-              {
-                availableNotes.Add(noteName);
-              }
+                string noteName = MidiToNoteName(midi, KeyUsesFlats(Key));
+                if (noteName.Length > 0 && BuildScaleDegrees(Key, SelectedScale)
+                        .Contains(noteName.TrimEnd('0', '1', '2', '3', '4', '5', '6', '7', '8', '9')))
+                {
+                    availableNotes.Add(noteName);
+                }
             }
+
             availableNotes = availableNotes.Distinct().ToList();
-          }
 
-            // After you have built availableNotes...
+            if (availableNotes.Count < 2)
+                return availableNotes.ToArray();
 
-            // Get the base name and octave of the lowest and highest notes
+            // Get stats from database asynchronously
+            var db = ServiceHelper.GetService<NoteDatabase>();
+            if (db == null)
+            {
+                Utils.Log("NoteDatabase service is not registered.");
+                return Array.Empty<string>();
+            }
+            await db.InitializeAsync();
+
+            var statsList = await db.GetAllAsync();
+            var stats = statsList.ToDictionary(s => s.WrittenName, s => s);
+
+            // Exclude mastered notes: PercentCorrect >= CorrectThreshold AND Correct >= MinCorrectCount
+            // Also exclude notes whose MsAverage is below OmitMsAvgThreshold (played fast = already mastered)
+            availableNotes = availableNotes
+                .Where(note =>
+                {
+                    if (stats.TryGetValue(note, out var stat))
+                    {
+                        if (stat.PercentCorrect >= CorrectThreshold && stat.Correct >= MinCorrectCount)
+                            return false;
+                        if (OmitMsAvgThreshold > 0 && stat.MsCount > 0 && stat.MsAverage < OmitMsAvgThreshold)
+                            return false;
+                    }
+                    return true;
+                })
+                .ToList();
+
+            // If filtering removed all notes or left only one, fall back to the full unfiltered pool
+            if (availableNotes.Count < 2)
+            {
+                availableNotes = new List<string>();
+                for (int midi = NoteNameToMidi(LowestNote); midi <= NoteNameToMidi(HighestNote); midi++)
+                {
+                    string noteName = MidiToNoteName(midi, KeyUsesFlats(Key));
+                    if (noteName.Length > 0 && BuildScaleDegrees(Key, SelectedScale)
+                            .Contains(noteName.TrimEnd('0', '1', '2', '3', '4', '5', '6', '7', '8', '9')))
+                    {
+                        availableNotes.Add(noteName);
+                    }
+                }
+                availableNotes = availableNotes.Distinct().ToList();
+            }
+
+            // Remove enharmonic boundary notes that would be out of range when respelled
+            // (e.g. Cb4 if lowest is C4, or B#5 if highest is B5)
             string lowestNote = LowestNote;
             string highestNote = HighestNote;
 
-            // Flat of the lowest note (e.g., "Cb4" if lowest is "C4")
             string flatOfLowest = "";
             if (lowestNote.Length > 1 && !lowestNote.Contains("#") && !lowestNote.Contains("b"))
-            {
                 flatOfLowest = lowestNote[0] + "b" + lowestNote.Substring(1);
-            }
 
-            // Sharp of the highest note (e.g., "B#5" if highest is "B5")
             string sharpOfHighest = "";
             if (highestNote.Length > 1 && !highestNote.Contains("#") && !highestNote.Contains("b"))
-            {
                 sharpOfHighest = highestNote[0] + "#" + highestNote.Substring(1);
-            }
 
-            // Filter out these notes
             availableNotes = availableNotes
                 .Where(n => n != flatOfLowest && n != sharpOfHighest)
                 .ToList();
 
+            // Interval-weighted random ordering
+            // Intervals 1–7 (index distance) get descending weights; farther notes fall back to unweighted pick
             var intervalWeights = new Dictionary<int, int>
-      {
-        [1] = 100, // 2nd
-        [2] = 80,  // 3rd
-        [3] = 60,  // 4th
-        [4] = 40,  // 5th
-        [5] = 20,  // 6th
-        [6] = 10,  // 7th
-        [7] = 5    // 8th (octave)
-      };
-
-          var rand = new Random();
-          var result = new List<string>();
-          var unused = Enumerable.Range(0, availableNotes.Count).ToList();
-
-          int currentIdx = unused[rand.Next(unused.Count)];
-          result.Add(availableNotes[currentIdx]);
-          unused.Remove(currentIdx);
-
-          while (unused.Count > 0)
-          {
-            var candidates = new List<(int idx, int weight)>();
-            foreach (var nextIdx in unused)
             {
-              int interval = Math.Abs(nextIdx - currentIdx);
-              if (interval == 0){ continue;}
-              if (intervalWeights.TryGetValue(interval, out int weight))
-              {
-                candidates.Add((nextIdx, weight));
-              }
-            }
+                [1] = 100, // 2nd
+                [2] = 80,  // 3rd
+                [3] = 60,  // 4th
+                [4] = 40,  // 5th
+                [5] = 20,  // 6th
+                [6] = 10,  // 7th
+                [7] = 5    // 8th (octave)
+            };
 
-            int chosenIdx;
-            if (candidates.Count > 0)
+            var rand = new Random();
+            var result = new List<string>();
+            var unused = Enumerable.Range(0, availableNotes.Count).ToList();
+
+            int currentIdx = unused[rand.Next(unused.Count)];
+            result.Add(availableNotes[currentIdx]);
+            unused.Remove(currentIdx);
+
+            while (unused.Count > 0)
             {
-              int totalWeight = candidates.Sum(c => c.weight);
-              int pick = rand.Next(totalWeight);
-              int acc = 0;
-              chosenIdx = candidates[0].idx;
-              foreach (var (idx, weight) in candidates)
-              {
-                acc += weight;
-                if (pick < acc)
+                var candidates = new List<(int idx, int weight)>();
+                foreach (var nextIdx in unused)
                 {
-                  chosenIdx = idx;
-                  break;
+                    int interval = Math.Abs(nextIdx - currentIdx);
+                    if (interval == 0) continue;
+                    if (intervalWeights.TryGetValue(interval, out int weight))
+                        candidates.Add((nextIdx, weight));
                 }
-              }
-            }
-            else
-            {
-              chosenIdx = unused[rand.Next(unused.Count)];
-            }
 
-            result.Add(availableNotes[chosenIdx]);
-            unused.Remove(chosenIdx);
-            currentIdx = chosenIdx;
-          }
+                int chosenIdx;
+                if (candidates.Count > 0)
+                {
+                    int totalWeight = candidates.Sum(c => c.weight);
+                    int pick = rand.Next(totalWeight);
+                    int acc = 0;
+                    chosenIdx = candidates[0].idx;
+                    foreach (var (idx, weight) in candidates)
+                    {
+                        acc += weight;
+                        if (pick < acc)
+                        {
+                            chosenIdx = idx;
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    chosenIdx = unused[rand.Next(unused.Count)];
+                }
+
+                result.Add(availableNotes[chosenIdx]);
+                unused.Remove(chosenIdx);
+                currentIdx = chosenIdx;
+            }
 
             // --- Accidental logic ---
-            // Use all scale-note MIDIs (not just unadorned ones) to detect enharmonic collisions.
+            // Use all scale-note MIDIs to detect enharmonic collisions
             var allScaleNoteMidis = new HashSet<int>(availableNotes.Select(n => NoteNameToMidi(n)));
 
             if (StatusService.Instance.IsPremiumUser && AccidentalPercent > 0 && result.Count > 0)
             {
                 int count = (int)Math.Round(result.Count * AccidentalPercent / 100.0);
                 var indices = Enumerable.Range(0, result.Count).OrderBy(_ => rand.Next()).Take(count).ToList();
-
                 var (flatPcs, sharpPcs) = GetAccidentalSetsForScale(Key, SelectedScale);
 
                 for (int i = 0; i < result.Count; i++)
@@ -1234,29 +1225,25 @@ namespace musicmate.Services
                     var letter = char.ToUpperInvariant(baseName[0]).ToString();
 
                     string candidateNote;
-
                     if (baseName.Contains('#'))
                     {
-                        // Scale tone is sharped (from key sig or already altered).
-                        // Naturalize it → displayed with ♮ because key expects this letter to be sharp.
+                        // Key-sig sharp tone → naturalize (displays as ♮)
                         candidateNote = letter + octave;
                     }
                     else if (baseName.Contains('b'))
                     {
-                        // Scale tone is flatted (from key sig or already altered).
-                        // Naturalize it → displayed with ♮ because key expects this letter to be flat.
+                        // Key-sig flat tone → naturalize (displays as ♮)
                         candidateNote = letter + octave;
                     }
                     else
                     {
-                        // Natural scale tone — add a chromatic accidental.
-                        // Prefer the direction away from the key-sig tendency for this pitch class.
+                        // Natural scale tone → add chromatic accidental away from key-sig tendency
                         var pc = Mod12(NoteNameToMidi(note));
                         string accidental;
                         if (flatPcs.Contains(pc))
-                            accidental = "#";          // pc is flat-flavoured in this key → go sharp
+                            accidental = "#";
                         else if (sharpPcs.Contains(pc))
-                            accidental = "b";          // pc is sharp-flavoured in this key → go flat
+                            accidental = "b";
                         else
                             accidental = rand.Next(2) == 0 ? "#" : "b";
                         candidateNote = letter + accidental + octave;
@@ -1269,13 +1256,14 @@ namespace musicmate.Services
                     int minMidi = NoteNameToMidi(LowestNote);
                     int maxMidi = NoteNameToMidi(HighestNote);
 
-                    // Reject if the candidate sounds identical to any existing scale tone or is out of range.
+                    // Reject if enharmonically identical to any scale tone, or out of range
                     if (allScaleNoteMidis.Contains(candidateMidi) || candidateMidi < minMidi || candidateMidi > maxMidi)
                         continue;
 
                     result[i] = candidateNote;
                 }
             }
+
             return result.ToArray();
         }
         public bool ShouldIgnoreAudio(DateTime utcNow)

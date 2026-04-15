@@ -17,6 +17,7 @@ namespace musicmate.Pages
 
         private int _lastFreeLowestIndex = 0;
         private int _lastFreeHighestIndex = 0;
+        private bool _premiumDialogOpen = false;
 
         public NoteSessionService Session => _session;
         public Color PanelBackgroundColor => _themeService.PanelBackgroundColor;
@@ -31,7 +32,6 @@ namespace musicmate.Pages
             _themeService = ServiceHelper.GetService<ThemeService>()!;
             BindingContext = _viewModel;
 
-            // Initialize view-model from live services
             _viewModel.PanelBackgroundColor = _themeService.PanelBackgroundColor;
             _viewModel.SelectedScale = _session.SelectedScale;
             _viewModel.LowestNote = _session.LowestNote;
@@ -43,7 +43,6 @@ namespace musicmate.Pages
             _viewModel.OmitMsAvgThreshold = _session.OmitMsAvgThreshold;
             _viewModel.AutoStart = _session.AutoStart;
 
-            // Find initial free scale index
             var scales = _viewModel.AvailableScalesForBinding?.ToList();
             if (scales != null)
             {
@@ -51,7 +50,6 @@ namespace musicmate.Pages
                 _lastFreeScaleIndex = FreeScales.Contains(_viewModel.SelectedScale) ? idx : 0;
             }
 
-            // Find initial free note indices
             var notes = _viewModel.WhiteKeyNoteNames?.ToList();
             if (notes != null)
             {
@@ -68,16 +66,35 @@ namespace musicmate.Pages
         {
             _orientation?.ForceLandscape();
             base.OnAppearing();
-            // Set 9mm left margin on the main layout inside the ScrollView
-            //var mainLayout = this.FindByName<VerticalStackLayout>("SettingsMainLayout");
-            //if (mainLayout != null)
-            //    musicmate.Utilities.MarginUtils.SetLeftMarginMM(mainLayout, 9, 0, 0, 0);  //  2026.04.02 1725  block out
         }
 
         private async void OnNavigateHomeClicked(object sender, EventArgs e)
         {
             await Shell.Current.GoToAsync("//MainPage");
         }
+
+        // ── Accidental % slider ───────────────────────────────────────────────
+
+        private async void OnAccidentalPercentDragCompleted(object? sender, EventArgs e)
+        {
+            if (_premiumDialogOpen) return;
+            if (StatusService.Instance.IsPremiumUser) return;
+            if (_viewModel.AccidentalPercent <= 0) return;
+
+            _premiumDialogOpen = true;
+
+            // onDecline: restore slider to 0 when the user taps "No thanks"
+            await PremiumPromptHelper.ShowAsync(this, onDecline: () =>
+            {
+                _viewModel.AccidentalPercent = 0;
+                if (sender is Slider slider)
+                    slider.Value = 0;
+            });
+
+            _premiumDialogOpen = false;
+        }
+
+        // ── Scale picker ──────────────────────────────────────────────────────
 
         private async void OnScalePickerChangedWithPrompt(object? sender, EventArgs e)
         {
@@ -88,21 +105,23 @@ namespace musicmate.Pages
 
             if (!FreeScales.Contains(selectedScale) && !StatusService.Instance.IsPremiumUser)
             {
-                bool upgrade = await DisplayAlertAsync("Premium Feature", $"The scale '{selectedScale}' is a premium feature. Upgrade to access.", "Upgrade", "Cancel");
-                if (!upgrade)
-                {
-                    picker.SelectedIndex = _lastFreeScaleIndex;
+                // onDecline: revert picker to last free scale
+                var purchased = await PremiumPromptHelper.ShowAsync(this,
+                    onDecline: () => picker.SelectedIndex = _lastFreeScaleIndex);
+
+                if (!purchased)
                     return;
-                }
-                // Optionally, trigger upgrade flow here
             }
             else
             {
                 _lastFreeScaleIndex = picker.SelectedIndex;
             }
-            // Let view-model push this change into NoteSessionService
+
             _viewModel.SelectedScale = selectedScale;
         }
+
+        // ── Lowest note picker ────────────────────────────────────────────────
+
         private async void OnLowestNotePickerChangedWithPrompt(object? sender, EventArgs e)
         {
             var picker = LowestNotePicker;
@@ -110,24 +129,33 @@ namespace musicmate.Pages
             if (selectedNote == null)
                 return;
 
-            // Only restrict for free users
             if (!StatusService.Instance.IsPremiumUser)
             {
-                // Allowed range: C4 (inclusive) and above
                 int minIdx = _viewModel.WhiteKeyNoteNames.ToList().IndexOf("C4");
                 int maxIdx = _viewModel.WhiteKeyNoteNames.ToList().IndexOf("F5");
                 int selIdx = picker.SelectedIndex;
+
                 if (selIdx < minIdx || selIdx > maxIdx)
                 {
-                    bool upgrade = await DisplayAlertAsync("Premium Feature", $"Lowest note '{selectedNote}' is a premium feature. Upgrade to access.", "Upgrade", "Cancel");
-                    picker.SelectedIndex = _lastFreeLowestIndex;
-                    return;
+                    // onDecline: revert picker to last free lowest note
+                    var purchased = await PremiumPromptHelper.ShowAsync(this,
+                        onDecline: () => picker.SelectedIndex = _lastFreeLowestIndex);
+
+                    if (!purchased)
+                        return;
+
+                    _lastFreeLowestIndex = selIdx;
                 }
-                _lastFreeLowestIndex = selIdx;
+                else
+                {
+                    _lastFreeLowestIndex = selIdx;
+                }
             }
-            // Let view-model push this change into NoteSessionService
+
             _viewModel.LowestNote = selectedNote;
         }
+
+        // ── Highest note picker ───────────────────────────────────────────────
 
         private async void OnHighestNotePickerChangedWithPrompt(object? sender, EventArgs e)
         {
@@ -136,24 +164,30 @@ namespace musicmate.Pages
             if (selectedNote == null)
                 return;
 
-            // Only restrict for free users
             if (!StatusService.Instance.IsPremiumUser)
             {
-                // Allowed range: F5 (inclusive) and below
                 int minIdx = _viewModel.WhiteKeyNoteNames.ToList().IndexOf("C4");
                 int maxIdx = _viewModel.WhiteKeyNoteNames.ToList().IndexOf("F5");
                 int selIdx = picker.SelectedIndex;
+
                 if (selIdx < minIdx || selIdx > maxIdx)
                 {
-                    bool upgrade = await DisplayAlertAsync("Premium Feature", $"Highest note '{selectedNote}' is a premium feature. Upgrade to access.", "Upgrade", "Cancel");
-                    picker.SelectedIndex = _lastFreeHighestIndex;
-                    return;
+                    // onDecline: revert picker to last free highest note
+                    var purchased = await PremiumPromptHelper.ShowAsync(this,
+                        onDecline: () => picker.SelectedIndex = _lastFreeHighestIndex);
+
+                    if (!purchased)
+                        return;
+
+                    _lastFreeHighestIndex = selIdx;
                 }
-                _lastFreeHighestIndex = selIdx;
+                else
+                {
+                    _lastFreeHighestIndex = selIdx;
+                }
             }
-            // Let view-model push this change into NoteSessionService
+
             _viewModel.HighestNote = selectedNote;
         }
-
     }
 }

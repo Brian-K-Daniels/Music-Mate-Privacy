@@ -33,6 +33,10 @@ namespace musicmate.Pages
         private bool _inactivityStopped = false;
         private readonly TimeSpan _inactivityTimeout = TimeSpan.FromMinutes(5);
 
+        // When true, RegenerateNotesAsync is suppressed so the post-autoplay
+        // green feedbacks and session stats remain visible until the next session.
+        private bool _freezeStaff = false;
+
         /// <summary>
         /// Apply saved panel background color at startup. If no saved color exists,
         /// reset ColorPickerDialog to defaults, use its preview color, persist it,
@@ -367,6 +371,7 @@ namespace musicmate.Pages
                     "C", "F", "Bb", "G", "D", "A", "E", "B", "F#" , "C#",
                     "Eb", "Ab", "Db", "Gb", "Cb"
                 };
+
                 KeyPicker.SelectedIndex = Array.IndexOf((string[])KeyPicker.ItemsSource, _session.Key);
                 if (KeyPicker.SelectedIndex < 0)
                     KeyPicker.SelectedIndex = 0;
@@ -429,6 +434,10 @@ namespace musicmate.Pages
 
         private async Task RegenerateNotesAsync()
         {
+            // While showing post-autoplay results, do not overwrite the staff.
+            if (_freezeStaff)
+                return;
+
             var width = StaffGraphicsView.Width <= 0 ? 360 : StaffGraphicsView.Width;
             await _session.GenerateNotesAsync(width);
 
@@ -441,7 +450,6 @@ namespace musicmate.Pages
 #endif
 
             StaffGraphicsView.Invalidate();
-            // After regenerating notes, recompute and apply the required height so the view isn't clipped
             UpdateStaffHeight();
         }
 
@@ -501,7 +509,7 @@ namespace musicmate.Pages
                 {
                     _playCts?.Cancel();
                     _audio.StopCapture();
-                    StatusService.Instance.StatusMessage = "Stopped, press green button to start listening.";
+                    StatusService.Instance.StatusMessage = "Stopped. Tap circle to listen, arrowhead to play.";
                     _session.SessionCompleted = true;
                 }
                 catch (Exception ex)
@@ -552,16 +560,8 @@ namespace musicmate.Pages
                 await RegenerateNotesAsync();
             }
 
-            // When Tuner mode is active, scroll so pickers are just in view at the top
-            if (_session.Tune == "Tuner")
-            {
-                await Task.Delay(100);
-                await MainScrollView.ScrollToAsync(PickersContainer, ScrollToPosition.Start, false);
-            }
-
 #if DEBUG
             // Diagnostic layout logging: wait briefly for layout to complete then print bounds/margins.
-            // Also apply temporary distinct background colors to help visualize empty space.
             try
             {
                 await Task.Delay(200); // allow layout pass to complete
@@ -581,20 +581,12 @@ namespace musicmate.Pages
                     }
                     Debug.WriteLine($"[LAYOUT DEBUG] {name}: Bounds={el.Bounds} Margin={el.Margin} Width={el.Width} Height={el.Height} X={el.X} Y={el.Y} Visibility={(el.IsVisible ? "Visible" : "Hidden")}");
                 }
-
-                Debug.WriteLine("[LAYOUT DEBUG] After layout:");
-                LogElement("MainPageMainLayout", mainLayout);
-                LogElement("MainScrollView", dbgMainScroll);
-                LogElement("StaffBorder", staffBorder);
-                LogElement("PlayEvaluateButton", playLbl);
-                LogElement("StartStopButton", startLbl);
-
-                // Temporary visual cues to help locate empty space. Remove when done.
-                //try { if (mainLayout != null) mainLayout.Background = new SolidColorBrush(Colors.LightPink); } catch { }
-                //try { if (dbgMainScroll != null) dbgMainScroll.Background = new SolidColorBrush(Colors.LightBlue); } catch { }
-                //try { if (staffBorder != null) staffBorder.Background = new SolidColorBrush(Colors.LightGreen); } catch { }
-                //try { if (playLbl != null) playLbl.Background = new SolidColorBrush(Colors.Yellow); } catch { }
-                //try { if (startLbl != null) startLbl.Background = new SolidColorBrush(Colors.Orange); } catch { }  //  2026.04.02 1830  block out
+                
+                if (_session.Tune == "Tuner")
+                {
+                    await Task.Delay(100);
+                    await MainScrollView.ScrollToAsync(PickersContainer, ScrollToPosition.Start, false);
+                }
             }
             catch (Exception ex)
             {
@@ -631,9 +623,7 @@ namespace musicmate.Pages
             SetButtonStates(false);
             DeviceDisplay.Current.KeepScreenOn = false;
             StatusService.Instance.StatusMessage = "Stopped listening.";
-        }   
-
-      
+        }         
 
         private async void OnPlayEvaluateClicked(object? sender, EventArgs e)
         {
@@ -819,9 +809,7 @@ namespace musicmate.Pages
                     }
                 });
             }
-        }
-
-       
+        }       
 
         /// <summary>
         /// Restarts only the audio capture stream without resetting session state,
@@ -910,6 +898,9 @@ namespace musicmate.Pages
         {
             try
             {
+                // Any new session clears the post-autoplay results freeze.
+                _freezeStaff = false;
+
                 StatusService.Instance.StatusMessage = "Listening";
                 Debug.WriteLine($"[Start] Starting listening, playBack={playBack}");
                 SetButtonStates(true);
@@ -924,14 +915,13 @@ namespace musicmate.Pages
                 {
                     Debug.WriteLine("[Start] Requesting audio permission...");
                     await _audio.EnsurePermissionAsync();
-                    try { _audio.StopCapture(); } catch { }  // ensure no lingering capture
+                    try { _audio.StopCapture(); } catch { }
                     Debug.WriteLine("[Start] Starting audio capture...");
                     _audio.StartCapture(OnAudioBlock);
                     Debug.WriteLine("[Start] Audio capture started");
                 }
                 else
                 {
-                    // Stop capture while auto-play runs to avoid mic ↔ speaker races.
                     try { _audio.StopCapture(); } catch { }
                 }
 
@@ -976,10 +966,8 @@ namespace musicmate.Pages
 
                     var note = _session.NotesToDraw[i];
 
-                    // Show current note being played
                     StatusService.Instance.StatusMessage = $"Playing note {i + 1}/{_session.NotesToDraw.Count}: {note.Name}";
 
-                    // Visual-only highlight (doesn't modify evaluation state)
                     await MainThread.InvokeOnMainThreadAsync(() =>
                     {
                         _session.PlaybackHighlightIndex = i;
@@ -1000,13 +988,11 @@ namespace musicmate.Pages
                     {
                         await MainThread.InvokeOnMainThreadAsync(() =>
                         {
-                            // Persist green feedback with cents (0 = in tune) for notes that finished playing
                             if (notePlayed && i < _session.FeedbackViewModels.Count)
                             {
                                 var cur = _session.FeedbackViewModels[i];
                                 _session.FeedbackViewModels[i] = new FeedbackItem(i, cur.WrongAttempts, 0, true);
                             }
-                            // Clear transient highlight
                             _session.PlaybackHighlightIndex = null;
                             StaffGraphicsView.Invalidate();
                         });
@@ -1023,30 +1009,44 @@ namespace musicmate.Pages
             }
             finally
             {
-                // Update UI and restore instrument selection on UI thread
                 await MainThread.InvokeOnMainThreadAsync(async () =>
                 {
                     _isPlaying = false;
                     PlayEvaluateButton.Text = "▶";
                     PlayEvaluateButton.TextColor = Color.FromArgb("#008000");
 
+                    if (!cancelled && _session.NotesToDraw.Count > 0)
+                    {
+                        // Freeze the staff NOW so the green feedbacks survive
+                        // the instrument restoration that follows.
+                        _freezeStaff = true;
+                        _session.SessionCompleted = true;
+                        await _session.TriggerSessionCompletionAsync();
+
+                        // TriggerSessionCompletionAsync sets "Correct = NaN%" for autoplay because
+                        // CorrectNoteIndices and NoteFeedbacks are empty (no mic input).
+                        // Override with correct autoplay stats: all notes played = 100%, tempo =
+                        // PlaybackBpm with zero variance (computer-controlled constant tempo).
+                        var playbackBpm = (double)_session.PlaybackBpm;
+#if DEBUG
+                        StatusService.Instance.StatusMessage =
+                            $"Correct = 100.0%, Tempo = {playbackBpm:F1} +/- 0.0 (cv 0.0%)  (raw 100.0)";
+#else
+                        StatusService.Instance.StatusMessage =
+                            $"Correct = 100.0%, Tempo = {playbackBpm:F1} +/- 0.0 (cv 0.0%)";
+#endif
+                    }
+
+                    // Restore instrument after freeze — its PropertyChanged will
+                    // trigger RegenerateNotesAsync which is now suppressed.
                     if (_savedInstrumentIndexForPlayback >= 0)
                     {
                         InstrumentPicker.SelectedIndex = _savedInstrumentIndexForPlayback;
                     }
                     _savedInstrumentForPlayback = null;
                     _savedInstrumentIndexForPlayback = -1;
-
-                    // Trigger session completion to show summary if all notes were played
-                    if (!cancelled && _session.NotesToDraw.Count > 0)
-                    {
-                        // Force session completion for autoplay
-                        _session.SessionCompleted = true;
-                        await _session.TriggerSessionCompletionAsync();
-                    }
                 });
 
-                // When playback finishes normally, restart capture so manual detection resumes.
                 if (!cancelled)
                 {
                     try
@@ -1063,7 +1063,6 @@ namespace musicmate.Pages
                 }
                 else
                 {
-                    // on cancellation, leave capture stopped; UI already updated.
                     SetButtonStates(false);
                 }
             }
@@ -1121,14 +1120,41 @@ namespace musicmate.Pages
             }
         }
 
+        private void UpdateConcertKeyLabel()
+        {
+            ConcertKeyLabel.Text = $"(Concert {_session.GetConcertKey()})";
+        }
+
+        private void UpdateSelectedScaleLabel()
+        {
+            SelectedScaleLabel.Text = _session.SelectedScale;
+        }
+
         private void UpdateKeyPickerVisibility()
         {
             var hide = _session.Tune == "Tuner";
             KeyPicker.IsVisible = !hide;
             KeyLabel.IsVisible = !hide;
             KeyBorder.IsVisible = !hide;
+            SelectedScaleLabel.IsVisible = !hide;
+            ConcertKeyLabel.IsVisible = !hide;
         }
 
+        private void UpdateTunerVisibility()
+        {
+            var isTuner = _session.Tune == "Tuner";
+            StaffBorder.IsVisible = !isTuner;
+            TunerGrid.IsVisible = isTuner;
+            if (isTuner)
+            {
+                _session.SessionCompleted = false;
+                TunerGraphicsView.Invalidate();
+                if (!_isRunning)
+                {
+                    _ = StartListeningAndEvaluatingAsync();
+                }
+            }
+        }
         private void InstrumentPicker_SelectedIndexChanged(object? sender, EventArgs e)
         {
             if (InstrumentPicker.SelectedItem is string s)
@@ -1152,23 +1178,24 @@ namespace musicmate.Pages
             if (selectedKey == null)
                 return;
 
-            // Always use only the short key (before comma)
             var shortKey = selectedKey.Split(',')[0].Trim();
 
             if (IsPremiumKey(shortKey) && !StatusService.Instance.IsPremiumUser)
             {
-                bool upgrade = await DisplayAlertAsync("Premium Feature", $"The key '{shortKey}' is a premium feature. Upgrade to access. (See About page)", "Upgrade", "Cancel");
-                if (!upgrade)
-                {
-                    KeyPicker.SelectedIndex = _lastFreeKeyIndex;
+                // onDecline: revert picker to last free key before closing the popup
+                var purchased = await PremiumPromptHelper.ShowAsync(this,
+                    onDecline: () => KeyPicker.SelectedIndex = _lastFreeKeyIndex);
+
+                if (!purchased)
                     return;
-                }
+
+                // Premium just purchased — allow the key through
             }
             else
             {
                 _lastFreeKeyIndex = KeyPicker.SelectedIndex;
             }
-            // Assign only the short key
+
             _session.Key = shortKey;
             OnSettingsChanged(sender, e);
         }
@@ -1185,33 +1212,6 @@ namespace musicmate.Pages
             await RegenerateNotesAsync();
         }
 
-        private void UpdateConcertKeyLabel()
-        {
-            ConcertKeyLabel.Text = $"Concert Key: {_session.GetConcertKey()}, ";
-        }
-
-        private void UpdateSelectedScaleLabel()
-        {
-            SelectedScaleLabel.Text = $"Selected Scale: {_session.SelectedScale}";
-        }
-
-        private void UpdateTunerVisibility()
-        {
-            var isTuner = _session.Tune == "Tuner";
-            StaffBorder.IsVisible = !isTuner;
-            TunerGrid.IsVisible = isTuner;
-            // when entering tuner mode, clear any previous session state and start listening
-            if (isTuner)
-            {
-                _session.SessionCompleted = false;
-                TunerGraphicsView.Invalidate();
-                // ensure audio capture is running so notes are heard on the Tuner page
-                if (!_isRunning)
-                {
-                    _ = StartListeningAndEvaluatingAsync();
-                }
-            }
-        }
 
         // Use base BindableObject.OnPropertyChanged so XAML bindings receive change notifications
 
