@@ -528,57 +528,43 @@ namespace musicmate.Services
         }
 
         private static string[] SpellDescendingDegrees(
-            char tonicLetter,
-            int startOctave,
-            int tonicIdx,
-            int tonicMidi,
-            int[] semitones,
-            AccidentalPreference pref,
-            HashSet<int> flats,
-            HashSet<int> sharps)
+      char tonicLetter,
+      int startOctave,
+      int tonicIdx,
+      int tonicMidi,
+      int[] semitones,
+      AccidentalPreference pref,
+      HashSet<int> flats,
+      HashSet<int> sharps)
+        {
+            var result = new List<string>(semitones.Length);
+
+            for (int i = 0; i < semitones.Length; i++)
             {
-                var result = new List<string>(semitones.Length);
-                var startMidi = tonicMidi;
+                var letterIdx = (tonicIdx - i) % 7;
+                if (letterIdx < 0)
+                    letterIdx += 7;
 
-                for (int i = 0; i < semitones.Length; i++)
-                {
-                    var letterIdx = (tonicIdx - i) % 7;
-                    if (letterIdx < 0)
-                        letterIdx += 7;
+                var degLetter = Letters[letterIdx];
+                var targetMidi = tonicMidi + semitones[i];
 
-                    var degLetter = Letters[letterIdx];
-                    var targetMidi = startMidi + semitones[i];
-                    var targetOctave = (targetMidi / 12) - 1;
-                    var pc = Mod12(targetMidi);
+                // ✅ same fix here
+                var noteName = SpellNote(degLetter, targetMidi);
 
-                    string noteName;
-                    if (flats.Contains(pc))
-                    {
-                        var adjOctave = degLetter == 'C' ? targetOctave + 1 : targetOctave;
-                        noteName = $"{degLetter}b{adjOctave}";
-                    }
-                    else if (sharps.Contains(pc))
-                    {
-                        var adjOctave = degLetter == 'B' ? targetOctave - 1 : targetOctave;
-                        noteName = $"{degLetter}#{adjOctave}";
-                    }
-                    else
-                        noteName = $"{degLetter}{targetOctave}";
-
-                    result.Add(noteName);
-                }
-
-                return result.ToArray();
+                result.Add(noteName);
             }
+
+            return result.ToArray();
+        }
         private static string[] SpellDegrees(
-           char tonicLetter,
-           int octave,
-           int tonicIdx,
-           int tonicMidi,
-           int[] semitones,
-           AccidentalPreference pref,
-           HashSet<int> flats,
-           HashSet<int> sharps)
+     char tonicLetter,
+     int octave,
+     int tonicIdx,
+     int tonicMidi,
+     int[] semitones,
+     AccidentalPreference pref,
+     HashSet<int> flats,
+     HashSet<int> sharps)
         {
             var result = new List<string>(semitones.Length);
 
@@ -586,22 +572,9 @@ namespace musicmate.Services
             {
                 var degLetter = Letters[(tonicIdx + i) % 7];
                 var targetMidi = tonicMidi + semitones[i];
-                var targetOctave = (targetMidi / 12) - 1;
-                var pc = Mod12(targetMidi);
 
-                string noteName;
-                if (flats.Contains(pc))
-                {
-                    var adjOctave = degLetter == 'C' ? targetOctave + 1 : targetOctave;
-                    noteName = $"{degLetter}b{adjOctave}";
-                }
-                else if (sharps.Contains(pc))
-                {
-                    var adjOctave = degLetter == 'B' ? targetOctave - 1 : targetOctave;
-                    noteName = $"{degLetter}#{adjOctave}";
-                }
-                else
-                    noteName = $"{degLetter}{targetOctave}";
+                // ✅ THIS is the fix:
+                var noteName = SpellNote(degLetter, targetMidi);
 
                 result.Add(noteName);
             }
@@ -1411,13 +1384,19 @@ namespace musicmate.Services
 
             var noteHeadWidth = 24f;
             var spacing = noteHeadWidth * 3f;
-            var usesLetterAwareSpelling = SelectedScale is "Major" or "Ionian" or "Harmonic Minor" or "Melodic Minor" or "Jazz Melodic Minor" or "Natural Minor" or "Aeolian" or
-                        "Harmonic Major" or "Phrygian Dominant" or "Double Harmonic";
-            if (sequence.Length > 1 && !usesLetterAwareSpelling)
+            //var usesLetterAwareSpelling = SelectedScale is "Major" or "Ionian" or "Harmonic Minor" or "Melodic Minor" or "Jazz Melodic Minor" or "Natural Minor" or "Aeolian" or
+            //            "Harmonic Major" or "Phrygian Dominant" or "Double Harmonic";
+            //if (sequence.Length > 1 && !usesLetterAwareSpelling)
+            //{
+            //    sequence = RespellToAvoidConsecutiveSameLetter(sequence, KeyUsesFlats(Key));
+            //}
+            // All scales now use letter-sequential spelling via SpellSequential or explicit builders.
+            // Only the chromatic scale falls back to raw GetNoteName; guard against consecutive
+            // same-letter enharmonics there.
+            if (sequence.Length > 1 && SelectedScale == "Chromatic Scale")
             {
                 sequence = RespellToAvoidConsecutiveSameLetter(sequence, KeyUsesFlats(Key));
             }
-
             if (availableWidth > 0 && sequence.Length > 0)
             {
                 var usable = (float)(availableWidth - 64);
@@ -1785,15 +1764,30 @@ namespace musicmate.Services
                 _ => new[] { 0, 2, 4, 5, 7, 9, 11, 12 }
             };
             var startMidi = NoteNameToMidi(tonic);
-            var descending = up.Length > 1 ? up.Take(up.Length - 1).Reverse().ToArray() : Array.Empty<int>();
-            var seqSemis = up.Concat(descending).ToArray();
-            (HashSet<int> flats, HashSet<int> sharps) = GetAccidentalSetsForScale(key, selectedScale);
 
-             return seqSemis.Select(d =>
+            // Chromatic scale has 12 pitches — letter uniqueness is impossible; use key preference
+            if (selectedScale == "Chromatic Scale")
             {
-                var midi = startMidi + d;
-                return GetNoteName(midi, pref);
-            }).ToArray();
+                var descChr = up.Take(up.Length - 1).Reverse().ToArray();
+                return up.Concat(descChr).Select(d => GetNoteName(startMidi + d, pref)).ToArray();
+            }
+
+            // All other scales: assign letters sequentially (A→B→C→D→E→F→G) from the tonic,
+            // then derive the correct accidental by comparing each MIDI with the natural pitch
+            // of the assigned letter.  Offsets are null for 7-note modes and whole-tone (sequential).
+            int[]? letterOffsets = selectedScale switch
+            {
+                "Major Pentatonic" => new[] { 0, 1, 2, 4, 5 },
+                "Minor Pentatonic" => new[] { 0, 2, 3, 4, 6 },
+                "Blues" or "Minor Blues" => new[] { 0, 2, 3, 4, 4, 6 },
+                "Major Blues" => new[] { 0, 1, 2, 2, 4, 5 },
+                "Japanese" => new[] { 0, 1, 3, 4, 5 },
+                "Egyptian" => new[] { 0, 1, 3, 4, 6 },
+                "Bebop" => new[] { 0, 1, 2, 3, 4, 5, 6, 6 },
+                "Symmetrical Diminished" or "Diminished" => new[] { 0, 1, 2, 2, 3, 4, 5, 6 },
+                _ => null  // 7-note modes + whole-tone
+            };
+            return SpellSequential(tonic[0], startMidi, up, letterOffsets);
         }
         private static readonly Dictionary<(string, string), (HashSet<int>, HashSet<int>)> _accidentalCache = new();
         private static (HashSet<int> flats, HashSet<int> sharps) GetAccidentalSetsForScale(string key, string scale)
@@ -1952,5 +1946,75 @@ namespace musicmate.Services
                 await SessionCompletedAsync.Invoke();
             }
         }
+
+        /// <summary>Returns the natural (no-accidental) pitch-class 0–11 for a letter A–G.</summary>
+        private static int NaturalPcForLetter(char letter) => letter switch
+        {
+            'C' => 0, 'D' => 2, 'E' => 4, 'F' => 5,
+            'G' => 7, 'A' => 9, 'B' => 11, _ => 0
+        };
+
+        /// <summary>
+        /// Spells one MIDI note using the given letter, computing the correct octave and
+        /// accidental by comparing <paramref name="targetMidi"/> with the nearest natural
+        /// pitch of that letter.
+        /// </summary>
+        private static string SpellNote(char letter, int targetMidi)
+        {
+            var naturalPC  = NaturalPcForLetter(letter);
+            var letterOctave = (targetMidi - naturalPC) / 12;
+            var naturalMidi  = (letterOctave + 1) * 12 + naturalPC;
+            var diff = targetMidi - naturalMidi;
+
+            // Correct for octave boundary: natural is in an adjacent octave
+            if      (diff >  6) { diff -= 12; letterOctave++; }
+            else if (diff < -6) { diff += 12; letterOctave--; }
+
+            return diff switch
+            {
+                 0 => $"{letter}{letterOctave}",
+                 1 => $"{letter}#{letterOctave}",
+                -1 => $"{letter}b{letterOctave}",
+                 2 => $"{letter}##{letterOctave}",
+                -2 => $"{letter}bb{letterOctave}",
+                _ => throw new InvalidOperationException(
+                $"Cannot spell MIDI {targetMidi} as letter {letter} within double accidental range.")
+            };
+        }
+
+        /// <summary>
+        /// Builds an ascending+descending scale sequence with correct letter-sequential spelling.
+        /// Each degree is assigned the next letter in A–B–C–D–E–F–G order (wrapping) and the
+        /// accidental is derived by comparing the target MIDI with the natural pitch of that letter.
+        /// <para><paramref name="up"/> must include the octave (semitone 12) as its last element.</para>
+        /// <para><paramref name="letterOffsets"/> maps each ascending degree (excluding the octave)
+        /// to a letter-index offset from the tonic.  Pass <c>null</c> for 7-note (or 6-note
+        /// whole-tone) scales to use sequential offsets 0, 1, 2, …</para>
+        /// </summary>
+        private static string[] SpellSequential(
+            char tonicLetter,
+            int  tonicMidi,
+            int[] up,
+            int[]? letterOffsets)
+        {
+            var tonicIdx    = Array.IndexOf(Letters, tonicLetter);
+            var degreeCount = up.Length - 1; // unique degrees, not counting the octave repeat
+
+            // Spell ascending (including the octave note at the end)
+            var ascSpelled = new string[up.Length];
+            for (var i = 0; i < up.Length; i++)
+            {
+                var offset = i < degreeCount
+                    ? (letterOffsets != null ? letterOffsets[i] : i)
+                    : 0; // octave repeats the tonic letter
+                var letter = Letters[(tonicIdx + offset) % 7];
+                ascSpelled[i] = SpellNote(letter, tonicMidi + up[i]);
+            }
+
+            // Descending mirrors ascending (minus octave), reversed — same spelling each direction
+            var descSpelled = ascSpelled.Take(degreeCount).Reverse().ToArray();
+            return ascSpelled.Concat(descSpelled).ToArray();
+        }
     }
 }
+

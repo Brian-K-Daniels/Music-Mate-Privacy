@@ -478,43 +478,29 @@ namespace musicmate.Drawables
                 // What the key signature already implies for this letter (null = nothing)
                 var sigAcc = GetSignatureAccidentalForLetter(letter, accidentalCount);
 
-                bool wantsSharp   = raw.Contains('#');
-                bool wantsFlat    = raw.Contains('b');
+                bool wantsSharp = raw.Contains('#');
+                bool wantsFlat = raw.Contains('b');
                 bool wantsNatural = !wantsSharp && !wantsFlat;
 
                 string? accidentalGlyph = null;
                 bool isAccFlat = false;
 
-                if (_session.Tune == "Random")
+                if (wantsSharp && sigAcc != "#")
                 {
-                    if (wantsSharp && sigAcc != "#")
-                    {
-                        accidentalGlyph = "♯";
-                        isAccFlat = false;
-                    }
-                    else if (wantsFlat && sigAcc != "b")
-                    {
-                        accidentalGlyph = "♭";
-                        isAccFlat = true;
-                    }
-                    else if (wantsNatural && sigAcc != null)
-                    {
-                        accidentalGlyph = "♮";
-                        isAccFlat = false;
-                    }
+                    accidentalGlyph = "♯";
+                    isAccFlat = false;
                 }
-                else
+                else if (wantsFlat && sigAcc != "b")
                 {
-                    if (wantsSharp && sigAcc != "#")
-                    {
-                        accidentalGlyph = "♯";
-                        isAccFlat = false;
-                    }
-                    else if (wantsFlat && sigAcc != "b")
-                    {
-                        accidentalGlyph = "♭";
-                        isAccFlat = true;
-                    }
+                    accidentalGlyph = "♭";
+                    isAccFlat = true;
+                }
+                else if (wantsNatural && sigAcc != null)
+                {
+                    // Note is natural but key signature implies an accidental → show ♮
+                    // e.g. B♮ in C Harmonic Minor (key sig has B♭)
+                    accidentalGlyph = "♮";
+                    isAccFlat = false;
                 }
 
                 if (accidentalGlyph != null)

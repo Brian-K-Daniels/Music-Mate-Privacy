@@ -1,3 +1,5 @@
+using System;
+using System.Diagnostics;
 using musicmate.Services;
 using musicmate.ViewModels;
 
@@ -47,9 +49,72 @@ namespace musicmate.Pages
             await Shell.Current.GoToAsync("//MainPage");
         }
 
-        private void OnResetClicked(object sender, EventArgs e)
+        /// <summary>
+        /// Reset to defaults and optionally clear persisted note/session data.
+        /// Asks the user to confirm resetting settings; then asks whether to
+        /// delete Note data, Session data, both, or neither. Clearing uses the
+        /// services' ClearAllAsync methods so tables remain present and usable.
+        /// </summary>
+        private async void OnResetClicked(object sender, EventArgs e)
         {
-            _viewModel.ResetToDefaults();
+            try
+            {
+                // Confirm resetting settings to defaults
+                var doReset = await DisplayAlertAsync(
+                    "Reset all to defaults",
+                    "This will reset all advanced settings to their default values. Continue?",
+                    "Yes",
+                    "No");
+                if (!doReset)
+                    return;
+
+                // Perform settings reset
+                _viewModel.ResetToDefaults();
+
+                // Ask whether to delete stored data
+                // Use DisplayActionSheetAsync with a cancel "Don't delete" and a destructive "Delete both"
+                var choice = await DisplayActionSheetAsync(
+                    "Also delete stored data?",
+                    "Don't delete",          // cancel
+                    "Delete both",           // destructive
+                    "Delete note data only",
+                    "Delete session data only");
+
+                // If user chose cancel, do nothing more
+                if (choice == "Don't delete" || string.IsNullOrEmpty(choice))
+                {
+                    await DisplayAlertAsync("Reset complete", "Settings reset to defaults.", "OK");
+                    return;
+                }
+
+                // Execute clears as requested
+                if (choice == "Delete both" || choice == "Delete note data only")
+                {
+                    var noteDb = ServiceHelper.GetService<NoteDatabase>();
+                    if (noteDb != null)
+                    {
+                        await noteDb.InitializeAsync(); // ensure table exists
+                        await noteDb.ClearAllAsync();
+                    }
+                }
+
+                if (choice == "Delete both" || choice == "Delete session data only")
+                {
+                    var sessionDb = ServiceHelper.GetService<SessionDatabase>();
+                    if (sessionDb != null)
+                    {
+                        await sessionDb.InitializeAsync(); // ensure table exists / migrations applied
+                        await sessionDb.ClearAllAsync();
+                    }
+                }
+
+                await DisplayAlertAsync("Reset complete", "Settings reset and selected data cleared.", "OK");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[AdvancedPage] OnResetClicked ERROR: {ex}");
+                await DisplayAlertAsync("Error", $"Failed to reset/clear data: {ex.Message}", "OK");
+            }
         }
     }
 }

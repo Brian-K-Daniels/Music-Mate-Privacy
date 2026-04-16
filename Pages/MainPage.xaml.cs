@@ -572,15 +572,15 @@ namespace musicmate.Pages
                 var playLbl = this.FindByName<Label>("PlayEvaluateButton");
                 var startLbl = this.FindByName<Label>("StartStopButton");
 
-                void LogElement(string name, View? el)
-                {
-                    if (el == null)
-                    {
-                        Debug.WriteLine($"[LAYOUT DEBUG] {name}: null");
-                        return;
-                    }
-                    Debug.WriteLine($"[LAYOUT DEBUG] {name}: Bounds={el.Bounds} Margin={el.Margin} Width={el.Width} Height={el.Height} X={el.X} Y={el.Y} Visibility={(el.IsVisible ? "Visible" : "Hidden")}");
-                }
+                //void LogElement(string name, View? el)
+                //{
+                //    if (el == null)
+                //    {
+                //        Debug.WriteLine($"[LAYOUT DEBUG] {name}: null");
+                //        return;
+                //    }
+                //    Debug.WriteLine($"[LAYOUT DEBUG] {name}: Bounds={el.Bounds} Margin={el.Margin} Width={el.Width} Height={el.Height} X={el.X} Y={el.Y} Visibility={(el.IsVisible ? "Visible" : "Hidden")}");
+                //}
                 
                 if (_session.Tune == "Tuner")
                 {
