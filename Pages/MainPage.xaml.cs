@@ -147,6 +147,8 @@ namespace musicmate.Pages
         }
 
         private bool _isInstrumentLabelVisible = false;
+        private static readonly HashSet<string> FreeScales = new() { "Major", "Harmonic Minor" };
+        private int _lastValidScaleTuneIndex = 0;
         public bool IsInstrumentLabelVisible
         {
             get => _isInstrumentLabelVisible;
@@ -377,41 +379,29 @@ namespace musicmate.Pages
                     KeyPicker.SelectedIndex = 0;
                 _lastFreeKeyIndex = KeyPicker.SelectedIndex;
 
-                var tuneOptions = new[] { "Selected Scale", "Random", "Tuner" };
-                TunePicker.ItemsSource = tuneOptions;
+                // Combined Scale + Tune picker: Tuner / Random then all scales
+                var scaleTuneOptions = new[] { "Tuner", "Random" }
+                    .Concat(NoteSessionService.AvailableScales)
+                    .ToArray();
+                ScaleTunePicker.ItemsSource = scaleTuneOptions;
+
                 var savedTune = Preferences.Default.Get<string?>("SelectedTune", null);
-                if (!string.IsNullOrEmpty(savedTune) && tuneOptions.Contains(savedTune))
-                {
+                if (!string.IsNullOrEmpty(savedTune) && (savedTune == "Random" || savedTune == "Tuner"))
                     _session.Tune = savedTune;
-                }
-                var tuneIdx = Array.IndexOf(tuneOptions, _session.Tune);
-                TunePicker.SelectedIndex = tuneIdx >= 0 ? tuneIdx : 0;
+                // else _session.Tune stays "Selected Scale" (persisted via SelectedTune preference)
+
+                var initialScaleTuneSelection = _session.Tune == "Random" ? "Random"
+                    : _session.Tune == "Tuner" ? "Tuner"
+                    : _session.SelectedScale;
+                var scaleTuneIdx = Array.IndexOf(scaleTuneOptions, initialScaleTuneSelection);
+                ScaleTunePicker.SelectedIndex = scaleTuneIdx >= 0 ? scaleTuneIdx : 0;
+                _lastValidScaleTuneIndex = ScaleTunePicker.SelectedIndex;
                 IsAutoRepeatVisible = _session.Tune == "Random";
 
-                TunePicker.SelectedIndexChanged += (s, e) =>
-                {
-                    if (TunePicker.SelectedItem is string selectedTune)
-                    {
-                        _session.Tune = selectedTune;
-                        Preferences.Default.Set("SelectedTune", selectedTune);
-                        IsAutoRepeatVisible = selectedTune == "Random";
-                        UpdateKeyPickerVisibility();
-                    }
-                };
-
-                // InstrumentPicker.SelectedIndexChanged += OnSettingsChanged;
+                ScaleTunePicker.SelectedIndexChanged += OnScaleTunePickerChanged;
 
                 InstrumentPicker.SelectedIndexChanged += InstrumentPicker_SelectedIndexChanged;
                 KeyPicker.SelectedIndexChanged += OnKeyPickerChangedWithPrompt;
-                TunePicker.SelectedIndexChanged += OnSettingsChanged;
-                ColorPickerDialog.ColorPreviewed -= OnStaffPanelColorPreviewed;
-                ColorPickerDialog.ColorPreviewed += OnStaffPanelColorPreviewed;
-
-                UpdateConcertKeyLabel();
-                UpdateSelectedScaleLabel();
-                UpdateTunerVisibility();
-                StatusService.Instance.StatusMessage =
-                    $"Select Keys, swipe up to scroll, touch green button and play.";
             }
             catch (Exception ex)
             {
@@ -1099,6 +1089,47 @@ namespace musicmate.Pages
             await _sessionDb.InsertAsync(stat);
         }
 
+        //private async void Session_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+        //{
+        //    if (e.PropertyName == nameof(_session.SelectedScale) ||
+        //        e.PropertyName == nameof(NoteSessionService.Instrument) ||
+        //        e.PropertyName == nameof(NoteSessionService.Key) ||
+        //        e.PropertyName == nameof(NoteSessionService.Tune))
+        //    {
+        //        await RegenerateNotesAsync();
+        //        UpdateTunerVisibility();
+        //        UpdateKeyPickerVisibility();
+        //    }
+
+        //    if (e.PropertyName == nameof(_session.SelectedScale) ||
+        //        e.PropertyName == nameof(NoteSessionService.Key) ||
+        //        e.PropertyName == nameof(NoteSessionService.Instrument))
+        //    {
+        //        UpdateConcertKeyLabel();
+        //        UpdateSelectedScaleLabel();
+        //    }
+        //}
+
+        //private void UpdateConcertKeyLabel()
+        //{
+        //    ConcertKeyLabel.Text = $"(Concert {_session.GetConcertKey()})";
+        //}
+
+        ////private void UpdateSelectedScaleLabel()
+        ////{
+        ////    SelectedScaleLabel.Text = _session.SelectedScale;
+        ////}
+
+
+        //private void UpdateKeyPickerVisibility()
+        //{
+        //    var hide = _session.Tune == "Tuner";
+        //    KeyPicker.IsVisible = !hide;
+        //    KeyLabel.IsVisible = !hide;
+        //    KeyBorder.IsVisible = !hide;
+        //    SelectedScaleLabel.IsVisible = !hide;
+        //    ConcertKeyLabel.IsVisible = !hide;
+        //}
         private async void Session_PropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
             if (e.PropertyName == nameof(_session.SelectedScale) ||
@@ -1116,7 +1147,7 @@ namespace musicmate.Pages
                 e.PropertyName == nameof(NoteSessionService.Instrument))
             {
                 UpdateConcertKeyLabel();
-                UpdateSelectedScaleLabel();
+                UpdateScaleTunePicker();
             }
         }
 
@@ -1125,21 +1156,14 @@ namespace musicmate.Pages
             ConcertKeyLabel.Text = $"(Concert {_session.GetConcertKey()})";
         }
 
-        private void UpdateSelectedScaleLabel()
-        {
-            SelectedScaleLabel.Text = _session.SelectedScale;
-        }
-
         private void UpdateKeyPickerVisibility()
         {
             var hide = _session.Tune == "Tuner";
             KeyPicker.IsVisible = !hide;
             KeyLabel.IsVisible = !hide;
             KeyBorder.IsVisible = !hide;
-            SelectedScaleLabel.IsVisible = !hide;
             ConcertKeyLabel.IsVisible = !hide;
         }
-
         private void UpdateTunerVisibility()
         {
             var isTuner = _session.Tune == "Tuner";
@@ -1154,6 +1178,59 @@ namespace musicmate.Pages
                     _ = StartListeningAndEvaluatingAsync();
                 }
             }
+        }
+        private void UpdateScaleTunePicker()
+        {
+            if (ScaleTunePicker.ItemsSource is not string[] items) return;
+            var selection = _session.Tune == "Random" ? "Random"
+                : _session.Tune == "Tuner" ? "Tuner"
+                : _session.SelectedScale;
+            var idx = Array.IndexOf(items, selection);
+            if (idx >= 0 && ScaleTunePicker.SelectedIndex != idx)
+                ScaleTunePicker.SelectedIndex = idx;
+        }
+
+        private async void OnScaleTunePickerChanged(object? sender, EventArgs e)
+        {
+            if (ScaleTunePicker.SelectedItem is not string selected) return;
+
+            if (selected == "Random" || selected == "Tuner")
+            {
+                _lastValidScaleTuneIndex = ScaleTunePicker.SelectedIndex;
+                _session.Tune = selected;
+                Preferences.Default.Set("SelectedTune", selected);
+                IsAutoRepeatVisible = selected == "Random";
+                UpdateKeyPickerVisibility();
+                return;
+            }
+
+            // Scale selected — premium check for non-free scales
+            if (!FreeScales.Contains(selected) && !StatusService.Instance.IsPremiumUser)
+            {
+                var purchased = await PremiumPromptHelper.ShowAsync(this,
+                    onDecline: () => ScaleTunePicker.SelectedIndex = _lastValidScaleTuneIndex);
+                if (!purchased)
+                    return;
+            }
+
+            _lastValidScaleTuneIndex = ScaleTunePicker.SelectedIndex;
+            _session.Tune = "Selected Scale";
+            _session.SelectedScale = selected;
+            Preferences.Default.Set("SelectedTune", "Selected Scale");
+            IsAutoRepeatVisible = false;
+            UpdateKeyPickerVisibility();
+        }
+
+        
+
+        private async void OnSettingsChanged(object? sender, EventArgs e)
+        {
+            _session.Instrument = InstrumentPicker.SelectedItem?.ToString() ?? _session.Instrument;
+            _session.Key = KeyPicker.SelectedItem?.ToString() ?? _session.Key;
+
+            UpdateConcertKeyLabel();
+            UpdateTunerVisibility();
+            await RegenerateNotesAsync();
         }
         private void InstrumentPicker_SelectedIndexChanged(object? sender, EventArgs e)
         {
@@ -1200,17 +1277,17 @@ namespace musicmate.Pages
             OnSettingsChanged(sender, e);
         }
 
-        private async void OnSettingsChanged(object? sender, EventArgs e)
-        {
-            _session.Instrument = InstrumentPicker.SelectedItem?.ToString() ?? _session.Instrument;
-            _session.Key = KeyPicker.SelectedItem?.ToString() ?? _session.Key;
-            _session.Tune = TunePicker.SelectedItem?.ToString() ?? _session.Tune;
+        //private async void OnSettingsChanged(object? sender, EventArgs e)
+        //{
+        //    _session.Instrument = InstrumentPicker.SelectedItem?.ToString() ?? _session.Instrument;
+        //    _session.Key = KeyPicker.SelectedItem?.ToString() ?? _session.Key;
+        //    _session.Tune = TunePicker.SelectedItem?.ToString() ?? _session.Tune;
 
-            UpdateConcertKeyLabel();
-            UpdateSelectedScaleLabel();
-            UpdateTunerVisibility();
-            await RegenerateNotesAsync();
-        }
+        //    UpdateConcertKeyLabel();
+        //    UpdateSelectedScaleLabel();
+        //    UpdateTunerVisibility();
+        //    await RegenerateNotesAsync();
+        //}
 
 
         // Use base BindableObject.OnPropertyChanged so XAML bindings receive change notifications

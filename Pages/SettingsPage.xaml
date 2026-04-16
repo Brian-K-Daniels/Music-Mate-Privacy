@@ -70,19 +70,9 @@
   <ScrollView>
     <VerticalStackLayout x:Name="SettingsMainLayout" Spacing="16" HorizontalOptions="Fill" Padding="16,8">
 
-      <!-- Scale/Range -->
+      <!-- Note Range -->
       <ScrollView Orientation="Horizontal">
         <HorizontalStackLayout Spacing="2" VerticalOptions="Center">
-          <Label Text="Scale" FontSize="13" VerticalOptions="Center" />
-          <Border Stroke="#8B4513" StrokeThickness="2" BackgroundColor="Transparent">
-            <Picker x:Name="ScalePicker"
-                    ItemsSource="{Binding AvailableScalesForBinding}"
-                    SelectedItem="{Binding SelectedScale, Mode=TwoWay}"
-                    WidthRequest="240"
-                    TextColor="Black"
-                    BackgroundColor="Transparent"
-                    FontSize="12" />
-          </Border>
           <Label Text="Lowest" FontSize="13" VerticalOptions="Center" />
           <Border StrokeThickness="2" Stroke="#8B4513" BackgroundColor="Transparent">
             <Picker x:Name="LowestNotePicker"

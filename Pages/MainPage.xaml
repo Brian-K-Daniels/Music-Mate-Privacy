@@ -74,8 +74,7 @@
     <ScrollView x:Name="MainScrollView" Grid.Column="1" HorizontalScrollBarVisibility="Never" Padding="0" Margin="0" HorizontalOptions="Fill">
       <VerticalStackLayout x:Name="MainPageMainLayout" Spacing="16" Padding="0" Margin="0" HorizontalOptions="Fill">
 
-        <!-- Pickers + labels row -->
-        <!-- Pickers row: Instrument [Bb] Key [F#] [Major] (Concert E) Tune [Selected Scale] -->
+        <!-- Pickers row: Instrument | Key | (Concert E) | Scale+Tune picker -->
         <VerticalStackLayout x:Name="PickersContainer" Padding="0" Margin="0">
           <HorizontalStackLayout Spacing="6" VerticalOptions="Center" Margin="0,4,0,4">
 
@@ -135,26 +134,16 @@
                       HorizontalOptions="Fill" />
             </Border>
 
-            <!-- Scale name e.g. "Major" (hidden in Tuner mode) -->
-            <Label x:Name="SelectedScaleLabel"
-                   FontSize="11"
-                   TextColor="#333333"
-                   VerticalOptions="Center" />
-
             <!-- Concert key e.g. "(Concert E)" (hidden in Tuner mode) -->
             <Label x:Name="ConcertKeyLabel"
                    FontSize="11"
                    TextColor="#333333"
                    VerticalOptions="Center" />
 
-            <!-- Tune -->
-            <Label Text="Tune"
-                   FontSize="11"
-                   TextColor="#333333"
-                   VerticalOptions="Center" />
+            <!-- Combined Scale / Tune picker -->
             <Border Style="{StaticResource CompactBrownBox}">
-              <Picker x:Name="TunePicker"
-                      WidthRequest="120"
+              <Picker x:Name="ScaleTunePicker"
+                      WidthRequest="140"
                       HeightRequest="28"
                       FontSize="11"
                       TextColor="#000000"
@@ -163,7 +152,6 @@
                       HorizontalOptions="Fill" />
             </Border>
 
-            <!-- Auto-repeat toggle moved; removed from this row -->
           </HorizontalStackLayout>
         </VerticalStackLayout>
 

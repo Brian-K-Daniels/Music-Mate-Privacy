@@ -12,8 +12,6 @@ namespace musicmate.Pages
         private readonly NoteSessionService _session;
         private readonly IOrientationService _orientation;
         private readonly ThemeService _themeService;
-        private int _lastFreeScaleIndex = 0;
-        private static readonly HashSet<string> FreeScales = new() { "Major", "Harmonic Minor" };
 
         private int _lastFreeLowestIndex = 0;
         private int _lastFreeHighestIndex = 0;
@@ -33,7 +31,6 @@ namespace musicmate.Pages
             BindingContext = _viewModel;
 
             _viewModel.PanelBackgroundColor = _themeService.PanelBackgroundColor;
-            _viewModel.SelectedScale = _session.SelectedScale;
             _viewModel.LowestNote = _session.LowestNote;
             _viewModel.HighestNote = _session.HighestNote;
             _viewModel.PlaybackBpm = _session.PlaybackBpm;
@@ -43,13 +40,6 @@ namespace musicmate.Pages
             _viewModel.OmitMsAvgThreshold = _session.OmitMsAvgThreshold;
             _viewModel.AutoStart = _session.AutoStart;
 
-            var scales = _viewModel.AvailableScalesForBinding?.ToList();
-            if (scales != null)
-            {
-                var idx = scales.IndexOf(_viewModel.SelectedScale);
-                _lastFreeScaleIndex = FreeScales.Contains(_viewModel.SelectedScale) ? idx : 0;
-            }
-
             var notes = _viewModel.WhiteKeyNoteNames?.ToList();
             if (notes != null)
             {
@@ -57,7 +47,6 @@ namespace musicmate.Pages
                 _lastFreeHighestIndex = notes.IndexOf("F5");
             }
 
-            ScalePicker.SelectedIndexChanged += OnScalePickerChangedWithPrompt;
             LowestNotePicker.SelectedIndexChanged += OnLowestNotePickerChangedWithPrompt;
             HighestNotePicker.SelectedIndexChanged += OnHighestNotePickerChangedWithPrompt;
         }
@@ -83,7 +72,6 @@ namespace musicmate.Pages
 
             _premiumDialogOpen = true;
 
-            // onDecline: restore slider to 0 when the user taps "No thanks"
             await PremiumPromptHelper.ShowAsync(this, onDecline: () =>
             {
                 _viewModel.AccidentalPercent = 0;
@@ -92,32 +80,6 @@ namespace musicmate.Pages
             });
 
             _premiumDialogOpen = false;
-        }
-
-        // ── Scale picker ──────────────────────────────────────────────────────
-
-        private async void OnScalePickerChangedWithPrompt(object? sender, EventArgs e)
-        {
-            var picker = ScalePicker;
-            var selectedScale = picker.SelectedItem?.ToString();
-            if (selectedScale == null)
-                return;
-
-            if (!FreeScales.Contains(selectedScale) && !StatusService.Instance.IsPremiumUser)
-            {
-                // onDecline: revert picker to last free scale
-                var purchased = await PremiumPromptHelper.ShowAsync(this,
-                    onDecline: () => picker.SelectedIndex = _lastFreeScaleIndex);
-
-                if (!purchased)
-                    return;
-            }
-            else
-            {
-                _lastFreeScaleIndex = picker.SelectedIndex;
-            }
-
-            _viewModel.SelectedScale = selectedScale;
         }
 
         // ── Lowest note picker ────────────────────────────────────────────────
@@ -137,7 +99,6 @@ namespace musicmate.Pages
 
                 if (selIdx < minIdx || selIdx > maxIdx)
                 {
-                    // onDecline: revert picker to last free lowest note
                     var purchased = await PremiumPromptHelper.ShowAsync(this,
                         onDecline: () => picker.SelectedIndex = _lastFreeLowestIndex);
 
@@ -172,7 +133,6 @@ namespace musicmate.Pages
 
                 if (selIdx < minIdx || selIdx > maxIdx)
                 {
-                    // onDecline: revert picker to last free highest note
                     var purchased = await PremiumPromptHelper.ShowAsync(this,
                         onDecline: () => picker.SelectedIndex = _lastFreeHighestIndex);
 

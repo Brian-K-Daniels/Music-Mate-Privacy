@@ -1735,6 +1735,10 @@ namespace musicmate.Services
             {
                 return BuildMajorSpelled(tonic, key);
             }
+            if (selectedScale is "Blues" or "Minor Blues")
+            {
+                return BuildBluesSpelled(tonic, key);
+            }
 
             var pref = GetPreferenceForScale(key, selectedScale);
             int[] up = selectedScale switch
@@ -1779,7 +1783,6 @@ namespace musicmate.Services
             {
                 "Major Pentatonic" => new[] { 0, 1, 2, 4, 5 },
                 "Minor Pentatonic" => new[] { 0, 2, 3, 4, 6 },
-                "Blues" or "Minor Blues" => new[] { 0, 2, 3, 4, 4, 6 },
                 "Major Blues" => new[] { 0, 1, 2, 2, 4, 5 },
                 "Japanese" => new[] { 0, 1, 3, 4, 5 },
                 "Egyptian" => new[] { 0, 1, 3, 4, 6 },
@@ -2014,6 +2017,51 @@ namespace musicmate.Services
             // Descending mirrors ascending (minus octave), reversed — same spelling each direction
             var descSpelled = ascSpelled.Take(degreeCount).Reverse().ToArray();
             return ascSpelled.Concat(descSpelled).ToArray();
+        }
+        private static string[] BuildBluesSpelled(string tonic, string key)
+        {
+            int[] up = new[] { 0, 3, 5, 6, 7, 10, 12 };
+            var tonicLetter = char.ToUpperInvariant(tonic[0]);
+            var tonicIdx = Array.IndexOf(Letters, tonicLetter);
+            var startMidi = NoteNameToMidi(tonic);
+
+            // b3=offset2, P4=offset3, tritone=dynamic (offset 3 or 4), P5=offset4, b7=offset6
+            int[] fixedOffsets = { 0, 2, 3, -1, 4, 6 }; // -1 = dynamic tritone
+
+            var ascSpelled = new string[up.Length];
+            for (int i = 0; i < up.Length - 1; i++)
+            {
+                int offset;
+                if (fixedOffsets[i] == -1)
+                {
+                    // Pick offset 3 (augmented 4th) or offset 4 (diminished 5th) —
+                    // whichever produces the simpler accidental. On a tie, prefer offset 4 (flat).
+                    var targetMidi = startMidi + up[i];
+                    int diff3 = ComputeSpellDiff(Letters[(tonicIdx + 3) % 7], targetMidi);
+                    int diff4 = ComputeSpellDiff(Letters[(tonicIdx + 4) % 7], targetMidi);
+                    offset = Math.Abs(diff3) < Math.Abs(diff4) ? 3 : 4;
+                }
+                else
+                {
+                    offset = fixedOffsets[i];
+                }
+                ascSpelled[i] = SpellNote(Letters[(tonicIdx + offset) % 7], startMidi + up[i]);
+            }
+            ascSpelled[up.Length - 1] = SpellNote(tonicLetter, startMidi + 12); // octave
+
+            var descSpelled = ascSpelled.Take(up.Length - 1).Reverse().ToArray();
+            return ascSpelled.Concat(descSpelled).ToArray();
+        }
+
+        private static int ComputeSpellDiff(char letter, int targetMidi)
+        {
+            var naturalPC = NaturalPcForLetter(letter);
+            var letterOctave = (targetMidi - naturalPC) / 12;
+            var naturalMidi = (letterOctave + 1) * 12 + naturalPC;
+            var diff = targetMidi - naturalMidi;
+            if (diff > 6) diff -= 12;
+            else if (diff < -6) diff += 12;
+            return diff;
         }
     }
 }

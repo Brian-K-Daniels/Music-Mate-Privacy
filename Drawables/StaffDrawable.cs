@@ -212,10 +212,11 @@ namespace musicmate.Drawables
             }
             else
             {
+                var activeAccidentals = new Dictionary<(char, int), string>();
                 foreach (var n in _session.NotesToDraw)
                 {
                     var scaledX = leftMargin + (n.X - minSrcX) * scale;
-                    DrawNoteWithLedger(canvas, n, staffCoreTop, staffCoreBottom, staffSpacing, noteHeadH, headW, scaledX, accidentalCount, backgroundColor, contrastColor, true);
+                    DrawNoteWithLedger(canvas, n, staffCoreTop, staffCoreBottom, staffSpacing, noteHeadH, headW, scaledX, accidentalCount, backgroundColor, contrastColor, true, activeAccidentals);
                 }
             }
 
@@ -440,7 +441,8 @@ namespace musicmate.Drawables
 
         // Draw a regular note (not tuner-centered) with ledger lines, accidental and stem.
         private void DrawNoteWithLedger(ICanvas canvas, NoteInfo note, float staffTop, float staffBottom, float spacing,
-                 float headH, float headW, float centerX, int accidentalCount, Color fillColor, Color strokeColor, bool drawAccidental)
+             float headH, float headW, float centerX, int accidentalCount, Color fillColor, Color strokeColor, bool drawAccidental,
+             Dictionary<(char, int), string>? activeAccidentals = null)
         {
             canvas.SaveState();
             canvas.FillColor = fillColor;
@@ -475,20 +477,43 @@ namespace musicmate.Drawables
                 var raw = note.Name.Trim();
                 char letter = char.ToUpperInvariant(raw[0]);
 
-                // What the key signature already implies for this letter (null = nothing)
+                // Parse octave from note name
+                int noteOctave = 4;
+                for (int oi = raw.Length - 1; oi >= 0; oi--)
+                {
+                    if (char.IsDigit(raw[oi]))
+                    {
+                        int oj = oi;
+                        while (oj > 0 && char.IsDigit(raw[oj - 1])) oj--;
+                        if (int.TryParse(raw.Substring(oj, oi - oj + 1), out var oct)) noteOctave = oct;
+                        break;
+                    }
+                }
+                var noteKey = (letter, noteOctave);
+
                 var sigAcc = GetSignatureAccidentalForLetter(letter, accidentalCount);
 
-                bool wantsSharp = raw.Contains('#');
-                bool wantsFlat = raw.Contains('b');
-                bool wantsNatural = !wantsSharp && !wantsFlat;
+                bool wantsDoubleSharp = raw.Contains("##");
+                bool wantsDoubleFlat = raw.Contains("bb");
+                bool wantsSharp = !wantsDoubleSharp && raw.Contains('#');
+                bool wantsFlat = !wantsDoubleFlat && raw.Contains('b');
+                bool wantsNatural = !wantsSharp && !wantsFlat && !wantsDoubleSharp && !wantsDoubleFlat;
 
                 string? accidentalGlyph = null;
                 bool isAccFlat = false;
 
-                if (wantsSharp && sigAcc != "#")
+                if (wantsDoubleSharp && sigAcc != "#")
+                {
+                    accidentalGlyph = "𝄪";
+                }
+                else if (wantsDoubleFlat && sigAcc != "b")
+                {
+                    accidentalGlyph = "𝄫";
+                    isAccFlat = true;
+                }
+                else if (wantsSharp && sigAcc != "#")
                 {
                     accidentalGlyph = "♯";
-                    isAccFlat = false;
                 }
                 else if (wantsFlat && sigAcc != "b")
                 {
@@ -497,11 +522,19 @@ namespace musicmate.Drawables
                 }
                 else if (wantsNatural && sigAcc != null)
                 {
-                    // Note is natural but key signature implies an accidental → show ♮
-                    // e.g. B♮ in C Harmonic Minor (key sig has B♭)
                     accidentalGlyph = "♮";
-                    isAccFlat = false;
                 }
+                // Courtesy accidental: this (letter, octave) was locally altered earlier in the sequence.
+                // Show whichever accidental the key signature requires, or ♮ if none — purely visual.
+                else if (activeAccidentals != null && activeAccidentals.ContainsKey(noteKey))
+                {
+                    accidentalGlyph = sigAcc == "#" ? "♯" : sigAcc == "b" ? "♭" : "♮";
+                    isAccFlat = accidentalGlyph == "♭";
+                }
+
+                // Update the within-sequence tracker keyed by (letter, octave)
+                if (activeAccidentals != null && accidentalGlyph != null)
+                    activeAccidentals[noteKey] = accidentalGlyph;
 
                 if (accidentalGlyph != null)
                 {
@@ -516,12 +549,10 @@ namespace musicmate.Drawables
                     if (isAccFlat)
                         drawY += flatDY;
 
-                    // Per-glyph horizontal clearance from the note head, converted from mm to dp (160 dpi baseline).
-                    // Flats are wider glyphs and need more clearance; sharps/naturals need a smaller extra gap.
                     const float mmToDp = 160f / 25.4f;
                     var accX = isAccFlat
-                        ? xLeft - headW * 1.1f - 1.5f * mmToDp   // flats: 2 mm extra clearance 2.0->1.5
-                        : xLeft - headW * 1.1f - 0.7f * mmToDp;  // sharps / naturals: 0.5 mm extra clearance 0.5 -> 0.7
+                        ? xLeft - headW * 1.1f - 1.5f * mmToDp
+                        : xLeft - headW * 1.1f - 0.7f * mmToDp;
 
                     canvas.DrawString(accidentalGlyph,
                         accX,
