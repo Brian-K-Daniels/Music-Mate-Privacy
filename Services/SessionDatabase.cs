@@ -13,6 +13,7 @@ public class SessionStat
     [PrimaryKey, AutoIncrement]
     public int Id { get; set; }
     public string Key { get; set; } = "";
+    
     public string Tune { get; set; } = "";
     public string Instrument { get; set; } = "";  // NEW: Instrument column
     public DateTime Dt { get; set; }      // Date and time
@@ -42,6 +43,8 @@ public class SessionStat
     }
     [Ignore]
     public bool IsSelected { get; set; }
+    [Ignore]
+    public string DisplayKey => Sc == "Random" ? "C" : Key;
     public string KeyAndScale => $"{Key} {Sc}";
     [Ignore]
     public Microsoft.Maui.Graphics.Color ContrastingTextColor { get; set; }= Microsoft.Maui.Graphics.Colors.Red;

@@ -1062,6 +1062,10 @@ namespace musicmate.Pages
         private async Task SaveSessionStatAsync()
         {
             if (_sessionDb == null) return;
+
+            // Do not record Tuner sessions
+            if (_session.Tune == "Tuner") return;
+
             await _sessionDb.InitializeAsync();
 
             var (correct, wrong, apc) = _session.GetSessionCorrectWrongTotals();
@@ -1075,9 +1079,8 @@ namespace musicmate.Pages
             {
                 Dt = DateTime.Now,
                 Key = _session.Key,
-                Tune = _session.Tune ?? string.Empty,
                 Instrument = _session.Instrument?.Split(',')[0].Trim() ?? string.Empty,
-                Sc = _session.SelectedScale,
+                Sc = _session.Tune == "Random" ? "Random" : _session.SelectedScale,
                 Hi = hi?.Name ?? "",
                 Lo = lo?.Name ?? "",
                 Pc = apc,
@@ -1088,48 +1091,6 @@ namespace musicmate.Pages
 
             await _sessionDb.InsertAsync(stat);
         }
-
-        //private async void Session_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-        //{
-        //    if (e.PropertyName == nameof(_session.SelectedScale) ||
-        //        e.PropertyName == nameof(NoteSessionService.Instrument) ||
-        //        e.PropertyName == nameof(NoteSessionService.Key) ||
-        //        e.PropertyName == nameof(NoteSessionService.Tune))
-        //    {
-        //        await RegenerateNotesAsync();
-        //        UpdateTunerVisibility();
-        //        UpdateKeyPickerVisibility();
-        //    }
-
-        //    if (e.PropertyName == nameof(_session.SelectedScale) ||
-        //        e.PropertyName == nameof(NoteSessionService.Key) ||
-        //        e.PropertyName == nameof(NoteSessionService.Instrument))
-        //    {
-        //        UpdateConcertKeyLabel();
-        //        UpdateSelectedScaleLabel();
-        //    }
-        //}
-
-        //private void UpdateConcertKeyLabel()
-        //{
-        //    ConcertKeyLabel.Text = $"(Concert {_session.GetConcertKey()})";
-        //}
-
-        ////private void UpdateSelectedScaleLabel()
-        ////{
-        ////    SelectedScaleLabel.Text = _session.SelectedScale;
-        ////}
-
-
-        //private void UpdateKeyPickerVisibility()
-        //{
-        //    var hide = _session.Tune == "Tuner";
-        //    KeyPicker.IsVisible = !hide;
-        //    KeyLabel.IsVisible = !hide;
-        //    KeyBorder.IsVisible = !hide;
-        //    SelectedScaleLabel.IsVisible = !hide;
-        //    ConcertKeyLabel.IsVisible = !hide;
-        //}
         private async void Session_PropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
             if (e.PropertyName == nameof(_session.SelectedScale) ||
@@ -1200,6 +1161,20 @@ namespace musicmate.Pages
                 _session.Tune = selected;
                 Preferences.Default.Set("SelectedTune", selected);
                 IsAutoRepeatVisible = selected == "Random";
+
+                // Force key to C when Random is selected so the staff shows no sharps/flats
+                if (selected == "Random")
+                {
+                    _session.Key = "C";
+                    var keyItems = KeyPicker.ItemsSource as string[];
+                    var cIdx = keyItems != null ? Array.IndexOf(keyItems, "C") : -1;
+                    if (cIdx >= 0)
+                    {
+                        KeyPicker.SelectedIndex = cIdx;
+                        _lastFreeKeyIndex = cIdx;
+                    }
+                }
+
                 UpdateKeyPickerVisibility();
                 return;
             }
@@ -1220,7 +1195,6 @@ namespace musicmate.Pages
             IsAutoRepeatVisible = false;
             UpdateKeyPickerVisibility();
         }
-
         
 
         private async void OnSettingsChanged(object? sender, EventArgs e)
