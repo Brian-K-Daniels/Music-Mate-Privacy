@@ -55,11 +55,34 @@ namespace musicmate.Pages
         {
             _orientation?.ForceLandscape();
             base.OnAppearing();
+            _viewModel?.RefreshStorageInfo();
         }
 
         private async void OnNavigateHomeClicked(object sender, EventArgs e)
         {
             await Shell.Current.GoToAsync("//MainPage");
+        }
+
+        // ── Reset to defaults ─────────────────────────────────────────────────
+
+        private async void OnResetSettingsClicked(object? sender, EventArgs e)
+        {
+            bool confirmed = await DisplayAlertAsync(
+                "Reset Settings",
+                "Reset all settings to factory defaults?",
+                "Reset", "Cancel");
+
+            if (!confirmed) return;
+
+            _viewModel.ResetToDefaults();
+
+            // Re-sync note range pickers to the reset free-range indices
+            var notes = _viewModel.WhiteKeyNoteNames?.ToList();
+            if (notes != null)
+            {
+                _lastFreeLowestIndex  = notes.IndexOf(SettingsPageViewModel.DefaultLowestNote);
+                _lastFreeHighestIndex = notes.IndexOf(SettingsPageViewModel.DefaultHighestNote);
+            }
         }
 
         // ── Accidental % slider ───────────────────────────────────────────────

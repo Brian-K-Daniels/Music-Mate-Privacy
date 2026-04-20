@@ -61,6 +61,9 @@ public class SessionDatabase
         _db = new SQLiteAsyncConnection(dbPath);
     }
 
+    // Add this public property
+    public string DatabasePath => _dbPath;
+
     public async Task InitializeAsync()
     {
         await _db.CreateTableAsync<SessionStat>();
@@ -131,4 +134,35 @@ public class SessionDatabase
 #endif
     }
 
+        /// <summary>
+        /// Deletes the oldest SessionStat rows by date until the DB file is under
+        /// <paramref name="maxBytes"/>. Does nothing if already within limit.
+        /// </summary>
+        public async Task PruneToSizeLimitAsync(long maxBytes)
+        {
+            try
+            {
+                var fileInfo = new FileInfo(_dbPath);
+                if (!fileInfo.Exists || fileInfo.Length <= maxBytes)
+                    return;
+
+                while (true)
+                {
+                    fileInfo.Refresh();
+                    if (fileInfo.Length <= maxBytes) break;
+
+                    var oldest = await _db.Table<SessionStat>()
+                        .OrderBy(s => s.Dt)
+                        .FirstOrDefaultAsync();
+
+                    if (oldest == null) break;
+
+                    await _db.DeleteAsync(oldest);
+                }
+            }
+            catch (Exception ex)
+            {
+                Utils.Log($"[SessionDatabase.PruneToSizeLimitAsync] {ex.Message}");
+            }
+        }
 }

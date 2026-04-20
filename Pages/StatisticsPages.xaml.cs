@@ -20,12 +20,6 @@ namespace musicmate.Pages
         {
             InitializeComponent();
 
-//#if DEBUG
-//            DeleteAllButton.IsVisible = true;
-//#else
-//            DeleteAllButton.IsVisible = false;
-//#endif
-
             _orientationService = ServiceHelper.GetService<IOrientationService>()!;
 
             _noteDatabase = ServiceHelper.GetService<NoteDatabase>()!;

@@ -54,6 +54,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <MauiAsset Remove="Resources\Raw\about001.html" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="Resources\Raw\about001.html" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Anjoxam.BillingClient.Droid" Version="7.1.1" />
     <PackageReference Include="CommunityToolkit.Maui" Version="14.1.0" />
     <PackageReference Include="CommunityToolkit.Maui.Core" Version="14.1.0" />

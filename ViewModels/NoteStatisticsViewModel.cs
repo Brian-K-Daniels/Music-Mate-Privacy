@@ -2,6 +2,7 @@ using musicmate.Services;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using musicmate.Utilities;
+using System.Windows.Input;
 
 namespace musicmate.ViewModels
 {  
@@ -21,6 +22,18 @@ namespace musicmate.ViewModels
 
         public ObservableCollection<NoteStat> NoteStats { get; } = new();
         public ObservableCollection<SessionStat> SessionStats { get; } = new();
+
+        // Sorting state for Note Stats
+        private string _noteCurrentSortColumn = "";
+        private bool _noteIsAscending = true;
+
+        // Sorting state for Session Stats
+        private string _sessionCurrentSortColumn = "";
+        private bool _sessionIsAscending = true;
+
+        // Commands
+        public ICommand SortNoteStatsCommand { get; }
+        public ICommand SortSessionStatsCommand { get; }
 
         private bool _isLoading = false;
         public bool IsLoading
@@ -56,6 +69,9 @@ namespace musicmate.ViewModels
             _sessionDatabase = sessionDatabase;
             _themeService = themeService;
             _session = session;
+
+            SortNoteStatsCommand = new Command<string>(SortNoteStatsByColumn);
+            SortSessionStatsCommand = new Command<string>(SortSessionStatsByColumn);
         }
 
         // Expose a debug flag to the view so debug-only UI can be shown/hidden via binding
@@ -160,6 +176,131 @@ namespace musicmate.ViewModels
         protected void OnPropertyChanged(string propertyName)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        }     
+        }
+
+        // Sort indicator properties for Note Stats
+        public string NoteSortIndicator => _noteCurrentSortColumn == "Note" ? (_noteIsAscending ? "▲" : "▼") : "";
+        public string CorrectSortIndicator => _noteCurrentSortColumn == "Correct" ? (_noteIsAscending ? "▲" : "▼") : "";
+        public string WrongSortIndicator => _noteCurrentSortColumn == "Wrong" ? (_noteIsAscending ? "▲" : "▼") : "";
+        public string PercentCorrectSortIndicator => _noteCurrentSortColumn == "PercentCorrect" ? (_noteIsAscending ? "▲" : "▼") : "";
+        public string MsAvgSortIndicator => _noteCurrentSortColumn == "MsAvg" ? (_noteIsAscending ? "▲" : "▼") : "";
+
+        // Sort indicator properties for Session Stats
+        public string DateSortIndicator => _sessionCurrentSortColumn == "Date" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string ScaleSortIndicator => _sessionCurrentSortColumn == "Scale" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string KeySortIndicator => _sessionCurrentSortColumn == "Key" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string CorrectPercentSortIndicator => _sessionCurrentSortColumn == "CorrectPercent" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string TempoSortIndicator => _sessionCurrentSortColumn == "Tempo" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string TempoCVSortIndicator => _sessionCurrentSortColumn == "TempoCV" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string InstrumentSortIndicator => _sessionCurrentSortColumn == "Instrument" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string HiSortIndicator => _sessionCurrentSortColumn == "Hi" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string LoSortIndicator => _sessionCurrentSortColumn == "Lo" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string TempoSDSortIndicator => _sessionCurrentSortColumn == "TempoSD" ? (_sessionIsAscending ? "▲" : "▼") : "";
+
+        private void SortNoteStatsByColumn(string columnName)
+        {
+            // Toggle sort direction if same column, otherwise default to ascending
+            if (_noteCurrentSortColumn == columnName)
+                _noteIsAscending = !_noteIsAscending;
+            else
+            {
+                _noteCurrentSortColumn = columnName;
+                _noteIsAscending = true;
+            }
+
+            var sorted = (columnName switch
+            {
+                "Note" => _noteIsAscending
+                    ? NoteStats.OrderBy(s => s.WrittenName)
+                    : NoteStats.OrderByDescending(s => s.WrittenName),
+                "Correct" => _noteIsAscending
+                    ? NoteStats.OrderBy(s => s.Correct)
+                    : NoteStats.OrderByDescending(s => s.Correct),
+                "Wrong" => _noteIsAscending
+                    ? NoteStats.OrderBy(s => s.Wrong)
+                    : NoteStats.OrderByDescending(s => s.Wrong),
+                "PercentCorrect" => _noteIsAscending
+                    ? NoteStats.OrderBy(s => s.PercentCorrect)
+                    : NoteStats.OrderByDescending(s => s.PercentCorrect),
+                "MsAvg" => _noteIsAscending
+                    ? NoteStats.OrderBy(s => s.MsAverage)
+                    : NoteStats.OrderByDescending(s => s.MsAverage),
+                _ => NoteStats.OrderBy(s => s.WrittenName) // Default to Note name ordering
+            }).ToList(); // Materialize the sequence before clearing
+
+            NoteStats.Clear();
+            foreach (var stat in sorted)
+                NoteStats.Add(stat);
+
+            // Update all sort indicators
+            OnPropertyChanged(nameof(NoteSortIndicator));
+            OnPropertyChanged(nameof(CorrectSortIndicator));
+            OnPropertyChanged(nameof(WrongSortIndicator));
+            OnPropertyChanged(nameof(PercentCorrectSortIndicator));
+            OnPropertyChanged(nameof(MsAvgSortIndicator));
+        }
+
+        private void SortSessionStatsByColumn(string columnName)
+        {
+            // Toggle sort direction if same column, otherwise default to ascending
+            if (_sessionCurrentSortColumn == columnName)
+                _sessionIsAscending = !_sessionIsAscending;
+            else
+            {
+                _sessionCurrentSortColumn = columnName;
+                _sessionIsAscending = true;
+            }
+
+            var sorted = (columnName switch
+            {
+                "Date" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.Dt)
+                    : SessionStats.OrderByDescending(s => s.Dt),
+                "Scale" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.Sc)
+                    : SessionStats.OrderByDescending(s => s.Sc),
+                "Key" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.Key)
+                    : SessionStats.OrderByDescending(s => s.Key),
+                "CorrectPercent" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.Pc)
+                    : SessionStats.OrderByDescending(s => s.Pc),
+                "Tempo" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.Tp)
+                    : SessionStats.OrderByDescending(s => s.Tp),
+                "TempoCV" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.Cf)
+                    : SessionStats.OrderByDescending(s => s.Cf),
+                "Instrument" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.Instrument)
+                    : SessionStats.OrderByDescending(s => s.Instrument),
+                "Hi" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.Hi)
+                    : SessionStats.OrderByDescending(s => s.Hi),
+                "Lo" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.Lo)
+                    : SessionStats.OrderByDescending(s => s.Lo),
+                "TempoSD" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.Ts)
+                    : SessionStats.OrderByDescending(s => s.Ts),
+                _ => SessionStats.OrderBy(s => s.Dt) // Default to Date ordering
+            }).ToList(); // Materialize the sequence before clearing
+
+            SessionStats.Clear();
+            foreach (var stat in sorted)
+                SessionStats.Add(stat);
+
+            // Update all sort indicators
+            OnPropertyChanged(nameof(DateSortIndicator));
+            OnPropertyChanged(nameof(ScaleSortIndicator));
+            OnPropertyChanged(nameof(KeySortIndicator));
+            OnPropertyChanged(nameof(CorrectPercentSortIndicator));
+            OnPropertyChanged(nameof(TempoSortIndicator));
+            OnPropertyChanged(nameof(TempoCVSortIndicator));
+            OnPropertyChanged(nameof(InstrumentSortIndicator));
+            OnPropertyChanged(nameof(HiSortIndicator));
+            OnPropertyChanged(nameof(LoSortIndicator));
+            OnPropertyChanged(nameof(TempoSDSortIndicator));
+        }
     }
 }

@@ -228,7 +228,7 @@
             </Grid>
           </Grid>
 
-          <!-- 8 px gap then the background-color button and Repeat button on same row -->
+          <!-- 8 px gap then the background-color button and Repeat buttons on same row -->
           <HorizontalStackLayout Spacing="12" HorizontalOptions="Center" Margin="0,8,0,0">
             <Button Text="Select background color"
                     FontSize="10"
@@ -238,17 +238,43 @@
                     HorizontalOptions="Center"
                     Clicked="OnColorButtonClicked" />
 
-            <Button x:Name="AutoRepeatToggleButton"
-                    Text="Repeat"
+            <!-- Random mode: two buttons for "Repeat New" and "Repeat Same" -->
+            <Button x:Name="AutoRepeatNewButton"
+                    Text="Repeat New"
                     Style="{StaticResource CompactBrownButton}"
-                    WidthRequest="80"
-                    MinimumWidthRequest="80"
+                    WidthRequest="110"
+                    MinimumWidthRequest="110"
                     MinimumHeightRequest="36"
                     Margin="4,0,4,0"
                     HorizontalOptions="Start"
                     VerticalOptions="Center"
-                    Clicked="AutoRepeatToggleButtonClicked"
-                    IsVisible="{Binding Source={x:Reference mainPage}, Path=IsAutoRepeatVisible}" />
+                    Clicked="OnAutoRepeatNewClicked"
+                    IsVisible="{Binding Source={x:Reference mainPage}, Path=IsRandomRepeatButtonsVisible}" />
+
+            <Button x:Name="AutoRepeatSameButton"
+                    Text="Repeat Same"
+                    Style="{StaticResource CompactBrownButton}"
+                    WidthRequest="110"
+                    MinimumWidthRequest="110"
+                    MinimumHeightRequest="36"
+                    Margin="4,0,4,0"
+                    HorizontalOptions="Start"
+                    VerticalOptions="Center"
+                    Clicked="OnAutoRepeatSameClicked"
+                    IsVisible="{Binding Source={x:Reference mainPage}, Path=IsRandomRepeatButtonsVisible}" />
+
+            <!-- Scale mode: single "Repeat" button -->
+            <Button x:Name="AutoRepeatScaleButton"
+                    Text="Repeat"
+                    Style="{StaticResource CompactBrownButton}"
+                    WidthRequest="110"
+                    MinimumWidthRequest="110"
+                    MinimumHeightRequest="36"
+                    Margin="4,0,4,0"
+                    HorizontalOptions="Start"
+                    VerticalOptions="Center"
+                    Clicked="OnAutoRepeatScaleClicked"
+                    IsVisible="{Binding Source={x:Reference mainPage}, Path=IsScaleRepeatButtonVisible}" />
           </HorizontalStackLayout>
         </VerticalStackLayout>
 

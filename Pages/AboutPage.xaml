@@ -99,9 +99,9 @@
               VerticalOptions="Center">
         <SearchBar x:Name="AboutSearchBar"
                    Placeholder="Search About…"
-                   TextColor="{Binding ContrastingTextColor}"
-                   PlaceholderColor="{Binding ContrastingTextColor}"
-                   BackgroundColor="Transparent"
+                   TextColor="Black"
+                   PlaceholderColor="#888888"
+                   BackgroundColor="White"
                    HorizontalOptions="Fill"
                    FontSize="{Binding SelectedFontSize}"
                    TextChanged="OnAboutSearchTextChanged"

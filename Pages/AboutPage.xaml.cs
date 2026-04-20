@@ -6,6 +6,8 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.IO;
+using Microsoft.Maui.Storage;
 
 namespace musicmate.Pages
 {
@@ -133,15 +135,9 @@ namespace musicmate.Pages
                            .Replace("amp:amp:", "&", StringComparison.OrdinalIgnoreCase)
                            .Replace("&amp;amp;", "&", StringComparison.OrdinalIgnoreCase);
 
-                // Normalize HTML entities in text (safe for typical HTML content)
-                try
-                {
-                    html = WebUtility.HtmlDecode(html);
-                }
-                catch
-                {
-                    // best-effort: if decode fails, continue with the original html
-                }
+                // Clean up Word-specific conditional comments and XML blobs that non-IE browsers
+                // (including Android WebView) cannot parse.
+                html = CleanWordHtml(html);
 
                 var vm = BindingContext as AboutPageViewModel;
                 var bg = _themeService?.PanelBackgroundColor ?? Colors.White;
@@ -187,30 +183,22 @@ namespace musicmate.Pages
         private static string InjectCssIntoHtml(string html, string css)
         {
             if (string.IsNullOrEmpty(html)) return html;
+
             var lower = html.ToLowerInvariant();
-            int headIndex = lower.IndexOf("<head");
-            if (headIndex >= 0)
+
+            // Insert just before </head>. This is safe because </head> has no attributes
+            // and can never contain a stray > like <head> or the elements inside head can.
+            // Inserting AFTER <head ...> was broken for Word-generated HTML whose first child
+            // has style="margin-bottom:0in" — the first > found was inside that attribute,
+            // causing the injected block to land mid-attribute and leak CSS text into the body.
+            int headCloseIdx = lower.IndexOf("</head>");
+            if (headCloseIdx >= 0)
             {
-                int headClose = html.IndexOf('>', headIndex);
-                if (headClose >= 0)
-                {
-                    var meta = "";
-                    if (!lower.Contains("charset"))
-                    {
-                        meta = "<meta charset=\"utf-8\">";
-                    }
-                    return html.Insert(headClose + 1, meta + $"<style>{css}</style>");
-                }
+                var meta = lower.Contains("charset") ? "" : "<meta charset=\"utf-8\">";
+                return html.Insert(headCloseIdx, meta + $"<style>{css}</style>");
             }
-            int htmlIndex = lower.IndexOf("<html");
-            if (htmlIndex >= 0)
-            {
-                int htmlClose = html.IndexOf('>', htmlIndex);
-                if (htmlClose >= 0)
-                {
-                    return html.Insert(htmlClose + 1, $"<head><meta charset=\"utf-8\"><style>{css}</style></head>");
-                }
-            }
+
+            // Fallback: no </head>; wrap the whole thing
             return $"<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><style>{css}</style></head><body>{html}</body></html>";
         }
 
@@ -455,6 +443,49 @@ namespace musicmate.Pages
         private async void OnNavigateHomeClicked(object sender, EventArgs e)
         {
             await Shell.Current.GoToAsync("//MainPage");
+        }
+
+        /// <summary>
+        /// Removes Word-specific conditional comments and XML blobs that non-IE browsers
+        /// (including Android WebView) cannot parse. Unrecognised (left arrow bracket)![if ...]> tags are left
+        /// "open" by the parser, swallowing the opening of the next real element and causing
+        /// its attributes to appear as visible text in the rendered page.
+        /// </summary>
+        private static string CleanWordHtml(string html)
+        {
+            // 1. Non-standard Word conditionals: <![if ...]>...</[endif]>
+            html = System.Text.RegularExpressions.Regex.Replace(
+                html,
+                @"<!\[if[^\]]*\]>.*?<!\[endif\]>",
+                string.Empty,
+                System.Text.RegularExpressions.RegexOptions.Singleline |
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            // 2. Standard IE conditional comments: <!--[if ...]>...</[endif]-->
+            html = System.Text.RegularExpressions.Regex.Replace(
+                html,
+                @"<!--\[if[^\]]*\]>.*?<!\[endif\]-->",
+                string.Empty,
+                System.Text.RegularExpressions.RegexOptions.Singleline |
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            // 3. Any orphaned tags that survived the above (defensive)
+            html = System.Text.RegularExpressions.Regex.Replace(
+                html, @"<!\[if[^\]]*\]>", string.Empty,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            html = System.Text.RegularExpressions.Regex.Replace(
+                html, @"<!\[endif\]>", string.Empty,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            // 4. Word XML blobs in <head> (<xml>...</xml>)
+            html = System.Text.RegularExpressions.Regex.Replace(
+                html,
+                @"<xml>.*?</xml>",
+                string.Empty,
+                System.Text.RegularExpressions.RegexOptions.Singleline |
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            return html;
         }
     }
 }

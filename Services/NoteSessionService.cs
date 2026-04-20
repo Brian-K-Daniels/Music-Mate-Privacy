@@ -927,6 +927,13 @@ namespace musicmate.Services
             if (idx >= NotesToDraw.Count)
                 return false;
 
+            // Bounds check to prevent race condition when collection is modified from another thread
+            if (idx < 0 || idx >= FeedbackViewModels.Count)
+            {
+                Utils.Log($"[Feedback] Index {idx} out of bounds for FeedbackViewModels (Count={FeedbackViewModels.Count}). Session may have been reset.");
+                return false;
+            }
+
             var targetNote = NotesToDraw[idx];
             var detectedMidi = (int)Math.Round(69 + 12 * Math.Log(freq / 440.0, 2));
             var detMidiWritten = detectedMidi - GetInstrumentTransposeOffset();

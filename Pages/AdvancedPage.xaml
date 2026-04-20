@@ -57,7 +57,7 @@
   <ScrollView>
     <VerticalStackLayout x:Name="AdvancedMainLayount" Spacing="16" HorizontalOptions="Fill" Padding="16, 8">
         <VerticalStackLayout Spacing="10" HorizontalOptions="Fill">
-        <Grid ColumnDefinitions="160,*,60" ColumnSpacing="8" HorizontalOptions="Fill"
+        <Grid ColumnDefinitions="250,Auto,80" ColumnSpacing="8" HorizontalOptions="Fill"
               RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
             <!-- Pitch Tolerance -->
             <Label Grid.Row="0" Grid.Column="0" Text="Pitch Tolerance (cents)" FontSize="12" VerticalOptions="Center"/>

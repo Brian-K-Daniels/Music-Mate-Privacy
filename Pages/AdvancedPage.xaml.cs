@@ -68,8 +68,9 @@ namespace musicmate.Pages
                 if (!doReset)
                     return;
 
-                // Perform settings reset
-                _viewModel.ResetToDefaults();
+                // Use factory defaults from SettingsPageViewModel (single source of truth)
+                var settingsVm = new musicmate.ViewModels.SettingsPageViewModel();
+                settingsVm.ResetToDefaults();
 
                 // Ask whether to delete stored data
                 // Use DisplayActionSheetAsync with a cancel "Don't delete" and a destructive "Delete both"

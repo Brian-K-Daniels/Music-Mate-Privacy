@@ -12,6 +12,7 @@ namespace musicmate.Services
     {
         private readonly SQLiteAsyncConnection _db;
         private readonly string _dbPath;
+        public string DatabasePath => _dbPath;
 
         public NoteDatabase(string dbPath)
         {
@@ -76,6 +77,40 @@ namespace musicmate.Services
 #else
             throw new InvalidOperationException("DeleteDatabaseAsync is only available in DEBUG builds.");
 #endif
+        }
+
+        /// <summary>
+        /// Deletes the oldest NoteStat rows (by WrittenName alphabetically as a proxy) until
+        /// the DB file is under <paramref name="maxBytes"/>. Does nothing if already within limit.
+        /// </summary>
+        public async Task PruneToSizeLimitAsync(long maxBytes)
+        {
+            try
+            {
+                var fileInfo = new FileInfo(_dbPath);
+                if (!fileInfo.Exists || fileInfo.Length <= maxBytes)
+                    return;
+
+                // Delete rows with the lowest correct+wrong totals first (least useful data)
+                while (true)
+                {
+                    fileInfo.Refresh();
+                    if (fileInfo.Length <= maxBytes) break;
+
+                    // Find and delete the row with fewest total attempts
+                    var oldest = await _db.Table<NoteStat>()
+                        .OrderBy(n => n.Correct + n.Wrong)
+                        .FirstOrDefaultAsync();
+
+                    if (oldest == null) break;
+
+                    await _db.DeleteAsync(oldest);
+                }
+            }
+            catch (Exception ex)
+            {
+                Utils.Log($"[NoteDatabase.PruneToSizeLimitAsync] {ex.Message}");
+            }
         }
     }
 }

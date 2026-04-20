@@ -717,8 +717,11 @@ namespace musicmate.Drawables
                     spacingX = headW * 2f;
                 }
 
-                var boxWidth = Math.Max(0, spacingX * 0.96f - gap * 2f);
-                var boxX = noteCenterX - boxWidth / 2f;
+                // Limit feedback rectangle width so it doesn't become excessively wide on large displays
+                const float MaxFeedbackBoxWidth = 60f; // pixels
+                var desiredBoxWidth = Math.Max(0, spacingX * 0.96f - gap * 2f);
+                var boxWidth = Math.Min(MaxFeedbackBoxWidth, desiredBoxWidth);
+                var boxX = noteCenterX - boxWidth / 2f; // keep centered on note head
                 var boxY = rowY;
 
                 // In DrawSmallFeedback, use PlaybackHighlightIndex to draw a transient visual highlight.

@@ -9,21 +9,22 @@ namespace musicmate.ViewModels
 {
     public class SettingsPageViewModel : INotifyPropertyChanged
     {
-        // Color logic
-        //private Color _backgroundColor = Colors.White;
-        //public Color BackgroundColor
-        //{
-        //    get => _backgroundColor;
-        //    set
-        //    {
-        //        if (_backgroundColor != value)
-        //        {
-        //            _backgroundColor = value;
-        //            OnPropertyChanged(nameof(BackgroundColor));
-        //            OnPropertyChanged(nameof(ContrastingTextColor));
-        //        }
-        //    }
-        //}
+        // ── Factory defaults ──────────────────────────────────────────────────
+        public static string DefaultInstrument => NoteSessionService.InstrumentOptions.Length > 3 ? NoteSessionService.InstrumentOptions[3] : "C";
+        public const string DefaultKey               = "C";
+        public const string DefaultTune             = "Major";
+        public const string DefaultLowestNote       = "C4";
+        public const string DefaultHighestNote      = "F5";
+        public const int    DefaultPlaybackBpm      = 100;
+        public const int    DefaultAccidentalPct    = 30;
+        public const int    DefaultCorrectThreshold = 95;
+        public const int    DefaultMinCorrectCount  = 6;
+        public const int    DefaultOmitMsAvg        = 400;
+        public const bool   DefaultAutoStart        = false;
+        public const bool   DefaultCollectNote      = true;
+        public const bool   DefaultCollectSession   = true;
+        public const int    DefaultMaxSessionDbMb   = 50;
+
         private Color _panelBackgroundColor = Color.FromArgb(Preferences.Get("musicmate.PanelBackgroundColor", Colors.White.ToHex()));
         private readonly NoteSessionService? _session;
         private readonly ThemeService? _theme;
@@ -119,7 +120,7 @@ namespace musicmate.ViewModels
             Enumerable.Range(21, 88)
                 .Select(midi => MidiToNoteName(midi, false))
                 .Where(name => !name.Contains('#') && !name.Contains('b'))
-                .ToArray()).Reverse().ToArray();  //  2026.04.14 1656  
+                .ToArray()).Reverse().ToArray();
 
         private string _selectedScale = Preferences.Get("musicmate.SelectedScale", "Major");
         public string SelectedScale
@@ -219,7 +220,8 @@ namespace musicmate.ViewModels
             {
                 var clamped = Math.Clamp(value, 30, 400);
                 if ((_session?.PlaybackBpm ?? _playbackBpm) == clamped) return;
-                if (_session != null)
+                if (_session != null
+                )
                 {
                     _session.PlaybackBpm = clamped;
                     OnPropertyChanged(nameof(PlaybackBpm));
@@ -298,7 +300,6 @@ namespace musicmate.ViewModels
             }
         }
 
-        // OmitMsAvgThreshold added to support settings binding
         private int _omitMsAvgThreshold = Preferences.Get("musicmate.OmitMsAvgThreshold", 0);
         public int OmitMsAvgThreshold
         {
@@ -313,11 +314,142 @@ namespace musicmate.ViewModels
             }
         }
 
+        // ── Statistics Collection ─────────────────────────────────────────────
+        const string KeyCollectNote    = "CollectNoteStats";
+        const string KeyCollectSession = "CollectSessionStats";
+        const string KeyMaxSessionDbMb = "MaxSessionDbSizeMb";
+
+        private bool _collectNoteStats = Preferences.Default.Get("CollectNoteStats", true);
+        public bool CollectNoteStats
+        {
+            get => _collectNoteStats;
+            set
+            {
+                if (_collectNoteStats == value) return;
+                _collectNoteStats = value;
+                Preferences.Default.Set(KeyCollectNote, value);
+                OnPropertyChanged(nameof(CollectNoteStats));
+            }
+        }
+
+        private bool _collectSessionStats = Preferences.Default.Get("CollectSessionStats", true);
+        public bool CollectSessionStats
+        {
+            get => _collectSessionStats;
+            set
+            {
+                if (_collectSessionStats == value) return;
+                _collectSessionStats = value;
+                Preferences.Default.Set(KeyCollectSession, value);
+                OnPropertyChanged(nameof(CollectSessionStats));
+            }
+        }
+
+
+        private double _maxSessionDbSizeMb = Preferences.Default.Get("MaxSessionDbSizeMb", 50);
+        public double MaxSessionDbSizeMb
+        {
+            get => _maxSessionDbSizeMb;
+            set
+            {
+                if (_maxSessionDbSizeMb == value) return;
+                _maxSessionDbSizeMb = value;
+                Preferences.Default.Set(KeyMaxSessionDbMb, (int)value);
+                OnPropertyChanged(nameof(MaxSessionDbSizeMb));
+                OnPropertyChanged(nameof(MaxSessionDbSizeDisplay));
+            }
+        }
+        public string MaxSessionDbSizeDisplay => $"Max Session DB size: {(int)MaxSessionDbSizeMb} MB";
+
+        // ── Storage info (read-only, refreshed on page appear) ────────────────
+        private double _sessionDbSizeMb;
+        public double SessionDbSizeMb
+        {
+            get => _sessionDbSizeMb;
+            private set { _sessionDbSizeMb = value; OnPropertyChanged(nameof(SessionDbSizeMb)); OnPropertyChanged(nameof(MemoryUsageDisplay)); }
+        }
+
+        private double _availableStorageMb = 500;
+        public double AvailableStorageMb
+        {
+            get => _availableStorageMb;
+            private set { _availableStorageMb = value; OnPropertyChanged(nameof(AvailableStorageMb)); OnPropertyChanged(nameof(MemoryUsageDisplay)); }
+        }
+
+        public string MemoryUsageDisplay =>
+            $"Memory usage:   Session Database {SessionDbSizeMb:F4} MB   Available {AvailableStorageMb:N0} MB";
+
+        public void RefreshStorageInfo()
+        {
+            try
+            {
+                var sessionDb = ServiceHelper.GetService<SessionDatabase>();
+                var dbPath = sessionDb?.DatabasePath ?? string.Empty;
+
+                long totalSize = 0;
+
+                // Main database file
+                if (File.Exists(dbPath))
+                    totalSize += new System.IO.FileInfo(dbPath).Length;
+
+                // Include WAL file (Write-Ahead Log) for SQLite databases
+                var walPath = dbPath + "-wal";
+                if (File.Exists(walPath))
+                    totalSize += new System.IO.FileInfo(walPath).Length;
+
+                // Include SHM file (Shared Memory) for SQLite databases
+                var shmPath = dbPath + "-shm";
+                if (File.Exists(shmPath))
+                    totalSize += new System.IO.FileInfo(shmPath).Length;
+
+                SessionDbSizeMb = totalSize / 1_048_576.0;
+
+                var drive = new System.IO.DriveInfo(FileSystem.AppDataDirectory);
+                var freeMb = drive.AvailableFreeSpace / 1_048_576.0;
+                AvailableStorageMb = freeMb;
+
+                // Clamp the slider value so it doesn't exceed the new maximum
+                if (_maxSessionDbSizeMb > freeMb)
+                    MaxSessionDbSizeMb = freeMb;
+            }
+            catch { }
+        }
+
+        /// <summary>Resets all settings to their factory defaults.</summary>
+        public void ResetToDefaults()
+        {
+            LowestNote          = DefaultLowestNote;
+            HighestNote         = DefaultHighestNote;
+            PlaybackBpm         = DefaultPlaybackBpm;
+            AccidentalPercent   = DefaultAccidentalPct;
+            CorrectThreshold    = DefaultCorrectThreshold;
+            MinCorrectCount     = DefaultMinCorrectCount;
+            OmitMsAvgThreshold  = DefaultOmitMsAvg;
+            AutoStart           = DefaultAutoStart;
+            CollectNoteStats    = DefaultCollectNote;
+            CollectSessionStats = DefaultCollectSession;
+            MaxSessionDbSizeMb  = DefaultMaxSessionDbMb;
+            // Musical defaults: reset scale/tune, instrument and key via session
+            SelectedScale = DefaultTune;
+            if (_session != null)
+            {
+                _session.Instrument = DefaultInstrument;
+                _session.Key = DefaultKey;
+                _session.Tune = DefaultTune;
+            }
+            else
+            {
+                Preferences.Set("musicmate.Instrument", DefaultInstrument);
+                Preferences.Set("musicmate.Key", DefaultKey);
+                Preferences.Set("musicmate.Tune", DefaultTune);
+            }
+        }
+
         // Helper for MIDI to note name
         private static string MidiToNoteName(int midi, bool preferSharps)
         {
             string[] namesSharps = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-            string[] namesFlats = { "C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B" };
+            string[] namesFlats  = { "C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B" };
             int octave = (midi / 12) - 1;
             int pc = midi % 12;
             string name = preferSharps ? namesSharps[pc] : namesFlats[pc];
