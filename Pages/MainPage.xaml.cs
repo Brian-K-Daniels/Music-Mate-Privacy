@@ -955,9 +955,13 @@ async Task UpdateNoteStatsDatabaseAsync()
                 if (_repeatSameTune && _savedNotesToRepeat != null && _savedNotesToRepeat.Count > 0)
                 {
                     // Restore the saved notes for "Repeat Same" mode
-                    _session.NotesToDraw.Clear();
-                    _session.NotesToDraw.AddRange(_savedNotesToRepeat);
-                    await MainThread.InvokeOnMainThreadAsync(() => StaffGraphicsView.Invalidate());
+                        _session.NotesToDraw.Clear();
+                        _session.NotesToDraw.AddRange(_savedNotesToRepeat);
+                        // Re-populate FeedbackViewModels (cleared by Reset) to match the restored notes
+                        _session.FeedbackViewModels.Clear();
+                        for (int i = 0; i < _savedNotesToRepeat.Count; i++)
+                            _session.FeedbackViewModels.Add(new FeedbackItem(i, 0, 0, false));
+                        await MainThread.InvokeOnMainThreadAsync(() => StaffGraphicsView.Invalidate());
                     Debug.WriteLine($"[Start] Restored {_savedNotesToRepeat.Count} saved notes for Repeat Same");
                 }
                 else
@@ -1177,6 +1181,15 @@ async Task UpdateNoteStatsDatabaseAsync()
                 e.PropertyName == nameof(NoteSessionService.Key) ||
                 e.PropertyName == nameof(NoteSessionService.Tune))
             {
+                // Saved notes are for a specific scale/key/tune — invalidate them when any of those change
+                // so the next repeat generates fresh notes for the new selection rather than restoring stale ones.
+                if (e.PropertyName == nameof(_session.SelectedScale) ||
+                    e.PropertyName == nameof(NoteSessionService.Key) ||
+                    e.PropertyName == nameof(NoteSessionService.Tune))
+                {
+                    _savedNotesToRepeat = null;
+                }
+
                 await RegenerateNotesAsync();
                 UpdateTunerVisibility();
                 UpdateKeyPickerVisibility();

@@ -10,7 +10,22 @@ namespace musicmate.ViewModels
     public class SettingsPageViewModel : INotifyPropertyChanged
     {
         // ── Factory defaults ──────────────────────────────────────────────────
-        public static string DefaultInstrument => NoteSessionService.InstrumentOptions.Length > 3 ? NoteSessionService.InstrumentOptions[3] : "C";
+        public static string DefaultInstrument
+        {
+            get
+            {
+                var opts = NoteSessionService.InstrumentOptions;
+                if (opts != null && opts.Length > 0)
+                {
+                    // Prefer an instrument explicitly named "C" when available, otherwise use the first option.
+                    var preferC = opts.FirstOrDefault(i => i == "C");
+                    if (!string.IsNullOrEmpty(preferC))
+                        return preferC;
+                    return opts[0];
+                }
+                return "C";
+            }
+        }
         public const string DefaultKey               = "C";
         public const string DefaultTune             = "Major";
         public const string DefaultLowestNote       = "C4";
