@@ -17,7 +17,7 @@
 
     <!-- Versions -->
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
-    <ApplicationVersion>3</ApplicationVersion>
+    <ApplicationVersion>6</ApplicationVersion>
 
     <WindowsPackageType>None</WindowsPackageType>
 

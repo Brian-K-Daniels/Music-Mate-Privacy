@@ -38,8 +38,18 @@ namespace musicmate
             builder.Services.AddSingleton<IOrientationService, OrientationService>();
             builder.Services.AddSingleton<StatusService>();
             builder.Services.AddSingleton<ThemeService>();
-            // Local store service used for initial development. Replace with real Play Billing implementation later.
+#if DEBUG
+            // Debug: local stub allows free "purchase" and a Restore button to reset it.
             builder.Services.AddSingleton<IStoreService, LocalStoreService>();
+#else
+            // Release: real Google Play Billing.
+#if ANDROID
+            builder.Services.AddSingleton<IStoreService, musicmate.Platforms.Android.GooglePlayStoreService>();
+#else
+            // Fallback for non-Android release builds (e.g. Windows side-load).
+            builder.Services.AddSingleton<IStoreService, LocalStoreService>();
+#endif
+#endif
 
     #if DEBUG
             builder.Logging.AddDebug();
@@ -47,6 +57,17 @@ namespace musicmate
 
             var app = builder.Build();
             ServiceHelper.Initialize(app.Services); // <-- ensure service locator is initialized
+
+            // Sync premium state from the store on every cold start.
+            // In Debug this is a no-op (LocalStoreService.InitializeAsync does nothing).
+            // In Release this connects to Google Play and refreshes the persisted flag.
+            try
+            {
+                var store = app.Services.GetService<IStoreService>();
+                if (store != null)
+                    _ = store.InitializeAsync();   // fire-and-forget; StatusService persists result
+            }
+            catch { }
 
             // Deploy saved panel background color now that services are initialized
             try

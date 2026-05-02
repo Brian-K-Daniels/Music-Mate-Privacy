@@ -761,7 +761,8 @@ namespace musicmate.Services
         public static readonly string[] AvailableScales = new[]
         {
             "Major",  "Harmonic Minor", "Melodic Minor", "Natural Minor", "Dorian", "Phrygian",
-            "Lydian", "Mixolydian", "Locrian", "Major Pentatonic", "Minor Pentatonic", "Blues"
+            "Lydian", "Mixolydian", "Locrian", "Major Pentatonic", "Minor Pentatonic", "Blues",
+            "Chromatic"
         };
         public string[] AvailableScalesForBinding => AvailableScales;
         private static readonly char[] Letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
@@ -1400,10 +1401,7 @@ namespace musicmate.Services
             // All scales now use letter-sequential spelling via SpellSequential or explicit builders.
             // Only the chromatic scale falls back to raw GetNoteName; guard against consecutive
             // same-letter enharmonics there.
-            if (sequence.Length > 1 && SelectedScale == "Chromatic Scale")
-            {
-                sequence = RespellToAvoidConsecutiveSameLetter(sequence, KeyUsesFlats(Key));
-            }
+            // Chromatic scale enharmonics are handled in BuildScaleSequence (sharps up, flats down).
             if (availableWidth > 0 && sequence.Length > 0)
             {
                 var usable = (float)(availableWidth - 64);
@@ -1771,16 +1769,18 @@ namespace musicmate.Services
                 "Bebop" => new[] { 0, 2, 4, 5, 7, 9, 10, 11, 12 },
                 "Symmetrical Whole-Tone" or "Whole-Tone" => new[] { 0, 2, 4, 6, 8, 10, 12 },
                 "Symmetrical Diminished" or "Diminished" => new[] { 0, 1, 3, 4, 6, 7, 9, 10, 12 },
-                "Chromatic Scale" => Enumerable.Range(0, 13).ToArray(),
+                "Chromatic" => Enumerable.Range(0, 13).ToArray(),
                 _ => new[] { 0, 2, 4, 5, 7, 9, 11, 12 }
             };
             var startMidi = NoteNameToMidi(tonic);
 
-            // Chromatic scale has 12 pitches — letter uniqueness is impossible; use key preference
-            if (selectedScale == "Chromatic Scale")
+            // Chromatic scale: sharps ascending, flats descending
+            if (selectedScale == "Chromatic")
             {
                 var descChr = up.Take(up.Length - 1).Reverse().ToArray();
-                return up.Concat(descChr).Select(d => GetNoteName(startMidi + d, pref)).ToArray();
+                var ascending  = up.Select(d => GetNoteName(startMidi + d, AccidentalPreference.Sharps));
+                var descending = descChr.Select(d => GetNoteName(startMidi + d, AccidentalPreference.Flats));
+                return ascending.Concat(descending).ToArray();
             }
 
             // All other scales: assign letters sequentially (A→B→C→D→E→F→G) from the tonic,

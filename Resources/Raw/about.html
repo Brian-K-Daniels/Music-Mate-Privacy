@@ -1,698 +1,348 @@
 <html>
 
 <head>
-<meta http-equiv=Content-Type content="text/html; charset=windows-1252">
-<meta name=Generator content="Microsoft Word 15 (filtered)">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <style>
-<!--
- /* Font Definitions */
- @font-face
-	{font-family:Courier;
-	panose-1:2 7 4 9 2 2 5 2 4 4;}
-@font-face
-	{font-family:"MS Gothic";
-	panose-1:2 11 6 9 7 2 5 8 2 4;}
-@font-face
-	{font-family:"Cambria Math";
-	panose-1:2 4 5 3 5 4 6 3 2 4;}
-@font-face
-	{font-family:Calibri;
-	panose-1:2 15 5 2 2 2 4 3 2 4;}
-@font-face
-	{font-family:Aptos;}
-@font-face
-	{font-family:"\@MS Gothic";
-	panose-1:2 11 6 9 7 2 5 8 2 4;}
- /* Style Definitions */
- p.MsoNormal, li.MsoNormal, div.MsoNormal
-	{margin-top:0in;
-	margin-right:0in;
-	margin-bottom:5.0pt;
-	margin-left:0in;
-	line-height:115%;
-	font-size:10.5pt;
-	font-family:"Aptos",sans-serif;}
-h1
-	{mso-style-link:"Heading 1 Char";
-	margin-top:12.0pt;
-	margin-right:0in;
-	margin-bottom:4.0pt;
-	margin-left:0in;
-	line-height:115%;
-	page-break-after:avoid;
-	font-size:14.0pt;
-	font-family:"Calibri",sans-serif;
-	color:#1F4E79;}
-h2
-	{mso-style-link:"Heading 2 Char";
-	margin-top:7.0pt;
-	margin-right:0in;
-	margin-bottom:2.0pt;
-	margin-left:0in;
-	line-height:115%;
-	page-break-after:avoid;
-	font-size:11.5pt;
-	font-family:"Calibri",sans-serif;
-	color:#2F5597;}
-p.MsoListBullet, li.MsoListBullet, div.MsoListBullet
-	{margin-top:0in;
-	margin-right:0in;
-	margin-bottom:5.0pt;
-	margin-left:.25in;
-	text-indent:-.25in;
-	line-height:115%;
-	font-size:10.5pt;
-	font-family:"Aptos",sans-serif;}
-p.MsoListBulletCxSpFirst, li.MsoListBulletCxSpFirst, div.MsoListBulletCxSpFirst
-	{margin-top:0in;
-	margin-right:0in;
-	margin-bottom:0in;
-	margin-left:.25in;
-	text-indent:-.25in;
-	line-height:115%;
-	font-size:10.5pt;
-	font-family:"Aptos",sans-serif;}
-p.MsoListBulletCxSpMiddle, li.MsoListBulletCxSpMiddle, div.MsoListBulletCxSpMiddle
-	{margin-top:0in;
-	margin-right:0in;
-	margin-bottom:0in;
-	margin-left:.25in;
-	text-indent:-.25in;
-	line-height:115%;
-	font-size:10.5pt;
-	font-family:"Aptos",sans-serif;}
-p.MsoListBulletCxSpLast, li.MsoListBulletCxSpLast, div.MsoListBulletCxSpLast
-	{margin-top:0in;
-	margin-right:0in;
-	margin-bottom:5.0pt;
-	margin-left:.25in;
-	text-indent:-.25in;
-	line-height:115%;
-	font-size:10.5pt;
-	font-family:"Aptos",sans-serif;}
-p.MsoTitle, li.MsoTitle, div.MsoTitle
-	{mso-style-link:"Title Char";
-	margin-top:0in;
-	margin-right:0in;
-	margin-bottom:3.0pt;
-	margin-left:0in;
-	border:none;
-	padding:0in;
-	font-size:22.0pt;
-	font-family:"Calibri",sans-serif;
-	color:#1F4E79;
-	letter-spacing:.25pt;
-	font-weight:bold;}
-p.MsoTitleCxSpFirst, li.MsoTitleCxSpFirst, div.MsoTitleCxSpFirst
-	{mso-style-link:"Title Char";
-	margin:0in;
-	border:none;
-	padding:0in;
-	font-size:22.0pt;
-	font-family:"Calibri",sans-serif;
-	color:#1F4E79;
-	letter-spacing:.25pt;
-	font-weight:bold;}
-p.MsoTitleCxSpMiddle, li.MsoTitleCxSpMiddle, div.MsoTitleCxSpMiddle
-	{mso-style-link:"Title Char";
-	margin:0in;
-	border:none;
-	padding:0in;
-	font-size:22.0pt;
-	font-family:"Calibri",sans-serif;
-	color:#1F4E79;
-	letter-spacing:.25pt;
-	font-weight:bold;}
-p.MsoTitleCxSpLast, li.MsoTitleCxSpLast, div.MsoTitleCxSpLast
-	{mso-style-link:"Title Char";
-	margin-top:0in;
-	margin-right:0in;
-	margin-bottom:3.0pt;
-	margin-left:0in;
-	border:none;
-	padding:0in;
-	font-size:22.0pt;
-	font-family:"Calibri",sans-serif;
-	color:#1F4E79;
-	letter-spacing:.25pt;
-	font-weight:bold;}
-p.MsoSubtitle, li.MsoSubtitle, div.MsoSubtitle
-	{mso-style-link:"Subtitle Char";
-	margin-top:0in;
-	margin-right:0in;
-	margin-bottom:14.0pt;
-	margin-left:0in;
-	line-height:115%;
-	font-size:10.5pt;
-	font-family:"Calibri",sans-serif;
-	color:#606060;
-	letter-spacing:.75pt;
-	font-style:italic;}
-span.Heading1Char
-	{mso-style-name:"Heading 1 Char";
-	mso-style-link:"Heading 1";
-	font-family:"Calibri",sans-serif;
-	color:#365F91;
-	font-weight:bold;}
-span.Heading2Char
-	{mso-style-name:"Heading 2 Char";
-	mso-style-link:"Heading 2";
-	font-family:"Calibri",sans-serif;
-	color:#4F81BD;
-	font-weight:bold;}
-span.TitleChar
-	{mso-style-name:"Title Char";
-	mso-style-link:Title;
-	font-family:"Calibri",sans-serif;
-	color:#17365D;
-	letter-spacing:.25pt;}
-span.SubtitleChar
-	{mso-style-name:"Subtitle Char";
-	mso-style-link:Subtitle;
-	font-family:"Calibri",sans-serif;
-	color:#4F81BD;
-	letter-spacing:.75pt;
-	font-style:italic;}
-p.MMNote, li.MMNote, div.MMNote
-	{mso-style-name:"MM Note";
-	margin-top:0in;
-	margin-right:0in;
-	margin-bottom:6.0pt;
-	margin-left:0in;
-	line-height:115%;
-	font-size:9.5pt;
-	font-family:"Aptos",sans-serif;
-	color:#555555;
-	font-style:italic;}
-p.MMQuick, li.MMQuick, div.MMQuick
-	{mso-style-name:"MM Quick";
-	margin-top:0in;
-	margin-right:0in;
-	margin-bottom:2.0pt;
-	margin-left:0in;
-	line-height:115%;
-	font-size:10.5pt;
-	font-family:"Aptos",sans-serif;
-	font-weight:bold;}
-.MsoChpDefault
-	{font-family:"Cambria",serif;}
-.MsoPapDefault
-	{margin-bottom:10.0pt;
-	line-height:115%;}
-@page WordSection1
-	{size:8.5in 11.0in;
-	margin:.8in .85in .75in .85in;}
-div.WordSection1
-	{page:WordSection1;}
- /* List Definitions */
- ol
-	{margin-bottom:0in;}
-ul
-	{margin-bottom:0in;}
--->
+/* Base styles - overridden by injected CSS at runtime */
+body { font-family: Calibri, sans-serif; font-size: 11pt; line-height: 1.4; }
 </style>
-
 </head>
 
-<body lang=EN-US style='word-wrap:break-word'>
+<body lang="EN-US" style="word-wrap:break-word">
 
-<div class=WordSection1>
+<h1 style="overflow: hidden;">
+  Music Mate
+  <small style="float: right; font-weight: normal; font-size: 0.6em; line-height: 1; margin-top: 0.2em;">April 29, 2026</small>
+</h1>
 
-<div style='border:none;border-bottom:solid #4F81BD 1.0pt;padding:0in 0in 4.0pt 0in'>
+<h2>Quick Start</h2>
 
-<p class=MsoTitle>Music Mate<br>
-<span style='font-weight:normal'>About Page and Quick Guide</span></p>
+<ol>
+ <li>Pick your instrument.</li>
+ <li>Choose a tune or scale.</li>
+ <li>Tap Listen.</li>
+ <li>Play the notes in order.</li>
+ <li>Watch for green boxes.</li>
+</ol>
 
-</div>
-
-<p class=MsoSubtitle>&nbsp;</p>
-
-<div align=center>
-
-<table class=MsoNormalTable border=1 cellspacing=0 cellpadding=0
- style='border-collapse:collapse;border:none'>
- <tr>
-  <td width=653 style='width:6.8in;border:none;background:#EAF3FB;padding:6.0pt 8.0pt 6.0pt 8.0pt'>
-  <p class=MMQuick><span style='color:#1F4E79'>Quick Start</span></p>
-  <p class=MsoListBulletCxSpFirst style='margin-bottom:0in'><span
-  style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  </span></span><span style='color:black'>1. Pick your instrument.</span></p>
-  <p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-  style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  </span></span><span style='color:black'>2. Choose a tune or scale.</span></p>
-  <p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-  style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  </span></span><span style='color:black'>3. Tap Listen.</span></p>
-  <p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-  style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  </span></span><span style='color:black'>4. Play the notes in order.</span></p>
-  <p class=MsoListBulletCxSpLast style='margin-bottom:0in'><span
-  style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  </span></span><span style='color:black'>5. Watch for green boxes.</span></p>
-  <p class=MMNote>Tip: If a list is long, flick to scroll quickly.</p>
-  </td>
- </tr>
-</table>
-
-</div>
-
-<p class=MsoNormal>&nbsp;</p>
+<p><b>Tip:</b> If a list is long, flick to scroll quickly.</p>
 
 <h1>Welcome to Music Mate</h1>
 
-<p class=MsoNormal>Music Mate helps you practice your instrument one note at a
-time.</p>
+<p>Music Mate helps you practice your instrument one note at a time.
+It listens while you play and gives you feedback right away. When you play the
+correct note, you will see it on the screen. As you keep practicing, Music Mate
+remembers how you are doing and helps you work on notes that still need practice.</p>
 
-<p class=MsoNormal>It listens while you play and gives you feedback right away.
-When you play the correct note, you will see it on the screen. As you keep
-practicing, Music Mate remembers how you are doing and helps you work on notes
-that still need practice.</p>
+<p>You can explore the app by tapping around. You cannot break anything. If you
+ever want to start over, use the Reset button to return to the starting settings.</p>
 
-<p class=MsoNormal>You can explore the app by tapping around. You cannot break
-anything. If you ever want to start over, use the Reset button to return to the
-starting settings.</p>
+<h2>Getting Around</h2>
 
-<h1>Getting Around</h1>
+<p>Tap the menu button (&#9776;) at the top left to open the different pages in the app.</p>
 
-<p class=MsoNormal>Tap the menu button (&#9776;) at the top left to open the
-different pages in the app.</p>
+<ul>
+ <li><b>Home</b> &ndash; where you practice</li>
+ <li><b>Settings</b> &ndash; where you choose how the app works</li>
+ <li><b>Statistics</b> &ndash; where you can see your progress</li>
+ <li><b>Advanced</b> &ndash; extra settings for adults, teachers, or experienced users</li>
+ <li><b>About</b> &ndash; the page you are reading now</li>
+</ul>
 
-<p class=MsoListBulletCxSpFirst style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Home - where you practice</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Settings - where you choose how the app works</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Statistics - where you can see your progress</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Advanced - extra settings for adults, teachers, or experienced
-users</p>
-
-<p class=MsoListBulletCxSpLast style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>About - the page you are reading now</p>
-
-<p class=MsoNormal>To move up or down on a page, drag to scroll. Some long
-lists move faster if you flick them quickly.</p>
+<p>To move up or down on a page, drag to scroll. Some long lists move faster if
+you flick them quickly.</p>
 
 <h1>Home Page</h1>
 
-<h2>Notes on the staff</h2>
+<h2>Notes on the Staff</h2>
 
-<p class=MsoNormal>Music Mate shows notes on a musical staff with a treble
-clef. In the usual starting setup, you will see a short group of notes going up
-and down over one octave.</p>
+<p>Music Mate shows notes on a musical staff with a treble clef. In the usual
+starting setup, you will see a short group of notes going up and down over one
+octave.</p>
 
 <h2>Feedback</h2>
 
-<p class=MsoListBulletCxSpFirst style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>When you play the correct note, the box turns green.</p>
+<ul>
+ <li>When you play the correct note, the box turns green.</li>
+ <li>If the note is not correct, the box stays the same.</li>
+ <li>The app keeps track of how you are doing as you practice.</li>
+</ul>
 
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>If the note is not correct, the box stays the same.</p>
+<p>Sometimes Music Mate also shows how far your note is from the correct pitch
+in cents. A cent is a very small pitch difference. 100&nbsp;cents&nbsp;=&nbsp;1&nbsp;semitone.</p>
 
-<p class=MsoListBulletCxSpLast style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>The app keeps track of how you are doing as you practice.</p>
+<h2>Main Controls</h2>
 
-<p class=MsoNormal>Sometimes Music Mate also shows how far your note is from
-the correct pitch in cents. A cent is a very small pitch difference. 100 cents
-= 1 semitone.</p>
+<h3>Instrument</h3>
 
-<h1>Main Controls</h1>
+<p>Choose the instrument you play. Music Mate remembers your choice for next time.</p>
 
-<h2>Instrument</h2>
+<h3>Key</h3>
 
-<p class=MsoNormal>Choose the instrument you play. Music Mate remembers your
-choice for next time.</p>
+<p>Choose the key signature you want to practice in. For transposing instruments,
+the app shows the music in the right key for your instrument.</p>
 
-<h2>Key</h2>
+<h3>Concert Key</h3>
 
-<p class=MsoNormal>Choose the key signature you want to practice in. For
-transposing instruments, the app shows the music in the right key for your
-instrument.</p>
+<p>If needed, the concert key is also shown.</p>
 
-<h2>Concert Key</h2>
+<h3>Major</h3>
 
-<p class=MsoNormal>If needed, the concert key is also shown.</p>
+<p>The Major scale is the default value of the many practice modes in this picker.</p>
 
-<h2>Start / Stop Listening</h2>
+<h3>Start / Stop Listening</h3>
 
-<p class=MsoListBulletCxSpFirst style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Tap the green round button to start listening.</p>
+<ul>
+ <li>Tap the green round button to make the phone start to listen to your play.</li>
+ <li>When listening, the button changes to a red square.</li>
+ <li>Tap the red square to stop listening.</li>
+</ul>
 
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>When listening is on, the button changes to a red square.</p>
+<h3>Auto Play</h3>
 
-<p class=MsoListBulletCxSpLast style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Tap the red square to stop listening.</p>
+<p>Tap the green triangle button to make the phone play the notes. This can help
+you learn how a scale or exercise should sound. While the notes are playing, the
+button turns red.</p>
 
-<h2>Auto Play</h2>
+<h3>Background Color</h3>
 
-<p class=MsoNormal>Tap the green triangle button to hear the notes played by
-the phone. This can help you learn how a scale or exercise should sound. While
-the notes are playing, the button turns red.</p>
+<p>You can change the background color of the staff area. Choose a color you like,
+then tap OK. Other pages use the chosen color for their background.</p>
 
-<h2>Background Color</h2>
+<h3>Repeat New</h3>
 
-<p class=MsoNormal>You can change the background color of the staff area.
-Choose a color you like, then tap OK.</p>
+<p>Toggle to green to make it automatically generate a new random pattern after a
+few seconds.</p>
+
+<h3>Repeat</h3>
+
+<p>Toggle to green to make it start listening from the beginning after a few
+seconds.</p>
 
 <h1>Practice Modes</h1>
 
 <h2>Tuner</h2>
 
-<p class=MsoNormal>In Tuner mode, Music Mate listens to any note you play.</p>
+<p>In Tuner mode, Music Mate listens to any note you play and displays:</p>
 
-<p class=MsoListBulletCxSpFirst style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>the nearest note name</p>
+<ul>
+ <li>the nearest note name</li>
+ <li>the octave number</li>
+ <li>how sharp or flat the note is</li>
+ <li>the note&rsquo;s frequency and the nearest standard frequency</li>
+</ul>
 
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>the octave number</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>how sharp or flat the note is</p>
-
-<p class=MsoListBulletCxSpLast style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>the note's frequency and the nearest standard frequency</p>
-
-<p class=MsoNormal>This is useful for checking tuning and pitch.</p>
+<p>This is useful for checking tuning and pitch.</p>
 
 <h2>Random</h2>
 
-<p class=MsoNormal>In Random mode, Music Mate makes a note pattern for you to
-play.</p>
+<p>In Random mode, Music Mate makes a note pattern for you to play using:</p>
 
-<p class=MsoListBulletCxSpFirst style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>the note range you choose</p>
+<ul>
+ <li>the note range you choose</li>
+ <li>note jumps that are common in melodies</li>
+ <li>the accidental percentage setting</li>
+ <li>your past results, so it can focus on notes that still need practice</li>
+</ul>
 
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>note jumps that are common in melodies</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>the accidental percentage setting</p>
-
-<p class=MsoListBulletCxSpLast style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>your past results, so it can focus on notes that still need
-practice</p>
-
-<p class=MsoNormal>As you improve, notes you already know well can be left out,
-so you spend more time practicing notes that need more work. You can also turn
-on Repeat so a new random pattern appears automatically after you finish one.</p>
+<p>As you improve, notes you already know well can be left out, so you spend more
+time practicing notes that need more work. You can also turn on <b>Repeat New</b> so
+a new random pattern appears automatically after you finish one. Or <b>Repeat Same</b>
+will make it repeat the same pattern of notes after a few seconds.</p>
 
 <h2>Scales</h2>
 
-<p class=MsoNormal>When you choose a scale, Music Mate shows the key signature,
-one octave going up, and the notes coming back down. This helps you practice
-reading, hearing, and playing scales.</p>
+<p>When you choose a scale, Music Mate shows the key signature, one octave going
+up, and the notes coming back down. This helps you practice reading, hearing,
+and playing scales.</p>
 
 <h1>Settings Page</h1>
 
-<p class=MsoNormal>On the Settings page, you can change how Music Mate works.</p>
+<p>On the Settings page, you can change how Music Mate works.</p>
 
-<p class=MsoListBulletCxSpFirst style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Lowest / Highest Note - choose your note range</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Playback BPM - change the speed of Auto Play</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Accidental % - choose how many accidentals Random mode may use</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Omit notes at/above % correct - leave out notes you already know
-well</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Minimum Correct Count - require enough correct plays before a
-note counts as learned</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Omit notes below MsAvg - include notes that you are slow to play
-correctly</p>
-
-<p class=MsoListBulletCxSpLast style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Auto start on appear - start listening automatically when the app
-opens</p>
-
-<p class=MsoNormal>A good note range to begin with is something moderate, such
-as C4 to C5. As you get better, you can make the range bigger.</p>
+<ul>
+ <li><b>Low / High Note</b> &ndash; choose your note range. A good note range to begin
+     with is something moderate, such as C4 to C5. As you get better, you can
+     make the range bigger.</li>
+ <li><b>Playback BPM</b> &ndash; change the speed of Auto Play</li>
+ <li><b>Accidental %</b> &ndash; choose how many notes are converted to random accidentals
+     in a Random practice mode</li>
+ <li><b>Omit notes at/above % correct</b> &ndash; leave out notes you already know well</li>
+ <li><b>Minimum Correct Count</b> &ndash; require enough correct plays before a note counts
+     as learned</li>
+ <li><b>Include notes with MsAvg above this value</b></li>
+ <li><b>Auto start on appear</b> &ndash; start listening automatically when the app opens</li>
+ <li>Turn note statistics on or off</li>
+ <li>Turn session statistics on or off</li>
+ <li><b>Reset</b> &ndash; restore all settings on this, Home, and Advanced pages to defaults</li>
+</ul>
 
 <h1>Statistics Page</h1>
 
-<p class=MsoNormal>The Statistics page shows how you have been doing.</p>
+<p>The Statistics page shows how you have been doing.</p>
 
 <h2>Note Data</h2>
 
-<p class=MsoListBulletCxSpFirst style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>the note name</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>the octave</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>how many times it was correct</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>how many times it was wrong</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>the percent correct</p>
-
-<p class=MsoListBulletCxSpLast style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>timing information</p>
+<ul>
+ <li>the note name and octave number</li>
+ <li>how many times it was correct</li>
+ <li>how many times it was wrong</li>
+ <li>the percent correct</li>
+ <li>the average number of milliseconds to play correctly</li>
+</ul>
 
 <h2>Session Data</h2>
 
-<p class=MsoNormal>A session is completed when you play all the notes on the
-staff correctly, in order.</p>
+<p>A session is completed when you play all the notes on the staff correctly,
+in order.</p>
 
-<p class=MsoListBulletCxSpFirst style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>the date and time</p>
+<ul>
+ <li>the date and time</li>
+ <li>the tune or scale used</li>
+ <li>the key</li>
+ <li>percent of notes heard that were correct</li>
+ <li>the note range used</li>
+ <li>the tempo</li>
+ <li>timing consistency</li>
+</ul>
 
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>the tune or scale used</p>
+<p>This helps you see your progress over time.</p>
 
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>the key</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>your percent correct</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>the note range used</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>the tempo</p>
-
-<p class=MsoListBulletCxSpLast style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>timing consistency</p>
-
-<p class=MsoNormal>This helps you see your progress over time.</p>
+<p>The data can be sorted by a long touch on the heading of any column.</p>
 
 <h1>Advanced Page</h1>
 
-<p class=MsoNormal>The Advanced page has extra settings. These are mainly for
-adults, teachers, or experienced users.</p>
+<p>The Advanced page has extra settings. These are mainly for adults, teachers,
+or experienced users.</p>
 
-<p class=MsoListBulletCxSpFirst style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Pitch Tolerance</p>
+<ul>
+ <li><b>Pitch Tolerance</b></li>
+ <li><b>RMS Threshold</b> &ndash; eliminates background noise</li>
+ <li><b>Cooldown</b></li>
+ <li><b>Pitch Offset</b> &ndash; to correct the pitch measurement if it should be off</li>
+ <li><b>Delay Between Repeats</b></li>
+ <li><b>Wrong Debounce</b></li>
+ <li><b>Pitch Window Size</b></li>
+ <li><b>Smoothing Window</b></li>
+ <li><b>Pitch Confidence</b></li>
+</ul>
 
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>RMS Threshold</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Cooldown</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Pitch Offset</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Delay Between Repeats</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Wrong Debounce</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Pitch Window Size</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Smoothing Window</p>
-
-<p class=MsoListBulletCxSpLast style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Pitch Confidence</p>
-
-<p class=MsoNormal>If you are not sure what these mean, it is fine to leave
-them alone. There is also a <b>Reset </b>button to return all settings to the
-starting values.</p>
+<p>If you are not sure what these mean, it is fine to leave them alone. There is
+also a Reset button to return all settings to the starting values.</p>
 
 <h1>About Page</h1>
 
-<p class=MsoNormal>On the About page, you can:</p>
+<p>On the About page, you can:</p>
 
-<p class=MsoListBulletCxSpFirst style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>change the font size</p>
+<ul>
+ <li>change the font size</li>
+ <li>search for words in the About text</li>
+ <li>go to the next search result</li>
+ <li>learn what the app does</li>
+ <li>read about features and limits</li>
+ <li>buy the Premium version</li>
+ <li>see whether Premium is active</li>
+ <li>find support information</li>
+</ul>
 
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>search for words in the About text</p>
+<h2>Premium Version</h2>
 
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>go to the next search result</p>
+<p>Some features are available only in the Premium version. Premium may include
+accidentals, keys with more than 3 sharps or flats, and other extra features.</p>
 
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>learn what the app does</p>
+<p>If you choose a Premium-only feature while using the free version, a message
+may appear. An adult can decide whether to buy Premium or keep using the free
+setting.</p>
 
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>read about features and limits</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>buy the Premium version</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>see whether Premium is active</p>
-
-<p class=MsoListBulletCxSpLast style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>find support information</p>
-
-<h1>Premium Version</h1>
-
-<p class=MsoNormal>Some features are available only in the Premium version.
-Premium may include accidentals, keys with more than 3 sharps or flats, and
-other extra features.</p>
-
-<p class=MsoNormal>If you choose a Premium-only feature while using the free
-version, a message may appear. An adult can decide whether to buy Premium or
-keep using the free setting.</p>
-
-<p class=MsoNormal>Premium is a lifetime purchase and includes future app
-updates.</p>
+<p>Premium is a lifetime purchase and includes future app updates.</p>
 
 <h1>Things to Know</h1>
 
-<p class=MsoNormal>Music Mate is always improving, but sound detection is not
-perfect yet.</p>
+<p>Music Mate is always improving, but sound detection is not perfect yet.</p>
 
-<p class=MsoListBulletCxSpFirst style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>a note in the wrong octave may be accepted</p>
+<ul>
+ <li>a note in the wrong octave may be accepted</li>
+ <li>very low or very high notes may be harder to detect</li>
+ <li>your % correct may look a little lower than expected</li>
+</ul>
 
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>very low or very high notes may be harder to detect</p>
+<p>We are continuing to improve the app.</p>
 
-<p class=MsoListBulletCxSpLast style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>your % correct may look a little lower than expected</p>
+<h2>Tips for Success</h2>
 
-<p class=MsoNormal>We are continuing to improve the app.</p>
-
-<h1>Tips for Success</h1>
-
-<p class=MsoListBulletCxSpFirst style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Start with a comfortable note range.</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Practice slowly at first.</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Use Auto Play to hear how notes should sound.</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Watch for green boxes.</p>
-
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Keep practicing notes that are still difficult.</p>
-
-<p class=MsoListBulletCxSpLast style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>Try Random mode for extra challenge.</p>
+<ul>
+ <li>Start with a comfortable note range.</li>
+ <li>Practice slowly at first.</li>
+ <li>Use Auto Play to hear how notes should sound.</li>
+ <li>Watch for green boxes.</li>
+ <li>Keep practicing notes that are still difficult.</li>
+ <li>Try Random mode for extra challenge.</li>
+</ul>
 
 <h1>Feedback and Support</h1>
 
-<p class=MsoNormal>If something is not working, or if you have an idea to make
-Music Mate better, I would love to hear from you.</p>
+<p>If something is not working, or if you have an idea to make Music Mate better,
+I would love to hear from you.</p>
 
-<p class=MsoNormal>Please email: Brian_K_Daniels@yahoo.com</p>
+<p>Please email: <a href="mailto:Brian_K_Daniels@yahoo.com">Brian_K_Daniels@yahoo.com</a></p>
 
-<p class=MsoNormal>When reporting a problem, it helps to include:</p>
+<p>When reporting a problem, it helps to include:</p>
 
-<p class=MsoListBulletCxSpFirst style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>your device</p>
+<ul>
+ <li>your device</li>
+ <li>your Android version</li>
+ <li>what you were doing when the problem happened</li>
+</ul>
 
-<p class=MsoListBulletCxSpMiddle style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>your Android version</p>
+<p>If you are a child, ask a parent, teacher, or older student to help you send
+the email.</p>
 
-<p class=MsoListBulletCxSpLast style='margin-bottom:0in'><span
-style='font-family:Symbol'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-</span></span>what you were doing when the problem happened</p>
+<h1>Random Tune &ndash; Advanced Details</h1>
 
-<p class=MsoNormal>If you are a child, ask a parent, teacher, or older student
-to help you send the email.</p>
+<h2>Candidate Note Pool</h2>
 
-</div>
+<p>Candidate notes are chosen for the selected scale and key signature.</p>
+
+<p>For each candidate note, the code checks if we have past statistics for that
+note. If we do, we will skip (exclude) the note when building the random list
+if it is already mastered &mdash; i.e. its accuracy percentage is at or above
+CorrectThreshold <b>and</b> it has been answered correctly at least MinCorrectCount
+times <b>and</b> its average milliseconds is less than the threshold. In other words,
+&ldquo;we&rsquo;ve practiced this enough and you&rsquo;re accurate, so don&rsquo;t include it.&rdquo;</p>
+
+<p>Settings that control this behaviour:</p>
+
+<ul>
+ <li><b>LowestNote / HighestNote</b> &ndash; the note range to consider</li>
+ <li><b>Key and SelectedScale</b> &ndash; which notes belong to the chosen scale</li>
+ <li><b>CorrectThreshold</b> &ndash; the accuracy percent needed to consider a note
+     &ldquo;accurate&rdquo;</li>
+ <li><b>MinCorrectCount</b> &ndash; how many correct hits are required before accuracy is
+     trusted</li>
+ <li><b>OmitMsAvgThreshold</b> &ndash; the average response-time cutoff (ms) below which
+     a note is skipped</li>
+</ul>
+
+<p>Premium users can also set <b>Accidental %</b> which causes some notes to be
+randomly modified by the addition of a sharp, flat, or natural symbol.</p>
+
+<h2>Ordering of the Random Notes</h2>
+
+<ul>
+ <li>Pick a random note to begin the list.</li>
+ <li>Repeatedly pick the next note from the remaining notes until none are left.</li>
+ <li>Prefer notes that are close to the current one in the scale (one step away
+     is most likely, two steps a bit less likely, and so on up to seven steps).</li>
+ <li>The code gives a much higher chance to 1-step moves, lower for 2-step,
+     lower still for 3-step, and so on.</li>
+ <li>If no &ldquo;close&rdquo; notes remain, pick any remaining note at random.</li>
+ <li>Each chosen note is removed from the pool so notes don&rsquo;t repeat.</li>
+</ul>
+
+<p>Result: the sequence tends to move in small steps most of the time, with
+occasional bigger jumps.</p>
+
+<p>&nbsp;</p>
 
 </body>
 

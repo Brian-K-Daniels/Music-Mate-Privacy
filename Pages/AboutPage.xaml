@@ -137,25 +137,40 @@
               ColumnSpacing="10"
               VerticalOptions="Center"
               Padding="8,6,8,4">
+
+          <!-- "Get Premium" button — visible only when NOT premium -->
           <Button Grid.Column="0"
                   Text="Get Premium"
                   Command="{Binding BuyPremiumCommand}"
+                  IsVisible="{Binding NotIsPremium}"
                   TextColor="White"
                   FontSize="{Binding SelectedFontSize}"
                   Padding="8,4" />
-          <Button Grid.Column="1"
-                  Text="Restore"
+
+          <!-- DEBUG-only reset button — visible only when IS premium, hidden in Release -->
+          <Button Grid.Column="2"
+                  Text="🔄 Remove Premium (debug)"
                   Command="{Binding RestorePurchasesCommand}"
-                  IsVisible="{Binding IsPremium}"
-                  TextColor="White"
-                  FontSize="{Binding SelectedFontSize}"
+                  IsVisible="{Binding IsDebugRestoreVisible}"
+                  BackgroundColor="Transparent"
+                  TextColor="#888888"
+                  BorderColor="#555555"
+                  BorderWidth="1"
+                  CornerRadius="6"
+                  FontSize="11"
+                  HorizontalOptions="End"
                   Padding="8,4" />
-          <Label Grid.Column="2"
-                 Text="Premium"
+
+          <!-- Confirmation label — visible only when IS premium; spans cols 0-1 only -->
+          <Label Grid.Column="0"
+                 Grid.ColumnSpan="2"
+                 Text="⭐ You have all premium privileges"
                  IsVisible="{Binding IsPremium}"
+                 FontAttributes="Bold"
                  FontSize="{Binding SelectedFontSize}"
-                 VerticalOptions="Center"
-                 HorizontalOptions="End" />
+                 TextColor="#FFD700"
+                 VerticalOptions="Center" />
+
         </Grid>
 
         <WebView x:Name="AboutWebView" Margin="0,4,0,0" />

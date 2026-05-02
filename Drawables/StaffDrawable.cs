@@ -164,8 +164,8 @@ namespace musicmate.Drawables
             }
 
             // Key signature and note horizontal layout
-            // Key signature: Tuner always shows C (no accidentals); other modes use the selected key/scale.
-            var accidentalCount = _session.Tune == "Tuner"
+            // Chromatic scale has no key signature; Tuner always uses C (no accidentals).
+            var accidentalCount = (_session.Tune == "Tuner" || _session.SelectedScale == "Chromatic")
                 ? 0
                 : GetAccidentalCountForScale(_session.Key, _session.SelectedScale);
             var accScale = 1.5f;
@@ -175,7 +175,9 @@ namespace musicmate.Drawables
 
             var desiredHeadPadding = 3f * headW;
             var fallbackPadding = 32f;
-            var extraLeftPadding = Math.Max(fallbackPadding, desiredHeadPadding);
+            var extraLeftPadding = _session.SelectedScale == "Chromatic"
+                ? headW                          // tight: just one note-head gap after clef
+                : Math.Max(fallbackPadding, desiredHeadPadding);
 
             var leftMargin = accStartX + Math.Abs(accidentalCount) * accSpacing + extraLeftPadding;
             var rightMargin = headW + 16f;

@@ -1,14 +1,24 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using Microsoft.Maui.Storage;
 
 namespace musicmate.Services
 {
     public class StatusService : INotifyPropertyChanged
     {
+        private const string PremiumKey = "IsPremium";
+
         // Singleton instance
         public static StatusService Instance { get; } = new StatusService();
 
         private bool _isPremiumUser;
+
+        private StatusService()
+        {
+            // Restore persisted premium state on every cold start
+            _isPremiumUser = Preferences.Get(PremiumKey, false);
+        }
+
         public bool IsPremiumUser
         {
             get => _isPremiumUser;
@@ -17,7 +27,8 @@ namespace musicmate.Services
                 if (_isPremiumUser != value)
                 {
                     _isPremiumUser = value;
-                    OnPropertyChanged(nameof(IsPremiumUser)); // Use OnPropertyChanged for consistency
+                    Preferences.Set(PremiumKey, value);   // persist immediately
+                    OnPropertyChanged(nameof(IsPremiumUser));
                 }
             }
         }

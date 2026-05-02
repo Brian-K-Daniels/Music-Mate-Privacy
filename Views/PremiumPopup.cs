@@ -89,10 +89,14 @@ public class PremiumPopup : Popup
                 new RowDefinition { Height = GridLength.Star    }, // row 2 – gap
                 new RowDefinition { Height = GridLength.Auto    }, // row 3 – subtitle
                 new RowDefinition { Height = GridLength.Star    }, // row 4 – gap
-                new RowDefinition { Height = new GridLength(52) }, // row 5 – Buy Premium (raised from 40)
+                new RowDefinition { Height = new GridLength(52) }, // row 5 – Buy Premium
                 new RowDefinition { Height = GridLength.Star    }, // row 6 – gap
-                new RowDefinition { Height = new GridLength(52) }, // row 7 – Decline (raised from 38)
-                new RowDefinition { Height = GridLength.Star    }, // row 8 – bottom gap
+                new RowDefinition { Height = new GridLength(52) }, // row 7 – Decline
+#if DEBUG
+                new RowDefinition { Height = GridLength.Star    }, // row 8 – gap (debug only)
+                new RowDefinition { Height = new GridLength(44) }, // row 9 – Restore (debug only)
+#endif
+                new RowDefinition { Height = GridLength.Star    }, // bottom gap
             }
         };
 
@@ -100,6 +104,28 @@ public class PremiumPopup : Popup
         grid.Add(subtitleLabel, column: 0, row: 3);
         grid.Add(buyButton,     column: 0, row: 5);
         grid.Add(declineButton, column: 0, row: 7);
+
+#if DEBUG
+        // DEBUG ONLY – "Restore Purchases" resets the local premium flag so you
+        // can test the flow repeatedly without uninstalling.
+        var restoreButton = new Button
+        {
+            Text              = "🔄 Restore Purchases (debug)",
+            BackgroundColor   = Colors.Transparent,
+            TextColor         = Color.FromArgb("#888888"),
+            BorderColor       = Color.FromArgb("#555555"),
+            BorderWidth       = 1,
+            CornerRadius      = 6,
+            FontSize          = 11,
+            Padding           = new Thickness(10, 6),
+            HorizontalOptions = LayoutOptions.Fill,
+            VerticalOptions   = LayoutOptions.Fill
+        };
+        restoreButton.Clicked += OnRestoreClicked;
+        grid.Add(restoreButton, column: 0, row: 9);
+
+        double debugPopupH = popupH + 60;   // extra height for the extra button
+#endif
 
         Content = new Border
         {
@@ -109,7 +135,11 @@ public class PremiumPopup : Popup
             StrokeShape     = new RoundRectangle { CornerRadius = new CornerRadius(10) },
             Padding         = new Thickness(20, 14),
             WidthRequest    = popupW,
+#if DEBUG
+            HeightRequest   = debugPopupH,
+#else
             HeightRequest   = popupH,
+#endif
             Content         = grid
         };
     }
@@ -125,13 +155,60 @@ public class PremiumPopup : Popup
                 PurchaseResult = true;
             }
         }
-        await CloseAsync();
+        await SafeCloseAsync();
     }
 
     private async void OnDeclineClicked(object? sender, EventArgs e)
     {
         // Revert the triggering property before the popup closes
         _onDecline?.Invoke();
-        await CloseAsync();
+        await SafeCloseAsync();
+    }
+
+#if DEBUG
+    private async void OnRestoreClicked(object? sender, EventArgs e)
+    {
+        if (_storeService != null)
+        {
+            bool restored = await _storeService.RestorePurchasesAsync();
+            if (restored)
+            {
+                StatusService.Instance.IsPremiumUser = true;
+                PurchaseResult = true;
+            }
+            else
+            {
+                StatusService.Instance.IsPremiumUser = false;
+            }
+        }
+        await SafeCloseAsync();
+    }
+#endif
+
+    /// <summary>
+    /// Closes the popup safely. If a modal page is blocking closure (e.g. the Instrument
+    /// picker dialog is still on the stack) it is popped first, then the popup closes.
+    /// </summary>
+    private async Task SafeCloseAsync()
+    {
+        try
+        {
+            await CloseAsync();
+        }
+        catch (Exception ex) when (ex.Message.Contains("blocked by the Modal Page") ||
+                                   ex.Message.Contains("PopupBlockedException"))
+        {
+            try
+            {
+                var nav = Application.Current?.Windows[0].Page?.Navigation;
+                if (nav?.ModalStack.Count > 0)
+                    await nav.PopModalAsync(animated: false);
+                await CloseAsync();
+            }
+            catch
+            {
+                // best effort — popup will close when the modal is dismissed naturally
+            }
+        }
     }
 }

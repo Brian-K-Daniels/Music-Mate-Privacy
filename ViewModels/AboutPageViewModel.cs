@@ -10,7 +10,6 @@ namespace musicmate.ViewModels
 {
     public class AboutPageViewModel : INotifyPropertyChanged
     {
-        private const string PremiumKey = "IsPremium";
         private Color _backgroundColor = Colors.White;
         private double _selectedFontSize;
         ThemeService? _themeService;
@@ -110,12 +109,27 @@ namespace musicmate.ViewModels
                 if (_isPremium != value)
                 {
                     _isPremium = value;
-                    Preferences.Set(PremiumKey, value);
-                    StatusService.Instance.IsPremiumUser = value;
+                    StatusService.Instance.IsPremiumUser = value;  // persists via StatusService
                     OnPropertyChanged(nameof(IsPremium));
+                    OnPropertyChanged(nameof(NotIsPremium));
+                    OnPropertyChanged(nameof(IsDebugRestoreVisible));
                 }
             }
         }
+
+        /// <summary>Inverse of IsPremium — used to show/hide the "Get Premium" button.</summary>
+        public bool NotIsPremium => !_isPremium;
+
+        /// <summary>
+        /// True only in DEBUG builds when the user currently has premium — shows the
+        /// "Remove Premium (debug)" reset button. Always false in Release.
+        /// </summary>
+        public bool IsDebugRestoreVisible =>
+#if DEBUG
+            _isPremium;
+#else
+            false;
+#endif
 
         public ICommand BuyPremiumCommand { get; }
         public ICommand RestorePurchasesCommand { get; }
@@ -141,17 +155,20 @@ namespace musicmate.ViewModels
         private async Task RestorePurchasesAsync()
         {
             System.Diagnostics.Debug.WriteLine($"RestorePurchasesAsync called. StoreService={_storeService?.GetType().Name}");
+#if DEBUG
+            // In Debug: this button is a reset tool — unconditionally remove premium.
+            if (_storeService != null)
+                await _storeService.RestorePurchasesAsync();   // resets the local stub flag
+            MainThread.BeginInvokeOnMainThread(() => IsPremium = false);
+#else
+            // In Release: genuine restore from the store (should never be reached — button is hidden).
             if (_storeService != null)
             {
                 var ok = await _storeService.RestorePurchasesAsync();
                 System.Diagnostics.Debug.WriteLine($"RestorePurchasesAsync returned: {ok}");
                 MainThread.BeginInvokeOnMainThread(() => IsPremium = ok);
             }
-            else
-            {
-                // No store service available — nothing to restore
-                MainThread.BeginInvokeOnMainThread(() => IsPremium = false);
-            }
+#endif
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
