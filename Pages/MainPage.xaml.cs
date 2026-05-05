@@ -526,11 +526,11 @@ namespace musicmate.Pages
                 // Use exact computed height - no extra margins
                 var heightReq = _drawable.ComputeRequiredHeight((float)StaffGraphicsView.Width);
                 // DEBUG: Log height calculations and current sizes
-                Debug.WriteLine($"[UpdateStaffHeight] Computed height: {heightReq:F1}");
-                Debug.WriteLine($"[UpdateStaffHeight] StaffGraphicsView current: Width={StaffGraphicsView.Width:F1}, Height={StaffGraphicsView.Height:F1}");
-                Debug.WriteLine($"[UpdateStaffHeight] StaffBorder current: Width={StaffBorder.Width:F1}, Height={StaffBorder.Height:F1}");
-                Debug.WriteLine($"[UpdateStaffHeight] StaffBorder Padding: {StaffBorder.Padding}");
-                Debug.WriteLine($"[UpdateStaffHeight] StaffBorder Margin: {StaffBorder.Margin}");
+                //Debug.WriteLine($"[UpdateStaffHeight] Computed height: {heightReq:F1}");
+                //Debug.WriteLine($"[UpdateStaffHeight] StaffGraphicsView current: Width={StaffGraphicsView.Width:F1}, Height={StaffGraphicsView.Height:F1}");
+                //Debug.WriteLine($"[UpdateStaffHeight] StaffBorder current: Width={StaffBorder.Width:F1}, Height={StaffBorder.Height:F1}");
+                //Debug.WriteLine($"[UpdateStaffHeight] StaffBorder Padding: {StaffBorder.Padding}");
+                //Debug.WriteLine($"[UpdateStaffHeight] StaffBorder Margin: {StaffBorder.Margin}");
 
                 StaffGraphicsView.HeightRequest = heightReq;
                 StaffBorder.HeightRequest = heightReq;
@@ -886,6 +886,7 @@ async Task UpdateNoteStatsDatabaseAsync()
             {
                 var db = ServiceHelper.GetService<NoteDatabase>();
                 var sessionStats = _session.GetAndClearRandomSessionNoteStats();
+                var sessionStreaks = _session.GetSessionStreaks();
 
                 foreach (var (writtenName, (correct, wrong, totalMs, msCount)) in sessionStats)
                 {
@@ -906,7 +907,8 @@ async Task UpdateNoteStatsDatabaseAsync()
                             Correct = correct,
                             Wrong = wrong,
                             MsCount = msCount,
-                            MsAverage = msCount > 0 ? totalMs / msCount : 0.0
+                            MsAverage = msCount > 0 ? totalMs / msCount : 0.0,
+                            Streak = sessionStreaks.GetValueOrDefault(writtenName, 0)
                         };
                         await db.InsertOrReplaceAsync(stat);
                     }
@@ -919,6 +921,14 @@ async Task UpdateNoteStatsDatabaseAsync()
                             var newMsCount = stat.MsCount + msCount;
                             stat.MsAverage = (stat.MsAverage * stat.MsCount + totalMs) / newMsCount;
                             stat.MsCount = newMsCount;
+                        }
+                        // Update streak: accumulate if no wrongs this session, otherwise reset to session-end streak
+                        if (sessionStreaks.TryGetValue(writtenName, out var sessionStreak))
+                        {
+                            if (sessionStreak > 0 && wrong == 0)
+                                stat.Streak += sessionStreak;
+                            else
+                                stat.Streak = sessionStreak;
                         }
                         await db.UpdateAsync(stat);
                     }
@@ -954,15 +964,42 @@ async Task UpdateNoteStatsDatabaseAsync()
                 // Handle note generation based on repeat mode
                 if (_repeatSameTune && _savedNotesToRepeat != null && _savedNotesToRepeat.Count > 0)
                 {
-                    // Restore the saved notes for "Repeat Same" mode
+                    // Filter out notes that are now mastered before restoring
+                    var notesToRestore = _savedNotesToRepeat.ToList();
+                    var db = ServiceHelper.GetService<NoteDatabase>();
+                    if (db != null)
+                    {
+                        await db.InitializeAsync();
+                        var statsList = await db.GetAllAsync();
+                        var stats = statsList.ToDictionary(s => s.WrittenName, s => s);
+                        notesToRestore = notesToRestore.Where(n =>
+                        {
+                            if (!stats.TryGetValue(n.Name, out var stat)) return true;
+                            if (_session.MasteredMethod == "Streak")
+                                return stat.Streak < _session.StreakCrit;
+                            return !(stat.PercentCorrect >= _session.CorrectThreshold && stat.Correct >= _session.MinCorrectCount);
+                        }).ToList();
+                    }
+
+                    // If too few notes remain after mastery filtering, regenerate instead
+                    if (notesToRestore.Count < 2)
+                    {
+                        await RegenerateNotesAsync();
+                        if (_session?.NotesToDraw != null && _session.NotesToDraw.Count > 0)
+                            _savedNotesToRepeat = new List<NoteInfo>(_session.NotesToDraw);
+                    }
+                    else
+                    {
+                        // Restore the filtered notes for "Repeat Same" mode
                         _session.NotesToDraw.Clear();
-                        _session.NotesToDraw.AddRange(_savedNotesToRepeat);
+                        _session.NotesToDraw.AddRange(notesToRestore);
                         // Re-populate FeedbackViewModels (cleared by Reset) to match the restored notes
                         _session.FeedbackViewModels.Clear();
-                        for (int i = 0; i < _savedNotesToRepeat.Count; i++)
+                        for (int i = 0; i < notesToRestore.Count; i++)
                             _session.FeedbackViewModels.Add(new FeedbackItem(i, 0, 0, false));
                         await MainThread.InvokeOnMainThreadAsync(() => StaffGraphicsView.Invalidate());
-                    Debug.WriteLine($"[Start] Restored {_savedNotesToRepeat.Count} saved notes for Repeat Same");
+                        Debug.WriteLine($"[Start] Restored {notesToRestore.Count} notes for Repeat Same (filtered from {_savedNotesToRepeat.Count})");
+                    }
                 }
                 else
                 {

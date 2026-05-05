@@ -184,6 +184,7 @@ namespace musicmate.ViewModels
         public string WrongSortIndicator => _noteCurrentSortColumn == "Wrong" ? (_noteIsAscending ? "▲" : "▼") : "";
         public string PercentCorrectSortIndicator => _noteCurrentSortColumn == "PercentCorrect" ? (_noteIsAscending ? "▲" : "▼") : "";
         public string MsAvgSortIndicator => _noteCurrentSortColumn == "MsAvg" ? (_noteIsAscending ? "▲" : "▼") : "";
+        public string StreakSortIndicator => _noteCurrentSortColumn == "Streak" ? (_noteIsAscending ? "▲" : "▼") : "";
 
         // Sort indicator properties for Session Stats
         public string DateSortIndicator => _sessionCurrentSortColumn == "Date" ? (_sessionIsAscending ? "▲" : "▼") : "";
@@ -196,6 +197,39 @@ namespace musicmate.ViewModels
         public string HiSortIndicator => _sessionCurrentSortColumn == "Hi" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string LoSortIndicator => _sessionCurrentSortColumn == "Lo" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string TempoSDSortIndicator => _sessionCurrentSortColumn == "TempoSD" ? (_sessionIsAscending ? "▲" : "▼") : "";
+
+        // Combined header label text for session columns (text + arrow in one binding)
+        public string DateHeader => "Date " + DateSortIndicator;
+        public string ScaleHeader => "Scale " + ScaleSortIndicator;
+        public string KeyHeader => "Key " + KeySortIndicator;
+        public string CorrectPercentHeader => "Correct % " + CorrectPercentSortIndicator;
+        public string TempoHeader => "Tempo " + TempoSortIndicator;
+        public string TempoCVHeader => "Tempo CV " + TempoCVSortIndicator;
+        public string InstrumentHeader => "Instrument " + InstrumentSortIndicator;
+        public string HiHeader => "Hi " + HiSortIndicator;
+        public string LoHeader => "Lo " + LoSortIndicator;
+        public string TempoSDHeader => "Tempo SD " + TempoSDSortIndicator;
+
+        // Returns a sort key for a note name such as "C#4" or "Bb3".
+        // Priority: octave (largest), then letter (C<D<E<F<G<A<B), then accidental (flat < natural < sharp).
+        private static (int octave, int letter, int accidental) NoteNameSortKey(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return (0, 0, 0);
+            int i = 0;
+            int letter = "CDEFGAB".IndexOf(char.ToUpper(name[i]));
+            if (letter < 0) letter = 0;
+            i++;
+            int accidental = 0;
+            if (i < name.Length && (name[i] == '#' || name[i] == 'b'))
+            {
+                accidental = name[i] == '#' ? 1 : -1;
+                i++;
+            }
+            int octave = 0;
+            if (i < name.Length && int.TryParse(name[i..], out int o))
+                octave = o;
+            return (octave, letter, accidental);
+        }
 
         private void SortNoteStatsByColumn(string columnName)
         {
@@ -211,8 +245,8 @@ namespace musicmate.ViewModels
             var sorted = (columnName switch
             {
                 "Note" => _noteIsAscending
-                    ? NoteStats.OrderBy(s => s.WrittenName)
-                    : NoteStats.OrderByDescending(s => s.WrittenName),
+                    ? NoteStats.OrderBy(s => NoteNameSortKey(s.WrittenName))
+                    : NoteStats.OrderByDescending(s => NoteNameSortKey(s.WrittenName)),
                 "Correct" => _noteIsAscending
                     ? NoteStats.OrderBy(s => s.Correct)
                     : NoteStats.OrderByDescending(s => s.Correct),
@@ -225,6 +259,9 @@ namespace musicmate.ViewModels
                 "MsAvg" => _noteIsAscending
                     ? NoteStats.OrderBy(s => s.MsAverage)
                     : NoteStats.OrderByDescending(s => s.MsAverage),
+                "Streak" => _noteIsAscending
+                    ? NoteStats.OrderBy(s => s.Streak)
+                    : NoteStats.OrderByDescending(s => s.Streak),
                 _ => NoteStats.OrderBy(s => s.WrittenName) // Default to Note name ordering
             }).ToList(); // Materialize the sequence before clearing
 
@@ -238,6 +275,7 @@ namespace musicmate.ViewModels
             OnPropertyChanged(nameof(WrongSortIndicator));
             OnPropertyChanged(nameof(PercentCorrectSortIndicator));
             OnPropertyChanged(nameof(MsAvgSortIndicator));
+            OnPropertyChanged(nameof(StreakSortIndicator));
         }
 
         private void SortSessionStatsByColumn(string columnName)
@@ -301,6 +339,16 @@ namespace musicmate.ViewModels
             OnPropertyChanged(nameof(HiSortIndicator));
             OnPropertyChanged(nameof(LoSortIndicator));
             OnPropertyChanged(nameof(TempoSDSortIndicator));
+            OnPropertyChanged(nameof(DateHeader));
+            OnPropertyChanged(nameof(ScaleHeader));
+            OnPropertyChanged(nameof(KeyHeader));
+            OnPropertyChanged(nameof(CorrectPercentHeader));
+            OnPropertyChanged(nameof(TempoHeader));
+            OnPropertyChanged(nameof(TempoCVHeader));
+            OnPropertyChanged(nameof(InstrumentHeader));
+            OnPropertyChanged(nameof(HiHeader));
+            OnPropertyChanged(nameof(LoHeader));
+            OnPropertyChanged(nameof(TempoSDHeader));
         }
     }
 }

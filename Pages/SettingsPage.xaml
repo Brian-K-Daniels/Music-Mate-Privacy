@@ -54,21 +54,28 @@
     <VerticalStackLayout Padding="8,6" Spacing="6">
 
       <!-- ── Note Range: bold label + both pickers on one line ────────── -->
-      <Grid ColumnDefinitions="300,Auto,*,Auto,*" ColumnSpacing="6" VerticalOptions="Center">
+      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="4" VerticalOptions="Center">
         <Label Grid.Column="0" Text="Note Range" FontAttributes="Bold" FontSize="13" />
         <Label Grid.Column="1" Text="Low" HorizontalTextAlignment="End"/>
         <Picker x:Name="LowestNotePicker"
                 Grid.Column="2"
-                WidthRequest="40"
+                WidthRequest="60"
                 ItemsSource="{Binding WhiteKeyNoteNames}"
                 SelectedItem="{Binding LowestNote, Mode=TwoWay}"
                 TextColor="Black" BackgroundColor="White" FontSize="12" />
         <Label Grid.Column="3" Text="High" />
         <Picker x:Name="HighestNotePicker"
                 Grid.Column="4"
-                WidthRequest="40"
+                WidthRequest="60"
                 ItemsSource="{Binding WhiteKeyNoteNames}"
                 SelectedItem="{Binding HighestNote, Mode=TwoWay}"
+                TextColor="Black" BackgroundColor="White" FontSize="12" />
+        <Label Grid.Column="5" />
+        <Label Grid.Column="6" Text="Mastered" VerticalOptions="Center" />
+        <Picker Grid.Column="7"
+                WidthRequest="100"
+                ItemsSource="{Binding MasteredMethodOptions}"
+                SelectedItem="{Binding MasteredMethod, Mode=TwoWay}"
                 TextColor="Black" BackgroundColor="White" FontSize="12" />
       </Grid>
 
@@ -94,18 +101,22 @@
                HorizontalTextAlignment="End" />
       </Grid>
 
-      <!-- Omit notes at/above % correct -->
+      <!-- Omit threshold (label and range change based on MasteredMethod) -->
       <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center">
-        <Label Grid.Column="0" Text="Omit ≥ % correct" />
-        <Slider Grid.Column="1" Minimum="0" Maximum="100"
-                Value="{Binding CorrectThreshold, Mode=TwoWay}"
+        <Label Grid.Column="0" Text="{Binding OmitSliderLabel}" />
+        <Slider x:Name="OmitThresholdSlider"
+                Grid.Column="1"
+                Minimum="{Binding OmitSliderMin}"
+                Maximum="{Binding OmitSliderMax}"
+                Value="{Binding OmitSliderValue, Mode=TwoWay}"
                 Style="{StaticResource SliderStyle}" />
-        <Label Grid.Column="2" Text="{Binding CorrectThreshold}"
+        <Label Grid.Column="2" Text="{Binding OmitSliderValue, StringFormat='{0:F0}'}"
                HorizontalTextAlignment="End" />
       </Grid>
 
-      <!-- Min correct count -->
-      <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center">
+      <!-- Min correct count (hidden when MasteredMethod=Streak) -->
+      <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center"
+            IsVisible="{Binding IsPercentCorrectMethod}">
         <Label Grid.Column="0" Text="Min correct count" />
         <Slider Grid.Column="1" Minimum="1" Maximum="20"
                 Value="{Binding MinCorrectCount, Mode=TwoWay}"
@@ -114,8 +125,9 @@
                HorizontalTextAlignment="End" />
       </Grid>
 
-      <!-- Omit below MsAvg -->
-      <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center">
+      <!-- Omit below MsAvg (hidden when MasteredMethod=Streak) -->
+      <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center"
+            IsVisible="{Binding IsPercentCorrectMethod}">
         <Label Grid.Column="0" Text="Omit below MsAvg" />
         <Slider Grid.Column="1" Minimum="0" Maximum="5000"
                 Value="{Binding OmitMsAvgThreshold, Mode=TwoWay}"

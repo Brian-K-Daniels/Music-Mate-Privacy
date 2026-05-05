@@ -77,6 +77,18 @@ namespace musicmate.ViewModels
                     OnPropertyChanged(nameof(AutoStart)); break;
                 case nameof(NoteSessionService.OmitMsAvgThreshold):
                     OnPropertyChanged(nameof(OmitMsAvgThreshold)); break;
+                case nameof(NoteSessionService.MasteredMethod):
+                    OnPropertyChanged(nameof(MasteredMethod));
+                    OnPropertyChanged(nameof(OmitSliderLabel));
+                    OnPropertyChanged(nameof(OmitSliderMin));
+                    OnPropertyChanged(nameof(OmitSliderMax));
+                    OnPropertyChanged(nameof(OmitSliderValue));
+                    OnPropertyChanged(nameof(IsPercentCorrectMethod));
+                    break;
+                case nameof(NoteSessionService.StreakCrit):
+                    OnPropertyChanged(nameof(StreakCrit));
+                    OnPropertyChanged(nameof(OmitSliderValue));
+                    break;
                 case nameof(NoteSessionService.WhiteKeyNoteNames):
                     OnPropertyChanged(nameof(WhiteKeyNoteNames)); break;
                 case nameof(NoteSessionService.AvailableScalesForBinding):
@@ -329,6 +341,74 @@ namespace musicmate.ViewModels
             }
         }
 
+        public List<string> MasteredMethodOptions { get; } = new() { "% Correct", "Streak" };
+
+        private string _masteredMethod = Preferences.Get("musicmate.MasteredMethod", "% Correct");
+        public string MasteredMethod
+        {
+            get => _session?.MasteredMethod ?? _masteredMethod;
+            set
+            {
+                if ((_session?.MasteredMethod ?? _masteredMethod) == value) return;
+                if (_session != null)
+                {
+                    _session.MasteredMethod = value;
+                    OnPropertyChanged(nameof(MasteredMethod));
+                }
+                else
+                {
+                    _masteredMethod = value;
+                    Preferences.Set("musicmate.MasteredMethod", value);
+                    OnPropertyChanged(nameof(MasteredMethod));
+                }
+                OnPropertyChanged(nameof(OmitSliderLabel));
+                OnPropertyChanged(nameof(OmitSliderMin));
+                OnPropertyChanged(nameof(OmitSliderMax));
+                OnPropertyChanged(nameof(OmitSliderValue));
+                OnPropertyChanged(nameof(IsPercentCorrectMethod));
+            }
+        }
+
+        public bool IsPercentCorrectMethod => MasteredMethod != "Streak";
+
+        public string OmitSliderLabel => MasteredMethod == "Streak" ? "Streak" : "Omit ≥ % correct";
+        public double OmitSliderMin => MasteredMethod == "Streak" ? 1 : 0;
+        public double OmitSliderMax => MasteredMethod == "Streak" ? 50 : 100;
+        public double OmitSliderValue
+        {
+            get => MasteredMethod == "Streak" ? StreakCrit : CorrectThreshold;
+            set
+            {
+                if (MasteredMethod == "Streak")
+                    StreakCrit = (int)value;
+                else
+                    CorrectThreshold = (int)value;
+            }
+        }
+
+        private int _streakCrit = Preferences.Get("musicmate.StreakCrit", 3);
+        public int StreakCrit
+        {
+            get => _session?.StreakCrit ?? _streakCrit;
+            set
+            {
+                var clamped = Math.Clamp(value, 1, 50);
+                if ((_session?.StreakCrit ?? _streakCrit) == clamped) return;
+                if (_session != null)
+                {
+                    _session.StreakCrit = clamped;
+                    OnPropertyChanged(nameof(StreakCrit));
+                }
+                else
+                {
+                    _streakCrit = clamped;
+                    Preferences.Set("musicmate.StreakCrit", clamped);
+                    OnPropertyChanged(nameof(StreakCrit));
+                }
+                OnPropertyChanged(nameof(OmitSliderValue));
+            }
+        }
+
         // ── Statistics Collection ─────────────────────────────────────────────
         const string KeyCollectNote    = "CollectNoteStats";
         const string KeyCollectSession = "CollectSessionStats";
@@ -441,6 +521,8 @@ namespace musicmate.ViewModels
             MinCorrectCount     = DefaultMinCorrectCount;
             OmitMsAvgThreshold  = DefaultOmitMsAvg;
             AutoStart           = DefaultAutoStart;
+            MasteredMethod      = "% Correct";
+            StreakCrit          = 3;
             CollectNoteStats    = DefaultCollectNote;
             CollectSessionStats = DefaultCollectSession;
             MaxSessionDbSizeMb  = DefaultMaxSessionDbMb;

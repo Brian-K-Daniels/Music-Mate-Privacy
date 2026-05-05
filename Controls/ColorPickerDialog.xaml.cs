@@ -202,7 +202,7 @@ namespace musicmate.Controls
             ColorPicker.PointerRingPositionYUnits += dyd;
             double x = ColorPicker.PointerRingPositionXUnits;
             double y = ColorPicker.PointerRingPositionYUnits;
-            Utils.Log($"Moving by {dxd}, {dyd} to {x:000.0} {y:000.0}");
+           // Utils.Log($"Moving by {dxd}, {dyd} to {x:000.0} {y:000.0}");
         }
     }
 }

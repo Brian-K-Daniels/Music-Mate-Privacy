@@ -16,6 +16,7 @@ namespace musicmate.Services
         public int? Octave { get; set; }
         public double MsAverage { get; set; }
         public int MsCount { get; set; }
+        public int Streak { get; set; }
         public int CorrectCount => Correct;
         public int WrongCount => Wrong;
 

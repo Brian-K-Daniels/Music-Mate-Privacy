@@ -80,9 +80,10 @@
       <ScrollView Orientation="Horizontal">
         <VerticalStackLayout MinimumWidthRequest="480" Spacing="0" Margin="8,0,0,0">
           <Grid ColumnDefinitions="*,Auto" Padding="0" Margin="0" IsVisible="{Binding IsNoteDatabase}">
-            <Grid Grid.Column="0" ColumnDefinitions="120,80,80,100,100" HeightRequest="28">
+            <Grid Grid.Column="0" ColumnDefinitions="120,80,80,100,100,70" HeightRequest="28">
                 <Border Grid.Column="0" BackgroundColor="Transparent" Padding="0">
-                  <Label FontSize="10" FontAttributes="Bold" TextColor="{Binding ContrastingTextColor}" VerticalOptions="Center">
+                  <Label FontSize="10" FontAttributes="Bold" TextColor="{Binding ContrastingTextColor}"
+                         HorizontalOptions="Center" HorizontalTextAlignment="Center" VerticalOptions="Center">
                     <Label.FormattedText>
                       <FormattedString>
                         <Span Text="Note " />
@@ -95,7 +96,8 @@
                   </Border.GestureRecognizers>
                 </Border>
                 <Border Grid.Column="1" BackgroundColor="Transparent" Padding="0">
-                  <Label FontSize="10" FontAttributes="Bold" TextColor="{Binding ContrastingTextColor}" VerticalOptions="Center">
+                  <Label FontSize="10" FontAttributes="Bold" TextColor="{Binding ContrastingTextColor}"
+                         HorizontalOptions="Center" HorizontalTextAlignment="Center" VerticalOptions="Center">
                     <Label.FormattedText>
                       <FormattedString>
                         <Span Text="Correct " />
@@ -108,7 +110,8 @@
                   </Border.GestureRecognizers>
                 </Border>
                 <Border Grid.Column="2" BackgroundColor="Transparent" Padding="0">
-                  <Label FontSize="10" FontAttributes="Bold" TextColor="{Binding ContrastingTextColor}" VerticalOptions="Center">
+                  <Label FontSize="10" FontAttributes="Bold" TextColor="{Binding ContrastingTextColor}"
+                         HorizontalOptions="Center" HorizontalTextAlignment="Center" VerticalOptions="Center">
                     <Label.FormattedText>
                       <FormattedString>
                         <Span Text="Wrong " />
@@ -121,7 +124,8 @@
                   </Border.GestureRecognizers>
                 </Border>
                 <Border Grid.Column="3" BackgroundColor="Transparent" Padding="0">
-                  <Label FontSize="10" FontAttributes="Bold" TextColor="{Binding ContrastingTextColor}" VerticalOptions="Center">
+                  <Label FontSize="10" FontAttributes="Bold" TextColor="{Binding ContrastingTextColor}"
+                         HorizontalOptions="Center" HorizontalTextAlignment="Center" VerticalOptions="Center">
                     <Label.FormattedText>
                       <FormattedString>
                         <Span Text="% Correct " />
@@ -134,7 +138,8 @@
                   </Border.GestureRecognizers>
                 </Border>
                 <Border Grid.Column="4" BackgroundColor="Transparent" Padding="0">
-                  <Label FontSize="10" FontAttributes="Bold" TextColor="{Binding ContrastingTextColor}" VerticalOptions="Center">
+                  <Label FontSize="10" FontAttributes="Bold" TextColor="{Binding ContrastingTextColor}"
+                         HorizontalOptions="Center" HorizontalTextAlignment="Center" VerticalOptions="Center">
                     <Label.FormattedText>
                       <FormattedString>
                         <Span Text="MsAvg " />
@@ -146,6 +151,20 @@
                     <TapGestureRecognizer Command="{Binding SortNoteStatsCommand}" CommandParameter="MsAvg" />
                   </Border.GestureRecognizers>
                 </Border>
+                <Border Grid.Column="5" BackgroundColor="Transparent" Padding="0">
+                  <Label FontSize="10" FontAttributes="Bold" TextColor="{Binding ContrastingTextColor}"
+                         HorizontalOptions="Center" HorizontalTextAlignment="Center" VerticalOptions="Center">
+                    <Label.FormattedText>
+                      <FormattedString>
+                        <Span Text="Streak " />
+                        <Span Text="{Binding StreakSortIndicator}" />
+                      </FormattedString>
+                    </Label.FormattedText>
+                  </Label>
+                  <Border.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding SortNoteStatsCommand}" CommandParameter="Streak" />
+                  </Border.GestureRecognizers>
+                </Border>
               </Grid>
             <Label Grid.Column="1" Text="{Binding AverageWrong, StringFormat='Avg Wrong: {0:F1}'}" VerticalOptions="Center" HorizontalOptions="End" Margin="8,0,8,0" TextColor="{Binding ContrastingTextColor}" />
           </Grid>
@@ -154,12 +173,13 @@
             <VerticalStackLayout BindableLayout.ItemsSource="{Binding NoteStats}" Padding="0,0,0,60">
               <BindableLayout.ItemTemplate>
                 <DataTemplate>
-                  <Grid ColumnDefinitions="120,80,80,100,100" Padding="0,0,0,0" HeightRequest="24">
+                  <Grid ColumnDefinitions="120,80,80,100,100,70" Padding="0,0,0,0" HeightRequest="24">
                     <Label Text="{Binding WrittenName}" Grid.Column="0" FontSize="10" TextColor="{Binding ContrastingTextColor}" />
                     <Label Text="{Binding Correct}" Grid.Column="1" FontSize="10" TextColor="{Binding ContrastingTextColor}" />
                     <Label Text="{Binding Wrong}" Grid.Column="2" FontSize="10" TextColor="{Binding ContrastingTextColor}" />
                     <Label Text="{Binding PercentCorrect, StringFormat='{0:F1}'}" Grid.Column="3" FontSize="10" TextColor="{Binding ContrastingTextColor}" />
                     <Label Text="{Binding MsAverage, StringFormat='{0:F0}'}" Grid.Column="4" FontSize="10" TextColor="{Binding ContrastingTextColor}" />
+                    <Label Text="{Binding Streak}" Grid.Column="5" FontSize="10" TextColor="{Binding ContrastingTextColor}" />
                   </Grid>
                 </DataTemplate>
               </BindableLayout.ItemTemplate>
@@ -192,150 +212,80 @@
                    HorizontalTextAlignment="Center" HorizontalOptions="Center" />
 
             <Border Grid.Column="1" BackgroundColor="Transparent" Padding="4,0">
-              <Label FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center">
-                <Label.FormattedText>
-                  <FormattedString>
-                    <Span Text="Date " />
-                    <Span Text="{Binding DateSortIndicator}" />
-                  </FormattedString>
-                </Label.FormattedText>
-              </Label>
+              <Label Text="{Binding DateHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Date" />
               </Border.GestureRecognizers>
             </Border>
 
             <Border Grid.Column="2" BackgroundColor="Transparent" Padding="4,0">
-              <Label FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center">
-                <Label.FormattedText>
-                  <FormattedString>
-                    <Span Text="Scale " />
-                    <Span Text="{Binding ScaleSortIndicator}" />
-                  </FormattedString>
-                </Label.FormattedText>
-              </Label>
+              <Label Text="{Binding ScaleHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Scale" />
               </Border.GestureRecognizers>
             </Border>
 
             <Border Grid.Column="3" BackgroundColor="Transparent" Padding="4,0">
-              <Label FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center">
-                <Label.FormattedText>
-                  <FormattedString>
-                    <Span Text="Key " />
-                    <Span Text="{Binding KeySortIndicator}" />
-                  </FormattedString>
-                </Label.FormattedText>
-              </Label>
+              <Label Text="{Binding KeyHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Key" />
               </Border.GestureRecognizers>
             </Border>
 
             <Border Grid.Column="4" BackgroundColor="Transparent" Padding="4,0">
-              <Label FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center">
-                <Label.FormattedText>
-                  <FormattedString>
-                    <Span Text="Correct % " />
-                    <Span Text="{Binding CorrectPercentSortIndicator}" />
-                  </FormattedString>
-                </Label.FormattedText>
-              </Label>
+              <Label Text="{Binding CorrectPercentHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="CorrectPercent" />
               </Border.GestureRecognizers>
             </Border>
 
             <Border Grid.Column="5" BackgroundColor="Transparent" Padding="4,0">
-              <Label FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center">
-                <Label.FormattedText>
-                  <FormattedString>
-                    <Span Text="Tempo " />
-                    <Span Text="{Binding TempoSortIndicator}" />
-                  </FormattedString>
-                </Label.FormattedText>
-              </Label>
+              <Label Text="{Binding TempoHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Tempo" />
               </Border.GestureRecognizers>
             </Border>
 
             <Border Grid.Column="6" BackgroundColor="Transparent" Padding="4,0">
-              <Label FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center">
-                <Label.FormattedText>
-                  <FormattedString>
-                    <Span Text="Tempo CV " />
-                    <Span Text="{Binding TempoCVSortIndicator}" />
-                  </FormattedString>
-                </Label.FormattedText>
-              </Label>
+              <Label Text="{Binding TempoCVHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="TempoCV" />
               </Border.GestureRecognizers>
             </Border>
 
             <Border Grid.Column="7" BackgroundColor="Transparent" Padding="4,0">
-              <Label FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center">
-                <Label.FormattedText>
-                  <FormattedString>
-                    <Span Text="Instrument " />
-                    <Span Text="{Binding InstrumentSortIndicator}" />
-                  </FormattedString>
-                </Label.FormattedText>
-              </Label>
+              <Label Text="{Binding InstrumentHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Instrument" />
               </Border.GestureRecognizers>
             </Border>
 
             <Border Grid.Column="8" BackgroundColor="Transparent" Padding="4,0">
-              <Label FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center">
-                <Label.FormattedText>
-                  <FormattedString>
-                    <Span Text="Hi " />
-                    <Span Text="{Binding HiSortIndicator}" />
-                  </FormattedString>
-                </Label.FormattedText>
-              </Label>
+              <Label Text="{Binding HiHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Hi" />
               </Border.GestureRecognizers>
             </Border>
 
             <Border Grid.Column="9" BackgroundColor="Transparent" Padding="4,0">
-              <Label FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center">
-                <Label.FormattedText>
-                  <FormattedString>
-                    <Span Text="Lo " />
-                    <Span Text="{Binding LoSortIndicator}" />
-                  </FormattedString>
-                </Label.FormattedText>
-              </Label>
+              <Label Text="{Binding LoHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Lo" />
               </Border.GestureRecognizers>
             </Border>
 
             <Border Grid.Column="10" BackgroundColor="Transparent" Padding="4,0">
-              <Label FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center">
-                <Label.FormattedText>
-                  <FormattedString>
-                    <Span Text="Tempo SD " />
-                    <Span Text="{Binding TempoSDSortIndicator}" />
-                  </FormattedString>
-                </Label.FormattedText>
-              </Label>
+              <Label Text="{Binding TempoSDHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="TempoSD" />
               </Border.GestureRecognizers>

@@ -286,6 +286,43 @@ namespace musicmate.Services
         // Track last wrong timestamp per written name for session stats debouncing
         private readonly Dictionary<string, DateTime> _lastRandomWrongUtc = new();
 
+        private const string PrefMasteredMethodKey = "musicmate.MasteredMethod";
+        private const string PrefStreakCritKey = "musicmate.StreakCrit";
+        private string _masteredMethod = Preferences.Get(PrefMasteredMethodKey, "% Correct");
+        private int _streakCrit = Preferences.Get(PrefStreakCritKey, 3);
+
+        public string MasteredMethod
+        {
+            get => _masteredMethod;
+            set
+            {
+                if (_masteredMethod != value)
+                {
+                    _masteredMethod = value;
+                    Preferences.Set(PrefMasteredMethodKey, value);
+                    OnPropertyChanged(nameof(MasteredMethod));
+                }
+            }
+        }
+
+        public int StreakCrit
+        {
+            get => _streakCrit;
+            set
+            {
+                var clamped = Math.Clamp(value, 1, 50);
+                if (_streakCrit != clamped)
+                {
+                    _streakCrit = clamped;
+                    Preferences.Set(PrefStreakCritKey, clamped);
+                    OnPropertyChanged(nameof(StreakCrit));
+                }
+            }
+        }
+
+        // Per-session streak tracking: written name → current consecutive correct count
+        private readonly Dictionary<string, int> _sessionStreaks = new();
+
         public void RecordRandomSessionNoteResult(string writtenName, bool correct)
         {
             if (!_randomSessionNoteStats.TryGetValue(writtenName, out var stat))
@@ -306,7 +343,9 @@ namespace musicmate.Services
                 _lastCorrectNoteUtc = now;
                 // Clear any debounce for this written note so future wrongs are counted
                 _lastRandomWrongUtc.Remove(writtenName);
-                Utils.Log($"[Stats] RecordRandomSessionNoteResult updated CORRECT for {writtenName} (after: C={stat.Correct}, W={stat.Wrong})");
+                // Increment session streak
+                _sessionStreaks[writtenName] = _sessionStreaks.GetValueOrDefault(writtenName, 0) + 1;
+                Utils.Log($"[Stats] RecordRandomSessionNoteResult updated CORRECT for {writtenName} (after: C={stat.Correct}, W={stat.Wrong}, Streak={_sessionStreaks[writtenName]})");
             }
             else
             {
@@ -332,6 +371,11 @@ namespace musicmate.Services
             var copy = new Dictionary<string, (int Correct, int Wrong, double TotalMs, int MsCount)>(_randomSessionNoteStats);
             _randomSessionNoteStats.Clear();
             return copy;
+        }
+
+        public Dictionary<string, int> GetSessionStreaks()
+        {
+            return new Dictionary<string, int>(_sessionStreaks);
         }
         public (double sumCorrects, double sumWrongs, double adjustedPercentCorrect) GetSessionCorrectWrongTotals()
         {
@@ -831,6 +875,7 @@ namespace musicmate.Services
             _lastWrongTimePerIndex.Clear();
             _lastRandomWrongUtc.Clear();
             _randomSessionNoteStats.Clear();
+            _sessionStreaks.Clear();
             _tunerPrevWrittenMidi = null;// reset direction tracking for next session
             // ensure persisted value is reloaded
             _wrongDebounceMs = Preferences.Get(PrefWrongDebounceMsKey, DefaultDebounceMs);
@@ -963,49 +1008,24 @@ namespace musicmate.Services
             // Only match if the detected pitch class matches the current note's pitch class
             if (Mod12(targetNote.Midi) != detectedPcWritten)
             {
-                //// Debounce wrong counts per note index to avoid spurious increments
-                //var now = DateTime.UtcNow;
-                //if (_lastWrongTimePerIndex.TryGetValue(idx, out var last) && (now - last).TotalMilliseconds < _wrongDebounceMs)
-                //{
-                //    Utils.Log($"[Feedback] Debounced wrong increment for index={idx}, note={targetNote.Name}, last={last:O}, windowMs={_wrongDebounceMs}");
-                //    return false; // skip update
-                //}
-
-                //_lastWrongTimePerIndex[idx] = now;
-
-                //// Update feedback for incorrect attempt: only increment wrong, do not update cents
-                //var cur = NoteFeedbacks.TryGetValue(idx, out var v) ? v : (Wrong: 0, Cents: 0);
-                //Utils.Log($"[Feedback] Incrementing wrong for index={idx}, note={targetNote.Name} (before={cur.Wrong})");
-                //cur = (Wrong: cur.Wrong + 1, Cents: cur.Cents);
-                //NoteFeedbacks[idx] = cur;
-                //FeedbackViewModels[idx] = new FeedbackItem(idx, cur.Wrong, cur.Cents, false);
-                //Utils.Log($"[Feedback] Updated wrong for index={idx}, note={targetNote.Name} (after={cur.Wrong})");
-                //return true;
-
-                // Replace this block at the bottom of UpdateFeedbackForCurrent:
-
-
                 // Debounce trailing wrong increments (pitch class matched but out of tolerance)
                 var nowTrailing = DateTime.UtcNow;
                 if (_lastWrongTimePerIndex.TryGetValue(idx, out var lastTrailing)
                     && (nowTrailing - lastTrailing).TotalMilliseconds < _wrongDebounceMs)
                 {
-                    Utils.Log($"[Feedback] Debounced trailing wrong for index={idx}, note={targetNote.Name}");
+                    //Utils.Log($"[Feedback] Debounced trailing wrong for index={idx}, note={targetNote.Name}");
                     return false;
                 }
                 _lastWrongTimePerIndex[idx] = nowTrailing;
 
                 // Update feedback for incorrect attempt: only increment wrong, do not update cents
-                Utils.Log($"[Feedback] Incrementing trailing wrong for index={idx}, note={targetNote.Name} (before={curFeedback.Wrong})");
+                //Utils.Log($"[Feedback] Incrementing trailing wrong for index={idx}, note={targetNote.Name} (before={curFeedback.Wrong})");
                 curFeedback = (Wrong: curFeedback.Wrong + 1, Cents: result.cents);
                 NoteFeedbacks[idx] = curFeedback;
                 FeedbackViewModels[idx] = new FeedbackItem(idx, curFeedback.Wrong, curFeedback.Cents, false);
-                Utils.Log($"[Feedback] Updated trailing wrong for index={idx}, note={targetNote.Name} (after={curFeedback.Wrong})");
+                //Utils.Log($"[Feedback] Updated trailing wrong for index={idx}, note={targetNote.Name} (after={curFeedback.Wrong})");
                 return true;
-            }
-
-            
-
+            } 
             if (result.correct)
             {
                 // Timing: record interval (skip first note)
@@ -1039,11 +1059,11 @@ namespace musicmate.Services
             }
 
             // Update feedback for incorrect attempt: only increment wrong, do not update cents
-            Utils.Log($"[Feedback] Incrementing trailing wrong for index={idx}, note={targetNote.Name} (before={curFeedback.Wrong})");
+            //Utils.Log($"[Feedback] Incrementing trailing wrong for index={idx}, note={targetNote.Name} (before={curFeedback.Wrong})");
             curFeedback = (Wrong: curFeedback.Wrong + 1, Cents: curFeedback.Cents);
             NoteFeedbacks[idx] = curFeedback;
             FeedbackViewModels[idx] = new FeedbackItem(idx, curFeedback.Wrong, curFeedback.Cents, false);
-            Utils.Log($"[Feedback] Updated trailing wrong for index={idx}, note={targetNote.Name} (after={curFeedback.Wrong})");
+            //Utils.Log($"[Feedback] Updated trailing wrong for index={idx}, note={targetNote.Name} (after={curFeedback.Wrong})");
             return true;
         }
         private async Task<string[]> BuildRandomSequenceAsync()
@@ -1077,36 +1097,64 @@ namespace musicmate.Services
             var statsList = await db.GetAllAsync();
             var stats = statsList.ToDictionary(s => s.WrittenName, s => s);
 
-            // Exclude mastered notes: PercentCorrect >= CorrectThreshold AND Correct >= MinCorrectCount
-            // Also exclude notes whose MsAverage is below OmitMsAvgThreshold (played fast = already mastered)
+            // Exclude mastered notes based on MasteredMethod
             availableNotes = availableNotes
                 .Where(note =>
                 {
                     if (stats.TryGetValue(note, out var stat))
                     {
-                        if (stat.PercentCorrect >= CorrectThreshold && stat.Correct >= MinCorrectCount)
-                            return false;
-                        if (OmitMsAvgThreshold > 0 && stat.MsCount > 0 && stat.MsAverage < OmitMsAvgThreshold)
-                            return false;
+                        if (MasteredMethod == "Streak")
+                        {
+                            if (stat.Streak >= StreakCrit)
+                                return false;
+                        }
+                        else // % Correct
+                        {
+                            if (stat.PercentCorrect >= CorrectThreshold && stat.Correct >= MinCorrectCount)
+                                return false;
+                            if (OmitMsAvgThreshold > 0 && stat.MsCount > 0 && stat.MsAverage < OmitMsAvgThreshold)
+                                return false;
+                        }
                     }
                     return true;
                 })
                 .ToList();
 
-            // If filtering removed all notes or left only one, fall back to the full unfiltered pool
+            // If filtering removed all notes or left only one, keep what we have if possible,
+            // otherwise fall back to the full unfiltered pool (all notes need more practice)
             if (availableNotes.Count < 2)
             {
-                availableNotes = new List<string>();
+                // Build the full note pool for this range/scale
+                var fullPool = new List<string>();
                 for (int midi = NoteNameToMidi(LowestNote); midi <= NoteNameToMidi(HighestNote); midi++)
                 {
                     string noteName = MidiToNoteName(midi, KeyUsesFlats(Key));
                     if (noteName.Length > 0 && BuildScaleDegrees(Key, SelectedScale)
                             .Contains(noteName.TrimEnd('0', '1', '2', '3', '4', '5', '6', '7', '8', '9')))
                     {
-                        availableNotes.Add(noteName);
+                        fullPool.Add(noteName);
                     }
                 }
-                availableNotes = availableNotes.Distinct().ToList();
+                fullPool = fullPool.Distinct().ToList();
+
+                if (fullPool.Count >= 2)
+                {
+                    // Pick the least-mastered notes: sort by streak ascending (or percent correct)
+                    // so we review the weakest notes rather than including fully mastered ones
+                    availableNotes = fullPool
+                        .OrderBy(note =>
+                        {
+                            if (stats.TryGetValue(note, out var s))
+                                return MasteredMethod == "Streak" ? s.Streak : (int)s.PercentCorrect;
+                            return 0;
+                        })
+                        .Take(Math.Max(2, fullPool.Count / 2))
+                        .ToList();
+                }
+                else
+                {
+                    availableNotes = fullPool;
+                }
             }
 
             // Remove enharmonic boundary notes that would be out of range when respelled
@@ -1338,10 +1386,6 @@ namespace musicmate.Services
                 var cents = (int)Math.Round(1200 * Math.Log(freq / nearestFreq, 2));
 
                 // Direction-based enharmonic spelling:
-                //   descending (new MIDI < prev) → prefer flats
-                //   ascending  (new MIDI > prev) → prefer sharps
-                //   same pitch                   → preserve current spelling (avoids flicker)
-                //   no prior note                → fall back to key preference
                 bool preferFlats;
                 if (_tunerPrevWrittenMidi.HasValue && writtenMidi != _tunerPrevWrittenMidi.Value)
                     preferFlats = writtenMidi < _tunerPrevWrittenMidi.Value;
@@ -1392,15 +1436,6 @@ namespace musicmate.Services
 
             var noteHeadWidth = 24f;
             var spacing = noteHeadWidth * 3f;
-            //var usesLetterAwareSpelling = SelectedScale is "Major" or "Ionian" or "Harmonic Minor" or "Melodic Minor" or "Jazz Melodic Minor" or "Natural Minor" or "Aeolian" or
-            //            "Harmonic Major" or "Phrygian Dominant" or "Double Harmonic";
-            //if (sequence.Length > 1 && !usesLetterAwareSpelling)
-            //{
-            //    sequence = RespellToAvoidConsecutiveSameLetter(sequence, KeyUsesFlats(Key));
-            //}
-            // All scales now use letter-sequential spelling via SpellSequential or explicit builders.
-            // Only the chromatic scale falls back to raw GetNoteName; guard against consecutive
-            // same-letter enharmonics there.
             // Chromatic scale enharmonics are handled in BuildScaleSequence (sharps up, flats down).
             if (availableWidth > 0 && sequence.Length > 0)
             {
@@ -1458,14 +1493,14 @@ namespace musicmate.Services
                  enharmonicMatch = enharmonicMidis.Any(m => Mod12(m) == detPcWritten);  //  2026.03.06 1745  
             }
 
-            Utils.Log($"Evaluate: freq={freq:F2}, detMidi={detMidi}, detMidiWritten={detMidiWritten}, detPcWritten={detPcWritten}, targetMidi={target.Midi}, expectedPc={expectedPc}, correctPc={correctPc}, enharmonicMatch={enharmonicMatch}");
+           // Utils.Log($"Evaluate: freq={freq:F2}, detMidi={detMidi}, detMidiWritten={detMidiWritten}, detPcWritten={detPcWritten}, targetMidi={target.Midi}, expectedPc={expectedPc}, correctPc={correctPc}, enharmonicMatch={enharmonicMatch}");
 
             // For cents, always use the concert pitch of the detected MIDI (not written MIDI)
             var nearestMidi = detMidi;
             var nearestFreq = MidiToFreq(nearestMidi);
             var cents = (int)Math.Round(1200 * Math.Log(freq / nearestFreq, 2));
             var withinTolerance = Math.Abs(cents) <= Tolerance;
-            Utils.Log($"Evaluate: nearestMidi={nearestMidi}, nearestFreq={nearestFreq:F2}, cents={cents}, withinTolerance={withinTolerance}");
+           // Utils.Log($"Evaluate: nearestMidi={nearestMidi}, nearestFreq={nearestFreq:F2}, cents={cents}, withinTolerance={withinTolerance}");
 
             // Consider a detection correct only if pitch-class matches (or is enharmonic)
             // AND the cents deviation is within the configured tolerance.
