@@ -17,10 +17,10 @@
           VerticalOptions="Center"
           Padding="24"
           BackgroundColor="White"
-          MinimumWidthRequest="320"
-          MaximumWidthRequest="420"
+          MinimumWidthRequest="1000"
+          MaximumWidthRequest="1200"
           MinimumHeightRequest="320"
-          MaximumHeightRequest="600">
+          MaximumHeightRequest="500">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -38,50 +38,68 @@
               HorizontalOptions="Center"
               Margin="0,0,0,12"/>
 
-          <!-- Centered arrow buttons and color picker -->
-          <VerticalStackLayout Grid.Row="1" Grid.Column="0" HorizontalOptions="Center" Spacing="8">
-            <!-- Color picker square centered -->
+          <!-- Row 1: ColorPicker + PreviewBox -->
+          <HorizontalStackLayout Grid.Row="1" Grid.Column="0"
+                                 HorizontalOptions="Center"
+                                 VerticalOptions="Center"
+                                 Spacing="12">
             <mcp:ColorPicker x:Name="ColorPicker"
                              HeightRequest="100"
                              WidthRequest="180"
-                             HorizontalOptions="Center"
+                             HorizontalOptions="Start"
                              VerticalOptions="Center"/>
-            
-            <!-- Arrow buttons centered underneath -->
-            <HorizontalStackLayout HorizontalOptions="Center" Spacing="8">
-              <Button x:Name="UpArrowButton"
-                      Text="▲"
-                      FontSize="12"
-                      TextColor="#000000"
-                      WidthRequest="18" HeightRequest="18"
-                      Pressed="OnUpArrowPressed"
-                      Released="OnArrowReleased"/>
-              <Button x:Name="LeftArrowButton"
-                      Text="◀"
-                      FontSize="12"
-                      TextColor="#000000"
-                      WidthRequest="18" HeightRequest="18"
-                      Pressed="OnLeftArrowPressed"
-                      Released="OnArrowReleased"/>
-              <Button x:Name="RightArrowButton"
-                      Text="▶"
-                      FontSize="12"
-                      TextColor="#000000"
-                      WidthRequest="18" HeightRequest="18"
-                      Pressed="OnRightArrowPressed"
-                      Released="OnArrowReleased"/>
-              <Button x:Name="DownArrowButton"
-                      Text="▼"
-                      FontSize="12"
-                      TextColor="#000000"
-                      WidthRequest="18" HeightRequest="18"
-                      Pressed="OnDownArrowPressed"
-                      Released="OnArrowReleased"/>
-            </HorizontalStackLayout>
-          </VerticalStackLayout>
+            <BoxView x:Name="PreviewBox"
+                     WidthRequest="60"
+                     HeightRequest="60"
+                     HorizontalOptions="Start"
+                     VerticalOptions="Center"
+                     BackgroundColor="{Binding PreviewColor, Source={x:Reference ColorPickerDialogRoot}}"/>
+          </HorizontalStackLayout>
+
+          <!-- Row 2: Arrow buttons + OK button -->
+          <HorizontalStackLayout Grid.Row="2" Grid.Column="0"
+                                 HorizontalOptions="Center"
+                                 VerticalOptions="Center"
+                                 Spacing="8">
+            <Button x:Name="UpArrowButton"
+                    Text="▲"
+                    FontSize="12"
+                    TextColor="#000000"
+                    WidthRequest="40" HeightRequest="40"
+                    Pressed="OnUpArrowPressed"
+                    Released="OnArrowReleased"/>
+            <Button x:Name="LeftArrowButton"
+                    Text="◀"
+                    FontSize="12"
+                    TextColor="#000000"
+                    WidthRequest="40" HeightRequest="40"
+                    Pressed="OnLeftArrowPressed"
+                    Released="OnArrowReleased"/>
+            <Button x:Name="RightArrowButton"
+                    Text="▶"
+                    FontSize="12"
+                    TextColor="#000000"
+                    WidthRequest="40" HeightRequest="40"
+                    Pressed="OnRightArrowPressed"
+                    Released="OnArrowReleased"/>
+            <Button x:Name="DownArrowButton"
+                    Text="▼"
+                    FontSize="12"
+                    TextColor="#000000"
+                    WidthRequest="40" HeightRequest="40"
+                    Pressed="OnDownArrowPressed"
+                    Released="OnArrowReleased"/>
+            <Button Text="OK"
+                    TextColor="#000000"
+                    Clicked="OnOkClicked"
+                    WidthRequest="80"
+                    HeightRequest="40"
+                    HorizontalOptions="Center"
+                    VerticalOptions="Center"/>
+          </HorizontalStackLayout>
 
           <!-- Whiteness slider labels and slider -->
-          <Grid Grid.Row="2" Grid.Column="0" Margin="0">
+          <Grid Grid.Row="3" Grid.Column="0" Margin="0">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="Auto"/>
               <ColumnDefinition Width="*"/>
@@ -110,25 +128,7 @@
              VerticalOptions="Center"
              HorizontalOptions="End"
              Grid.Column="2"/>
-          </Grid>
-
-      <!-- Centered preview box and OK button -->
-          <HorizontalStackLayout Grid.Row="3" Grid.Column="0" HorizontalOptions="Center" Spacing="12">
-            <BoxView x:Name="PreviewBox"
-               WidthRequest="60"
-               HeightRequest="60"
-               HorizontalOptions="Center"
-               VerticalOptions="Center"
-               BackgroundColor="{Binding PreviewColor, Source={x:Reference ColorPickerDialogRoot}}" />
-            <Button
-                Text="OK"
-                TextColor="#000000"
-                Clicked="OnOkClicked"
-                WidthRequest="80"
-                HeightRequest="60"
-                HorizontalOptions="Center"
-                VerticalOptions="Center"/>
-          </HorizontalStackLayout>
+          </Grid>     
         </Grid>
   </ScrollView>
 </ContentView>

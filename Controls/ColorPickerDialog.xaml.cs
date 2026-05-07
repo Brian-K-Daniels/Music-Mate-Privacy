@@ -34,7 +34,7 @@ namespace musicmate.Controls
         public ColorPickerDialog()
         {
             InitializeComponent();
-            ColorPicker.PropertyChanged += OnColorPickerChanged;
+            ColorPicker.PickedColorChanged += OnPickedColorChanged;
             WhitenessSlider.ValueChanged += OnWhitenessSliderChanged;
             UpdatePreviewColor();
         }
@@ -54,47 +54,24 @@ namespace musicmate.Controls
         }
 
         /// <summary>
-        /// Show the dialog and set the color, decomposing to pointer and whiteness.
+        /// Show the dialog, restoring the last saved pointer and whiteness positions.
+        /// The color argument is ignored — the saved positions already encode the color.
         /// </summary>
         public void Show(Color staffPanelColor)
         {
-            // Optionally, you can persist pointer/slider positions, or decompose the color.
-            // Here, we decompose the color and set the picker accordingly.
-            Color baseColor;
-            double whiteness;
-            DecomposeColor(staffPanelColor, out baseColor, out whiteness);
-            ColorPicker.PickedColor = baseColor;
-            WhitenessSlider.Value = whiteness;
-
-            // Optionally, also restore pointer positions if you want to always persist UI state:
+            // Restore saved pointer and slider positions — do NOT set PickedColor because
+            // the library resets X/Y when PickedColor is assigned, moving the dot to the bottom.
             ColorPicker.PointerRingPositionXUnits = Preferences.Default.Get("ColorPicker_X", 0.5);
             ColorPicker.PointerRingPositionYUnits = Preferences.Default.Get("ColorPicker_Y", 0.5);
+            WhitenessSlider.Value = Preferences.Default.Get("ColorPicker_Whiteness", 0.8);
 
             UpdatePreviewColor();
             IsVisible = true;
         }
 
-        private void DecomposeColor(Color color, out Color baseColor, out double whiteness)
+        private void OnPickedColorChanged(object? sender, Maui.ColorPicker.PickedColorChangedEventArgs e)
         {
-            // Whiteness is the minimum of R, G, B (how close to white)
-            whiteness = Math.Min(Math.Min(color.Red, color.Green), color.Blue);
-
-            // Remove whiteness from color (approximate)
-            float r = (float)(color.Red - whiteness);
-            float g = (float)(color.Green - whiteness);
-            float b = (float)(color.Blue - whiteness);
-
-            r = Math.Clamp(r, 0f, 1f);
-            g = Math.Clamp(g, 0f, 1f);
-            b = Math.Clamp(b, 0f, 1f);
-
-            baseColor = new Color(r, g, b, color.Alpha);
-        }
-
-        private void OnColorPickerChanged(object? sender, PropertyChangedEventArgs e)
-        {
-            if (e.PropertyName == nameof(ColorPicker.PickedColor))
-                UpdatePreviewColor();
+            UpdatePreviewColor();
         }
 
         private void OnWhitenessSliderChanged(object? sender, ValueChangedEventArgs e)

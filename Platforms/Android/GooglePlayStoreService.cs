@@ -11,8 +11,8 @@ namespace musicmate.Platforms.Android
     /// </summary>
     public class GooglePlayStoreService : Java.Lang.Object, IStoreService, IPurchasesUpdatedListener
     {
-        private const string PremiumKey      = "IsPremium";
-        private const string PremiumProductId = "premium";
+        private const string PremiumKey       = "IsPremium";
+        private const string PremiumProductId  = "music_mate_premium";
 
         private BillingClient? _billingClient;
         private TaskCompletionSource<bool>? _purchaseTcs;
@@ -85,6 +85,28 @@ namespace musicmate.Platforms.Android
             return owned;
         }
 
+        public async Task<bool> CheckPremiumStatusAsync()
+        {
+            // Non-destructive: if already known locally, trust it; also sync from Play.
+            await EnsureConnectedAsync();
+            bool owned = await QueryPurchasedAsync(PremiumProductId);
+            if (owned)
+            {
+                Preferences.Set(PremiumKey, true);
+                MainThread.BeginInvokeOnMainThread(() =>
+                    StatusService.Instance.IsPremiumUser = true);
+            }
+            else
+            {
+                // Only clear if Play explicitly says not owned (not a connectivity failure).
+                // Keep any existing local flag so offline users aren't locked out.
+                var local = Preferences.Get(PremiumKey, false);
+                MainThread.BeginInvokeOnMainThread(() =>
+                    StatusService.Instance.IsPremiumUser = local);
+            }
+            return StatusService.Instance.IsPremiumUser;
+        }
+
         // ── IPurchasesUpdatedListener ────────────────────────────────────────
 
         public void OnPurchasesUpdated(BillingResult billingResult, IList<Purchase>? purchases)
@@ -93,8 +115,13 @@ namespace musicmate.Platforms.Android
             {
                 foreach (var purchase in purchases)
                 {
-                    if (purchase.PurchaseState == 1 /* Purchased */)
+                    if (purchase.PurchaseState == 1 /* Purchased */ &&
+                        purchase.Products.Contains(PremiumProductId))
                     {
+                        // Persist entitlement before acknowledging so it survives a crash
+                        Preferences.Set(PremiumKey, true);
+                        MainThread.BeginInvokeOnMainThread(() =>
+                            StatusService.Instance.IsPremiumUser = true);
                         AcknowledgePurchase(purchase);
                         _purchaseTcs?.TrySetResult(true);
                         return;

@@ -16,8 +16,8 @@
     <ApplicationId>com.bkdaniels.musicmate</ApplicationId>
 
     <!-- Versions -->
-    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
-    <ApplicationVersion>6</ApplicationVersion>
+    <ApplicationDisplayVersion>1.10</ApplicationDisplayVersion>
+    <ApplicationVersion>10</ApplicationVersion>
 
     <WindowsPackageType>None</WindowsPackageType>
 
@@ -41,6 +41,10 @@
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <AndroidLinkMode>SdkOnly</AndroidLinkMode>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-android'">
+    <LinkDescription Include="Platforms\Android\Linker.xml" />
+  </ItemGroup>
 
   <ItemGroup>
     <MauiIcon Include="Resources\AppIcon\appicon.png" />

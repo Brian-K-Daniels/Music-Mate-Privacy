@@ -17,8 +17,8 @@ namespace musicmate.ViewModels
                 var opts = NoteSessionService.InstrumentOptions;
                 if (opts != null && opts.Length > 0)
                 {
-                    // Prefer an instrument explicitly named "C" when available, otherwise use the first option.
-                    var preferC = opts.FirstOrDefault(i => i == "C");
+                    // Match the 0-semitone "C" entry (short name starts with "C,")
+                    var preferC = opts.FirstOrDefault(i => i.Split(',')[0].Trim() == "C");
                     if (!string.IsNullOrEmpty(preferC))
                         return preferC;
                     return opts[0];

@@ -148,7 +148,7 @@ public class PremiumPopup : Popup
     {
         if (_storeService != null)
         {
-            var purchased = await _storeService.PurchaseAsync("premium");
+            var purchased = await _storeService.PurchaseAsync("music_mate_premium");
             if (purchased)
             {
                 StatusService.Instance.IsPremiumUser = true;
@@ -188,6 +188,8 @@ public class PremiumPopup : Popup
     /// <summary>
     /// Closes the popup safely. If a modal page is blocking closure (e.g. the Instrument
     /// picker dialog is still on the stack) it is popped first, then the popup closes.
+    /// Also handles the CommunityToolkit.Maui "Ambiguous routes" Shell bug that occurs
+    /// when duplicate PopupPage route registrations are detected on close.
     /// </summary>
     private async Task SafeCloseAsync()
     {
@@ -196,14 +198,14 @@ public class PremiumPopup : Popup
             await CloseAsync();
         }
         catch (Exception ex) when (ex.Message.Contains("blocked by the Modal Page") ||
-                                   ex.Message.Contains("PopupBlockedException"))
+                                   ex.Message.Contains("PopupBlockedException") ||
+                                   ex.Message.Contains("Ambiguous routes"))
         {
             try
             {
                 var nav = Application.Current?.Windows[0].Page?.Navigation;
                 if (nav?.ModalStack.Count > 0)
                     await nav.PopModalAsync(animated: false);
-                await CloseAsync();
             }
             catch
             {

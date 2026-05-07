@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using Microsoft.Maui.Storage;
+using musicmate.Services;
 
 namespace musicmate.Services
 {
@@ -32,6 +33,14 @@ namespace musicmate.Services
             // Local stub has no real store to verify against, so clear the local flag
             Preferences.Set(PremiumKey, false);
             return Task.FromResult(false);
+        }
+
+        public Task<bool> CheckPremiumStatusAsync()
+        {
+            // Non-destructive: just read the persisted flag
+            var val = Preferences.Get(PremiumKey, false);
+            StatusService.Instance.IsPremiumUser = val;
+            return Task.FromResult(val);
         }
     }
 }

@@ -58,6 +58,18 @@ namespace musicmate.Pages
             _orientation?.ForceLandscape();
             base.OnAppearing();
             _viewModel?.RefreshStorageInfo();
+            _ = CheckPremiumStatusAsync();
+        }
+
+        private static async Task CheckPremiumStatusAsync()
+        {
+            try
+            {
+                var store = ServiceHelper.GetService<IStoreService>();
+                if (store != null)
+                    await store.CheckPremiumStatusAsync();
+            }
+            catch { }
         }
 
         private async void OnNavigateHomeClicked(object sender, EventArgs e)

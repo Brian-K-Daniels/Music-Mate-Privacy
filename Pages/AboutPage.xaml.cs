@@ -2,6 +2,7 @@ using CommunityToolkit.Maui.Alerts;
 using CommunityToolkit.Maui.Core;
 using musicmate.Services;
 using musicmate.ViewModels;
+using musicmate.Utilities;
 using System.Globalization;
 using System.Net;
 using System.Text;
@@ -67,6 +68,18 @@ namespace musicmate.Pages
             base.OnAppearing();
 
             _ = LoadAboutHtmlAsync();
+            _ = CheckPremiumStatusAsync();
+        }
+
+        private static async Task CheckPremiumStatusAsync()
+        {
+            try
+            {
+                var store = ServiceHelper.GetService<IStoreService>();
+                if (store != null)
+                    await store.CheckPremiumStatusAsync();
+            }
+            catch { }
         }
 
         private async Task LoadAboutHtmlAsync()
