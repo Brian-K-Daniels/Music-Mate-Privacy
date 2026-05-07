@@ -30,11 +30,7 @@ namespace musicmate.Platforms.Android
 
         public async Task<bool> IsPurchasedAsync(string productId)
         {
-            // First check the local cached flag for speed
-            if (Preferences.Get(PremiumKey, false))
-                return true;
-
-            // Fall back to a live Play store query
+            // Always verify with Google Play — never trust the local cache alone.
             await EnsureConnectedAsync();
             return await QueryPurchasedAsync(productId);
         }

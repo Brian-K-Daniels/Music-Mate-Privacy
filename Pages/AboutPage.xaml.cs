@@ -201,14 +201,15 @@ namespace musicmate.Pages
 
             // Insert just before </head>. This is safe because </head> has no attributes
             // and can never contain a stray > like <head> or the elements inside head can.
-            // Inserting AFTER <head ...> was broken for Word-generated HTML whose first child
-            // has style="margin-bottom:0in" — the first > found was inside that attribute,
-            // causing the injected block to land mid-attribute and leak CSS text into the body.
             int headCloseIdx = lower.IndexOf("</head>");
             if (headCloseIdx >= 0)
             {
                 var meta = lower.Contains("charset") ? "" : "<meta charset=\"utf-8\">";
-                return html.Insert(headCloseIdx, meta + $"<style>{css}</style>");
+                // Always inject viewport — without it Android WebView uses a ~980px wide virtual
+                // viewport and scales it down, making JS offsetTop values ~3x MAUI dp values,
+                // which breaks scroll-to-highlight position calculations.
+                var viewport = lower.Contains("viewport") ? "" : "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">";
+                return html.Insert(headCloseIdx, meta + viewport + $"<style>{css}</style>");
             }
 
             // Fallback: no </head>; wrap the whole thing
@@ -262,44 +263,66 @@ namespace musicmate.Pages
                 // Serialize query safely for JS string literal
                 var jsQuery = JsonSerializer.Serialize(query);
 
-                // JS highlights all matches and returns match count. It also scrolls the first match into view inside the WebView (center).
+                // JS highlights all matches in text nodes only (never inside tag attributes).
+                // Using TreeWalker avoids the innerHTML regex approach which was corrupting
+                // HTML attributes (e.g. list-style-type:disc) and leaking tag markup as visible text.
                 var js = $@"(function(){{
                         var q = {jsQuery};
-                        try {{
-                            // Remove existing highlights first
-                            var olds = document.querySelectorAll('.about-search-highlight');
-                            if (olds && olds.length) {{
-                                for (var i=0;i<olds.length;i++) {{
-                                    var el = olds[i];
-                                    el.outerHTML = el.textContent;
-                                }}
-                            }}
-                        }} catch(e) {{ }}
-
-                        if (!q) {{ window.scrollTo(0,0); return 0; }}
-
-                        function escapeRegExp(s) {{ return s.replace(/[.*+?^{{}}()|[\\]\\\/]/g, '\\\\$&'); }}
-                        try {{
-                            var body = document.body;
-                            var html = body.innerHTML;
-                            var re = new RegExp(escapeRegExp(q), 'gi');
-                            var count = 0;
-                            var newHtml = html.replace(re, function(m) {{
-                                var r = '<span class=""about-search-highlight"" data-about-index=""' + count + '"">' + m + '</span>';
-                                count++;
-                                return r;
-                            }});
-                            if (count > 0) {{
-                                body.innerHTML = newHtml;
-                                var first = document.querySelector('.about-search-highlight[data-about-index=""0""]');
-                                if (first) {{
-                                    try {{ first.scrollIntoView({{behavior:'smooth', block:'center'}}); }} catch(e) {{ }}
-                                }}
-                            }}
-                            return count;
-                        }} catch(e) {{
-                            return 0;
+                        // Remove existing highlights, restoring original text nodes
+                        var olds = document.querySelectorAll('.about-search-highlight');
+                        for (var i = olds.length - 1; i >= 0; i--) {{
+                            var el = olds[i];
+                            var p = el.parentNode;
+                            if (!p) continue;
+                            while (el.firstChild) p.insertBefore(el.firstChild, el);
+                            p.removeChild(el);
+                            p.normalize();
                         }}
+                        if (!q) {{ window.scrollTo(0,0); return 0; }}
+                        function escapeRegExp(s) {{ return s.replace(/[.*+?^{{}}()|[\]\\\\]/g, '\\\\$&'); }}
+                        var re = new RegExp(escapeRegExp(q), 'gi');
+                        var count = 0;
+                        try {{
+                            var walker = document.createTreeWalker(
+                                document.body,
+                                NodeFilter.SHOW_TEXT,
+                                {{ acceptNode: function(n) {{
+                                    var tag = n.parentNode ? n.parentNode.nodeName.toUpperCase() : '';
+                                    if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return NodeFilter.FILTER_REJECT;
+                                    if (n.parentNode && n.parentNode.classList && n.parentNode.classList.contains('about-search-highlight')) return NodeFilter.FILTER_REJECT;
+                                    return NodeFilter.FILTER_ACCEPT;
+                                }} }}
+                            );
+                            var nodes = [];
+                            var n;
+                            while ((n = walker.nextNode())) nodes.push(n);
+                            for (var i = 0; i < nodes.length; i++) {{
+                                var tn = nodes[i];
+                                var text = tn.textContent;
+                                re.lastIndex = 0;
+                                if (!re.test(text)) continue;
+                                re.lastIndex = 0;
+                                var frag = document.createDocumentFragment();
+                                var last = 0, m;
+                                while ((m = re.exec(text)) !== null) {{
+                                    if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+                                    var span = document.createElement('span');
+                                    span.className = 'about-search-highlight';
+                                    span.setAttribute('data-about-index', String(count));
+                                    span.textContent = m[0];
+                                    frag.appendChild(span);
+                                    count++;
+                                    last = m.index + m[0].length;
+                                }}
+                                if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+                                tn.parentNode.replaceChild(frag, tn);
+                            }}
+                            if (count > 0) {{
+                                var first = document.querySelector('.about-search-highlight[data-about-index=""0""]');
+                                if (first) {{ try {{ first.scrollIntoView({{behavior:'smooth',block:'center'}}); }} catch(e) {{}} }}
+                            }}
+                        }} catch(e) {{ return 0; }}
+                        return count;
                     }})();";
 
                 var result = await web.EvaluateJavaScriptAsync(js);
@@ -365,19 +388,15 @@ namespace musicmate.Pages
                 var web = this.FindByName<Microsoft.Maui.Controls.WebView>("AboutWebView");
                 if (web == null) return;
 
-                // JS: scroll the specific highlighted span into view inside the WebView (center)
+                // JS: just confirm the element exists; outer ScrollView handles scrolling
                 var js = $@"(function(idx) {{
                         try {{
                             var el = document.querySelector('.about-search-highlight[data-about-index=""' + idx + '""]');
-                            if (el) {{
-                                try {{ el.scrollIntoView({{behavior:'smooth', block:'center'}}); }} catch(e) {{ }}
-                                return true;
-                            }}
-                        }} catch(e) {{ }}
-                        return false;
+                            return el ? 'ok' : 'missing';
+                        }} catch(e) {{ return 'err'; }}
                     }})({_aboutCurrentIndex});";
 
-                var res = await web.EvaluateJavaScriptAsync(js);
+                await web.EvaluateJavaScriptAsync(js);
 
                 // Center the highlighted element in the outer ScrollView vertically
                 var sv = this.FindByName<ScrollView>("AboutScrollView");
@@ -405,39 +424,51 @@ namespace musicmate.Pages
                 var sv = this.FindByName<ScrollView>("AboutScrollView");
                 if (web == null || sv == null) return;
 
-                // Ensure we have measured sizes and positions; retry a few times if needed
+                // Wait for the ScrollView to have a measured height
                 int retries = 5;
-                while (retries-- > 0 && (sv.Height <= 0 || AboutWebView.Y == 0))
-                {
+                while (retries-- > 0 && sv.Height <= 0)
                     await Task.Delay(50);
-                }
 
-                // Return absolute top (document-coordinate) and element height as "top|height"
-                var infoJs = $@"(function(idx){{ var el = document.querySelector('.about-search-highlight[data-about-index=""' + idx + '""]'); if(!el) return ''; var r = el.getBoundingClientRect(); return (window.pageYOffset + r.top) + '|' + r.height; }})({index});";
+                // Return element top (offsetParent walk), element height, and total body scroll height.
+                // We scale JS coordinates to MAUI dp via the fraction: (jsOffset / bodyScrollHeight) * webViewHeightDp.
+                // This eliminates any mismatch when Android WebView renders without a viewport meta tag,
+                // which causes JS layout values to be in a ~980px virtual space rather than device dp.
+                var infoJs = $@"(function(idx){{
+                    var el = document.querySelector('.about-search-highlight[data-about-index=""' + idx + '""]');
+                    if (!el) return '';
+                    var top = 0, h = el.offsetHeight, cur = el;
+                    while (cur) {{ top += cur.offsetTop; cur = cur.offsetParent; }}
+                    var totalH = document.body.scrollHeight;
+                    return top + '|' + h + '|' + totalH;
+                }})({index});";
+
                 var infoRes = await web.EvaluateJavaScriptAsync(infoJs);
                 var trimmed = infoRes?.Trim('"');
                 if (string.IsNullOrEmpty(trimmed))
                 {
-                    // fallback: center the WebView
                     await sv.ScrollToAsync(AboutWebView, ScrollToPosition.Center, true);
                     return;
                 }
 
                 var parts = trimmed.Split('|');
-                if (parts.Length >= 2
-                    && double.TryParse(parts[0], NumberStyles.Any, CultureInfo.InvariantCulture, out var top)
-                    && double.TryParse(parts[1], NumberStyles.Any, CultureInfo.InvariantCulture, out var elHeight))
+                if (parts.Length >= 3
+                    && double.TryParse(parts[0], NumberStyles.Any, CultureInfo.InvariantCulture, out var elTop)
+                    && double.TryParse(parts[1], NumberStyles.Any, CultureInfo.InvariantCulture, out var elHeight)
+                    && double.TryParse(parts[2], NumberStyles.Any, CultureInfo.InvariantCulture, out var bodyScrollHeight)
+                    && bodyScrollHeight > 0)
                 {
-                    var svHeight = sv.Height;
-                    if (svHeight <= 0)
-                        svHeight = Application.Current?.Windows?.FirstOrDefault()?.Page?.Height ?? 600;
+                    var svHeight = sv.Height > 0 ? sv.Height
+                        : Application.Current?.Windows?.FirstOrDefault()?.Page?.Height ?? 600;
 
-                    // WebView top offset within the ScrollView content
+                    // Convert JS coordinate space to MAUI dp.
+                    // AboutWebView.HeightRequest is set from bodyScrollHeight+20 by AutoSizeWebViewAsync,
+                    // so (HeightRequest - 20) / bodyScrollHeight ≈ 1.0 when viewport is correct,
+                    // but corrects for any scale difference when viewport is absent.
+                    var webHeightDp = AboutWebView.HeightRequest > 20 ? AboutWebView.HeightRequest - 20 : bodyScrollHeight;
+                    var scale = webHeightDp / bodyScrollHeight;
                     var webTop = AboutWebView.Y;
 
-                    // target scroll Y so the element's center sits in the vertical middle of the ScrollView.
-                    // top is element position inside the web document; add webTop to map into the outer ScrollView content coordinates.
-                    var target = webTop + top + (elHeight / 2.0) - (svHeight / 2.0);
+                    var target = webTop + (elTop + elHeight / 2.0) * scale - svHeight / 2.0;
                     if (target < 0) target = 0;
 
                     await sv.ScrollToAsync(0, target, true);
