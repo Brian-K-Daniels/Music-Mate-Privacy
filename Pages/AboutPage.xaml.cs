@@ -158,6 +158,9 @@ namespace musicmate.Pages
                 var fontSize = vm?.SelectedFontSize ?? DefaultFontSize;
                 var fontFamily = "-apple-system, BlinkMacSystemFont, \"Segoe UI Symbol\", \"Segoe UI Emoji\", \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, \"Times New Roman\", serif";
                 var css = $"html, body {{ background: {ColorToHex(bg)} !important; color: {ColorToHex(fg)} !important; font-size: {fontSize}px !important; margin:0; padding:8px; font-family: {fontFamily}; overflow: hidden !important; }} ";
+                // Force ALL elements to inherit fg color so inline style="color:#000000" from
+                // Word-generated HTML cannot make text invisible against a dark background.
+                css += $"*, *::before, *::after {{ color: {ColorToHex(fg)} !important; }} ";
                 css += "p, span, li, td, th, div, a, b, i, u, em, strong { font-size: inherit !important; } ";
                 css += "span[style*='Symbol'] { font-size: 1.2em !important; line-height: 1; } ";
                 css += "span[style*='Wingdings'] { font-size: 1.2em !important; line-height: 1; } ";
