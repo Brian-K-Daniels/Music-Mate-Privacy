@@ -1,4 +1,5 @@
 using Microsoft.Maui.Graphics;
+using musicmate.Models;
 using musicmate.Services;
 
 namespace musicmate.Drawables
@@ -65,7 +66,7 @@ namespace musicmate.Drawables
         public void Draw(ICanvas canvas, RectF dirtyRect)
         {
             // Basic primitives
-            var noteHeadH = 8f;
+            var noteHeadH = 6f;//was 8f
             var headW = noteHeadH * 1.5f;
             var staffSpacing = noteHeadH + 2f;
 
@@ -171,15 +172,26 @@ namespace musicmate.Drawables
             var accScale = 1.5f;
             var accWidth = headW * accScale;
             var accSpacing = headW * 0.33f * accScale;
-            var accStartX = clefX + clefW + 6f;
+            var accStartX = clefX + clefW * 0.65f + 4f;
 
             var desiredHeadPadding = 3f * headW;
             var fallbackPadding = 32f;
             var extraLeftPadding = _session.SelectedScale == "Chromatic"
-                ? headW                          // tight: just one note-head gap after clef
-                : Math.Max(fallbackPadding, desiredHeadPadding);
+                ? headW
+                : _session.Tune == "Practice Tune"
+                    ? headW * 1.2f          // tight gap after time signature
+                    : Math.Max(fallbackPadding, desiredHeadPadding);
 
-            var leftMargin = accStartX + Math.Abs(accidentalCount) * accSpacing + extraLeftPadding;
+            // Width consumed by the key signature symbols (each slot + the final glyph's own body)
+            var keySigGlyphSize = accWidth * correctionFactor * (accidentalCount < 0 ? flatSizeBoost : 1.0f);
+            var keySigWidth = Math.Abs(accidentalCount) > 0
+                ? (Math.Abs(accidentalCount) - 1) * (accSpacing + 2f) + keySigGlyphSize
+                : 0f;
+
+            // For Practice Tune, reserve space for: gap (headW) + time sig box (1.6 * staffSpacing)
+            var timeSigWidth = (_session.Tune == "Practice Tune") ? headW + staffSpacing * 1.6f + headW : 0f;
+
+            var leftMargin = accStartX + keySigWidth + timeSigWidth + extraLeftPadding;
             var rightMargin = headW + 16f;
             try
             {
@@ -193,6 +205,12 @@ namespace musicmate.Drawables
             {
                 if (n.X < minSrcX) minSrcX = n.X;
                 if (n.X > maxSrcX) maxSrcX = n.X;
+            }
+            // Include rest slots in range so they scale together with the notes
+            foreach (var rx in _session.RestXPositions)
+            {
+                if (rx < minSrcX) minSrcX = rx;
+                if (rx > maxSrcX) maxSrcX = rx;
             }
             if (minSrcX == float.MaxValue) { minSrcX = 0f; maxSrcX = 1f; }
 
@@ -214,6 +232,57 @@ namespace musicmate.Drawables
             }
             else
             {
+                // ── Time signature + bar lines (Practice Tune mode only) ────────────────────
+                if (_session.Tune == "Practice Tune" && _session.CurrentTune != null)
+                {
+                    var ts = _session.CurrentTune.TimeSignature;
+                    // Place time sig immediately after the key signature, with a clear gap
+                    var timeSigX = accStartX + keySigWidth + headW;
+                    DrawTimeSignature(canvas, timeSigX, staffCoreTop, staffSpacing, ts, contrastColor);
+
+                    // Bar lines: thin vertical lines spanning the full staff height
+                    canvas.SaveState();
+                    canvas.StrokeColor = contrastColor;
+                    canvas.StrokeSize  = Math.Max(1f, headW * 0.08f);
+                    foreach (var barX in _session.MeasureBarXPositions)
+                    {
+                        var scaledBarX = leftMargin + (barX - minSrcX) * scale;
+                        canvas.DrawLine(scaledBarX, staffCoreTop, scaledBarX, staffCoreTop + 4f * staffSpacing);
+                    }
+                    // Final bar line (double) after the rightmost slot (note or rest)
+                    if (_session.NotesToDraw.Count > 0 || _session.RestXPositions.Count > 0)
+                    {
+                        var lastX = leftMargin + (maxSrcX - minSrcX) * scale + headW * 1.5f;
+                        var thin  = Math.Max(1f, headW * 0.08f);
+                        var thick = thin * 3f;
+                        canvas.StrokeSize  = thin;
+                        canvas.DrawLine(lastX, staffCoreTop, lastX, staffCoreTop + 4f * staffSpacing);
+                        canvas.StrokeSize  = thick;
+                        canvas.DrawLine(lastX + thin * 2f, staffCoreTop, lastX + thin * 2f, staffCoreTop + 4f * staffSpacing);
+                    }
+                    canvas.RestoreState();
+
+                    // Rest symbols (quarter, half, whole) — dispatch by duration
+                    for (int ri = 0; ri < _session.RestXPositions.Count; ri++)
+                    {
+                        var restSrcX = _session.RestXPositions[ri];
+                        var rx = leftMargin + (restSrcX - minSrcX) * scale;
+                        var dur = ri < _session.RestDurations.Count ? _session.RestDurations[ri] : NoteDuration.Quarter;
+                        switch (dur)
+                        {
+                            case NoteDuration.Whole:
+                                DrawWholeRest(canvas, rx, staffCoreTop, staffSpacing, headW, contrastColor);
+                                break;
+                            case NoteDuration.Half:
+                                DrawHalfRest(canvas, rx, staffCoreTop, staffSpacing, headW, contrastColor);
+                                break;
+                            default:
+                                DrawQuarterRest(canvas, rx, staffCoreTop, staffSpacing, headW, contrastColor);
+                                break;
+                        }
+                    }
+                }
+
                 var activeAccidentals = new Dictionary<(char, int), string>();
                 foreach (var n in _session.NotesToDraw)
                 {
@@ -450,28 +519,75 @@ namespace musicmate.Drawables
             canvas.FillColor = fillColor;
             canvas.StrokeColor = strokeColor;
 
+            var dur = note.Duration;
+            bool isOpen  = dur == NoteDuration.Half || dur == NoteDuration.Whole;
+            bool hasStem = dur != NoteDuration.Whole;
+            bool hasFlag = dur == NoteDuration.Eighth;
+
             var middleLineY = staffTop + spacing * 2;
             var noteY = GetYForSpelledNote(note.Name, middleLineY, spacing);
             var xLeft = centerX - headW / 2f;
+            var baseThickness = Math.Max(1f, headW * 0.06f);
 
-            // Draw base head (background layer) so ledger/stem can be drawn on top
+            // Draw head background layer (filled with fillColor so the hole punches through for open noteheads)
+            canvas.FillColor = fillColor;
             canvas.FillEllipse(xLeft, noteY - headH / 2f, headW, headH);
 
-            // Stem
-            var baseThickness = Math.Max(1f, headW * 0.06f);
-            canvas.StrokeSize = baseThickness;
-            var stemLength = spacing * 3f;
-            if (noteY < middleLineY)
-                canvas.DrawLine(xLeft, noteY, xLeft, noteY + stemLength);
-            else
-                canvas.DrawLine(xLeft + headW, noteY, xLeft + headW, noteY - stemLength);
-
-            // Ledger lines where necessary
+            // Ledger lines (before outline so note sits on top)
             DrawLedgerLines(canvas, centerX, noteY, staffTop, staffTop + 4 * spacing, spacing, headW, fillColor, strokeColor);
 
-            // Outline/fill the head with strokeColor for visibility (final pass)
-            canvas.FillColor = strokeColor;
-            canvas.FillEllipse(xLeft, noteY - headH / 2f, headW, headH);
+            // Stem
+            canvas.StrokeColor = strokeColor;
+            canvas.StrokeSize = baseThickness;
+            bool stemUp = noteY >= middleLineY;
+            float stemLength = spacing * 3f;
+            float stemX, stemTipY;
+            if (hasStem)
+            {
+                if (stemUp)
+                {
+                    stemX    = xLeft + headW;
+                    stemTipY = noteY - stemLength;
+                    canvas.DrawLine(stemX, noteY, stemX, stemTipY);
+                }
+                else
+                {
+                    stemX    = xLeft;
+                    stemTipY = noteY + stemLength;
+                    canvas.DrawLine(stemX, noteY, stemX, stemTipY);
+                }
+
+                // Eighth flag
+                if (hasFlag)
+                {
+                    var flagW = headW * 0.9f;
+                    var flagH = spacing * 1.2f;
+                    if (stemUp)
+                    {
+                        // flag curves down-right from the tip
+                        canvas.DrawLine(stemX, stemTipY, stemX + flagW, stemTipY + flagH * 0.5f);
+                        canvas.DrawLine(stemX + flagW, stemTipY + flagH * 0.5f, stemX + flagW * 0.5f, stemTipY + flagH);
+                    }
+                    else
+                    {
+                        // flag curves up-right from the tip
+                        canvas.DrawLine(stemX, stemTipY, stemX + flagW, stemTipY - flagH * 0.5f);
+                        canvas.DrawLine(stemX + flagW, stemTipY - flagH * 0.5f, stemX + flagW * 0.5f, stemTipY - flagH);
+                    }
+                }
+            }
+
+            // Draw notehead outline
+            canvas.StrokeColor = strokeColor;
+            canvas.StrokeSize = baseThickness * (isOpen ? 2.5f : 1f);
+            canvas.DrawEllipse(xLeft, noteY - headH / 2f, headW, headH);
+
+            if (!isOpen)
+            {
+                // Filled notehead: paint over with solid stroke color
+                canvas.FillColor = strokeColor;
+                canvas.FillEllipse(xLeft, noteY - headH / 2f, headW, headH);
+            }
 
             // --- Accidental display with proper music-theory rules ---
             if (drawAccidental)
@@ -869,6 +985,101 @@ namespace musicmate.Drawables
             feedbackRowY = lowestNoteY + noteHeadH * 2f;
             feedbackBottom = feedbackRowY + boxHeight;
         }
-    }
 
+        /// <summary>
+        /// Draws a time signature (e.g. 4/4) as two stacked numerals spanning the staff.
+        /// Each numeral is centered on the middle two staff spaces.
+        /// </summary>
+        /// <summary>Half rest: a filled rectangle sitting ON top of the middle (3rd) staff line.</summary>
+        private static void DrawHalfRest(ICanvas canvas, float cx, float staffTop, float spacing, float headW, Color color)
+        {
+            canvas.SaveState();
+            canvas.FillColor = color;
+            // Middle staff line (line 3) is at staffTop + 2*spacing
+            var lineY = staffTop + 2f * spacing;
+            var w = headW * 1.2f;
+            var h = spacing * 0.45f;
+            // Half rest sits on top of line 3
+            canvas.FillRectangle(cx - w / 2f, lineY - h, w, h);
+            canvas.RestoreState();
+        }
+
+        /// <summary>Whole rest: a filled rectangle hanging BELOW the 4th staff line.</summary>
+        private static void DrawWholeRest(ICanvas canvas, float cx, float staffTop, float spacing, float headW, Color color)
+        {
+            canvas.SaveState();
+            canvas.FillColor = color;
+            // 4th staff line is at staffTop + 3*spacing
+            var lineY = staffTop + 3f * spacing;
+            var w = headW * 1.2f;
+            var h = spacing * 0.45f;
+            // Whole rest hangs below line 4 (down from line 4)
+            canvas.FillRectangle(cx - w / 2f, lineY, w, h);
+            canvas.RestoreState();
+        }
+
+        /// <summary>
+        /// Uses a zigzag approximation: three short diagonal strokes forming the classic quarter-rest shape.
+        /// </summary>
+        private static void DrawQuarterRest(ICanvas canvas, float cx, float staffTop, float spacing, float headW, Color color)
+        {
+            canvas.SaveState();
+            canvas.StrokeColor = color;
+            canvas.StrokeLineCap = LineCap.Round;
+            var sw = Math.Max(1.5f, headW * 0.12f);
+            canvas.StrokeSize = sw;
+
+            // The rest spans from line 2 to line 4 (two staff spaces in the middle).
+            // staffTop + spacing = line 2;  staffTop + 3*spacing = line 4
+            var top    = staffTop + spacing;
+            var bottom = staffTop + 3f * spacing;
+            var h      = bottom - top;         // = 2 * spacing
+            var w      = h * 0.45f;            // proportional width
+
+            // Classic quarter-rest zigzag: 4 points
+            //   A (top-right)  → B (middle-left)  → C (just below middle, right)  → D (bottom-left)
+            float ax = cx + w * 0.5f, ay = top;
+            float bx = cx - w * 0.5f, by = top + h * 0.38f;
+            float cx2 = cx + w * 0.35f, cy2 = top + h * 0.55f;
+            float dx = cx - w * 0.5f, dy = bottom;
+
+            canvas.DrawLine(ax, ay, bx, by);
+            canvas.DrawLine(bx, by, cx2, cy2);
+            canvas.DrawLine(cx2, cy2, dx, dy);
+
+            canvas.RestoreState();
+        }
+
+        private static void DrawTimeSignature(ICanvas canvas, float x, float staffTop, float spacing,
+            TimeSignature ts, Color color)
+        {
+            canvas.SaveState();
+            canvas.FontColor = color;
+            canvas.Font = new Microsoft.Maui.Graphics.Font("Arial", FontWeights.Bold);
+
+            // Derive the bottom number: how many of that duration fit in a whole note.
+            int bottomNumber = (int)Math.Round(4.0 / ts.BeatUnit.ToBeatValue());
+
+            // Each numeral fills exactly half the staff height (2 * spacing).
+            // Combined they span the full distance from top staff line to bottom staff line.
+            var numeralH = spacing * 2f;
+            // Font size slightly smaller than box height so DrawString fills the box.
+            canvas.FontSize = numeralH * 0.88f;
+
+            var boxW = spacing * 1.6f;
+            var leftX = x - boxW * 0.5f;
+
+            // Top number: sits in the upper two staff spaces (lines 1 – 3)
+            canvas.DrawString(ts.Beats.ToString(),
+                leftX, staffTop, boxW, numeralH,
+                HorizontalAlignment.Center, VerticalAlignment.Center);
+
+            // Bottom number: sits in the lower two staff spaces (lines 3 – 5)
+            canvas.DrawString(bottomNumber.ToString(),
+                leftX, staffTop + numeralH, boxW, numeralH,
+                HorizontalAlignment.Center, VerticalAlignment.Center);
+
+            canvas.RestoreState();
+        }
+    }
 }

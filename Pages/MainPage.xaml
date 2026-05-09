@@ -142,7 +142,7 @@
             <!-- Combined Scale / Tune picker -->
             <Border Style="{StaticResource CompactBrownBox}">
               <Picker x:Name="ScaleTunePicker"
-                      WidthRequest="140"
+                      WidthRequest="180"
                       HeightRequest="28"
                       FontSize="11"
                       TextColor="#000000"

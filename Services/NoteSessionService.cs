@@ -5,6 +5,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
+using musicmate.Models;
 using musicmate.Utilities;
 
 namespace musicmate.Services
@@ -22,6 +23,10 @@ namespace musicmate.Services
         public string Name { get; set; } = "";
         public double TargetFreq { get; set; }
         public float X { get; set; }
+        /// <summary>When true this slot is a rest — it is skipped during capture evaluation and drawn as a rest symbol.</summary>
+        public bool IsRest { get; set; }
+        /// <summary>Rhythmic duration for practice-tune notes. Null in random/scale/tuner modes.</summary>
+        public NoteDuration? Duration { get; set; }
 
         // Returns all enharmonic names for this note (including itself)
         public IEnumerable<string> EnharmonicNames
@@ -798,6 +803,30 @@ namespace musicmate.Services
         public readonly List<NoteInfo> NotesToDraw = new();
         public int CurrentNoteIndex { get; private set; }
         public readonly HashSet<int> CorrectNoteIndices = new();
+
+        /// <summary>
+        /// The practice tune currently loaded into <see cref="NotesToDraw"/>.
+        /// Null when the active mode is not "Practice Tune".
+        /// </summary>
+        public PracticeTune? CurrentTune { get; private set; }
+
+        /// <summary>
+        /// X-positions (in the same coordinate space as <see cref="NoteInfo.X"/>) at which
+        /// bar lines should be drawn between measures.  Populated by
+        /// <see cref="GenerateNotesAsync"/> when a <see cref="PracticeTune"/> is loaded.
+        /// Empty for all other modes.
+        /// </summary>
+        public readonly List<float> MeasureBarXPositions = new();
+
+        /// <summary>
+        /// X-positions of rest slots in the current practice tune.
+        /// Each entry holds the source X (same space as <see cref="NoteInfo.X"/>)
+        /// for use by the drawing layer to render rest symbols.
+        /// Empty for all other modes.
+        /// </summary>
+        public readonly List<float> RestXPositions = new();
+        /// <summary>Duration for each rest in <see cref="RestXPositions"/> (parallel list).</summary>
+        public readonly List<NoteDuration> RestDurations = new();
         public readonly Dictionary<int, (int Wrong, int Cents)> NoteFeedbacks = new();
         public DateTime IgnoreAudioUntilUtc { get; private set; } = DateTime.MinValue;
         private int? _lockedPitchClassAfterAdvance;
@@ -1409,6 +1438,84 @@ namespace musicmate.Services
         public string TunerDisplay => TunerLastNoteName == null ? "-" : $"{TunerLastNoteName} {TunerLastCents:+ 0;- 0;0}¢";
         public async Task GenerateNotesAsync(double availableWidth)
         {
+            NotesToDraw.Clear();
+            FeedbackViewModels.Clear();
+            CorrectNoteIndices.Clear();
+            NoteFeedbacks.Clear();
+            MeasureBarXPositions.Clear();
+            RestXPositions.Clear();
+            RestDurations.Clear();
+            CurrentNoteIndex = 0;
+            _lockedPitchClassAfterAdvance = null;
+            IgnoreAudioUntilUtc = DateTime.MinValue;
+
+            // ── Practice Tune mode ──────────────────────────────────────────────
+            if (Tune == "Practice Tune")
+            {
+                var tune = CurrentTune ?? TuneLibrary.CMajorScale;
+                CurrentTune = tune;
+
+                // Proportional spacing: each beat unit gets a fixed pixel width so that
+                // half notes are twice as wide as quarters, whole notes four times as wide, etc.
+                var noteHeadWidth = 24f;
+                var beatUnit = tune.TimeSignature.BeatUnit;
+                var beatUnitValue = beatUnit.ToBeatValue(); // e.g. 1.0 for quarter
+
+                // Count total beat-units across the whole tune for layout sizing
+                double totalBeats = 0;
+                foreach (var m in tune.Measures)
+                    foreach (var mn in m.Notes)
+                        totalBeats += mn.Duration.ToBeatValue() / beatUnitValue;
+
+                var usable = availableWidth > 0 ? (float)(availableWidth - 64) : noteHeadWidth * 3f * (float)totalBeats;
+                // pixels per beat-unit
+                var pixPerBeat = Math.Max(noteHeadWidth * 2f, usable / Math.Max(1, (float)totalBeats));
+                var startX = 32f;
+
+                double cursorBeats = 0;
+                bool firstMeasure = true;
+                foreach (var measure in tune.Measures)
+                {
+                    // Record bar-line X at the start of each measure except the first
+                    if (!firstMeasure)
+                    {
+                        var barX = startX + (float)(cursorBeats * pixPerBeat) - pixPerBeat * 0.5f;
+                        MeasureBarXPositions.Add(barX);
+                    }
+                    firstMeasure = false;
+
+                    foreach (var mn in measure.Notes)
+                    {
+                        var beatVal = mn.Duration.ToBeatValue() / beatUnitValue;
+                        var slotX = startX + (float)(cursorBeats * pixPerBeat);
+                        if (mn.IsRest)
+                        {
+                            RestXPositions.Add(slotX);
+                            RestDurations.Add(mn.Duration);
+                        }
+                        else
+                        {
+                            var freq = MidiToFreq(mn.MidiNumber);
+                            var noteIdx = NotesToDraw.Count;
+                            NotesToDraw.Add(new NoteInfo
+                            {
+                                Midi       = mn.MidiNumber,
+                                Name       = mn.SpelledName,
+                                TargetFreq = freq,
+                                X          = slotX,
+                                Duration   = mn.Duration
+                            });
+                            FeedbackViewModels.Add(new FeedbackItem(noteIdx, 0, 0, false));
+                        }
+                        cursorBeats += beatVal;
+                    }
+                }
+                return;
+            }
+
+            // ── All other modes (unchanged) ─────────────────────────────────────
+            CurrentTune = null;
+
             string[] sequence;
             if (Tune == "Random")
             {
@@ -1426,32 +1533,24 @@ namespace musicmate.Services
             {
                 sequence = BuildScaleSequence(Key, SelectedScale);
             }
-            NotesToDraw.Clear();
-            FeedbackViewModels.Clear();
-            CorrectNoteIndices.Clear();
-            NoteFeedbacks.Clear();
-            CurrentNoteIndex = 0;
-            _lockedPitchClassAfterAdvance = null;
-            IgnoreAudioUntilUtc = DateTime.MinValue;
 
-            var noteHeadWidth = 24f;
-            var spacing = noteHeadWidth * 3f;
-            // Chromatic scale enharmonics are handled in BuildScaleSequence (sharps up, flats down).
+            var noteHeadWidthStd = 24f;
+            var spacingStd = noteHeadWidthStd * 3f;
             if (availableWidth > 0 && sequence.Length > 0)
             {
                 var usable = (float)(availableWidth - 64);
-                spacing = Math.Max(noteHeadWidth * 2f, usable / Math.Max(1, sequence.Length));
+                spacingStd = Math.Max(noteHeadWidthStd * 2f, usable / Math.Max(1, sequence.Length));
             }
 
-            var startX = 32f;
+            var startXStd = 32f;
             for (var i = 0; i < sequence.Length; i++)
             {
                 var midi = NoteNameToMidi(sequence[i]);
                 var freq = MidiToFreq(midi);
-                NotesToDraw.Add(new NoteInfo { Midi = midi, Name = sequence[i], TargetFreq = freq, X = startX + i * spacing });
+                NotesToDraw.Add(new NoteInfo { Midi = midi, Name = sequence[i], TargetFreq = freq, X = startXStd + i * spacingStd });
                 FeedbackViewModels.Add(new FeedbackItem(i, 0, 0, false));
             }
-        }                
+        }
         public string GetConcertKey()
         {
             return TransposeKey(Key, GetInstrumentTransposeOffset());
@@ -1966,7 +2065,17 @@ namespace musicmate.Services
             }
         }
 
-        public List<string> TuneOptions { get; } = new() { "Selected Scale", "Random", "Tuner" };
+        /// <summary>
+        /// Sets <see cref="CurrentTune"/> and switches <see cref="Tune"/> to "Practice Tune"
+        /// so the next call to <see cref="GenerateNotesAsync"/> will use the supplied tune.
+        /// </summary>
+        public void SelectPracticeTune(PracticeTune tune)
+        {
+            CurrentTune = tune ?? throw new ArgumentNullException(nameof(tune));
+            Tune = "Practice Tune";
+        }
+
+        public List<string> TuneOptions { get; } = new() { "Selected Scale", "Random", "Tuner", "Practice Tune" };
 
         private bool _sessionCompleted = true;
         public bool SessionCompleted 

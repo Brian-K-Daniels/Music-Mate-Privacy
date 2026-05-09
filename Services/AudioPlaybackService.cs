@@ -38,8 +38,6 @@ namespace musicmate.Services
 
                     await Task.Delay(TimeSpan.FromSeconds(noteSeconds), token);
 
-                    player.Stop();
-
                     if (gapSeconds > 0)
                     {
                         await Task.Delay(TimeSpan.FromSeconds(gapSeconds), token);
@@ -62,10 +60,20 @@ namespace musicmate.Services
             int samples = (int)(SampleRate * durationSeconds);
             var pcm = new byte[44 + samples * 2];
             WriteWavHeader(pcm, samples);
+
+            // Fade in/out over 10 ms to eliminate click transients at note onset and release
+            int fadeSamples = Math.Min((int)(SampleRate * 0.010), samples / 4);
+
             for (int i = 0; i < samples; i++)
             {
                 double t = (double)i / SampleRate;
-                var sample = (short)(Math.Sin(2 * Math.PI * freq * t) * short.MaxValue * volume);
+                double envelope = 1.0;
+                if (i < fadeSamples)
+                    envelope = (double)i / fadeSamples;
+                else if (i >= samples - fadeSamples)
+                    envelope = (double)(samples - 1 - i) / fadeSamples;
+
+                var sample = (short)(Math.Sin(2 * Math.PI * freq * t) * short.MaxValue * volume * envelope);
                 BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(44 + i * 2), sample);
             }
             return new MemoryStream(pcm);

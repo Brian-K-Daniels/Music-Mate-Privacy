@@ -1,5 +1,6 @@
 using CommunityToolkit.Maui.Alerts;
 using musicmate.Controls;
+using musicmate.Models;
 using musicmate.Services;
 using musicmate.Utilities;
 using System.ComponentModel;
@@ -449,8 +450,10 @@ namespace musicmate.Pages
                     KeyPicker.SelectedIndex = 0;
                 _lastFreeKeyIndex = KeyPicker.SelectedIndex;
 
-                // Combined Scale + Tune picker: Tuner / Random then all scales
+                // Combined Scale + Tune picker: Tuner / Random / individual practice tunes / scales
+                var practiceTuneTitles = musicmate.Models.TuneLibrary.All.Select(t => t.Title).ToArray();
                 var scaleTuneOptions = new[] { "Tuner", "Random" }
+                    .Concat(practiceTuneTitles)
                     .Concat(NoteSessionService.AvailableScales)
                     .ToArray();
                 ScaleTunePicker.ItemsSource = scaleTuneOptions;
@@ -458,10 +461,17 @@ namespace musicmate.Pages
                 var savedTune = Preferences.Default.Get<string?>("SelectedTune", null);
                 if (!string.IsNullOrEmpty(savedTune) && (savedTune == "Random" || savedTune == "Tuner"))
                     _session.Tune = savedTune;
+                else if (!string.IsNullOrEmpty(savedTune) && practiceTuneTitles.Contains(savedTune))
+                {
+                    var savedPT = musicmate.Models.TuneLibrary.All.FirstOrDefault(t => t.Title == savedTune);
+                    if (savedPT != null)
+                        _session.SelectPracticeTune(savedPT);
+                }
                 // else _session.Tune stays "Selected Scale" (persisted via SelectedTune preference)
 
                 var initialScaleTuneSelection = _session.Tune == "Random" ? "Random"
                     : _session.Tune == "Tuner" ? "Tuner"
+                    : _session.Tune == "Practice Tune" ? (_session.CurrentTune?.Title ?? practiceTuneTitles[0])
                     : _session.SelectedScale;
                 var scaleTuneIdx = Array.IndexOf(scaleTuneOptions, initialScaleTuneSelection);
                 ScaleTunePicker.SelectedIndex = scaleTuneIdx >= 0 ? scaleTuneIdx : 0;
@@ -1060,14 +1070,21 @@ async Task UpdateNoteStatsDatabaseAsync()
 
                 var bpm = Math.Clamp(_session.PlaybackBpm, 30, 200);
                 var beatSeconds = 60.0 / bpm;
-                var gapSeconds = Math.Min(0.02, beatSeconds * 0.05);
-                var noteSeconds = Math.Max(0.05, beatSeconds - gapSeconds);
 
                 for (int i = 0; i < _session.NotesToDraw.Count; i++)
                 {
                     ct.ThrowIfCancellationRequested();
 
                     var note = _session.NotesToDraw[i];
+
+                    // Scale duration by note's rhythmic value when available (practice tune mode).
+                    // A quarter note = 1 beat; half = 2 beats; eighth = 0.5 beats, etc.
+                    var durationBeats = note.Duration.HasValue
+                        ? note.Duration.Value.ToBeatValue()
+                        : 1.0;
+                    var totalSeconds = beatSeconds * durationBeats;
+                    var gapSeconds = Math.Min(0.02, totalSeconds * 0.05);
+                    var noteSeconds = Math.Max(0.05, totalSeconds - gapSeconds);
 
                     StatusService.Instance.StatusMessage = $"Playing note {i + 1}/{_session.NotesToDraw.Count}: {note.Name}";
 
@@ -1196,7 +1213,9 @@ async Task UpdateNoteStatsDatabaseAsync()
                 Dt = DateTime.Now,
                 Key = _session.Key,
                 Instrument = _session.Instrument?.Split(',')[0].Trim() ?? string.Empty,
-                Sc = _session.Tune == "Random" ? "Random" : _session.SelectedScale,
+                Sc = _session.Tune == "Random" ? "Random"
+                    : _session.Tune == "Practice Tune" ? (_session.CurrentTune?.Title ?? "Practice Tune")
+                    : _session.SelectedScale,
                 Hi = hi?.Name ?? "",
                 Lo = lo?.Name ?? "",
                 Pc = apc,
@@ -1297,6 +1316,7 @@ async Task UpdateNoteStatsDatabaseAsync()
             if (ScaleTunePicker.ItemsSource is not string[] items) return;
             var selection = _session.Tune == "Random" ? "Random"
                 : _session.Tune == "Tuner" ? "Tuner"
+                : _session.Tune == "Practice Tune" ? (_session.CurrentTune?.Title ?? string.Empty)
                 : _session.SelectedScale;
             var idx = Array.IndexOf(items, selection);
             if (idx >= 0 && ScaleTunePicker.SelectedIndex != idx)
@@ -1306,6 +1326,18 @@ async Task UpdateNoteStatsDatabaseAsync()
         private async void OnScaleTunePickerChanged(object? sender, EventArgs e)
         {
             if (ScaleTunePicker.SelectedItem is not string selected) return;
+
+            // Check if the selection is a practice tune title
+            var practiceTune = musicmate.Models.TuneLibrary.All.FirstOrDefault(t => t.Title == selected);
+            if (practiceTune != null)
+            {
+                _lastValidScaleTuneIndex = ScaleTunePicker.SelectedIndex;
+                _session.SelectPracticeTune(practiceTune);
+                Preferences.Default.Set("SelectedTune", selected);
+                IsAutoRepeatVisible = true;
+                UpdateKeyPickerVisibility();
+                return;
+            }
 
             if (selected == "Random" || selected == "Tuner")
             {
