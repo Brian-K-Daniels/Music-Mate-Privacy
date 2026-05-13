@@ -9,18 +9,27 @@ namespace musicmate.Models
     {
         private readonly List<MusicNote> _notes = new();
 
-        /// <summary>Read-only view of the notes inside this measure.</summary>
+        // ── v2: GeneratedNote slots (populated by the v2 session engine) ──────────
+        private readonly List<GeneratedNote> _generatedNotes = new();
+
+        /// <summary>Read-only view of the v1 <see cref="MusicNote"/> slots in this measure.</summary>
         public IReadOnlyList<MusicNote> Notes => _notes;
+
+        /// <summary>
+        /// Read-only view of the v2 <see cref="GeneratedNote"/> slots in this measure.
+        /// Populated only when this measure is managed by the v2 session engine.
+        /// </summary>
+        public IReadOnlyList<GeneratedNote> GeneratedNotes => _generatedNotes;
 
         /// <summary>Time signature that governs this measure.</summary>
         public TimeSignature TimeSignature { get; }
 
-        /// <summary>Total beats available in this measure.</summary>
-        public double BeatsAvailable => TimeSignature.Beats;
+        /// <summary>Total quarter-beat capacity of this measure (mirrors <see cref="TimeSignature.TotalBeats"/>).</summary>
+        public double BeatsAvailable => TimeSignature.TotalBeats;
 
         /// <summary>
-        /// Sum of the beat values of all notes currently in the measure.
-        /// Each note's beat value is relative to the time signature's beat unit.
+        /// Sum of the quarter-beat values of all notes currently in the measure.
+        /// Counts both v1 <see cref="MusicNote"/> and v2 <see cref="GeneratedNote"/> slots.
         /// </summary>
         public double BeatsUsed
         {
@@ -28,31 +37,69 @@ namespace musicmate.Models
             {
                 double total = 0;
                 foreach (var note in _notes)
-                    total += note.Duration.ToBeatValue() / TimeSignature.BeatUnit.ToBeatValue();
+                    total += note.Duration.ToBeatValue();
+                foreach (var note in _generatedNotes)
+                    total += note.Duration.ToBeatValue();
                 return total;
             }
         }
 
+        /// <summary>Beats remaining before the measure is full.</summary>
+        public double BeatsRemaining => Math.Max(0.0, BeatsAvailable - BeatsUsed);
+
         /// <summary>True when <see cref="BeatsUsed"/> has reached or exceeded <see cref="BeatsAvailable"/>.</summary>
-        public bool IsFull => BeatsUsed >= BeatsAvailable;
+        public bool IsFull => BeatsUsed >= BeatsAvailable - 1e-9;
 
         public Measure(TimeSignature timeSignature)
         {
             TimeSignature = timeSignature ?? throw new ArgumentNullException(nameof(timeSignature));
         }
 
+        // ── v1 note management ────────────────────────────────────────────────────
+
         /// <summary>
-        /// Adds a note to the measure.
-        /// The caller is responsible for not overfilling; this method does not throw if the measure is full,
-        /// so that partial/pickup measures and editor states can be represented freely.
+        /// Adds a v1 <see cref="MusicNote"/> to the measure without overflow checking.
+        /// Partial/pickup measures are allowed — the caller controls fullness.
         /// </summary>
         public void AddNote(MusicNote note)
         {
-            if (note == null) throw new ArgumentNullException(nameof(note));
+            if (note is null) throw new ArgumentNullException(nameof(note));
             _notes.Add(note);
         }
 
+        /// <summary>
+        /// Returns true when adding <paramref name="note"/> would push <see cref="BeatsUsed"/>
+        /// beyond <see cref="BeatsAvailable"/>.
+        /// </summary>
+        public bool WouldExceed(MusicNote note)
+        {
+            if (note is null) throw new ArgumentNullException(nameof(note));
+            return BeatsUsed + note.Duration.ToBeatValue() > BeatsAvailable + 1e-9;
+        }
+
+        // ── v2 note management ────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Adds a v2 <see cref="GeneratedNote"/> to the measure without overflow checking.
+        /// </summary>
+        public void AddNote(GeneratedNote note)
+        {
+            if (note is null) throw new ArgumentNullException(nameof(note));
+            _generatedNotes.Add(note);
+        }
+
+        /// <summary>
+        /// Returns true when adding <paramref name="note"/> would push <see cref="BeatsUsed"/>
+        /// beyond <see cref="BeatsAvailable"/>.
+        /// </summary>
+        public bool WouldExceed(GeneratedNote note)
+        {
+            if (note is null) throw new ArgumentNullException(nameof(note));
+            return BeatsUsed + note.Duration.ToBeatValue() > BeatsAvailable + 1e-9;
+        }
+
         public override string ToString() =>
-            $"Measure [{BeatsUsed:0.##}/{BeatsAvailable} beats, {_notes.Count} note(s), Full={IsFull}]";
+            $"Measure [{TimeSignature}  {BeatsUsed:0.##}/{BeatsAvailable} beats, " +
+            $"{_notes.Count + _generatedNotes.Count} note(s), Full={IsFull}]";
     }
 }

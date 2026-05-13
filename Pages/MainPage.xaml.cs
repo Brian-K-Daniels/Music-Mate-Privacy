@@ -1,5 +1,6 @@
 using CommunityToolkit.Maui.Alerts;
 using musicmate.Controls;
+using musicmate.Drawables;
 using musicmate.Models;
 using musicmate.Services;
 using musicmate.Utilities;
@@ -15,6 +16,7 @@ namespace musicmate.Pages
         private readonly IAudioCaptureService _audio = null!;
         private readonly IAudioPlaybackService _player = null!;
         private readonly Drawables.StaffDrawable _drawable = null!;
+        private Drawables.V2MeasureDrawable? _v2Drawable;
         private readonly SessionDatabase _sessionDb = null!;
         private readonly IOrientationService _orientation = null!;
         private readonly ThemeService _theme_service = null!;
@@ -323,6 +325,11 @@ namespace musicmate.Pages
                 catch { }
                 StaffGraphicsView.SetBinding(GraphicsView.BackgroundColorProperty, new Binding("PanelBackgroundColor"));
 
+                // V2 staff drawable setup
+                _v2Drawable = new Drawables.V2MeasureDrawable(_session, _theme_service);
+                V2StaffGraphicsView.Drawable = _v2Drawable;
+                V2StaffGraphicsView.SetBinding(GraphicsView.BackgroundColorProperty, new Binding("PanelBackgroundColor"));
+
                 // Tuner graphics setup
                 TunerBorder.BindingContext = _theme_service;
                 TunerGraphicsView.BindingContext = _theme_service;
@@ -357,6 +364,15 @@ namespace musicmate.Pages
                 {
                     try
                     {
+                        // In V2 staff mode the note buffer is infinite; reaching the end of the
+                        // current session window just means more notes need to be generated.
+                        // Skip the normal session-end flow and let AppendV2MeasuresAsync handle it.
+                        if (_session.V2StaffMode)
+                        {
+                            await AppendV2MeasuresAsync(V2BatchSize);
+                            return;
+                        }
+
                         await UpdateNoteStatsDatabaseAsync();
                         await SaveSessionStatAsync();
 
@@ -519,8 +535,344 @@ namespace musicmate.Pages
             }
 #endif
 
-            StaffGraphicsView.Invalidate();
-            UpdateStaffHeight();
+            if (_session.V2StaffMode)
+            {
+                UpdateV2Display();
+                StaffBorder.IsVisible = false;
+                V2StaffBorder.IsVisible = true;
+            }
+            else
+            {
+                StaffBorder.IsVisible = true;
+                V2StaffBorder.IsVisible = false;
+                StaffGraphicsView.Invalidate();
+                UpdateStaffHeight();
+            }
+        }
+
+        // ── V2 multi-measure queue ────────────────────────────────────────────────
+
+        /// <summary>How many measures to generate at once (initial fill and each top-up).</summary>
+        private const int V2BatchSize = 4;
+        /// <summary>Trigger a top-up when this many measures remain ahead of the current one.</summary>
+        private const int V2RefillThreshold = 2;
+
+        // Generator offsets: updated every time we append more measures.
+        private int    _v2NextMeasureIndex    = 0;
+        private double _v2NextBeatOffset      = 0.0;
+        private int    _v2NextGlobalNoteIndex = 0;
+        private bool   _v2AppendInProgress    = false;
+
+        /// <summary>Cached excluded MIDI set rebuilt whenever a new sequence starts.</summary>
+        private HashSet<int> _v2ExcludedMidis = new();
+
+        /// <summary>
+        /// Loads the set of mastered MIDI numbers from the note database using the
+        /// same logic as <see cref="NoteSessionService.BuildRandomSequenceAsync"/>.
+        /// </summary>
+        private async Task LoadV2ExcludedMidisAsync()
+        {
+            _v2ExcludedMidis = await _session.GetMasteredMidiNumbersAsync();
+        }
+
+        /// <summary>
+        /// Builds a <see cref="MusicSequenceGenerator"/> configured with the current
+        /// session parameters, append offsets, and mastery exclusions.
+        /// </summary>
+        private MusicSequenceGenerator BuildV2Generator(int measureCount)
+        {
+            // Translate persisted string settings to model types.
+            var timeSig = _session.V2TimeSignature switch
+            {
+                "3/4" => TimeSignature.ThreeFour,
+                "2/4" => TimeSignature.TwoFour,
+                _     => TimeSignature.FourFour
+            };
+
+            // "Simple" = quarter notes only; "Mixed" = variety up to the chosen smallest value.
+            // RhythmVarietyPercent drives how often non-quarter durations appear.
+            int rhythmVariety = _session.V2RhythmMode == "Mixed" ? 60 : 0;
+
+            return new MusicSequenceGenerator
+            {
+                Key                  = _session.Key,
+                Scale                = _session.SelectedScale,
+                LowestNote           = _session.LowestNote,
+                HighestNote          = _session.HighestNote,
+                TimeSignature        = timeSig,
+                MeasureCount         = measureCount,
+                RhythmVarietyPercent = rhythmVariety,
+                SmallestDuration     = _session.V2SmallestNote switch
+                {
+                    "Sixteenth" => NoteDuration.Sixteenth,
+                    "Eighth"    => NoteDuration.Eighth,
+                    _           => NoteDuration.Quarter
+                },
+                StartMeasureIndex    = _v2NextMeasureIndex,
+                StartBeatOffset      = _v2NextBeatOffset,
+                StartGlobalNoteIndex = _v2NextGlobalNoteIndex,
+                ExcludedMidiNumbers  = _v2ExcludedMidis
+            };
+        }
+
+        /// <summary>
+        /// Derives bar-beat positions from a flat list of <see cref="GeneratedNote"/>
+        /// based on the <see cref="GeneratedNote.MeasureIndex"/> transitions.
+        /// Returns only the positions of bar lines that do not already exist in
+        /// <paramref name="existingBarBeats"/> (so appended bars never duplicate).
+        /// </summary>
+        private static List<double> ComputeNewBarBeats(
+            IReadOnlyList<GeneratedNote> notes,
+            HashSet<double> existingBarBeats)
+        {
+            var result = new List<double>();
+            int prevMeasure = notes.Count > 0 ? (notes[0].MeasureIndex ?? 0) : 0;
+            foreach (var n in notes)
+            {
+                if ((n.MeasureIndex ?? prevMeasure) != prevMeasure && n.BeatPosition.HasValue)
+                {
+                    double bp = n.BeatPosition.Value;
+                    if (!existingBarBeats.Contains(bp))
+                    {
+                        result.Add(bp);
+                        existingBarBeats.Add(bp);
+                    }
+                    prevMeasure = n.MeasureIndex ?? prevMeasure;
+                }
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Populates the v2 drawable with a freshly generated measure sequence and
+        /// invalidates the v2 GraphicsView.  Also populates _session.NotesToDraw so
+        /// the existing Evaluate/UpdateFeedbackForCurrent pitch logic works unchanged.
+        /// Generates <see cref="V2BatchSize"/> measures ahead from the start.
+        /// </summary>
+        private async Task UpdateV2DisplayAsync()
+        {
+            if (_v2Drawable == null) return;
+            try
+            {
+                // Reset queue state.
+                _v2NextMeasureIndex    = 0;
+                _v2NextBeatOffset      = 0.0;
+                _v2NextGlobalNoteIndex = 0;
+                _v2AppendInProgress    = false;
+
+                await LoadV2ExcludedMidisAsync();
+
+                var gen      = BuildV2Generator(V2BatchSize);
+                var measures = gen.GenerateSequence();
+                var flat     = MusicSequenceGenerator.Flatten(measures);
+
+                // Advance offsets past the generated measures.
+                _v2NextMeasureIndex    += measures.Count;
+                _v2NextBeatOffset      += measures.Count * (double)gen.TimeSignature.TotalBeats;
+                _v2NextGlobalNoteIndex += flat.Count(n => !n.IsRest);
+
+                // Bar beats: every position where MeasureIndex changes.
+                var existingBarBeats = new HashSet<double>();
+                var barBeats = ComputeNewBarBeats(flat, existingBarBeats);
+
+                // ── Push to drawable ──────────────────────────────────────────────
+                _v2Drawable.Notes           = flat;
+                _v2Drawable.MeasureBarBeats = barBeats;
+                _v2Drawable.CurrentNoteIndex = 0;
+                _v2Drawable.NoteStates       = new V2NoteState[flat.Count];
+
+                // Mark first playable note as current.
+                for (int i = 0; i < flat.Count; i++)
+                {
+                    if (!flat[i].IsRest)
+                    {
+                        _v2Drawable.NoteStates[i] = V2NoteState.Current;
+                        _v2Drawable.CurrentNoteIndex = i;
+                        break;
+                    }
+                }
+
+                // Populate session NotesToDraw.
+                RebuildSessionNotesFromV2(flat, 0);
+
+                V2StaffGraphicsView.Invalidate();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[V2] UpdateV2DisplayAsync ERROR: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// Legacy sync wrapper kept so existing call sites (RegenerateNotesAsync) compile.
+        /// Fires the async path and discards the task on the calling thread.
+        /// </summary>
+        private void UpdateV2Display() => _ = UpdateV2DisplayAsync();
+
+        /// <summary>
+        /// Appends <paramref name="measureCount"/> more measures to the v2 sequence
+        /// without restarting the session.  Called when the player is getting close
+        /// to the end of the visible note list.
+        /// </summary>
+        private async Task AppendV2MeasuresAsync(int measureCount)
+        {
+            if (_v2Drawable == null || _v2AppendInProgress) return;
+            _v2AppendInProgress = true;
+            try
+            {
+                var gen      = BuildV2Generator(measureCount);
+                var measures = gen.GenerateSequence();
+                var newNotes = MusicSequenceGenerator.Flatten(measures);
+
+                if (newNotes.Count == 0) return;
+
+                // Advance offsets.
+                _v2NextMeasureIndex    += measures.Count;
+                _v2NextBeatOffset      += measures.Count * (double)gen.TimeSignature.TotalBeats;
+                _v2NextGlobalNoteIndex += newNotes.Count(n => !n.IsRest);
+
+                // Compute bar beats for the new notes only.
+                var existingSet = new HashSet<double>(_v2Drawable.MeasureBarBeats);
+                var newBarBeats = ComputeNewBarBeats(newNotes, existingSet);
+
+                // Append to drawable on the main thread.
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    var combinedNotes    = _v2Drawable.Notes.Concat(newNotes).ToList();
+                    var combinedBarBeats = _v2Drawable.MeasureBarBeats.Concat(newBarBeats).ToList();
+
+                    // Expand NoteStates, keeping existing state entries.
+                    var oldStates    = _v2Drawable.NoteStates;
+                    var newStates    = new V2NoteState[combinedNotes.Count];
+                    Array.Copy(oldStates, newStates,
+                        Math.Min(oldStates.Length, newStates.Length));
+                    // New entries default to V2NoteState.Pending (= 0), which is correct.
+
+                    _v2Drawable.Notes           = combinedNotes;
+                    _v2Drawable.MeasureBarBeats = combinedBarBeats;
+                    _v2Drawable.NoteStates      = newStates;
+
+                    // Extend NotesToDraw with the new pitch notes.
+                    int sessionOffset = _session.NotesToDraw.Count;
+                    foreach (var gn in newNotes)
+                    {
+                        if (gn.IsRest) continue;
+                        _session.NotesToDraw.Add(new NoteInfo
+                        {
+                            Midi       = gn.MidiNumber,
+                            Name       = gn.SpelledName,
+                            TargetFreq = gn.TargetFrequency,
+                            X          = 0f,
+                            Duration   = gn.Duration
+                        });
+                        _session.FeedbackViewModels.Add(
+                            new FeedbackItem(sessionOffset++, 0, 0, false));
+                    }
+
+                    V2StaffGraphicsView.Invalidate();
+                    Debug.WriteLine($"[V2] Appended {measureCount} measures. Total notes: {combinedNotes.Count}");
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[V2] AppendV2MeasuresAsync ERROR: {ex}");
+            }
+            finally
+            {
+                _v2AppendInProgress = false;
+            }
+        }
+
+        /// <summary>
+        /// Rebuilds <see cref="NoteSessionService.NotesToDraw"/> and
+        /// <see cref="NoteSessionService.FeedbackViewModels"/> from a flat
+        /// <see cref="GeneratedNote"/> list, starting at <paramref name="sessionStart"/>.
+        /// </summary>
+        private void RebuildSessionNotesFromV2(
+            IReadOnlyList<GeneratedNote> flat, int sessionStart)
+        {
+            _session.NotesToDraw.Clear();
+            _session.FeedbackViewModels.Clear();
+            int idx = sessionStart;
+            foreach (var gn in flat)
+            {
+                if (gn.IsRest) continue;
+                _session.NotesToDraw.Add(new NoteInfo
+                {
+                    Midi       = gn.MidiNumber,
+                    Name       = gn.SpelledName,
+                    TargetFreq = gn.TargetFrequency,
+                    X          = 0f,
+                    Duration   = gn.Duration
+                });
+                _session.FeedbackViewModels.Add(new FeedbackItem(idx++, 0, 0, false));
+            }
+        }
+
+        /// <summary>
+        /// Syncs V2NoteState array from session feedback/progress after each pitch evaluation.
+        /// Called on the main thread.  Also triggers a look-ahead append when the player
+        /// is approaching the end of the current note buffer.
+        /// </summary>
+        private void SyncV2NoteStates()
+        {
+            if (_v2Drawable == null || _v2Drawable.Notes.Count == 0) return;
+
+            var states = _v2Drawable.NoteStates;
+            if (states.Length != _v2Drawable.Notes.Count)
+                states = new V2NoteState[_v2Drawable.Notes.Count];
+
+            // Walk v2 Notes; for each non-rest note find its session index
+            int sessionIdx        = 0;
+            int currentSessionIdx = _session.CurrentNoteIndex;
+
+            for (int i = 0; i < _v2Drawable.Notes.Count; i++)
+            {
+                var gn = _v2Drawable.Notes[i];
+                if (gn.IsRest)
+                {
+                    states[i] = V2NoteState.Pending;
+                    continue;
+                }
+
+                if (sessionIdx < currentSessionIdx)
+                {
+                    bool correct = _session.CorrectNoteIndices.Contains(sessionIdx);
+                    states[i] = correct ? V2NoteState.Correct : V2NoteState.Wrong;
+                }
+                else if (sessionIdx == currentSessionIdx)
+                {
+                    bool hasWrong = _session.NoteFeedbacks.TryGetValue(sessionIdx, out var fb) && fb.Wrong > 0;
+                    states[i] = hasWrong ? V2NoteState.Wrong : V2NoteState.Current;
+                }
+                else
+                {
+                    states[i] = V2NoteState.Pending;
+                }
+
+                sessionIdx++;
+            }
+
+            _v2Drawable.NoteStates       = states;
+            _v2Drawable.CurrentNoteIndex = _session.CurrentNoteIndex;
+            V2StaffGraphicsView.Invalidate();
+
+            // ── Look-ahead top-up ─────────────────────────────────────────────────
+            // Determine which measure the current note is in, then check how many
+            // measures still lie ahead.  Trigger an append when only a few remain.
+            if (!_v2AppendInProgress && _v2Drawable.Notes.Count > 0)
+            {
+                int curDrawIdx = _v2Drawable.CurrentNoteIndex;
+                if (curDrawIdx >= 0 && curDrawIdx < _v2Drawable.Notes.Count)
+                {
+                    int currentMeasure = _v2Drawable.Notes[curDrawIdx].MeasureIndex ?? 0;
+                    int lastMeasure    = _v2Drawable.Notes[^1].MeasureIndex ?? 0;
+                    int measuresAhead  = lastMeasure - currentMeasure;
+
+                    if (measuresAhead <= V2RefillThreshold)
+                        _ = AppendV2MeasuresAsync(V2BatchSize);
+                }
+            }
         }
 
         private void UpdateStaffHeight()
@@ -796,7 +1148,26 @@ namespace musicmate.Pages
                         return;
 
                     // Only accept the note as correct if it matches the expected note (including octave) at the current index
-                    if (_session.Tune == "Random" && _session.CurrentNoteIndex < _session.NotesToDraw.Count)
+                    if (_session.V2StaffMode)
+                    {
+                        // V2 mode: use same evaluate/updatefeedback pipeline, then sync visual states
+                        var result = _session.Evaluate(freq);
+                        if (_session.UpdateFeedbackForCurrent(freq, result))
+                        {
+                            if (result.correct && !string.IsNullOrEmpty(_session.NotesToDraw.ElementAtOrDefault(_session.CurrentNoteIndex > 0 ? _session.CurrentNoteIndex - 1 : 0)?.Name))
+                            {
+                                var prevName = _session.NotesToDraw.ElementAtOrDefault(_session.CurrentNoteIndex - 1)?.Name ?? "";
+                                _session.RecordRandomSessionNoteResult(prevName, true);
+                            }
+                            SyncV2NoteStates();
+                        }
+                        else
+                        {
+                            // wrong attempt — still sync to show red
+                            SyncV2NoteStates();
+                        }
+                    }
+                    else if (_session.Tune == "Random" && _session.CurrentNoteIndex < _session.NotesToDraw.Count)
                     {
                         var expectedName = _session.NotesToDraw[_session.CurrentNoteIndex].Name;
                         // Accept enharmonic equivalents for accidentals
@@ -1299,7 +1670,21 @@ async Task UpdateNoteStatsDatabaseAsync()
         private void UpdateTunerVisibility()
         {
             var isTuner = _session.Tune == "Tuner";
-            StaffBorder.IsVisible = !isTuner;
+            if (isTuner)
+            {
+                StaffBorder.IsVisible  = false;
+                V2StaffBorder.IsVisible = false;
+            }
+            else if (_session.V2StaffMode)
+            {
+                StaffBorder.IsVisible  = false;
+                V2StaffBorder.IsVisible = true;
+            }
+            else
+            {
+                StaffBorder.IsVisible  = true;
+                V2StaffBorder.IsVisible = false;
+            }
             TunerGrid.IsVisible = isTuner;
             if (isTuner)
             {
@@ -1336,6 +1721,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                 Preferences.Default.Set("SelectedTune", selected);
                 IsAutoRepeatVisible = true;
                 UpdateKeyPickerVisibility();
+                await RegenerateNotesAsync();
                 return;
             }
 

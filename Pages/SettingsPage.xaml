@@ -175,6 +175,34 @@
                HorizontalTextAlignment="End" />
       </Grid>
 
+      <!-- ── Music Mate v2 Rhythm ─────────────────────────────────────────── -->
+      <BoxView HeightRequest="1" Color="#8B4513" Margin="0,4,0,2" />
+      <Label Text="V2 Rhythm (experimental)" FontAttributes="Bold" FontSize="13" />
+
+      <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
+        <Label Grid.Column="0" Text="Time signature" />
+        <Picker Grid.Column="1"
+                ItemsSource="{Binding V2TimeSignatureOptions}"
+                SelectedItem="{Binding V2TimeSignature, Mode=TwoWay}"
+                TextColor="Black" BackgroundColor="White" FontSize="12" />
+      </Grid>
+
+      <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
+        <Label Grid.Column="0" Text="Smallest note" />
+        <Picker Grid.Column="1"
+                ItemsSource="{Binding V2SmallestNoteOptions}"
+                SelectedItem="{Binding V2SmallestNote, Mode=TwoWay}"
+                TextColor="Black" BackgroundColor="White" FontSize="12" />
+      </Grid>
+
+      <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
+        <Label Grid.Column="0" Text="Rhythm mode" />
+        <Picker Grid.Column="1"
+                ItemsSource="{Binding V2RhythmModeOptions}"
+                SelectedItem="{Binding V2RhythmMode, Mode=TwoWay}"
+                TextColor="Black" BackgroundColor="White" FontSize="12" />
+      </Grid>
+
       <!-- ── Reset to defaults ────────────────────────────────────────── -->
       <BoxView HeightRequest="1" Color="#8B4513" Margin="0,6,0,2" />
       <Button Text="Reset to defaults"

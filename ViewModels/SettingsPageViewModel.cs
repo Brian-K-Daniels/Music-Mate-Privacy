@@ -89,6 +89,12 @@ namespace musicmate.ViewModels
                     OnPropertyChanged(nameof(StreakCrit));
                     OnPropertyChanged(nameof(OmitSliderValue));
                     break;
+                case nameof(NoteSessionService.V2TimeSignature):
+                    OnPropertyChanged(nameof(V2TimeSignature)); break;
+                case nameof(NoteSessionService.V2SmallestNote):
+                    OnPropertyChanged(nameof(V2SmallestNote)); break;
+                case nameof(NoteSessionService.V2RhythmMode):
+                    OnPropertyChanged(nameof(V2RhythmMode)); break;
                 case nameof(NoteSessionService.WhiteKeyNoteNames):
                     OnPropertyChanged(nameof(WhiteKeyNoteNames)); break;
                 case nameof(NoteSessionService.AvailableScalesForBinding):
@@ -406,6 +412,75 @@ namespace musicmate.ViewModels
                     OnPropertyChanged(nameof(StreakCrit));
                 }
                 OnPropertyChanged(nameof(OmitSliderValue));
+            }
+        }
+
+        // ── Music Mate v2 Rhythm Settings ─────────────────────────────────────────
+
+        public List<string> V2TimeSignatureOptions { get; } = new() { "4/4", "3/4", "2/4" };
+        public List<string> V2SmallestNoteOptions  { get; } = new() { "Quarter", "Eighth", "Sixteenth" };
+        public List<string> V2RhythmModeOptions    { get; } = new() { "Simple", "Mixed" };
+
+        private string _v2TimeSignature = Preferences.Get("musicmate.V2TimeSignature", "4/4");
+        public string V2TimeSignature
+        {
+            get => _session?.V2TimeSignature ?? _v2TimeSignature;
+            set
+            {
+                if ((_session?.V2TimeSignature ?? _v2TimeSignature) == value) return;
+                if (_session != null)
+                {
+                    _session.V2TimeSignature = value;
+                    OnPropertyChanged(nameof(V2TimeSignature));
+                }
+                else
+                {
+                    _v2TimeSignature = value;
+                    Preferences.Set("musicmate.V2TimeSignature", value);
+                    OnPropertyChanged(nameof(V2TimeSignature));
+                }
+            }
+        }
+
+        private string _v2SmallestNote = Preferences.Get("musicmate.V2SmallestNote", "Quarter");
+        public string V2SmallestNote
+        {
+            get => _session?.V2SmallestNote ?? _v2SmallestNote;
+            set
+            {
+                if ((_session?.V2SmallestNote ?? _v2SmallestNote) == value) return;
+                if (_session != null)
+                {
+                    _session.V2SmallestNote = value;
+                    OnPropertyChanged(nameof(V2SmallestNote));
+                }
+                else
+                {
+                    _v2SmallestNote = value;
+                    Preferences.Set("musicmate.V2SmallestNote", value);
+                    OnPropertyChanged(nameof(V2SmallestNote));
+                }
+            }
+        }
+
+        private string _v2RhythmMode = Preferences.Get("musicmate.V2RhythmMode", "Simple");
+        public string V2RhythmMode
+        {
+            get => _session?.V2RhythmMode ?? _v2RhythmMode;
+            set
+            {
+                if ((_session?.V2RhythmMode ?? _v2RhythmMode) == value) return;
+                if (_session != null)
+                {
+                    _session.V2RhythmMode = value;
+                    OnPropertyChanged(nameof(V2RhythmMode));
+                }
+                else
+                {
+                    _v2RhythmMode = value;
+                    Preferences.Set("musicmate.V2RhythmMode", value);
+                    OnPropertyChanged(nameof(V2RhythmMode));
+                }
             }
         }
 

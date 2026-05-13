@@ -93,6 +93,92 @@ namespace musicmate.Services
             }
         }
 
+        // ── v2 Feature Flag ───────────────────────────────────────────────────────
+        // Developer-facing toggle that switches between v1 single-note display and the
+        // new v2 staff/measure display.  Persisted to Preferences so it survives app
+        // restarts during testing.  Default is FALSE (v1 behaviour) so existing users
+        // are completely unaffected until explicitly enabled.
+        private const string PrefV2StaffModeKey      = "musicmate.V2StaffMode";
+        private const string PrefV2TimeSignatureKey  = "musicmate.V2TimeSignature";
+        private const string PrefV2SmallestNoteKey   = "musicmate.V2SmallestNote";
+        private const string PrefV2RhythmModeKey     = "musicmate.V2RhythmMode";
+
+        private bool   _v2StaffMode    = Preferences.Get(PrefV2StaffModeKey, false);
+        private string _v2TimeSignature = Preferences.Get(PrefV2TimeSignatureKey, "4/4");
+        private string _v2SmallestNote  = Preferences.Get(PrefV2SmallestNoteKey,  "Quarter");
+        private string _v2RhythmMode    = Preferences.Get(PrefV2RhythmModeKey,    "Simple");
+
+        /// <summary>
+        /// When <c>true</c>, the app uses the Music Mate v2 measure-based staff display
+        /// (rendered from <see cref="MusicSequenceGenerator"/> output).
+        /// When <c>false</c> (default), the existing v1 single-note display is used.
+        /// <para>
+        /// This flag is developer-facing and temporary.  Toggle it from the Advanced
+        /// settings page or directly via <c>Preferences.Set("musicmate.V2StaffMode", true)</c>
+        /// during a debug session.
+        /// </para>
+        /// </summary>
+        public bool V2StaffMode
+        {
+            get => _v2StaffMode;
+            set
+            {
+                if (_v2StaffMode == value) return;
+                _v2StaffMode = value;
+                Preferences.Set(PrefV2StaffModeKey, value);
+                OnPropertyChanged(nameof(V2StaffMode));
+            }
+        }
+
+        /// <summary>
+        /// Time signature for v2 rhythm generation.
+        /// Persisted value is the display string: "4/4", "3/4", or "2/4".
+        /// </summary>
+        public string V2TimeSignature
+        {
+            get => _v2TimeSignature;
+            set
+            {
+                if (_v2TimeSignature == value) return;
+                _v2TimeSignature = value;
+                Preferences.Set(PrefV2TimeSignatureKey, value);
+                OnPropertyChanged(nameof(V2TimeSignature));
+            }
+        }
+
+        /// <summary>
+        /// Smallest note value allowed in v2 rhythm generation.
+        /// Persisted value is the display string: "Quarter", "Eighth", or "Sixteenth".
+        /// </summary>
+        public string V2SmallestNote
+        {
+            get => _v2SmallestNote;
+            set
+            {
+                if (_v2SmallestNote == value) return;
+                _v2SmallestNote = value;
+                Preferences.Set(PrefV2SmallestNoteKey, value);
+                OnPropertyChanged(nameof(V2SmallestNote));
+            }
+        }
+
+        /// <summary>
+        /// Rhythm variety mode for v2 generation.
+        /// "Simple" uses only quarter notes (and half/whole occasionally).
+        /// "Mixed" allows the full range of durations up to <see cref="V2SmallestNote"/>.
+        /// </summary>
+        public string V2RhythmMode
+        {
+            get => _v2RhythmMode;
+            set
+            {
+                if (_v2RhythmMode == value) return;
+                _v2RhythmMode = value;
+                Preferences.Set(PrefV2RhythmModeKey, value);
+                OnPropertyChanged(nameof(V2RhythmMode));
+            }
+        }
+
         private float _rmsThreshold = 0.025f;
         public int AccidentalPercent
         {
@@ -381,6 +467,49 @@ namespace musicmate.Services
         public Dictionary<string, int> GetSessionStreaks()
         {
             return new Dictionary<string, int>(_sessionStreaks);
+        }
+
+        /// <summary>
+        /// Returns the set of written-pitch MIDI numbers that the player has mastered,
+        /// using the same criteria as v1 Random mode mastery filtering.
+        /// Used by v2 sequence generation to exclude mastered notes.
+        /// </summary>
+        public async Task<HashSet<int>> GetMasteredMidiNumbersAsync()
+        {
+            var result = new HashSet<int>();
+            try
+            {
+                var db = ServiceHelper.GetService<NoteDatabase>();
+                if (db == null) return result;
+                await db.InitializeAsync();
+
+                var statsList = await db.GetAllAsync();
+                foreach (var stat in statsList)
+                {
+                    bool mastered;
+                    if (MasteredMethod == "Streak")
+                    {
+                        mastered = stat.Streak >= StreakCrit;
+                    }
+                    else
+                    {
+                        mastered = stat.PercentCorrect >= CorrectThreshold
+                                   && stat.Correct >= MinCorrectCount;
+                        if (mastered && OmitMsAvgThreshold > 0 && stat.MsCount > 0)
+                            mastered = stat.MsAverage < OmitMsAvgThreshold;
+                    }
+
+                    if (!mastered) continue;
+
+                    int midi = NoteNameToMidi(stat.WrittenName);
+                    if (midi > 0) result.Add(midi);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Session] GetMasteredMidiNumbersAsync ERROR: {ex}");
+            }
+            return result;
         }
         public (double sumCorrects, double sumWrongs, double adjustedPercentCorrect) GetSessionCorrectWrongTotals()
         {
@@ -2008,6 +2137,7 @@ namespace musicmate.Services
 
             return (flats, sharps);
         }
+
         private Color _appBackgroundColor = GetColorPreference("musicmate.AppBackgroundColor", Colors.White);
         public Color AppBackgroundColor
         {

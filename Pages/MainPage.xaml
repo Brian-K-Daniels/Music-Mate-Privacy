@@ -160,7 +160,7 @@
 
             <!-- Staff panel and Tuner panel fill the full column -->
             <Grid Grid.Column="0">
-              <!-- Selected Scale / Random mode -->
+              <!-- Selected Scale / Random mode (v1) -->
               <Border x:Name="StaffBorder"
                       Stroke="Green"
                       StrokeShape="RoundRectangle 8"
@@ -172,6 +172,30 @@
                               BackgroundColor="{Binding PanelBackgroundColor}"
                               Margin="0"
                               VerticalOptions="Start"/>
+              </Border>
+
+              <!-- V2 measure display (shown when V2StaffMode is enabled) -->
+              <Border x:Name="V2StaffBorder"
+                      Stroke="DodgerBlue"
+                      StrokeThickness="2"
+                      StrokeShape="RoundRectangle 8"
+                      BackgroundColor="{Binding PanelBackgroundColor}"
+                      Padding="0"
+                      IsVisible="False"
+                      VerticalOptions="Start">
+                <VerticalStackLayout Spacing="0">
+                  <!-- label strip -->
+                  <Label x:Name="V2ModeBanner"
+                         Text="V2 Staff Mode"
+                         FontSize="10"
+                         TextColor="DodgerBlue"
+                         HorizontalOptions="End"
+                         Margin="0,2,8,0" />
+                  <GraphicsView x:Name="V2StaffGraphicsView"
+                                HeightRequest="120"
+                                BackgroundColor="{Binding PanelBackgroundColor}"
+                                Margin="0" />
+                </VerticalStackLayout>
               </Border>
 
               <!-- Tuner mode: staff canvas centred on left, note/freq info on right -->
