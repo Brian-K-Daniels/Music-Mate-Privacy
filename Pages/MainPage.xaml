@@ -57,10 +57,10 @@
     <Style x:Key="CompactBrownButton" TargetType="Button">
       <Setter Property="BackgroundColor" Value="#8B4513" />
       <Setter Property="TextColor" Value="White" />
-      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontSize" Value="13" />
       <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="HeightRequest" Value="28" />
-      <Setter Property="Padding" Value="8,2" />
+      <Setter Property="HeightRequest" Value="44" />
+      <Setter Property="Padding" Value="8,4" />
       <Setter Property="BorderColor" Value="Black" />
       <Setter Property="BorderWidth" Value="2" />
       <Setter Property="VerticalOptions" Value="Center" />
@@ -229,8 +229,10 @@
             <!-- Play (leftmost, 16px from screen edge via Margin on parent) -->
             <Label x:Name="PlayEvaluateButton"
                    Text="▶"
-                   FontSize="24"
+                   FontSize="34"
                    TextColor="#008000"
+                   WidthRequest="44"
+                   HeightRequest="44"
                    VerticalOptions="Center"
                    HorizontalOptions="Start"
                    Margin="0">
@@ -242,13 +244,13 @@
             <!-- Start/Stop -->
             <Label x:Name="StartStopButton"
                    Text="●"
-                   FontSize="32"
+                   FontSize="38"
                    TextColor="Green"
-                   WidthRequest="36"
-                   HeightRequest="36"
+                   WidthRequest="44"
+                   HeightRequest="44"
                    VerticalOptions="Center"
                    HorizontalOptions="Start"
-                   Margin="0">
+                   Margin="4,0,0,0">
               <Label.GestureRecognizers>
                 <TapGestureRecognizer Tapped="OnStartStopToggleClicked" />
               </Label.GestureRecognizers>
@@ -260,8 +262,8 @@
                     Style="{StaticResource CompactBrownButton}"
                     WidthRequest="110"
                     MinimumWidthRequest="110"
-                    MinimumHeightRequest="36"
-                    Margin="4,0,4,0"
+                    MinimumHeightRequest="44"
+                    Margin="20,0,4,0"
                     HorizontalOptions="Start"
                     VerticalOptions="Center"
                     Clicked="OnAutoRepeatScaleClicked"
@@ -273,8 +275,8 @@
                     Style="{StaticResource CompactBrownButton}"
                     WidthRequest="110"
                     MinimumWidthRequest="110"
-                    MinimumHeightRequest="36"
-                    Margin="4,0,4,0"
+                    MinimumHeightRequest="44"
+                    Margin="20,0,4,0"
                     HorizontalOptions="Start"
                     VerticalOptions="Center"
                     Clicked="OnAutoRepeatNewClicked"
@@ -285,7 +287,7 @@
                     Style="{StaticResource CompactBrownButton}"
                     WidthRequest="110"
                     MinimumWidthRequest="110"
-                    MinimumHeightRequest="36"
+                    MinimumHeightRequest="44"
                     Margin="4,0,4,0"
                     HorizontalOptions="Start"
                     VerticalOptions="Center"
@@ -293,7 +295,7 @@
                     IsVisible="{Binding Source={x:Reference mainPage}, Path=IsRandomRepeatButtonsVisible}" />
 
             <Button Text="Background Color"
-                    FontSize="10"
+                    FontSize="12"
                     WidthRequest="200"
                     Style="{StaticResource CompactBrownButton}"
                     VerticalOptions="Center"

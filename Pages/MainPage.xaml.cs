@@ -611,7 +611,10 @@ namespace musicmate.Pages
                 StartMeasureIndex    = _v2NextMeasureIndex,
                 StartBeatOffset      = _v2NextBeatOffset,
                 StartGlobalNoteIndex = _v2NextGlobalNoteIndex,
-                ExcludedMidiNumbers  = _v2ExcludedMidis
+                ExcludedMidiNumbers  = _v2ExcludedMidis,
+                // Walk the scale in order (up then down) when a specific scale is selected.
+                // Random mode uses random pitch picking instead.
+                UseScaleOrder        = _session.Tune != "Random"
             };
         }
 
@@ -695,6 +698,14 @@ namespace musicmate.Pages
                 // Populate session NotesToDraw.
                 RebuildSessionNotesFromV2(flat, 0);
 
+                // Resize the GraphicsView to fit the tallest note (ledger lines + labels).
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    var h = _v2Drawable.ComputeRequiredHeight();
+                    V2StaffGraphicsView.HeightRequest = h;
+                    V2StaffBorder.HeightRequest = h;
+                });
+
                 V2StaffGraphicsView.Invalidate();
             }
             catch (Exception ex)
@@ -751,6 +762,11 @@ namespace musicmate.Pages
                     _v2Drawable.Notes           = combinedNotes;
                     _v2Drawable.MeasureBarBeats = combinedBarBeats;
                     _v2Drawable.NoteStates      = newStates;
+
+                    // Resize to accommodate any newly added high/low notes.
+                    var h = _v2Drawable.ComputeRequiredHeight();
+                    V2StaffGraphicsView.HeightRequest = h;
+                    V2StaffBorder.HeightRequest = h;
 
                     // Extend NotesToDraw with the new pitch notes.
                     int sessionOffset = _session.NotesToDraw.Count;
@@ -1727,28 +1743,10 @@ async Task UpdateNoteStatsDatabaseAsync()
 
             if (selected == "Random" || selected == "Tuner")
             {
-                // Only force key to C when switching TO Random from a different mode,
-                // not when already in Random mode (preserve user's key selection)
-                var wasAlreadyRandom = _session.Tune == "Random";
-
                 _lastValidScaleTuneIndex = ScaleTunePicker.SelectedIndex;
                 _session.Tune = selected;
                 Preferences.Default.Set("SelectedTune", selected);
                 IsAutoRepeatVisible = selected == "Random";
-
-                // Force key to C only when initially switching to Random mode
-                if (selected == "Random" && !wasAlreadyRandom)
-                {
-                    _session.Key = "C";
-                    var keyItems = KeyPicker.ItemsSource as string[];
-                    var cIdx = keyItems != null ? Array.IndexOf(keyItems, "C") : -1;
-                    if (cIdx >= 0)
-                    {
-                        KeyPicker.SelectedIndex = cIdx;
-                        _lastFreeKeyIndex = cIdx;
-                    }
-                }
-
                 UpdateKeyPickerVisibility();
                 return;
             }

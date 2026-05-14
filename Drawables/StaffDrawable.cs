@@ -164,14 +164,24 @@ namespace musicmate.Drawables
                 DrawTrebleClef(canvas, clefX, clefY, clefW, clefH, contrastColor);
             }
 
-            // Key signature and note horizontal layout
-            // Chromatic scale has no key signature; Tuner always uses C (no accidentals).
-            var accidentalCount = (_session.Tune == "Tuner" || _session.SelectedScale == "Chromatic")
+            // Key signature and note horizontal layout.
+            // The KEY SIGNATURE reflects the tonal centre and scale TYPE, not individual note accidentals.
+            // Accidentals that deviate from the key signature (e.g. raised 6th/7th in melodic minor,
+            // raised 7th in harmonic minor) are drawn per-note in DrawNoteWithLedger — they are NOT
+            // part of the key signature.
+            // Chromatic scale, Tuner, Practice Tune, and Random mode show no key signature.
+            // Random mode draws from across the note range regardless of scale, so there is no
+            // single tonal centre; showing a key signature there would be misleading.
+            var accidentalCount = (_session.Tune == "Tuner"
+                                   || _session.Tune == "Practice Tune"
+                                   || _session.Tune == "Random"
+                                   || _session.SelectedScale == "Chromatic")
                 ? 0
-                : GetAccidentalCountForScale(_session.Key, _session.SelectedScale);
+                : GetAccidentalCountForScale(_session.GetConcertKey(), _session.SelectedScale);
             var accScale = 1.5f;
             var accWidth = headW * accScale;
-            var accSpacing = headW * 0.33f * accScale;
+            // Slightly wider spacing so key-signature symbols have breathing room in dense keys (e.g. 7 flats).
+            var accSpacing = headW * 0.48f * accScale;
             var accStartX = clefX + clefW * 0.65f + 4f;
 
             var desiredHeadPadding = 3f * headW;
@@ -422,26 +432,25 @@ namespace musicmate.Drawables
             canvas.StrokeColor = strokeColor;
             canvas.FontSize    = glyphSize;
 
-            // baseline compensation  for flats 
-            var flatDY = -spacing * 0.25f;
-
             for (int i = 0; i < abs && i < notes.Length; i++)
             {
                 var note = notes[i];
+                float pitchY = GetYForSpelledNote(note, middleLineY, spacing);
 
-                // Center on the correct staff line/space, then apply baseline compensation.
-                float yCenter = GetYForSpelledNote(note, middleLineY, spacing) - 0.5f * spacing;
-
-                // Move flats down by 0.5 spaces (they were too high previously).
-                if (isFlat)
-                    yCenter += flatDY; 
+                // ♯  — crossing bars should straddle the target staff line/space:
+                //        centre the glyph box on pitchY → drawBoxTopY = pitchY - glyphSize * 0.50
+                // ♭  — oval body sits at ≈ 70 % of the glyph bounding-box height;
+                //        shift box up so the oval lands on pitchY → drawBoxTopY = pitchY - glyphSize * 0.70
+                float drawBoxTopY = isFlat
+                    ? pitchY - glyphSize * 0.70f
+                    : pitchY - glyphSize * 0.50f;
 
                 float x = startX + i * (symbolSpacing + 2f);
 
                 canvas.DrawString(
                     isFlat ? "♭" : "♯",
                     x,
-                    yCenter - glyphSize / 2f,
+                    drawBoxTopY,
                     glyphSize,
                     glyphSize,
                     HorizontalAlignment.Center,
@@ -609,6 +618,13 @@ namespace musicmate.Drawables
                 }
                 var noteKey = (letter, noteOctave);
 
+                // sigAcc: the accidental this letter carries in the key signature ("#", "b", or null).
+                // A note accidental glyph is shown only when the note DEVIATES from the key signature.
+                // Examples for C minor (3 flats: Bb, Eb, Ab):
+                //   Eb4 → sigAcc="b", wantsFlat=true  → no glyph (already implied by key sig)
+                //   E4  → sigAcc="b", wantsNatural=true → glyph="♮" (raised: Melodic/Harmonic minor context)
+                //   B4  → sigAcc="b", wantsNatural=true → glyph="♮" (raised leading tone in Harmonic minor)
+                //   A4  → sigAcc="b", wantsNatural=true → glyph="♮" (raised 6th in Melodic minor ascending)
                 var sigAcc = GetSignatureAccidentalForLetter(letter, accidentalCount);
 
                 bool wantsDoubleSharp = raw.Contains("##");
@@ -660,12 +676,11 @@ namespace musicmate.Drawables
                     canvas.FontSize = accSize;
                     canvas.FontColor = strokeColor;
 
-                    var verticalAdjust = spacing / 2f;
-                    var flatDY = -spacing * 0.25f;
-
-                    var drawY = noteY - verticalAdjust - accSize / 2f;
-                    if (isAccFlat)
-                        drawY += flatDY;
+                    // ♯ / ♮ : centre glyph box on the note's pitch position.
+                    // ♭     : oval body is at ≈ 70 % of glyph height — shift box up so oval lands on pitch.
+                    var drawY = isAccFlat
+                        ? noteY - accSize * 0.70f
+                        : noteY - accSize * 0.50f;
 
                     const float mmToDp = 160f / 25.4f;
                     var accX = isAccFlat
@@ -731,12 +746,11 @@ namespace musicmate.Drawables
                 canvas.FontSize = accSize;
                 canvas.FontColor = strokeColor;
 
-                var verticalAdjust = spacing / 2f;
-                var flatDY = -spacing * 0.25f;
-
-                var drawY = noteY - verticalAdjust - accSize / 2f;
-                if (isAccFlat)
-                    drawY += flatDY;
+                // ♯ / ♮ : centre glyph box on the note's pitch position.
+                // ♭     : oval body is at ≈ 70 % of glyph height — shift box up so oval lands on pitch.
+                var drawY = isAccFlat
+                    ? noteY - accSize * 0.70f
+                    : noteY - accSize * 0.50f;
 
                 const float mmToDp = 160f / 25.4f;
                 var accX = isAccFlat
@@ -891,53 +905,118 @@ namespace musicmate.Drawables
         /// </summary>
        
 
+        /// <summary>
+        /// Returns the number of sharps (positive) or flats (negative) for the key signature
+        /// to display on the staff.
+        /// <para>
+        /// KEY SIGNATURE vs. SCALE ACCIDENTALS — important distinction:
+        /// The key signature shows the tonal centre's standard sharps/flats. Scale-specific
+        /// chromatic alterations (e.g. raised ♭6 and ♭7 ascending in Melodic Minor, raised ♭7
+        /// in Harmonic Minor) are NOT shown in the key signature; they appear as per-note
+        /// accidentals drawn by DrawNoteWithLedger.
+        /// </para>
+        /// <para>
+        /// Harmonic Minor and Melodic Minor share the same key signature as Natural Minor
+        /// for their tonic.  C Harmonic Minor and C Melodic Minor both show 3 flats (Bb, Eb, Ab),
+        /// exactly like C Natural Minor.  The raised 7th (B♮) in C Harmonic Minor and the
+        /// raised 6th (A♮) and 7th (B♮) in C Melodic Minor ascending appear as ♮ accidentals
+        /// on the affected note heads.
+        /// </para>
+        /// <para>
+        /// Modal scales (Dorian, Phrygian, Lydian, Mixolydian, Locrian) are modes of the major
+        /// scale.  Their key signature reflects the parent major key, e.g. C Dorian = Bb major
+        /// (2 flats), C Phrygian = Ab major (4 flats), C Lydian = G major (1 sharp).
+        /// </para>
+        /// </summary>
         private static int GetAccidentalCountForScale(string key, string selectedScale)
         {
-            var isMinorLike = selectedScale is "Natural Minor" or "Harmonic Minor" or "Melodic Minor" or "Aeolian" or "Jazz Melodic Minor"
-                              || selectedScale.Contains("Minor", StringComparison.OrdinalIgnoreCase)
-                              || selectedScale.Contains("Melodic", StringComparison.OrdinalIgnoreCase);
-            if (!isMinorLike)
+            // Scales that use the NATURAL-MINOR key signature for their tonic.
+            // Harmonic and Melodic minor keep the natural-minor signature; their extra
+            // chromatic notes are shown as per-note accidentals, not in the key signature.
+            var isMinorLike = selectedScale is
+                "Natural Minor" or "Harmonic Minor" or "Melodic Minor" or
+                "Aeolian" or "Jazz Melodic Minor" or
+                "Hungarian Minor" or "Neapolitan Minor" or
+                "Minor Pentatonic" or "Minor Blues";
+
+            if (isMinorLike)
             {
-                // Major keys (Ionian/major-like)
+                // Natural-minor key signatures (same count used for Harmonic/Melodic minor).
                 return key switch
                 {
-                    "C" => 0,
-                    "G" => 1,
-                    "D" => 2,
-                    "A" => 3,
-                    "E" => 4,
-                    "B" => 5,
-                    "F#" => 6,
-                    "C#" => 7,
-                    "F" => -1,
-                    "Bb" => -2,
-                    "Eb" => -3,
-                    "Ab" => -4,
-                    "Db" => -5,
-                    "Gb" => -6,
-                    "Cb" => -7,
+                    "A" => 0,
+                    "E" => 1,
+                    "B" => 2,
+                    "F#" => 3,
+                    "C#" => 4,
+                    "G#" => 5,
+                    "D#" => 6,
+                    "A#" => 7,
+                    "D" => -1,
+                    "G" => -2,
+                    "C" => -3,  // C minor: Bb, Eb, Ab
+                    "F" => -4,
+                    "Bb" => -5,
+                    "Eb" => -6,
+                    "Ab" => -7,
                     _ => 0
                 };
             }
 
-            // Natural minor (relative minor) key signatures
+            // Modal scales: each mode is a rotation of the major scale, so its key signature
+            // equals the parent major key (the major key whose tonic is the relevant degree).
+            // Offsets below give the count of the parent major key, derived from circle-of-fifths.
+            // Example: C Dorian = 2nd mode of Bb major → Bb major has 2 flats → return -2.
+            var modalOffset = selectedScale switch
+            {
+                // Ionian = major (degree 1, offset 0)
+                "Ionian" => 0,
+                // Dorian = degree 2 of major scale, parent is a major 2nd below → -2 fifths
+                "Dorian" => -2,
+                // Phrygian = degree 3, parent is a major 3rd below → -4 fifths
+                "Phrygian" => -4,
+                // Lydian = degree 4, parent is a perfect 4th below → +1 fifth
+                "Lydian" => 1,
+                // Mixolydian = degree 5, parent is a perfect 5th below → -1 fifth
+                "Mixolydian" => -1,
+                // Locrian = degree 7, parent is a major 7th below → -5 fifths
+                "Locrian" => -5,
+                _ => int.MinValue  // sentinel: not a simple modal scale
+            };
+
+            if (modalOffset != int.MinValue)
+            {
+                // The parent major key's accidental count = this key's major count + modalOffset.
+                int majorCount = key switch
+                {
+                    "C" => 0,  "G" => 1,  "D" => 2,  "A" => 3,  "E" => 4,  "B" => 5,
+                    "F#" => 6, "C#" => 7,
+                    "F" => -1, "Bb" => -2, "Eb" => -3, "Ab" => -4, "Db" => -5,
+                    "Gb" => -6, "Cb" => -7,
+                    _ => 0
+                };
+                // Clamp to valid range [-7, 7]
+                return Math.Max(-7, Math.Min(7, majorCount + modalOffset));
+            }
+
+            // Major and all remaining scales use the standard major key signature.
             return key switch
             {
-                "A" => 0,
-                "E" => 1,
-                "B" => 2,
-                "F#" => 3,
-                "C#" => 4,
-                "G#" => 5,
-                "D#" => 6,
-                "A#" => 7,
-                "D" => -1,
-                "G" => -2,
-                "C" => -3,
-                "F" => -4,
-                "Bb" => -5,
-                "Eb" => -6,
-                "Ab" => -7,
+                "C" => 0,
+                "G" => 1,
+                "D" => 2,
+                "A" => 3,
+                "E" => 4,
+                "B" => 5,
+                "F#" => 6,
+                "C#" => 7,
+                "F" => -1,
+                "Bb" => -2,
+                "Eb" => -3,
+                "Ab" => -4,
+                "Db" => -5,
+                "Gb" => -6,
+                "Cb" => -7,
                 _ => 0
             };
         }

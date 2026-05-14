@@ -80,6 +80,13 @@ namespace musicmate.Services
         /// </summary>
         public HashSet<int> ExcludedMidiNumbers { get; set; } = new();
 
+        /// <summary>
+        /// When <c>true</c>, notes are drawn in ascending then descending scale order
+        /// (scale walk) instead of being picked randomly from the pool.
+        /// Use this for "Selected Scale" mode so the player sees a proper scale sequence.
+        /// </summary>
+        public bool UseScaleOrder { get; set; } = false;
+
         // ── Public API ────────────────────────────────────────────────────────────
 
         /// <summary>
@@ -103,7 +110,23 @@ namespace musicmate.Services
             // 2. Decide which durations are available and with what weights.
             var durationWeights = BuildDurationWeights();
 
-            // 3. Fill measures.
+            // 3. Build a scale-ordered pitch queue when UseScaleOrder is set.
+            //    The queue walks up the pool then back down (excluding duplicate endpoints).
+            Queue<int>? scaleQueue = null;
+            if (UseScaleOrder)
+            {
+                var sortedPool = pool.OrderBy(m => m).ToList();
+                var walk = new List<int>(sortedPool);
+                // Add descending portion: reverse of pool minus both endpoints to avoid repeating them.
+                for (int d = sortedPool.Count - 2; d > 0; d--)
+                    walk.Add(sortedPool[d]);
+                // Always end on the tonic (first note of sorted pool) to close the phrase.
+                if (walk.Count > 0 && walk[^1] != sortedPool[0])
+                    walk.Add(sortedPool[0]);
+                scaleQueue = new Queue<int>(walk);
+            }
+
+            // 4. Fill measures.
             var measures = new List<Measure>(MeasureCount);
             int globalNoteIndex = StartGlobalNoteIndex;
 
@@ -134,7 +157,27 @@ namespace musicmate.Services
                     }
                     else
                     {
-                        var pitch = PickPitch(rng, pool);
+                        int pitch;
+                        if (scaleQueue != null && scaleQueue.Count > 0)
+                        {
+                            // Scale-order mode: consume next note from the walk queue;
+                            // refill the queue when exhausted so the phrase loops seamlessly.
+                            pitch = scaleQueue.Dequeue();
+                            if (scaleQueue.Count == 0)
+                            {
+                                var sortedPool2 = pool.OrderBy(m => m).ToList();
+                                var walk2 = new List<int>(sortedPool2);
+                                for (int d = sortedPool2.Count - 2; d > 0; d--)
+                                    walk2.Add(sortedPool2[d]);
+                                if (walk2.Count > 0 && walk2[^1] != sortedPool2[0])
+                                    walk2.Add(sortedPool2[0]);
+                                scaleQueue = new Queue<int>(walk2);
+                            }
+                        }
+                        else
+                        {
+                            pitch = PickPitch(rng, pool);
+                        }
                         note = BuildNote(pitch, dur, absoluteMi,
                             globalBeatCursor + localCursor, globalNoteIndex);
                         globalNoteIndex++;

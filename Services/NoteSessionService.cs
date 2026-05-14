@@ -102,11 +102,13 @@ namespace musicmate.Services
         private const string PrefV2TimeSignatureKey  = "musicmate.V2TimeSignature";
         private const string PrefV2SmallestNoteKey   = "musicmate.V2SmallestNote";
         private const string PrefV2RhythmModeKey     = "musicmate.V2RhythmMode";
+        private const string PrefV2NoteNameDisplayKey = "musicmate.V2NoteNameDisplay";
 
         private bool   _v2StaffMode    = Preferences.Get(PrefV2StaffModeKey, false);
         private string _v2TimeSignature = Preferences.Get(PrefV2TimeSignatureKey, "4/4");
         private string _v2SmallestNote  = Preferences.Get(PrefV2SmallestNoteKey,  "Quarter");
         private string _v2RhythmMode    = Preferences.Get(PrefV2RhythmModeKey,    "Simple");
+        private string _v2NoteNameDisplay = Preferences.Get(PrefV2NoteNameDisplayKey, "Current only");
 
         /// <summary>
         /// When <c>true</c>, the app uses the Music Mate v2 measure-based staff display
@@ -179,7 +181,21 @@ namespace musicmate.Services
             }
         }
 
-        private float _rmsThreshold = 0.025f;
+        /// <summary>
+        /// Controls when note names are shown above/below noteheads in the v2 staff.
+        /// Values: "Current only", "All notes", "Off".
+        /// </summary>
+        public string V2NoteNameDisplay
+        {
+            get => _v2NoteNameDisplay;
+            set
+            {
+                if (_v2NoteNameDisplay == value) return;
+                _v2NoteNameDisplay = value;
+                Preferences.Set(PrefV2NoteNameDisplayKey, value);
+                OnPropertyChanged(nameof(V2NoteNameDisplay));
+            }
+        }
         public int AccidentalPercent
         {
             get => _accidentalPercent;
@@ -895,7 +911,8 @@ namespace musicmate.Services
                 OnPropertyChanged(nameof(AutoStart)); 
             }
         }
-      
+
+        private float _rmsThreshold = 0.025f;
         public float RmsThreshold
         {
             get => _rmsThreshold;

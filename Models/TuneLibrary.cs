@@ -46,7 +46,6 @@ namespace musicmate.Models
         /// <summary>All built-in tunes in display order.</summary>
         public static IReadOnlyList<PracticeTune> All => new[]
         {
-            CMajorScale,
             MaryHadALittleLamb,
             OdeToJoy,
             MinuetG
