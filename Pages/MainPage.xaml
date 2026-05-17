@@ -70,17 +70,27 @@
   </ContentPage.Resources>
 
   <Grid>
-    <ScrollView x:Name="MainScrollView" HorizontalScrollBarVisibility="Never" Padding="0" Margin="0" HorizontalOptions="Fill">
+    <ScrollView x:Name="MainScrollView" HorizontalScrollBarVisibility="Never" Padding="0,0
+                ,0,0
+                
+                " Margin="0" HorizontalOptions="Fill">
       <VerticalStackLayout x:Name="MainPageMainLayout" Spacing="16" Padding="0" Margin="0" HorizontalOptions="Fill">
 
         <!-- Pickers row: Instrument | Key | (Concert E) | Scale+Tune picker -->
-        <VerticalStackLayout x:Name="PickersContainer" Padding="0" Margin="0">
+        <VerticalStackLayout x:Name="PickersContainer" Padding="0">
+          <VerticalStackLayout.Margin>
+            <OnPlatform x:TypeArguments="Thickness">
+              <On Platform="WinUI"   Value="0,20,0,0" />
+              <On Platform="Android" Value="0,0,0,0" />
+            </OnPlatform>
+          </VerticalStackLayout.Margin>
           <HorizontalStackLayout Spacing="6" VerticalOptions="Center" Margin="0,4,0,4">
 
             <!-- Instrument -->
             <Label Text="Instrument"
                    FontSize="11"
                    TextColor="#333333"
+                   Margin="8,0,0,0"
                    VerticalOptions="Center" />
             <Border Style="{StaticResource CompactBrownBox}">
               <Grid WidthRequest="160">
@@ -124,7 +134,7 @@
                    VerticalOptions="Center" />
             <Border x:Name="KeyBorder" Style="{StaticResource CompactBrownBox}">
               <Picker x:Name="KeyPicker"
-                      WidthRequest="30"
+                      WidthRequest="50"
                       HeightRequest="28"
                       FontSize="11"
                       TextColor="#000000"
@@ -183,23 +193,24 @@
                       Padding="0"
                       IsVisible="False"
                       VerticalOptions="Start">
-                <VerticalStackLayout Spacing="0">
-                  <!-- label strip -->
-                  <Label x:Name="V2ModeBanner"
-                         Text="V2 Staff Mode"
-                         FontSize="10"
-                         TextColor="DodgerBlue"
-                         HorizontalOptions="End"
-                         Margin="0,2,8,0" />
-                  <GraphicsView x:Name="V2StaffGraphicsView"
-                                HeightRequest="120"
-                                BackgroundColor="{Binding PanelBackgroundColor}"
-                                Margin="0" />
-                </VerticalStackLayout>
+                <GraphicsView x:Name="V2StaffGraphicsView"
+                              HeightRequest="120"
+                              BackgroundColor="{Binding PanelBackgroundColor}"
+                              Margin="0" />
               </Border>
+              <!-- V2 mode label overlay (outside the border so it doesn't affect height) -->
+              <Label x:Name="V2ModeBanner"
+                     Text="V2 Staff Mode"
+                     FontSize="10"
+                     TextColor="DodgerBlue"
+                     HorizontalOptions="End"
+                     VerticalOptions="Start"
+                     Margin="0,4,10,0"
+                     IsVisible="False"
+                     InputTransparent="True" />
 
-              <!-- Tuner mode: staff canvas centred on left, note/freq info on right -->
-              <Grid x:Name="TunerGrid" ColumnDefinitions="*,*" IsVisible="False">
+              <!-- Tuner mode: staff canvas on left (wider), note/freq info on right -->
+              <Grid x:Name="TunerGrid" ColumnDefinitions="3*,2*" IsVisible="False">
                 <Border x:Name="TunerBorder"
                         Grid.Column="0"
                         Stroke="Green"
@@ -208,101 +219,114 @@
                         VerticalOptions="Center">
                   <GraphicsView x:Name="TunerGraphicsView" HeightRequest="200" />
                 </Border>
-                <VerticalStackLayout Grid.Column="1" Padding="12" Spacing="8"
+                <VerticalStackLayout Grid.Column="1" Padding="8" Spacing="6"
                                      HorizontalOptions="Center" VerticalOptions="Center">
-                  <Label Text="Tuner" FontSize="24" FontAttributes="Bold"
+                  <Label Text="Tuner" FontSize="20" FontAttributes="Bold"
                          HorizontalOptions="Center" TextColor="#000000" />
-                  <Label Text="{Binding TunerDisplay}" FontSize="48" FontAttributes="Bold"
+                  <Label Text="{Binding TunerDisplay}" FontSize="40" FontAttributes="Bold"
                          HorizontalOptions="Center" TextColor="#000000" />
                   <Label Text="{Binding TunerLastDetectedFreq, StringFormat='Heard: {0:F2} Hz'}"
-                         FontSize="14" HorizontalOptions="Center" TextColor="#000000" />
+                         FontSize="13" HorizontalOptions="Center" TextColor="#000000" />
                   <Label Text="{Binding TunerLastNearestFreq, StringFormat='Nearest: {0:F2} Hz'}"
-                         FontSize="14" HorizontalOptions="Center" TextColor="#000000" />
+                         FontSize="13" HorizontalOptions="Center" TextColor="#000000" />
                 </VerticalStackLayout>
               </Grid>
             </Grid>
           </Grid>
 
-          <!-- Bottom row: Play | Stop/Start | Repeat | Repeat New | Background Color -->
-          <HorizontalStackLayout Spacing="6" HorizontalOptions="Start" Margin="16,8,0,0">
+          <!-- Bottom row: Play | Stop/Start | Repeat/RepeatNew/RepeatSame | Background Color
+               Equal column widths fill the full page width with matching end margins. -->
+          <Grid x:Name="BottomButtonRow"
+                Margin="12,8,12,8"
+                ColumnSpacing="8"
+                HorizontalOptions="Fill">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="64" />   <!-- Play -->
+              <ColumnDefinition Width="64" />   <!-- Start/Stop -->
+              <ColumnDefinition Width="*" />    <!-- Repeat / Repeat New -->
+              <ColumnDefinition Width="*" />    <!-- (Repeat Same — hidden in Scale mode) -->
+              <ColumnDefinition Width="Auto" /> <!-- Background Color — sizes to text -->
+            </Grid.ColumnDefinitions>
 
-            <!-- Play (leftmost, 16px from screen edge via Margin on parent) -->
-            <Label x:Name="PlayEvaluateButton"
-                   Text="▶"
-                   FontSize="34"
-                   TextColor="#008000"
-                   WidthRequest="44"
-                   HeightRequest="44"
-                   VerticalOptions="Center"
-                   HorizontalOptions="Start"
-                   Margin="0">
-              <Label.GestureRecognizers>
-                <TapGestureRecognizer Tapped="OnPlayEvaluateClicked" />
-              </Label.GestureRecognizers>
-            </Label>
+            <!-- Play -->
+            <Button x:Name="PlayEvaluateButton"
+                    Grid.Column="0"
+                    Text="▶"
+                    FontSize="26"
+                    TextColor="#00CC00"
+                    BackgroundColor="#F7F7F7"
+                    BorderColor="#F7F7F7"
+                    BorderWidth="1"
+                    CornerRadius="8"
+                    HeightRequest="44"
+                    MinimumHeightRequest="44"
+                    Padding="0"
+                    HorizontalOptions="Fill"
+                    VerticalOptions="Fill"
+                    Clicked="OnPlayEvaluateClicked" />
 
             <!-- Start/Stop -->
-            <Label x:Name="StartStopButton"
-                   Text="●"
-                   FontSize="38"
-                   TextColor="Green"
-                   WidthRequest="44"
-                   HeightRequest="44"
-                   VerticalOptions="Center"
-                   HorizontalOptions="Start"
-                   Margin="4,0,0,0">
-              <Label.GestureRecognizers>
-                <TapGestureRecognizer Tapped="OnStartStopToggleClicked" />
-              </Label.GestureRecognizers>
-            </Label>
+            <Button x:Name="StartStopButton"
+                    Grid.Column="1"
+                    Text="⏹"
+                    FontSize="26"
+                    TextColor="Green"
+                    BackgroundColor="#F7F7F7"
+                    BorderColor="#F7F7F7"
+                    BorderWidth="1"
+                    CornerRadius="8"
+                    HeightRequest="44"
+                    MinimumHeightRequest="44"
+                    Padding="0"
+                    HorizontalOptions="Fill"
+                    VerticalOptions="Fill"
+                    Clicked="OnStartStopToggleClicked" />
 
-            <!-- Scale mode: single "Repeat" button -->
+            <!-- Scale mode: single "Repeat" spans cols 2-3 -->
             <Button x:Name="AutoRepeatScaleButton"
+                    Grid.Column="2"
+                    Grid.ColumnSpan="2"
                     Text="Repeat"
                     Style="{StaticResource CompactBrownButton}"
-                    WidthRequest="110"
-                    MinimumWidthRequest="110"
-                    MinimumHeightRequest="44"
-                    Margin="20,0,4,0"
-                    HorizontalOptions="Start"
-                    VerticalOptions="Center"
+                    HeightRequest="44"
+                    HorizontalOptions="Fill"
+                    VerticalOptions="Fill"
                     Clicked="OnAutoRepeatScaleClicked"
                     IsVisible="{Binding Source={x:Reference mainPage}, Path=IsScaleRepeatButtonVisible}" />
 
-            <!-- Random mode: two buttons for "Repeat New" and "Repeat Same" -->
+            <!-- Random mode: Repeat New (col 2) -->
             <Button x:Name="AutoRepeatNewButton"
+                    Grid.Column="2"
                     Text="Repeat New"
                     Style="{StaticResource CompactBrownButton}"
-                    WidthRequest="110"
-                    MinimumWidthRequest="110"
-                    MinimumHeightRequest="44"
-                    Margin="20,0,4,0"
-                    HorizontalOptions="Start"
-                    VerticalOptions="Center"
+                    HeightRequest="44"
+                    HorizontalOptions="Fill"
+                    VerticalOptions="Fill"
                     Clicked="OnAutoRepeatNewClicked"
                     IsVisible="{Binding Source={x:Reference mainPage}, Path=IsRandomRepeatButtonsVisible}" />
 
+            <!-- Random mode: Repeat Same (col 3) -->
             <Button x:Name="AutoRepeatSameButton"
+                    Grid.Column="3"
                     Text="Repeat Same"
                     Style="{StaticResource CompactBrownButton}"
-                    WidthRequest="110"
-                    MinimumWidthRequest="110"
-                    MinimumHeightRequest="44"
-                    Margin="4,0,4,0"
-                    HorizontalOptions="Start"
-                    VerticalOptions="Center"
+                    HeightRequest="44"
+                    HorizontalOptions="Fill"
+                    VerticalOptions="Fill"
                     Clicked="OnAutoRepeatSameClicked"
                     IsVisible="{Binding Source={x:Reference mainPage}, Path=IsRandomRepeatButtonsVisible}" />
 
-            <Button Text="Background Color"
-                    FontSize="12"
-                    WidthRequest="200"
+            <!-- Background Color (col 4) -->
+            <Button Grid.Column="4"
+                    Text="Background Color"
                     Style="{StaticResource CompactBrownButton}"
-                    VerticalOptions="Center"
-                    HorizontalOptions="Start"
+                    HeightRequest="44"
+                    MinimumWidthRequest="140"
+                    HorizontalOptions="Fill"
+                    VerticalOptions="Fill"
                     Clicked="OnColorButtonClicked" />
 
-          </HorizontalStackLayout>
+          </Grid>
         </VerticalStackLayout>
 
       </VerticalStackLayout>

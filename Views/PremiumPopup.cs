@@ -67,7 +67,7 @@ public class PremiumPopup : Popup
         var declineButton = new Button
         {
             Text              = "No thanks, continue free",
-            BackgroundColor   = Colors.Transparent,
+            BackgroundColor   = Color.FromArgb("#01000000"),
             TextColor         = Color.FromArgb("#AAAAAA"),
             BorderColor       = Color.FromArgb("#888888"),
             BorderWidth       = 1,
@@ -111,7 +111,7 @@ public class PremiumPopup : Popup
         var restoreButton = new Button
         {
             Text              = "🔄 Restore Purchases (debug)",
-            BackgroundColor   = Colors.Transparent,
+            BackgroundColor   = Color.FromArgb("#01000000"),
             TextColor         = Color.FromArgb("#888888"),
             BorderColor       = Color.FromArgb("#555555"),
             BorderWidth       = 1,
@@ -211,6 +211,10 @@ public class PremiumPopup : Popup
             {
                 // best effort — popup will close when the modal is dismissed naturally
             }
+        }
+        catch
+        {
+            // Windows or other platform threw an unrecognised exception on close — ignore.
         }
     }
 }

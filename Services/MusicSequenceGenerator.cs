@@ -87,6 +87,23 @@ namespace musicmate.Services
         /// </summary>
         public bool UseScaleOrder { get; set; } = false;
 
+        /// <summary>
+        /// When appending batches in scale-order mode, the number of pitch notes already
+        /// generated (= <see cref="StartGlobalNoteIndex"/>).  The generator uses this to
+        /// resume the ascending/descending walk at the correct position instead of
+        /// restarting from the bottom tonic every batch.
+        /// Leave at 0 for a fresh sequence.
+        /// </summary>
+        public int ScaleWalkOffset { get; set; } = 0;
+
+        /// <summary>
+        /// 0–100.  Percentage of note slots that receive a chromatic accidental (sharp or flat)
+        /// that is not in the key signature.  Mirrors the v1 AccidentalPercent setting.
+        /// Only applied in random mode (<see cref="UseScaleOrder"/> = false).
+        /// 0 = no accidentals added, 100 = all slots get an accidental when possible.
+        /// </summary>
+        public int AccidentalPercent { get; set; } = 0;
+
         // ── Public API ────────────────────────────────────────────────────────────
 
         /// <summary>
@@ -117,18 +134,26 @@ namespace musicmate.Services
             {
                 var sortedPool = pool.OrderBy(m => m).ToList();
                 var walk = new List<int>(sortedPool);
-                // Add descending portion: reverse of pool minus both endpoints to avoid repeating them.
+                // Add descending portion: reverse of pool minus both endpoints to avoid
+                // repeating the top or bottom tonic — the turnaround has exactly one note.
                 for (int d = sortedPool.Count - 2; d > 0; d--)
                     walk.Add(sortedPool[d]);
-                // Always end on the tonic (first note of sorted pool) to close the phrase.
-                if (walk.Count > 0 && walk[^1] != sortedPool[0])
-                    walk.Add(sortedPool[0]);
-                scaleQueue = new Queue<int>(walk);
+                // Do NOT append the bottom tonic: the walk ends one step above it so that
+                // when the queue wraps the bottom tonic appears exactly once (start of the
+                // next ascending pass), giving the natural …D4 | C4 D4… turnaround.
+                // When appending a batch, resume the walk at the correct position so
+                // the descending branch continues instead of jumping back to the bottom.
+                int walkLen = walk.Count;
+                int startIdx = walkLen > 0 ? ScaleWalkOffset % walkLen : 0;
+                scaleQueue = startIdx == 0
+                    ? new Queue<int>(walk)
+                    : new Queue<int>(walk.Skip(startIdx).Concat(walk.Take(startIdx)));
             }
 
             // 4. Fill measures.
             var measures = new List<Measure>(MeasureCount);
             int globalNoteIndex = StartGlobalNoteIndex;
+            int prevPitch = -1;  // tracks last non-rest MIDI for ascending/descending spelling
 
             // globalBeatCursor accumulates across measures so every note carries a
             // sequence-wide beat position suitable for proportional layout and scrolling.
@@ -169,8 +194,8 @@ namespace musicmate.Services
                                 var walk2 = new List<int>(sortedPool2);
                                 for (int d = sortedPool2.Count - 2; d > 0; d--)
                                     walk2.Add(sortedPool2[d]);
-                                if (walk2.Count > 0 && walk2[^1] != sortedPool2[0])
-                                    walk2.Add(sortedPool2[0]);
+                                // No trailing tonic: the walk ends on the note above the bottom,
+                                // so the bottom tonic appears naturally at the start of each cycle.
                                 scaleQueue = new Queue<int>(walk2);
                             }
                         }
@@ -179,7 +204,8 @@ namespace musicmate.Services
                             pitch = PickPitch(rng, pool);
                         }
                         note = BuildNote(pitch, dur, absoluteMi,
-                            globalBeatCursor + localCursor, globalNoteIndex);
+                            globalBeatCursor + localCursor, globalNoteIndex, prevPitch);
+                        prevPitch = pitch;
                         globalNoteIndex++;
                     }
 
@@ -224,6 +250,30 @@ namespace musicmate.Services
             bool preferFlats = KeyUsesFlats(Key);
             var scalePcs = GetScalePitchClasses(Key, Scale);
 
+            if (UseScaleOrder)
+            {
+                // Restrict the range to complete octaves that start and end on the key tonic
+                // so the scale walk always begins and ends cleanly on the root.
+                int tonicPc = ((NoteSessionService.NoteNameToMidi($"{Key}4") % 12) + 12) % 12;
+
+                // First tonic at or above the user's low bound.
+                int octaveStart = minMidi;
+                while (octaveStart <= maxMidi && ((octaveStart % 12 + 12) % 12) != tonicPc)
+                    octaveStart++;
+
+                // Last tonic at or below the user's high bound.
+                int octaveEnd = maxMidi;
+                while (octaveEnd >= minMidi && ((octaveEnd % 12 + 12) % 12) != tonicPc)
+                    octaveEnd--;
+
+                // Use the tonic-bounded range only when at least one complete octave fits.
+                if (octaveStart < octaveEnd)
+                {
+                    minMidi = octaveStart;
+                    maxMidi = octaveEnd;
+                }
+            }
+
             var fullPool = new List<int>();
             for (int midi = minMidi; midi <= maxMidi; midi++)
             {
@@ -232,8 +282,45 @@ namespace musicmate.Services
                     fullPool.Add(midi);
             }
 
-            if (ExcludedMidiNumbers.Count == 0)
+            if (ExcludedMidiNumbers.Count == 0 && (!UseScaleOrder && AccidentalPercent <= 0))
                 return fullPool;
+
+            // When AccidentalPercent > 0 (random mode only) add chromatic non-scale tones
+            // to the pool weighted by the percentage.  We do this by duplicating chromatic
+            // entries proportionally: for every 100 diatonic slots we add
+            // AccidentalPercent chromatic slots so the random picker naturally hits them
+            // at roughly the requested frequency.
+            if (!UseScaleOrder && AccidentalPercent > 0)
+            {
+                var chromaticPool = new List<int>();
+                for (int midi = minMidi; midi <= maxMidi; midi++)
+                {
+                    int pc = ((midi % 12) + 12) % 12;
+                    if (!scalePcs.Contains(pc))
+                        chromaticPool.Add(midi);
+                }
+
+                if (chromaticPool.Count > 0)
+                {
+                    // Add enough chromatic entries to achieve the requested accidental ratio.
+                    // ratio = accidental_slots / total_slots = AccidentalPercent / 100
+                    // accidental_count = diatonic_count * AccidentalPercent / (100 - AccidentalPercent)
+                    int diatonicCount = fullPool.Count;
+                    int wantChromatic = AccidentalPercent >= 100
+                        ? diatonicCount * 4      // near-100%: flood with chromatic
+                        : (int)Math.Round((double)diatonicCount * AccidentalPercent / (100 - AccidentalPercent));
+
+                    var rngLocal = new Random();
+                    for (int added = 0; added < wantChromatic; added++)
+                        fullPool.Add(chromaticPool[rngLocal.Next(chromaticPool.Count)]);
+                }
+            }
+
+            if (ExcludedMidiNumbers.Count == 0)
+            {
+                System.Diagnostics.Debug.WriteLine($"[V2Pool] AccPct={AccidentalPercent} diatonic={fullPool.Count(m => { int p=((m%12)+12)%12; return scalePcs.Contains(p); })} chromatic={fullPool.Count(m => { int p=((m%12)+12)%12; return !scalePcs.Contains(p); })} total={fullPool.Count}");
+                return fullPool;
+            }
 
             // Remove mastered notes; fall back to the full pool when too few remain
             // so the sequence never runs dry.
@@ -321,9 +408,20 @@ namespace musicmate.Services
         /// Constructs a <see cref="GeneratedNote"/> from a raw MIDI number.
         /// Derives letter, octave, accidental, spelled name, and frequency.
         /// </summary>
-        private GeneratedNote BuildNote(int midi, NoteDuration dur, int measureIndex, double beatPos, int globalIndex)
+        private GeneratedNote BuildNote(int midi, NoteDuration dur, int measureIndex, double beatPos, int globalIndex, int prevMidi = -1)
         {
             bool preferFlats = KeyUsesFlats(Key);
+
+            // For C major (and other keys with no key signature), choose sharp/flat for
+            // chromatic notes based on melodic direction: ascending → sharp, descending → flat.
+            // This matches standard music-theory enharmonic spelling practice.
+            if (!preferFlats && GetKeySigAccidentalCount(Key, Scale) == 0 && prevMidi >= 0)
+            {
+                bool isChromatic = !GetScalePitchClasses(Key, Scale).Contains(((midi % 12) + 12) % 12);
+                if (isChromatic)
+                    preferFlats = midi < prevMidi;  // descending → flat; ascending → sharp
+            }
+
             string spelledName = NoteSessionService.MidiToNoteName(midi, preferFlats);
             double freq        = MidiToFreq(midi);
 
@@ -334,6 +432,14 @@ namespace musicmate.Services
             Accidental accidental = Accidental.None;
             if (spelledName.Contains('#'))      accidental = Accidental.Sharp;
             else if (spelledName.Contains('b')) accidental = Accidental.Flat;
+            else
+            {
+                // No sharp/flat in the spelled name — but if this letter is altered by the
+                // key signature the note needs an explicit natural sign to cancel it.
+                accidental = NeedsNaturalSign(letter, Key, Scale)
+                    ? Accidental.Natural
+                    : Accidental.None;
+            }
 
             return new GeneratedNote
             {
@@ -395,6 +501,53 @@ namespace musicmate.Services
 
             return pcs;
         }
+
+        /// <summary>
+        /// Returns true when <paramref name="letter"/> is altered by the key signature
+        /// (sharped or flatted) and therefore a natural note on that letter contradicts
+        /// the key and needs an explicit natural sign.
+        /// </summary>
+        private static bool NeedsNaturalSign(char letter, string key, string scale)
+        {
+            int accCount = GetKeySigAccidentalCount(key, scale);
+            if (accCount == 0) return false;
+
+            bool useFlats = KeyUsesFlats(key);
+            // Flats order:  Bb Eb Ab Db Gb Cb Fb
+            char[] flatLetters  = { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
+            // Sharps order: F# C# G# D# A# E# B#
+            char[] sharpLetters = { 'F', 'C', 'G', 'D', 'A', 'E', 'B' };
+            char[] keySigLetters = useFlats ? flatLetters : sharpLetters;
+
+            for (int i = 0; i < Math.Min(accCount, keySigLetters.Length); i++)
+                if (keySigLetters[i] == char.ToUpperInvariant(letter)) return true;
+            return false;
+        }
+
+        /// <summary>Circle-of-fifths accidental count — mirrors the drawable's logic.</summary>
+        private static int GetKeySigAccidentalCount(string key, string scale)
+        {
+            string majorKey = scale switch
+            {
+                "Natural Minor" or "Aeolian" or "Harmonic Minor"
+                    or "Melodic Minor" or "Jazz Melodic Minor" => RelativeMajorForKeySig(key),
+                _ => key
+            };
+            return majorKey switch
+            {
+                "C"  => 0,
+                "G"  => 1, "D"  => 2, "A"  => 3, "E"  => 4, "B"  => 5, "F#" => 6, "C#" => 7,
+                "F"  => 1, "Bb" => 2, "Eb" => 3, "Ab" => 4, "Db" => 5, "Gb" => 6, "Cb" => 7,
+                _ => 0
+            };
+        }
+
+        private static string RelativeMajorForKeySig(string minorKey) => minorKey switch
+        {
+            "A" => "C", "E" => "G", "B" => "D", "F#" => "A", "C#" => "E", "G#" => "B", "D#" => "F#",
+            "D" => "F", "G" => "Bb", "C" => "Eb", "F" => "Ab", "Bb" => "Db", "Eb" => "Gb",
+            _ => minorKey
+        };
 
         private static bool KeyUsesFlats(string key)
             => key is "F" or "Bb" or "Eb" or "Ab" or "Db" or "Gb" or "Cb";

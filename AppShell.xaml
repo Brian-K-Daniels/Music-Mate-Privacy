@@ -9,12 +9,21 @@
     FlyoutBehavior="Flyout"
     FlyoutWidth="240"
     Shell.BackgroundColor="Transparent"
-    Shell.FlyoutBackgroundColor="#000000"
+    Shell.FlyoutBackgroundColor="#1A1A1A"
     Shell.TitleColor="White"
     Shell.ForegroundColor="White"
-    Shell.UnselectedColor="#DDDDDD"
+    Shell.UnselectedColor="White"
     Shell.DisabledColor="#888888"
     Shell.NavBarIsVisible="False">
+
+  <Shell.Resources>
+    <Style TargetType="Label" Class="FlyoutItemLabelStyle">
+      <Setter Property="TextColor" Value="White" />
+    </Style>
+    <Style TargetType="Grid" Class="FlyoutItemLayoutStyle" ApplyToDerivedTypes="True">
+      <Setter Property="BackgroundColor" Value="#1A1A1A" />
+    </Style>
+  </Shell.Resources>
 
   <FlyoutItem Title="Home">
     <ShellContent

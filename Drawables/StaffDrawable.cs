@@ -123,6 +123,22 @@ namespace musicmate.Drawables
                 catch { }
             }
 
+            // In Tuner mode, also seed the range from the session note range so the
+            // staff is always the same size as it is in scale modes.
+            if (_session.Tune == "Tuner")
+            {
+                foreach (var noteName in new[] { _session.LowestNote, _session.HighestNote })
+                {
+                    if (string.IsNullOrEmpty(noteName)) continue;
+                    var sR = noteName.Trim();
+                    var letterR = char.ToUpperInvariant(sR[0]);
+                    if (!int.TryParse(sR[^1].ToString(), out var octaveR)) continue;
+                    int stepsR = StaffStepsFromB4(letterR, octaveR);
+                    if (stepsR < 0) maxStepsAbove = Math.Max(maxStepsAbove, -stepsR);
+                    else            maxStepsBelow = Math.Max(maxStepsBelow, stepsR);
+                }
+            }
+
             // Include clef center (G4)
             var clefSteps = StaffStepsFromB4('G', 4);
             if (clefSteps < 0) maxStepsAbove = Math.Max(maxStepsAbove, -clefSteps);
@@ -138,7 +154,12 @@ namespace musicmate.Drawables
 
             // Draw staff lines
             var staffLineLeftMargin = 8f;
-            var staffLineRightMargin = 8f;
+            // Classic Tuner uses TunerGrid where the staff canvas is wide and the text column
+            // lives to the right — keep the original 2/3 cutoff so lines don't overrun the text.
+            // V2 Tuner constrains V2StaffBorder to a narrow fixed width, so no cutoff needed there.
+            var staffLineRightMargin = (_session.Tune == "Tuner" && !_session.V2StaffMode)
+                ? 2 * dirtyRect.Width / 3
+                : 8f;
             for (int i = 0; i < 5; i++)
             {
                 var y = staffCoreTop + i * staffSpacing;
@@ -234,7 +255,14 @@ namespace musicmate.Drawables
                 var tunerName = _session.TunerLastNoteName;
                 if (!string.IsNullOrEmpty(tunerName))
                 {
-                    var centerX = dirtyRect.Width / 2f;
+                    // Layout: [staff left] [clef] [note] [trailing staff lines …] [canvas edge] | gap | text column
+                    // Place the note at ~20 % of the canvas width so the staff lines continue
+                    // clearly to the right of the note head.  Enforce a hard minimum so the note
+                    // (and any ♯/♭ to its left) never overlaps the clef.
+                    var clefRightEdge = clefX + clefW;
+                    var minAccClearance = headW * 1.5f * correctionFactor * flatSizeBoost + headW * 1.2f;
+                    var noteZoneLeft = clefRightEdge + minAccClearance;
+                    var centerX = Math.Max(noteZoneLeft, dirtyRect.Width * 0.2f);  //  2026.05.16 1713   0.42f);
                     var tunerHeadH = noteHeadH * 1.2f;
                     var tunerHeadW = tunerHeadH * 1.5f;
                     DrawCenteredNote(canvas, tunerName, centerX, staffCoreTop, staffSpacing, tunerHeadH, tunerHeadW, contrastColor, contrastColor);
@@ -354,6 +382,22 @@ namespace musicmate.Drawables
                     }
                 }
                 catch { }
+            }
+
+            // In Tuner mode, also seed the range from the session note range so the
+            // computed height matches scale modes.
+            if (_session.Tune == "Tuner")
+            {
+                foreach (var noteName in new[] { _session.LowestNote, _session.HighestNote })
+                {
+                    if (string.IsNullOrEmpty(noteName)) continue;
+                    var sR = noteName.Trim();
+                    var letterR = char.ToUpperInvariant(sR[0]);
+                    if (!int.TryParse(sR[^1].ToString(), out var octaveR)) continue;
+                    int stepsR = StaffStepsFromB4(letterR, octaveR);
+                    if (stepsR < 0) maxStepsAbove = Math.Max(maxStepsAbove, -stepsR);
+                    else            maxStepsBelow = Math.Max(maxStepsBelow, stepsR);
+                }
             }
 
             // Include clef center (G4)

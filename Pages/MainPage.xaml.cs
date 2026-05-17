@@ -535,16 +535,23 @@ namespace musicmate.Pages
             }
 #endif
 
-            if (_session.V2StaffMode)
+            if (_session.Tune == "Tuner")
+            {
+                // Tuner mode: never generate a scale sequence — just update visibility.
+                UpdateTunerVisibility();
+            }
+            else if (_session.V2StaffMode)
             {
                 UpdateV2Display();
                 StaffBorder.IsVisible = false;
                 V2StaffBorder.IsVisible = true;
+                V2ModeBanner.IsVisible = true;
             }
             else
             {
                 StaffBorder.IsVisible = true;
                 V2StaffBorder.IsVisible = false;
+                V2ModeBanner.IsVisible = false;
                 StaffGraphicsView.Invalidate();
                 UpdateStaffHeight();
             }
@@ -593,7 +600,7 @@ namespace musicmate.Pages
             // RhythmVarietyPercent drives how often non-quarter durations appear.
             int rhythmVariety = _session.V2RhythmMode == "Mixed" ? 60 : 0;
 
-            return new MusicSequenceGenerator
+            var gen = new MusicSequenceGenerator
             {
                 Key                  = _session.Key,
                 Scale                = _session.SelectedScale,
@@ -614,8 +621,80 @@ namespace musicmate.Pages
                 ExcludedMidiNumbers  = _v2ExcludedMidis,
                 // Walk the scale in order (up then down) when a specific scale is selected.
                 // Random mode uses random pitch picking instead.
-                UseScaleOrder        = _session.Tune != "Random"
+                UseScaleOrder        = _session.Tune != "Random",
+                // Resume the scale walk at the correct position when appending batches
+                // so the descending branch continues instead of jumping back to the bottom.
+                ScaleWalkOffset      = _v2NextGlobalNoteIndex,
+                // Pass through the accidental-density setting so V2 random mode
+                // inserts chromatic tones at the same rate the user configured.
+                AccidentalPercent    = _session.Tune == "Random" ? _session.AccidentalPercent : 0
             };
+            Debug.WriteLine($"[V2Gen] Tune={_session.Tune} AccPct={_session.AccidentalPercent} EffectiveAccPct={(_session.Tune == "Random" ? _session.AccidentalPercent : 0)}");
+            return gen;
+        }
+
+        /// <summary>
+        /// Converts a <see cref="PracticeTune"/> into a flat list of <see cref="GeneratedNote"/>
+        /// with correct <see cref="GeneratedNote.BeatPosition"/>, <see cref="GeneratedNote.MeasureIndex"/>,
+        /// and accidentals parsed from each note's spelled name.
+        /// </summary>
+        private static List<GeneratedNote> BuildV2NotesFromTune(PracticeTune tune)
+        {
+            var result = new List<GeneratedNote>();
+            double beatCursor = 0.0;
+            int measureIndex = 0;
+
+            foreach (var measure in tune.Measures)
+            {
+                double measureBeat = beatCursor;
+                foreach (var mn in measure.Notes)
+                {
+                    GeneratedNote gn;
+                    if (mn.IsRest)
+                    {
+                        gn = GeneratedNote.Rest(mn.Duration, measureIndex, beatCursor);
+                    }
+                    else
+                    {
+                        var raw    = mn.SpelledName.Trim();
+                        char letter = char.ToUpperInvariant(raw[0]);
+                        int octave  = 4;
+                        for (int i = raw.Length - 1; i >= 0; i--)
+                        {
+                            if (char.IsDigit(raw[i]))
+                            {
+                                int j = i;
+                                while (j > 0 && char.IsDigit(raw[j - 1])) j--;
+                                if (int.TryParse(raw.Substring(j, i - j + 1), out var oct)) octave = oct;
+                                break;
+                            }
+                        }
+                        Accidental acc = Accidental.None;
+                        if (raw.Contains("##"))      acc = Accidental.DoubleSharp;
+                        else if (raw.Contains("bb")) acc = Accidental.DoubleFlat;
+                        else if (raw.Contains('#'))  acc = Accidental.Sharp;
+                        else if (raw.Length > 1 && raw[1] == 'b') acc = Accidental.Flat;
+
+                        gn = new GeneratedNote
+                        {
+                            MidiNumber      = mn.MidiNumber,
+                            Letter          = letter,
+                            Octave          = octave,
+                            Accidental      = acc,
+                            SpelledName     = mn.SpelledName,
+                            TargetFrequency = 440.0 * Math.Pow(2.0, (mn.MidiNumber - 69) / 12.0),
+                            Duration        = mn.Duration,
+                            IsRest          = false,
+                            MeasureIndex    = measureIndex,
+                            BeatPosition    = beatCursor,
+                        };
+                    }
+                    result.Add(gn);
+                    beatCursor += mn.Duration.ToBeatValue();
+                }
+                measureIndex++;
+            }
+            return result;
         }
 
         /// <summary>
@@ -663,20 +742,35 @@ namespace musicmate.Pages
                 _v2NextGlobalNoteIndex = 0;
                 _v2AppendInProgress    = false;
 
-                await LoadV2ExcludedMidisAsync();
-
-                var gen      = BuildV2Generator(V2BatchSize);
-                var measures = gen.GenerateSequence();
-                var flat     = MusicSequenceGenerator.Flatten(measures);
-
-                // Advance offsets past the generated measures.
-                _v2NextMeasureIndex    += measures.Count;
-                _v2NextBeatOffset      += measures.Count * (double)gen.TimeSignature.TotalBeats;
-                _v2NextGlobalNoteIndex += flat.Count(n => !n.IsRest);
-
-                // Bar beats: every position where MeasureIndex changes.
+                List<GeneratedNote> flat;
+                List<double> barBeats;
                 var existingBarBeats = new HashSet<double>();
-                var barBeats = ComputeNewBarBeats(flat, existingBarBeats);
+
+                if (_session.Tune == "Practice Tune" && _session.CurrentTune != null)
+                {
+                    // Build the note list directly from the tune so the actual melody
+                    // (e.g. Ode to Joy) is shown instead of a generated scale walk.
+                    flat     = BuildV2NotesFromTune(_session.CurrentTune);
+                    barBeats = ComputeNewBarBeats(flat, existingBarBeats);
+                    // Advance offsets to the end of the tune so appending is disabled.
+                    _v2NextMeasureIndex    = _session.CurrentTune.Measures.Count;
+                    _v2NextBeatOffset      = flat.Sum(n => n.BeatDuration);
+                    _v2NextGlobalNoteIndex = flat.Count(n => !n.IsRest);
+                }
+                else
+                {
+                    await LoadV2ExcludedMidisAsync();
+
+                    var gen      = BuildV2Generator(V2BatchSize);
+                    var measures = gen.GenerateSequence();
+                    flat     = MusicSequenceGenerator.Flatten(measures);
+                    barBeats = ComputeNewBarBeats(flat, existingBarBeats);
+
+                    // Advance offsets past the generated measures.
+                    _v2NextMeasureIndex    += measures.Count;
+                    _v2NextBeatOffset      += measures.Count * (double)gen.TimeSignature.TotalBeats;
+                    _v2NextGlobalNoteIndex += flat.Count(n => !n.IsRest);
+                }
 
                 // ── Push to drawable ──────────────────────────────────────────────
                 _v2Drawable.Notes           = flat;
@@ -727,6 +821,8 @@ namespace musicmate.Pages
         /// </summary>
         private async Task AppendV2MeasuresAsync(int measureCount)
         {
+            // Practice Tune is fully loaded upfront — nothing to append.
+            if (_session.Tune == "Practice Tune") return;
             if (_v2Drawable == null || _v2AppendInProgress) return;
             _v2AppendInProgress = true;
             try
@@ -1042,6 +1138,25 @@ namespace musicmate.Pages
             if (_isPlaying)
                 return;
 
+            // If currently listening, stop before starting auto-play.
+            if (_isRunning)
+            {
+                try
+                {
+                    _playCts?.Cancel();
+                    _audio.StopCapture();
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[PlayEvaluate] Stop listening error: {ex}");
+                }
+                finally
+                {
+                    SetButtonStates(false);
+                }
+                await Task.Delay(80); // brief pause so audio pipeline drains
+            }
+
             // Save user's instrument selection to restore after playback
             _savedInstrumentForPlayback = _session.Instrument;
             _savedInstrumentIndexForPlayback = InstrumentPicker?.SelectedIndex ?? -1;
@@ -1148,7 +1263,10 @@ namespace musicmate.Pages
                     _session.UpdateTunerLastNote(freq);
                     MainThread.BeginInvokeOnMainThread(() =>
                     {
-                        TunerGraphicsView.Invalidate();
+                        if (_session.V2StaffMode)
+                            V2StaffGraphicsView.Invalidate();
+                        else
+                            TunerGraphicsView.Invalidate();
                     });
                     return;
                 }
@@ -1478,7 +1596,34 @@ async Task UpdateNoteStatsDatabaseAsync()
                     await MainThread.InvokeOnMainThreadAsync(() =>
                     {
                         _session.PlaybackHighlightIndex = i;
-                        StaffGraphicsView.Invalidate();
+                        if (_session.V2StaffMode && _v2Drawable != null)
+                        {
+                            // Map session note index i to the drawable note index (skipping rests)
+                            int drawIdx = 0, noteCount = 0;
+                            for (int d = 0; d < _v2Drawable.Notes.Count; d++)
+                            {
+                                if (!_v2Drawable.Notes[d].IsRest)
+                                {
+                                    if (noteCount == i) { drawIdx = d; break; }
+                                    noteCount++;
+                                }
+                            }
+                            _v2Drawable.CurrentNoteIndex = drawIdx;
+                            var states = new V2NoteState[_v2Drawable.Notes.Count];
+                            int si = 0;
+                            for (int d = 0; d < _v2Drawable.Notes.Count; d++)
+                            {
+                                if (_v2Drawable.Notes[d].IsRest) { states[d] = V2NoteState.Pending; continue; }
+                                states[d] = si < i ? V2NoteState.Correct : si == i ? V2NoteState.Current : V2NoteState.Pending;
+                                si++;
+                            }
+                            _v2Drawable.NoteStates = states;
+                            V2StaffGraphicsView.Invalidate();
+                        }
+                        else
+                        {
+                            StaffGraphicsView.Invalidate();
+                        }
                     });
 
                     bool notePlayed = false;
@@ -1502,6 +1647,8 @@ async Task UpdateNoteStatsDatabaseAsync()
                             }
                             _session.PlaybackHighlightIndex = null;
                             StaffGraphicsView.Invalidate();
+                            if (_session.V2StaffMode)
+                                V2StaffGraphicsView.Invalidate();
                         });
                     }
                 }
@@ -1686,30 +1833,75 @@ async Task UpdateNoteStatsDatabaseAsync()
         private void UpdateTunerVisibility()
         {
             var isTuner = _session.Tune == "Tuner";
+            var isV2Tuner = isTuner && _session.V2StaffMode;
+
             if (isTuner)
             {
-                StaffBorder.IsVisible  = false;
-                V2StaffBorder.IsVisible = false;
+                // In V2 Tuner mode show the large V2 staff panel; otherwise hide all staff panels.
+                StaffBorder.IsVisible   = false;
+                V2StaffBorder.IsVisible = isV2Tuner;
+                V2ModeBanner.IsVisible  = false;
             }
             else if (_session.V2StaffMode)
             {
                 StaffBorder.IsVisible  = false;
                 V2StaffBorder.IsVisible = true;
+                V2ModeBanner.IsVisible = true;
+                // Clear any width constraint left over from V2 Tuner mode.
+                V2StaffBorder.WidthRequest      = -1;
+                V2StaffBorder.HorizontalOptions = LayoutOptions.Fill;
             }
             else
             {
                 StaffBorder.IsVisible  = true;
                 V2StaffBorder.IsVisible = false;
+                V2ModeBanner.IsVisible = false;
+                // Clear any width constraint left over from V2 Tuner mode.
+                V2StaffBorder.WidthRequest      = -1;
+                V2StaffBorder.HorizontalOptions = LayoutOptions.Fill;
             }
+
             TunerGrid.IsVisible = isTuner;
+
             if (isTuner)
             {
+                // In V2 Tuner mode the large staff is shown in V2StaffBorder; hide the duplicate
+                // staff canvas inside TunerGrid and collapse its column so only the info panel shows.
+                TunerBorder.IsVisible = !isV2Tuner;
+                if (isV2Tuner)
+                {
+                    // Constrain V2StaffBorder to a narrow fixed width so it ends just past the staff
+                    // lines, leaving the TunerGrid text column clearly separated to its right.
+                    const double staffPanelWidth = 220;
+                    V2StaffBorder.WidthRequest   = staffPanelWidth;
+                    V2StaffBorder.HorizontalOptions = LayoutOptions.Start;
+                    TunerGrid.ColumnDefinitions[0] = new ColumnDefinition(staffPanelWidth);
+                }
+                else
+                {
+                    V2StaffBorder.WidthRequest      = -1;
+                    V2StaffBorder.HorizontalOptions = LayoutOptions.Fill;
+                    TunerGrid.ColumnDefinitions[0] = new ColumnDefinition(GridLength.Star);
+                }
+
+                // V2 Tuner: use the StaffDrawable (which renders the tuner note) on the V2 panel.
+                if (isV2Tuner && _v2Drawable != null)
+                    V2StaffGraphicsView.Drawable = _drawable;
+
                 _session.SessionCompleted = false;
-                TunerGraphicsView.Invalidate();
+                if (isV2Tuner)
+                    V2StaffGraphicsView.Invalidate();
+                else
+                    TunerGraphicsView.Invalidate();
                 if (!_isRunning)
                 {
                     _ = StartListeningAndEvaluatingAsync();
                 }
+            }
+            else if (_v2Drawable != null && V2StaffGraphicsView.Drawable != _v2Drawable)
+            {
+                // Restore V2 drawable when leaving Tuner mode.
+                V2StaffGraphicsView.Drawable = _v2Drawable;
             }
         }
         private void UpdateScaleTunePicker()
@@ -1766,6 +1958,7 @@ async Task UpdateNoteStatsDatabaseAsync()
             Preferences.Default.Set("SelectedTune", "Selected Scale");
             IsAutoRepeatVisible = true;
             UpdateKeyPickerVisibility();
+            await RegenerateNotesAsync();
         }
         
 
