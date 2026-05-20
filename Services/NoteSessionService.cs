@@ -10,6 +10,19 @@ using musicmate.Utilities;
 
 namespace musicmate.Services
 {
+    /// <summary>
+    /// Controls which staff renderer is active on the Home / V3 Home page.
+    /// </summary>
+    public enum StaffDisplayMode
+    {
+        /// <summary>Original single-note staff (StaffDrawable).</summary>
+        Classic,
+        /// <summary>V2 scrolling measure staff (V2MeasureDrawable).</summary>
+        V2,
+        /// <summary>V3 two-staff endless display (V3StaffDrawable — in development).</summary>
+        V3
+    }
+
     public record FeedbackItem(int Index, int WrongAttempts, int CentsDeviation, bool IsCorrect)
     {
         public string CentsText => $"{CentsDeviation:+0;-0;0}";
@@ -93,44 +106,99 @@ namespace musicmate.Services
             }
         }
 
-        // ── v2 Feature Flag ───────────────────────────────────────────────────────
-        // Developer-facing toggle that switches between v1 single-note display and the
-        // new v2 staff/measure display.  Persisted to Preferences so it survives app
-        // restarts during testing.  Default is FALSE (v1 behaviour) so existing users
-        // are completely unaffected until explicitly enabled.
+        // ── Display mode ─────────────────────────────────────────────────────────
+        // StaffDisplayMode is the single source of truth for which staff renderer is
+        // active.  Classic = original single-note view; V2 = v2 measure staff;
+        // V3 = new two-staff endless display.
+        //
+        // V2StaffMode is kept as a computed shim so all existing call sites continue
+        // to compile and behave correctly without modification.
+        private const string PrefStaffDisplayModeKey = "musicmate.StaffDisplayMode";
         private const string PrefV2StaffModeKey      = "musicmate.V2StaffMode";
         private const string PrefV2TimeSignatureKey  = "musicmate.V2TimeSignature";
         private const string PrefV2SmallestNoteKey   = "musicmate.V2SmallestNote";
         private const string PrefV2RhythmModeKey     = "musicmate.V2RhythmMode";
         private const string PrefV2NoteNameDisplayKey = "musicmate.V2NoteNameDisplay";
 
-        private bool   _v2StaffMode    = Preferences.Get(PrefV2StaffModeKey, false);
+        private StaffDisplayMode _staffDisplayMode = LoadStaffDisplayMode();
+
+        private static StaffDisplayMode LoadStaffDisplayMode()
+        {
+            // Migrate from the legacy bool key on first run with the new enum key.
+            if (Preferences.ContainsKey(PrefStaffDisplayModeKey))
+            {
+                var saved = Preferences.Get(PrefStaffDisplayModeKey, nameof(StaffDisplayMode.Classic));
+                return Enum.TryParse<StaffDisplayMode>(saved, out var parsed) ? parsed : StaffDisplayMode.Classic;
+            }
+            // First run: promote the old V2StaffMode bool if it was ever set true.
+            if (Preferences.Get(PrefV2StaffModeKey, false))
+                return StaffDisplayMode.V2;
+            return StaffDisplayMode.Classic;
+        }
+
+        /// <summary>
+        /// Active staff display mode.  Changing this property persists the choice and
+        /// raises <see cref="INotifyPropertyChanged"/> for both
+        /// <see cref="StaffDisplayMode"/> and the legacy <see cref="V2StaffMode"/> shim.
+        /// </summary>
+        public StaffDisplayMode StaffDisplayMode
+        {
+            get => _staffDisplayMode;
+            set
+            {
+                if (_staffDisplayMode == value) return;
+                _staffDisplayMode = value;
+                Preferences.Set(PrefStaffDisplayModeKey, value.ToString());
+                // Keep the legacy bool key in sync so Settings pages that read it
+                // directly via Preferences still reflect the right state.
+                Preferences.Set(PrefV2StaffModeKey, value == StaffDisplayMode.V2);
+                OnPropertyChanged(nameof(StaffDisplayMode));
+                OnPropertyChanged(nameof(V2StaffMode));
+                OnPropertyChanged(nameof(StaffDisplayModeDisplay));
+            }
+        }
+
+        /// <summary>
+        /// Legacy compatibility shim.  Backed by <see cref="StaffDisplayMode"/>.
+        /// Existing code that reads or writes this bool continues to work unchanged.
+        /// Setting it to <c>true</c> selects V2; <c>false</c> selects Classic.
+        /// Code that needs V3 should set <see cref="StaffDisplayMode"/> directly.
+        /// </summary>
+        public bool V2StaffMode
+        {
+            get => _staffDisplayMode == StaffDisplayMode.V2;
+            set => StaffDisplayMode = value ? StaffDisplayMode.V2 : StaffDisplayMode.Classic;
+        }
+
+        /// <summary>Human-readable label for the Settings picker.</summary>
+        public string StaffDisplayModeDisplay
+        {
+            get => _staffDisplayMode switch
+            {
+                StaffDisplayMode.V2 => "V2 Rhythm",
+                StaffDisplayMode.V3 => "V3 Two-Staff",
+                _                   => "Classic"
+            };
+            set
+            {
+                var parsed = value switch
+                {
+                    "V2 Rhythm"    => StaffDisplayMode.V2,
+                    "V3 Two-Staff" => StaffDisplayMode.V3,
+                    _              => StaffDisplayMode.Classic
+                };
+                StaffDisplayMode = parsed;
+                OnPropertyChanged(nameof(StaffDisplayModeDisplay));
+            }
+        }
+
+        public static string[] StaffDisplayModeOptions { get; } =
+            { "Classic", "V2 Rhythm", "V3 Two-Staff" };
+
         private string _v2TimeSignature = Preferences.Get(PrefV2TimeSignatureKey, "4/4");
         private string _v2SmallestNote  = Preferences.Get(PrefV2SmallestNoteKey,  "Quarter");
         private string _v2RhythmMode    = Preferences.Get(PrefV2RhythmModeKey,    "Simple");
         private string _v2NoteNameDisplay = Preferences.Get(PrefV2NoteNameDisplayKey, "Current only");
-
-        /// <summary>
-        /// When <c>true</c>, the app uses the Music Mate v2 measure-based staff display
-        /// (rendered from <see cref="MusicSequenceGenerator"/> output).
-        /// When <c>false</c> (default), the existing v1 single-note display is used.
-        /// <para>
-        /// This flag is developer-facing and temporary.  Toggle it from the Advanced
-        /// settings page or directly via <c>Preferences.Set("musicmate.V2StaffMode", true)</c>
-        /// during a debug session.
-        /// </para>
-        /// </summary>
-        public bool V2StaffMode
-        {
-            get => _v2StaffMode;
-            set
-            {
-                if (_v2StaffMode == value) return;
-                _v2StaffMode = value;
-                Preferences.Set(PrefV2StaffModeKey, value);
-                OnPropertyChanged(nameof(V2StaffMode));
-            }
-        }
 
         /// <summary>
         /// Time signature for v2 rhythm generation.

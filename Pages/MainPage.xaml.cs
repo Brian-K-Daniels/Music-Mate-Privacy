@@ -17,6 +17,7 @@ namespace musicmate.Pages
         private readonly IAudioPlaybackService _player = null!;
         private readonly Drawables.StaffDrawable _drawable = null!;
         private Drawables.V2MeasureDrawable? _v2Drawable;
+        private Drawables.V3StaffDrawable? _v3Drawable;
         private readonly SessionDatabase _sessionDb = null!;
         private readonly IOrientationService _orientation = null!;
         private readonly ThemeService _theme_service = null!;
@@ -31,14 +32,22 @@ namespace musicmate.Pages
         private string? _savedInstrumentForPlayback = null;
         private int _savedInstrumentIndexForPlayback = -1;
 
+        // V3 home bottom-row picker references (initialized after InitializeComponent)
+        private Picker _v3HomeInstrumentPicker = null!;
+        private Picker _v3HomeKeyPicker = null!;
+        private Picker _v3HomeScaleTunePicker = null!;
+        private Label _v3HomeConcertKeyLabel = null!;
+
         // fields for inactivity tracking
         private DateTime _lastHeardTime = DateTime.UtcNow;
         private bool _inactivityStopped = false;
+#pragma warning disable CS0414
         private readonly TimeSpan _inactivityTimeout = TimeSpan.FromMinutes(5);
 
         // When true, RegenerateNotesAsync is suppressed so the post-autoplay
         // green feedbacks and session stats remain visible until the next session.
         private bool _freezeStaff = false;
+#pragma warning restore CS0414
 
         /// <summary>
         /// Apply saved panel background color at startup. If no saved color exists,
@@ -181,10 +190,16 @@ namespace musicmate.Pages
 
         private void UpdateRepeatButtonsVisibility()
         {
+            var isV3 = _session?.StaffDisplayMode == StaffDisplayMode.V3;
             var isRandom = _session?.Tune == "Random";
-            IsRandomRepeatButtonsVisible = _isAutoRepeatVisible && isRandom;
-            IsScaleRepeatButtonVisible = _isAutoRepeatVisible && !isRandom;
+            IsRandomRepeatButtonsVisible = _isAutoRepeatVisible && isRandom && !isV3;
+            IsScaleRepeatButtonVisible = _isAutoRepeatVisible && !isRandom && !isV3;
+            OnPropertyChanged(nameof(IsNotV3Mode));
+            OnPropertyChanged(nameof(IsV3Mode));
         }
+
+        public bool IsNotV3Mode => _session?.StaffDisplayMode != StaffDisplayMode.V3;
+        public bool IsV3Mode => _session?.StaffDisplayMode == StaffDisplayMode.V3;
         private string _selectedInstrumentShort = "";
         public string SelectedInstrumentShort
         {
@@ -258,6 +273,12 @@ namespace musicmate.Pages
             {
                 InitializeComponent();
 
+                // Resolve V3 home bottom-row pickers (generated field may be stale; use FindByName)
+                _v3HomeInstrumentPicker = this.FindByName<Picker>("V3HomeInstrumentPicker")!;
+                _v3HomeKeyPicker        = this.FindByName<Picker>("V3HomeKeyPicker")!;
+                _v3HomeScaleTunePicker  = this.FindByName<Picker>("V3HomeScaleTunePicker")!;
+                _v3HomeConcertKeyLabel  = this.FindByName<Label>("V3HomeConcertKeyLabel")!;
+
                 // Ensure ThemeService is available so we can deploy saved/default panel background
                 _theme_service = ServiceHelper.GetService<ThemeService>()!;
 
@@ -326,9 +347,14 @@ namespace musicmate.Pages
                 StaffGraphicsView.SetBinding(GraphicsView.BackgroundColorProperty, new Binding("PanelBackgroundColor"));
 
                 // V2 staff drawable setup
-                _v2Drawable = new Drawables.V2MeasureDrawable(_session, _theme_service);
+                _v2Drawable = new Drawables.V2MeasureDrawable(_session, _theme_service!);
                 V2StaffGraphicsView.Drawable = _v2Drawable;
                 V2StaffGraphicsView.SetBinding(GraphicsView.BackgroundColorProperty, new Binding("PanelBackgroundColor"));
+
+                // V3 staff drawable setup
+                _v3Drawable = new Drawables.V3StaffDrawable(_session, _theme_service);
+                V3StaffGraphicsView.Drawable = _v3Drawable;
+                V3StaffGraphicsView.SetBinding(GraphicsView.BackgroundColorProperty, new Binding("PanelBackgroundColor"));
 
                 // Tuner graphics setup
                 TunerBorder.BindingContext = _theme_service;
@@ -367,6 +393,23 @@ namespace musicmate.Pages
                         // In V2 staff mode the note buffer is infinite; reaching the end of the
                         // current session window just means more notes need to be generated.
                         // Skip the normal session-end flow and let AppendV2MeasuresAsync handle it.
+                        if (_session.StaffDisplayMode == StaffDisplayMode.V3)
+                        {
+                            // V3: the cycle is managed by SyncV3NoteStates / RefreshV3UpperStaffAsync.
+                            // A full session-end here means both staffs are complete.
+                            // In two-octave scale mode (UpperHasEndBar) this is a true end-of-sequence:
+                            // run the normal summary + AutoRepeat path instead of silently regenerating.
+                            if (_v3Drawable != null && _v3Drawable.UpperHasEndBar)
+                            {
+                                // Fall through to the standard summary / AutoRepeat flow below.
+                            }
+                            else
+                            {
+                                await UpdateV3DisplayAsync();
+                                return;
+                            }
+                        }
+
                         if (_session.V2StaffMode)
                         {
                             await AppendV2MeasuresAsync(V2BatchSize);
@@ -496,8 +539,24 @@ namespace musicmate.Pages
 
                 ScaleTunePicker.SelectedIndexChanged += OnScaleTunePickerChanged;
 
+                // V3 home bottom-row pickers — mirror of the main pickers
+                _v3HomeInstrumentPicker.ItemsSource = instrumentOptions.Select(s => s.Split(',')[0].Trim()).ToArray();
+                _v3HomeInstrumentPicker.SelectedIndex = InstrumentPicker.SelectedIndex;
+                _v3HomeInstrumentPicker.SelectedIndexChanged += V3HomeInstrumentPicker_SelectedIndexChanged;
+
+                _v3HomeKeyPicker.ItemsSource = KeyPicker.ItemsSource;
+                _v3HomeKeyPicker.SelectedIndex = KeyPicker.SelectedIndex;
+                _v3HomeKeyPicker.SelectedIndexChanged += V3HomeKeyPicker_SelectedIndexChanged;
+
+                _v3HomeScaleTunePicker.ItemsSource = scaleTuneOptions;
+                _v3HomeScaleTunePicker.SelectedIndex = ScaleTunePicker.SelectedIndex;
+                _v3HomeScaleTunePicker.SelectedIndexChanged += V3HomeScaleTunePickerChanged;
+
                 InstrumentPicker.SelectedIndexChanged += InstrumentPicker_SelectedIndexChanged;
                 KeyPicker.SelectedIndexChanged += OnKeyPickerChangedWithPrompt;
+
+                // Apply initial pickers-row visibility based on the loaded display mode
+                UpdatePickersContainerVisibility();
             }
             catch (Exception ex)
             {
@@ -540,17 +599,34 @@ namespace musicmate.Pages
                 // Tuner mode: never generate a scale sequence — just update visibility.
                 UpdateTunerVisibility();
             }
+            else if (_session.StaffDisplayMode == StaffDisplayMode.V3)
+            {
+                // Show V3 border first so the GraphicsView gets a layout width before we draw.
+                StaffBorder.IsVisible   = false;
+                V2StaffBorder.IsVisible = false;
+                V2ModeBanner.IsVisible  = false;
+                V3StaffBorder.IsVisible = true;
+
+                // Wait up to 500 ms for the view to get a measured width.
+                var sw2 = System.Diagnostics.Stopwatch.StartNew();
+                while (V3StaffGraphicsView.Width <= 0 && sw2.ElapsedMilliseconds < 500)
+                    await Task.Delay(20);
+
+                await UpdateV3DisplayAsync();
+            }
             else if (_session.V2StaffMode)
             {
                 UpdateV2Display();
                 StaffBorder.IsVisible = false;
                 V2StaffBorder.IsVisible = true;
+                V3StaffBorder.IsVisible = false;
                 V2ModeBanner.IsVisible = true;
             }
             else
             {
                 StaffBorder.IsVisible = true;
                 V2StaffBorder.IsVisible = false;
+                V3StaffBorder.IsVisible = false;
                 V2ModeBanner.IsVisible = false;
                 StaffGraphicsView.Invalidate();
                 UpdateStaffHeight();
@@ -579,7 +655,9 @@ namespace musicmate.Pages
         /// </summary>
         private async Task LoadV2ExcludedMidisAsync()
         {
-            _v2ExcludedMidis = await _session.GetMasteredMidiNumbersAsync();
+            _v2ExcludedMidis = _session.Tune == "Random"
+                ? await _session.GetMasteredMidiNumbersAsync()
+                : new HashSet<int>();
         }
 
         /// <summary>
@@ -813,6 +891,427 @@ namespace musicmate.Pages
         /// Fires the async path and discards the task on the calling thread.
         /// </summary>
         private void UpdateV2Display() => _ = UpdateV2DisplayAsync();
+
+        // ── V3 two-staff display ──────────────────────────────────────────────────
+
+        /// <summary>How many measures to put on each V3 staff.</summary>
+        private const int V3MeasuresPerStaff = 2;
+
+        // Offsets for appending the lower staff content.
+        private int    _v3LowerMeasureIndex    = 0;
+        private double _v3LowerBeatOffset      = 0.0;
+        private int    _v3LowerGlobalNoteIndex = 0;
+
+        /// <summary>
+        /// Populates the V3 drawable with an upper and lower staff worth of notes.
+        /// Upper staff is played first; lower staff follows.
+        /// </summary>
+        private async Task UpdateV3DisplayAsync()
+        {
+            if (_v3Drawable == null) return;
+            try
+            {
+                // Reset queue offsets.
+                _v2NextMeasureIndex    = 0;
+                _v2NextBeatOffset      = 0.0;
+                _v2NextGlobalNoteIndex = 0;
+                _v2AppendInProgress    = false;
+
+                List<GeneratedNote> upperFlat;
+                List<double>        upperBarBeats;
+                List<GeneratedNote> lowerFlat;
+                List<double>        lowerBarBeats;
+                var existingUpper = new HashSet<double>();
+                var existingLower = new HashSet<double>();
+
+                if (_session.Tune == "Practice Tune" && _session.CurrentTune != null)
+                {
+                    // Split tune measures between upper and lower staff.
+                    var allNotes = BuildV2NotesFromTune(_session.CurrentTune);
+                    var allMeasures = _session.CurrentTune.Measures.Count;
+                    int splitAt = allMeasures / 2;
+
+                    // Gather beat threshold for split.
+                    double splitBeat = 0.0;
+                    for (int m = 0; m < splitAt && m < _session.CurrentTune.Measures.Count; m++)
+                        foreach (var mn in _session.CurrentTune.Measures[m].Notes)
+                            splitBeat += mn.Duration.ToBeatValue();
+
+                    upperFlat     = allNotes.Where(n => (n.BeatPosition ?? 0) < splitBeat).ToList();
+                    lowerFlat     = allNotes.Where(n => (n.BeatPosition ?? 0) >= splitBeat).ToList();
+                    upperBarBeats = ComputeNewBarBeats(upperFlat, existingUpper);
+                    lowerBarBeats = ComputeNewBarBeats(lowerFlat, existingLower);
+
+                    _v2NextMeasureIndex    = allMeasures;
+                    _v2NextBeatOffset      = allNotes.Sum(n => n.BeatDuration);
+                    _v2NextGlobalNoteIndex = allNotes.Count(n => !n.IsRest);
+
+                    _v3LowerMeasureIndex    = _v2NextMeasureIndex;
+                    _v3LowerBeatOffset      = _v2NextBeatOffset;
+                    _v3LowerGlobalNoteIndex = _v2NextGlobalNoteIndex;
+                    if (_v3Drawable != null) _v3Drawable.UpperHasEndBar = false;
+                }
+                else
+                {
+                    await LoadV2ExcludedMidisAsync();
+
+                    // Detect a two-octave scale range: when the hi−lo span is ≥ 24 semitones
+                    // (two full octaves) and we are in scale-order mode, generate the full
+                    // ascending+descending walk as a single sequence, then split it at the
+                    // peak so the ascending half goes on the upper staff and the descending
+                    // half goes on the lower staff.
+                    bool isScaleMode = _session.Tune != "Random";
+                    int loMidi = NoteSessionService.NoteNameToMidi(_session.LowestNote);
+                    int hiMidi = NoteSessionService.NoteNameToMidi(_session.HighestNote);
+                    bool isTwoOctave = isScaleMode && (hiMidi - loMidi) >= 24;
+
+                    if (isTwoOctave)
+                    {
+                        // Build a combined generator sized to hold the full ascending+descending
+                        // scale walk.  The walk length for N pitch-pool notes is (2N − 2) events
+                        // so use enough measures to hold it all at the smallest allowed duration.
+                        var timeSig = _session.V2TimeSignature switch
+                        {
+                            "3/4" => TimeSignature.ThreeFour,
+                            "2/4" => TimeSignature.TwoFour,
+                            _     => TimeSignature.FourFour
+                        };
+                        // A safe upper bound: even a chromatic 3-octave range (37 pitches) needs
+                        // at most (2*37−2)=72 quarter notes = 18 bars of 4/4.  Cap at 24 to be safe.
+                        var genAll = BuildV2Generator(24);
+                        var allMeasures = genAll.GenerateSequence();
+                        var allNotes = MusicSequenceGenerator.Flatten(allMeasures);
+
+                        // Find the first occurrence of the maximum MIDI in the walk
+                        // — that is the peak note where ascending turns to descending.
+                        int peakMidi = allNotes.Where(n => !n.IsRest).Max(n => n.MidiNumber);
+                        int peakIdx  = allNotes.FindIndex(n => !n.IsRest && n.MidiNumber == peakMidi);
+
+                        // Upper staff: notes up to and including the peak note.
+                        // Lower staff: notes after the peak.
+                        // Trim trailing rests from upper so the end bar lands right after the peak.
+                        int splitIdx = peakIdx >= 0 ? peakIdx + 1 : allNotes.Count / 2;
+                        upperFlat = allNotes.Take(splitIdx).ToList();
+                        lowerFlat = allNotes.Skip(splitIdx).ToList();
+
+                        // Drop notes once the descending walk turns back upward — that
+                        // signals the start of the next cycle.  The generator intentionally
+                        // stops one step above the bottom tonic (e.g. D4 for C Major) so
+                        // the bottom tonic never appears in the lower half; searching for
+                        // loMidi would find the C4 that starts the *next* cycle instead.
+                        int cutIdx = lowerFlat.Count;
+                        int prevPitchMidi = -1;
+                        for (int li = 0; li < lowerFlat.Count; li++)
+                        {
+                            if (lowerFlat[li].IsRest) continue;
+                            int m = lowerFlat[li].MidiNumber;
+                            if (prevPitchMidi >= 0 && m > prevPitchMidi)
+                            {
+                                cutIdx = li;   // stop before the ascending restart
+                                break;
+                            }
+                            prevPitchMidi = m;
+                        }
+                        lowerFlat = lowerFlat.Take(cutIdx).ToList();
+
+                        // Re-offset lower staff beat positions to start at 0.
+                        double lowerBeatShift = lowerFlat.Count > 0 ? (lowerFlat[0].BeatPosition ?? 0.0) : 0.0;
+                        if (lowerBeatShift > 0.0)
+                        {
+                            for (int i = 0; i < lowerFlat.Count; i++)
+                            {
+                                var n = lowerFlat[i];
+                                lowerFlat[i] = new GeneratedNote
+                                {
+                                    MidiNumber       = n.MidiNumber,
+                                    Letter           = n.Letter,
+                                    Octave           = n.Octave,
+                                    Accidental       = n.Accidental,
+                                    SpelledName      = n.SpelledName,
+                                    TargetFrequency  = n.TargetFrequency,
+                                    Duration         = n.Duration,
+                                    IsRest           = n.IsRest,
+                                    MeasureIndex     = n.MeasureIndex,
+                                    BeatPosition     = (n.BeatPosition ?? 0.0) - lowerBeatShift,
+                                    IsPlayedCorrectly = n.IsPlayedCorrectly
+                                };
+                            }
+                        }
+
+                        upperBarBeats = ComputeNewBarBeats(upperFlat, existingUpper);
+                        lowerBarBeats = ComputeNewBarBeats(lowerFlat, existingLower);
+
+                        double upperBeats = upperFlat.Sum(n => n.BeatDuration);
+                        double lowerBeats = lowerFlat.Sum(n => n.BeatDuration);
+                        int upperPitches  = upperFlat.Count(n => !n.IsRest);
+                        int lowerPitches  = lowerFlat.Count(n => !n.IsRest);
+
+                        _v2NextMeasureIndex    = allMeasures.Count;
+                        _v2NextBeatOffset      = upperBeats + lowerBeats;
+                        _v2NextGlobalNoteIndex = upperPitches + lowerPitches;
+                        _v3LowerMeasureIndex    = _v2NextMeasureIndex;
+                        _v3LowerBeatOffset      = _v2NextBeatOffset;
+                        _v3LowerGlobalNoteIndex = _v2NextGlobalNoteIndex;
+                    }
+                    else
+                    {
+                        // Standard path: two independent measures-per-staff blocks.
+                        var genUpper = BuildV2Generator(V3MeasuresPerStaff);
+                        var upperMeasures = genUpper.GenerateSequence();
+                        upperFlat     = MusicSequenceGenerator.Flatten(upperMeasures);
+                        upperBarBeats = ComputeNewBarBeats(upperFlat, existingUpper);
+
+                        _v2NextMeasureIndex    += upperMeasures.Count;
+                        _v2NextBeatOffset      += upperMeasures.Count * (double)genUpper.TimeSignature.TotalBeats;
+                        _v2NextGlobalNoteIndex += upperFlat.Count(n => !n.IsRest);
+
+                        var genLower = BuildV2Generator(V3MeasuresPerStaff);
+                        var lowerMeasures = genLower.GenerateSequence();
+                        lowerFlat     = MusicSequenceGenerator.Flatten(lowerMeasures);
+                        lowerBarBeats = ComputeNewBarBeats(lowerFlat, existingLower);
+
+                        _v3LowerMeasureIndex    = _v2NextMeasureIndex + lowerMeasures.Count;
+                        _v3LowerBeatOffset      = _v2NextBeatOffset + lowerMeasures.Count * (double)genLower.TimeSignature.TotalBeats;
+                        _v3LowerGlobalNoteIndex = _v2NextGlobalNoteIndex + lowerFlat.Count(n => !n.IsRest);
+
+                        _v2NextMeasureIndex    = _v3LowerMeasureIndex;
+                        _v2NextBeatOffset      = _v3LowerBeatOffset;
+                        _v2NextGlobalNoteIndex = _v3LowerGlobalNoteIndex;
+                    }
+
+                    // Signal the drawable whether to draw a single end bar on the upper staff.
+                    _v3Drawable.UpperHasEndBar = isTwoOctave;
+                }
+
+                // ── Push to V3 drawable ────────────────────────────────────────────
+                _v3Drawable.UpperNotes      = upperFlat;
+                _v3Drawable.LowerNotes      = lowerFlat;
+                _v3Drawable.UpperBarBeats   = upperBarBeats;
+                _v3Drawable.LowerBarBeats   = lowerBarBeats;
+                _v3Drawable.UpperNoteStates = new V2NoteState[upperFlat.Count];
+                _v3Drawable.LowerNoteStates = new V2NoteState[lowerFlat.Count];
+                _v3Drawable.IsUpperActive   = true;
+                _v3Drawable.ActiveNoteIndex = 0;
+                _v3Drawable.UpperAlpha      = 1f;
+                _v3Drawable.LowerAlpha      = 1f;
+
+                // Mark first non-rest note on upper staff as Current.
+                for (int i = 0; i < upperFlat.Count; i++)
+                {
+                    if (!upperFlat[i].IsRest)
+                    {
+                        _v3Drawable.UpperNoteStates[i] = V2NoteState.Current;
+                        _v3Drawable.ActiveNoteIndex = i;
+                        break;
+                    }
+                }
+
+                // Populate session NotesToDraw from upper then lower.
+                int sessionIdx = 0;
+                _session.NotesToDraw.Clear();
+                _session.FeedbackViewModels.Clear();
+                foreach (var gn in upperFlat.Concat(lowerFlat))
+                {
+                    if (gn.IsRest) continue;
+                    _session.NotesToDraw.Add(new NoteInfo
+                    {
+                        Midi       = gn.MidiNumber,
+                        Name       = gn.SpelledName,
+                        TargetFreq = gn.TargetFrequency,
+                        X          = 0f,
+                        Duration   = gn.Duration
+                    });
+                    _session.FeedbackViewModels.Add(new FeedbackItem(sessionIdx++, 0, 0, false));
+                }
+
+                int upperPitchCount = upperFlat.Count(n => !n.IsRest);
+
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    var h = _v3Drawable.ComputeRequiredHeight();
+                    V3StaffGraphicsView.HeightRequest = h;
+                    V3StaffBorder.HeightRequest = h;
+                    V3StaffGraphicsView.Invalidate();
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[V3] UpdateV3DisplayAsync ERROR: {ex}");
+                StatusService.Instance.StatusMessage = $"[V3 Error] {ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// Syncs V3 note states from session progress; mirrors <see cref="SyncV2NoteStates"/>
+        /// but covers two staffs.  When the player finishes the upper staff the lower becomes
+        /// active, and new notes are loaded onto the upper staff (fade in).
+        /// </summary>
+        private void SyncV3NoteStates()
+        {
+            if (_v3Drawable == null) return;
+
+            int upperPitchCount = _v3Drawable.UpperNotes.Count(n => !n.IsRest);
+            int currentSession  = _session.CurrentNoteIndex;
+
+            bool isUpperActive = currentSession < upperPitchCount;
+            _v3Drawable.IsUpperActive = isUpperActive;
+
+            // ── Upper staff states ────────────────────────────────────────────────
+            var upperStates = new V2NoteState[_v3Drawable.UpperNotes.Count];
+            int si = 0;
+            for (int i = 0; i < _v3Drawable.UpperNotes.Count; i++)
+            {
+                if (_v3Drawable.UpperNotes[i].IsRest) { upperStates[i] = V2NoteState.Pending; continue; }
+                if (si < currentSession)
+                    upperStates[i] = _session.CorrectNoteIndices.Contains(si) ? V2NoteState.Correct : V2NoteState.Wrong;
+                else if (si == currentSession && isUpperActive)
+                {
+                    bool hasWrong = _session.NoteFeedbacks.TryGetValue(si, out var fb) && fb.Wrong > 0;
+                    upperStates[i] = hasWrong ? V2NoteState.Wrong : V2NoteState.Current;
+                }
+                else
+                    upperStates[i] = V2NoteState.Pending;
+                si++;
+            }
+            _v3Drawable.UpperNoteStates = upperStates;
+
+            // ── Lower staff states ────────────────────────────────────────────────
+            var lowerStates = new V2NoteState[_v3Drawable.LowerNotes.Count];
+            int li = 0;
+            for (int i = 0; i < _v3Drawable.LowerNotes.Count; i++)
+            {
+                if (_v3Drawable.LowerNotes[i].IsRest) { lowerStates[i] = V2NoteState.Pending; continue; }
+                int globalIdx = upperPitchCount + li;
+                if (globalIdx < currentSession)
+                    lowerStates[i] = _session.CorrectNoteIndices.Contains(globalIdx) ? V2NoteState.Correct : V2NoteState.Wrong;
+                else if (globalIdx == currentSession && !isUpperActive)
+                {
+                    bool hasWrong = _session.NoteFeedbacks.TryGetValue(globalIdx, out var fb2) && fb2.Wrong > 0;
+                    lowerStates[i] = hasWrong ? V2NoteState.Wrong : V2NoteState.Current;
+                }
+                else
+                    lowerStates[i] = V2NoteState.Pending;
+                li++;
+            }
+            _v3Drawable.LowerNoteStates = lowerStates;
+
+            _v3Drawable.ActiveNoteIndex = isUpperActive ? currentSession : currentSession - upperPitchCount;
+
+            V3StaffGraphicsView.Invalidate();
+
+            // ── Transition: player just moved onto lower staff → refresh upper ────
+            // Skip in two-octave scale mode: the sequence is a fixed complete walk.
+            if (!isUpperActive && _v3Drawable.UpperAlpha >= 1f && _session.Tune != "Practice Tune"
+                && !_v3Drawable.UpperHasEndBar)
+            {
+                // Check whether we're on the first note of the lower staff (just transitioned).
+                int lowerSessionStart = upperPitchCount;
+                if (currentSession == lowerSessionStart)
+                    _ = RefreshV3UpperStaffAsync();
+            }
+        }
+
+        /// <summary>
+        /// Generates new notes for the upper V3 staff while the player is on the lower staff,
+        /// then fades in the new upper staff content.
+        /// </summary>
+        private async Task RefreshV3UpperStaffAsync()
+        {
+            if (_v3Drawable == null || _session.Tune == "Practice Tune") return;
+            try
+            {
+                var gen      = BuildV2Generator(V3MeasuresPerStaff);
+                var measures = gen.GenerateSequence();
+                var newNotes = MusicSequenceGenerator.Flatten(measures);
+                var barBeats = ComputeNewBarBeats(newNotes, new HashSet<double>());
+
+                _v2NextMeasureIndex    += measures.Count;
+                _v2NextBeatOffset      += measures.Count * (double)gen.TimeSignature.TotalBeats;
+                _v2NextGlobalNoteIndex += newNotes.Count(n => !n.IsRest);
+
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    _v3Drawable.UpperNotes      = newNotes;
+                    _v3Drawable.UpperBarBeats   = barBeats;
+                    _v3Drawable.UpperNoteStates = new V2NoteState[newNotes.Count];
+                    _v3Drawable.UpperAlpha      = 0f;
+                });
+
+                // Animate fade-in over ~300 ms.
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                const double fadeDuration = 300.0;
+                while (sw.ElapsedMilliseconds < fadeDuration)
+                {
+                    float alpha = (float)(sw.ElapsedMilliseconds / fadeDuration);
+                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    {
+                        _v3Drawable.UpperAlpha = alpha;
+                        V3StaffGraphicsView.Invalidate();
+                    });
+                    await Task.Delay(16);
+                }
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    _v3Drawable.UpperAlpha = 1f;
+                    V3StaffGraphicsView.Invalidate();
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[V3] RefreshV3UpperStaffAsync ERROR: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// Generates new notes for the lower V3 staff while the player is on the upper staff,
+        /// then fades in the new lower staff content.  Called when play starts on upper staff
+        /// after a lower-staff refresh cycle.
+        /// </summary>
+        private async Task RefreshV3LowerStaffAsync()
+        {
+            if (_v3Drawable == null || _session.Tune == "Practice Tune") return;
+            try
+            {
+                var gen      = BuildV2Generator(V3MeasuresPerStaff);
+                var measures = gen.GenerateSequence();
+                var newNotes = MusicSequenceGenerator.Flatten(measures);
+                var barBeats = ComputeNewBarBeats(newNotes, new HashSet<double>());
+
+                _v3LowerMeasureIndex    += measures.Count;
+                _v3LowerBeatOffset      += measures.Count * (double)gen.TimeSignature.TotalBeats;
+                _v3LowerGlobalNoteIndex += newNotes.Count(n => !n.IsRest);
+
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    _v3Drawable.LowerNotes      = newNotes;
+                    _v3Drawable.LowerBarBeats   = barBeats;
+                    _v3Drawable.LowerNoteStates = new V2NoteState[newNotes.Count];
+                    _v3Drawable.LowerAlpha      = 0f;
+                });
+
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                const double fadeDuration = 300.0;
+                while (sw.ElapsedMilliseconds < fadeDuration)
+                {
+                    float alpha = (float)(sw.ElapsedMilliseconds / fadeDuration);
+                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    {
+                        _v3Drawable.LowerAlpha = alpha;
+                        V3StaffGraphicsView.Invalidate();
+                    });
+                    await Task.Delay(16);
+                }
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    _v3Drawable.LowerAlpha = 1f;
+                    V3StaffGraphicsView.Invalidate();
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[V3] RefreshV3LowerStaffAsync ERROR: {ex}");
+            }
+        }
 
         /// <summary>
         /// Appends <paramref name="measureCount"/> more measures to the v2 sequence
@@ -1094,9 +1593,16 @@ namespace musicmate.Pages
                 try
                 {
                     var sw = System.Diagnostics.Stopwatch.StartNew();
-                    while (StaffGraphicsView != null && StaffGraphicsView.Width <= 0 && sw.ElapsedMilliseconds < 1000)
+                    // Wait for whichever staff view is active to get a valid layout width.
+                    if (_session.StaffDisplayMode == StaffDisplayMode.V3)
                     {
-                        await Task.Delay(40);
+                        while (V3StaffGraphicsView != null && V3StaffGraphicsView.Width <= 0 && sw.ElapsedMilliseconds < 1500)
+                            await Task.Delay(40);
+                    }
+                    else
+                    {
+                        while (StaffGraphicsView != null && StaffGraphicsView.Width <= 0 && sw.ElapsedMilliseconds < 1000)
+                            await Task.Delay(40);
                     }
                     await RegenerateNotesAsync();
                 }
@@ -1105,22 +1611,38 @@ namespace musicmate.Pages
                     Debug.WriteLine($"[OnAppearing] ERROR regenerating notes: {ex}");
                 }
             }
+        }
 
-#if DEBUG
-            try
+        protected override void OnNavigatedTo(NavigatedToEventArgs args)
+        {
+            base.OnNavigatedTo(args);
+            // Shell calls OnNavigatedTo after it has finished restoring scroll position,
+            // so this is the correct place to snap the scroll so no note heads are hidden.
+            MainThread.BeginInvokeOnMainThread(async () =>
             {
-                await Task.Delay(200);
-                if (_session.Tune == "Tuner")
+                try
                 {
-                    await Task.Delay(100);
-                    await MainScrollView.ScrollToAsync(PickersContainer, ScrollToPosition.Start, false);
+                    // Compute the Y position of the topmost pixel of the highest note
+                    // in the active staff so we scroll exactly to show it.
+                    double scrollY = 0;
+                    if (_session.StaffDisplayMode == StaffDisplayMode.V3 && _v3Drawable != null)
+                    {
+                        // V3StaffBorder sits inside the VerticalStackLayout.
+                        // Its Y relative to MainScrollView content is its absolute position
+                        // within MainPageMainLayout.
+                        double borderY = V3StaffBorder.Y
+                                       + (V3StaffBorder.Parent is View p ? p.Y : 0);
+                        // TopMargin inside the drawable is the clearance above the highest note.
+                        // Subtract TopMargin so the scroll top lands at the notehead top edge.
+                        scrollY = Math.Max(0, borderY);
+                    }
+                    await MainScrollView.ScrollToAsync(0, scrollY, false);
                 }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[LAYOUT DEBUG] ERROR: {ex}");
-            }
-#endif
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[OnNavigatedTo] scroll error: {ex}");
+                }
+            });
         }
         protected override void OnDisappearing()
         {
@@ -1282,7 +1804,31 @@ namespace musicmate.Pages
                         return;
 
                     // Only accept the note as correct if it matches the expected note (including octave) at the current index
-                    if (_session.V2StaffMode)
+                    if (_session.StaffDisplayMode == StaffDisplayMode.V3)
+                    {
+                        var result = _session.Evaluate(freq);
+                        if (_session.UpdateFeedbackForCurrent(freq, result))
+                        {
+                            if (result.correct)
+                            {
+                                var prevName = _session.NotesToDraw.ElementAtOrDefault(_session.CurrentNoteIndex - 1)?.Name ?? "";
+                                if (!string.IsNullOrEmpty(prevName))
+                                    _session.RecordRandomSessionNoteResult(prevName, true);
+
+                                // When upper staff is exhausted, trigger lower-staff refresh.
+                                int upperPitchCount = _v3Drawable?.UpperNotes.Count(n => !n.IsRest) ?? 0;
+                                if (_session.CurrentNoteIndex == upperPitchCount && _v3Drawable != null
+                                    && _v3Drawable.LowerAlpha >= 1f && !_v3Drawable.UpperHasEndBar)
+                                    _ = RefreshV3LowerStaffAsync();
+                            }
+                            SyncV3NoteStates();
+                        }
+                        else
+                        {
+                            SyncV3NoteStates();
+                        }
+                    }
+                    else if (_session.V2StaffMode)
                     {
                         // V2 mode: use same evaluate/updatefeedback pipeline, then sync visual states
                         var result = _session.Evaluate(freq);
@@ -1596,7 +2142,35 @@ async Task UpdateNoteStatsDatabaseAsync()
                     await MainThread.InvokeOnMainThreadAsync(() =>
                     {
                         _session.PlaybackHighlightIndex = i;
-                        if (_session.V2StaffMode && _v2Drawable != null)
+                        if (_session.StaffDisplayMode == StaffDisplayMode.V3 && _v3Drawable != null)
+                        {
+                            int upperPitchCount = _v3Drawable.UpperNotes.Count(n => !n.IsRest);
+                            bool onUpper = i < upperPitchCount;
+                            _v3Drawable.IsUpperActive = onUpper;
+                            _v3Drawable.ActiveNoteIndex = onUpper ? i : i - upperPitchCount;
+                            // Set states
+                            var us = new V2NoteState[_v3Drawable.UpperNotes.Count];
+                            int si2 = 0;
+                            for (int d = 0; d < _v3Drawable.UpperNotes.Count; d++)
+                            {
+                                if (_v3Drawable.UpperNotes[d].IsRest) continue;
+                                us[d] = si2 < i ? V2NoteState.Correct : si2 == i ? V2NoteState.Current : V2NoteState.Pending;
+                                si2++;
+                            }
+                            _v3Drawable.UpperNoteStates = us;
+                            var ls = new V2NoteState[_v3Drawable.LowerNotes.Count];
+                            int li2 = 0;
+                            for (int d = 0; d < _v3Drawable.LowerNotes.Count; d++)
+                            {
+                                if (_v3Drawable.LowerNotes[d].IsRest) continue;
+                                int gi = upperPitchCount + li2;
+                                ls[d] = gi < i ? V2NoteState.Correct : gi == i ? V2NoteState.Current : V2NoteState.Pending;
+                                li2++;
+                            }
+                            _v3Drawable.LowerNoteStates = ls;
+                            V3StaffGraphicsView.Invalidate();
+                        }
+                        else if (_session.V2StaffMode && _v2Drawable != null)
                         {
                             // Map session note index i to the drawable note index (skipping rests)
                             int drawIdx = 0, noteCount = 0;
@@ -1798,6 +2372,13 @@ async Task UpdateNoteStatsDatabaseAsync()
 
             if (e.PropertyName == nameof(NoteSessionService.Key))
                 UpdateKeyPickerSelection();
+
+            if (e.PropertyName == nameof(NoteSessionService.StaffDisplayMode))
+            {
+                UpdatePickersContainerVisibility();
+                UpdateRepeatButtonsVisibility();
+                await RegenerateNotesAsync();
+            }
         }
 
         private void UpdateInstrumentPickerSelection()
@@ -1806,6 +2387,8 @@ async Task UpdateNoteStatsDatabaseAsync()
             var idx = Array.IndexOf(items, _session.Instrument);
             if (idx >= 0 && InstrumentPicker.SelectedIndex != idx)
                 InstrumentPicker.SelectedIndex = idx;
+            if (idx >= 0 && _v3HomeInstrumentPicker?.SelectedIndex != idx)
+                _v3HomeInstrumentPicker!.SelectedIndex = idx;
             SelectedInstrumentShort = _session.Instrument?.Split(',')[0].Trim() ?? string.Empty;
         }
 
@@ -1815,11 +2398,15 @@ async Task UpdateNoteStatsDatabaseAsync()
             var idx = Array.IndexOf(items, _session.Key);
             if (idx >= 0 && KeyPicker.SelectedIndex != idx)
                 KeyPicker.SelectedIndex = idx;
+            if (idx >= 0 && _v3HomeKeyPicker?.SelectedIndex != idx)
+                _v3HomeKeyPicker!.SelectedIndex = idx;
         }
 
         private void UpdateConcertKeyLabel()
         {
-            ConcertKeyLabel.Text = $"(Concert {_session.GetConcertKey()})";
+            var text = $"(Concert {_session.GetConcertKey()})";
+            ConcertKeyLabel.Text = text;
+            if (_v3HomeConcertKeyLabel != null) _v3HomeConcertKeyLabel.Text = text;
         }
 
         private void UpdateKeyPickerVisibility()
@@ -1830,9 +2417,16 @@ async Task UpdateNoteStatsDatabaseAsync()
             KeyBorder.IsVisible = !hide;
             ConcertKeyLabel.IsVisible = !hide;
         }
+
+        private void UpdatePickersContainerVisibility()
+        {
+            // In V3 mode the pickers live on the What to Play page
+            PickersContainer.IsVisible = _session.StaffDisplayMode != StaffDisplayMode.V3;
+        }
         private void UpdateTunerVisibility()
         {
             var isTuner = _session.Tune == "Tuner";
+            var isV3    = _session.StaffDisplayMode == StaffDisplayMode.V3;
             var isV2Tuner = isTuner && _session.V2StaffMode;
 
             if (isTuner)
@@ -1841,6 +2435,14 @@ async Task UpdateNoteStatsDatabaseAsync()
                 StaffBorder.IsVisible   = false;
                 V2StaffBorder.IsVisible = isV2Tuner;
                 V2ModeBanner.IsVisible  = false;
+                V3StaffBorder.IsVisible = false;
+            }
+            else if (isV3)
+            {
+                StaffBorder.IsVisible   = false;
+                V2StaffBorder.IsVisible = false;
+                V2ModeBanner.IsVisible  = false;
+                V3StaffBorder.IsVisible = true;
             }
             else if (_session.V2StaffMode)
             {
@@ -1914,6 +2516,52 @@ async Task UpdateNoteStatsDatabaseAsync()
             var idx = Array.IndexOf(items, selection);
             if (idx >= 0 && ScaleTunePicker.SelectedIndex != idx)
                 ScaleTunePicker.SelectedIndex = idx;
+            // Keep V3 home picker in sync
+            if (V3HomeScaleTunePicker.ItemsSource is string[] v3Items)
+            {
+                var v3Idx = Array.IndexOf(v3Items, selection);
+                if (v3Idx >= 0 && V3HomeScaleTunePicker.SelectedIndex != v3Idx)
+                    V3HomeScaleTunePicker.SelectedIndex = v3Idx;
+            }
+        }
+
+        private void V3HomeInstrumentPicker_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            var idx = V3HomeInstrumentPicker.SelectedIndex;
+            if (idx < 0) return;
+            var fullInstrument = NoteSessionService.InstrumentOptions[idx];
+            _session.Instrument = fullInstrument;
+            if (InstrumentPicker.SelectedIndex != idx)
+                InstrumentPicker.SelectedIndex = idx;
+            SelectedInstrumentShort = fullInstrument.Split(',')[0].Trim();
+        }
+
+        private async void V3HomeKeyPicker_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            var selectedKey = V3HomeKeyPicker.SelectedItem?.ToString();
+            if (selectedKey == null) return;
+            var shortKey = selectedKey.Split(',')[0].Trim();
+            if (IsPremiumKey(shortKey) && !StatusService.Instance.IsPremiumUser)
+            {
+                var purchased = await PremiumPromptHelper.ShowAsync(this,
+                    onDecline: () => V3HomeKeyPicker.SelectedIndex = _lastFreeKeyIndex);
+                if (!purchased) return;
+            }
+            else { _lastFreeKeyIndex = V3HomeKeyPicker.SelectedIndex; }
+            _session.Key = shortKey;
+            if (KeyPicker.SelectedIndex != V3HomeKeyPicker.SelectedIndex)
+                KeyPicker.SelectedIndex = V3HomeKeyPicker.SelectedIndex;
+            UpdateConcertKeyLabel();
+        }
+
+        private async void V3HomeScaleTunePickerChanged(object? sender, EventArgs e)
+        {
+            if (V3HomeScaleTunePicker.SelectedItem is not string selected) return;
+            if (ScaleTunePicker.SelectedIndex != V3HomeScaleTunePicker.SelectedIndex)
+                ScaleTunePicker.SelectedIndex = V3HomeScaleTunePicker.SelectedIndex;
+            // Delegate to main handler
+            await Task.CompletedTask;
+            OnScaleTunePickerChanged(V3HomeScaleTunePicker, e);
         }
 
         private async void OnScaleTunePickerChanged(object? sender, EventArgs e)

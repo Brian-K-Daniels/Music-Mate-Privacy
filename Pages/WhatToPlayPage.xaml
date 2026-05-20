@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:services="clr-namespace:musicmate.Services"
+             xmlns:controls="clr-namespace:musicmate.Controls"
+             xmlns:converters="clr-namespace:musicmate.Converters"
+             x:Class="musicmate.Pages.WhatToPlayPage"
+             x:Name="whatToPlayPage"
+             Shell.NavBarIsVisible="True"
+             Padding="0"             
+             BackgroundColor="{Binding Source={x:Reference whatToPlayPage}, Path=PanelBackgroundColor}">
+  <!--BackgroundColor="#F7F7F7"> -->
+
+  <Shell.TitleView>
+    <Grid ColumnDefinitions="*,Auto" HeightRequest="30" VerticalOptions="Center" BackgroundColor="Transparent">
+      <HorizontalStackLayout Spacing="10" VerticalOptions="Center" Grid.Column="0">
+        <Button Text="←"
+                Clicked="OnNavigateHomeClicked"
+                BackgroundColor="Transparent"
+                TextColor="White"
+                FontSize="18"
+                Padding="0"
+                WidthRequest="32" />
+        <Label Text="What to Play"
+               TextColor="White"
+               FontAttributes="Bold"
+               FontSize="18"
+               VerticalOptions="Center" />
+        <Label x:Name="StatusLabel"
+               Text="{Binding Source={x:Static services:StatusService.Instance}, Path=StatusMessage}"
+               TextColor="Yellow"
+               FontAttributes="Bold"
+               FontSize="10"
+               Margin="8,0,0,0"
+               VerticalOptions="Center" />
+      </HorizontalStackLayout>
+      <Image Source="logo.png"
+             HeightRequest="32" WidthRequest="32"
+             VerticalOptions="Center" HorizontalOptions="End"
+             Grid.Column="1" />
+    </Grid>
+  </Shell.TitleView>
+
+  <ContentPage.Resources>
+    <Style x:Key="WtpBrownBox" TargetType="Border">
+      <Setter Property="Background" Value="#8B4513" />
+      <Setter Property="Stroke" Value="Black" />
+      <Setter Property="StrokeThickness" Value="2" />
+      <Setter Property="StrokeShape">
+        <Setter.Value>
+          <RoundRectangle CornerRadius="8" />
+        </Setter.Value>
+      </Setter>
+      <Setter Property="Padding" Value="8,2" />
+      <Setter Property="HeightRequest" Value="28" />
+      <Setter Property="VerticalOptions" Value="Center" />
+      <Setter Property="HorizontalOptions" Value="Center" />
+    </Style>
+    <Style x:Key="WtpBrownButton" TargetType="Button">
+      <Setter Property="BackgroundColor" Value="#8B4513" />
+      <Setter Property="TextColor" Value="White" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="HeightRequest" Value="44" />
+      <Setter Property="Padding" Value="8,4" />
+      <Setter Property="BorderColor" Value="Black" />
+      <Setter Property="BorderWidth" Value="2" />
+      <Setter Property="VerticalOptions" Value="Center" />
+      <Setter Property="HorizontalOptions" Value="Center" />
+    </Style>
+    <converters:InverseBoolConverter x:Key="InverseBoolConverter" />
+  </ContentPage.Resources>
+
+  <!-- Root Grid so ColorPickerDialog can overlay everything -->
+  <Grid>
+
+    <!-- Main layout: Auto top row | * center | Auto bottom buttons -->
+    <Grid RowDefinitions="Auto,*,Auto">
+      <Grid.Margin>
+        <OnPlatform x:TypeArguments="Thickness">
+          <On Platform="WinUI"   Value="0,20,0,0" />
+          <On Platform="Android" Value="0,0,0,0" />
+        </OnPlatform>
+      </Grid.Margin>
+
+      <!-- ── Row 0: Instrument | Key | Concert key (evenly spaced) ── -->
+      <Grid Grid.Row="0"
+            ColumnDefinitions="*,*,*"
+            Margin="8,4,8,4">
+
+        <!-- Instrument -->
+        <VerticalStackLayout Grid.Column="0"
+                             HorizontalOptions="Center"
+                             VerticalOptions="Center"
+                             Spacing="2">
+          <Label Text="Instrument"
+                 FontSize="11"
+                 TextColor="#333333"
+                 HorizontalOptions="Center" />
+          <Border Style="{StaticResource WtpBrownBox}">
+            <Grid WidthRequest="160">
+              <Picker x:Name="InstrumentPicker"
+                      SelectedIndexChanged="InstrumentPicker_SelectedIndexChanged"
+                      Unfocused="InstrumentPicker_Unfocused"
+                      HeightRequest="28"
+                      FontSize="11"
+                      TextColor="White"
+                      BackgroundColor="#2C2C2C"
+                      VerticalOptions="Fill"
+                      HorizontalOptions="Fill"
+                      IsEnabled="True"
+                      InputTransparent="False"
+                      IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsInstrumentPickerVisible}" />
+              <Border BackgroundColor="White" Stroke="#8B4513" StrokeThickness="2"
+                      StrokeShape="RoundRectangle 8"
+                      Padding="8,2" HeightRequest="28"
+                      VerticalOptions="Center" HorizontalOptions="Fill"
+                      IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsInstrumentLabelVisible}">
+                <Label x:Name="InstrumentPickerOverlay"
+                       Text="{Binding Source={x:Reference whatToPlayPage}, Path=SelectedInstrumentShort}"
+                       VerticalOptions="Center"
+                       HorizontalOptions="Fill"
+                       Padding="10,0"
+                       FontSize="11"
+                       TextColor="Black">
+                  <Label.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnInstrumentLabelTapped" />
+                  </Label.GestureRecognizers>
+                </Label>
+              </Border>
+            </Grid>
+          </Border>
+        </VerticalStackLayout>
+
+        <!-- Key -->
+        <VerticalStackLayout Grid.Column="1"
+                             HorizontalOptions="Center"
+                             VerticalOptions="Center"
+                             Spacing="2">
+          <Label x:Name="KeyLabel"
+                 Text="Key"
+                 FontSize="11"
+                 TextColor="#333333"
+                 HorizontalOptions="Center" />
+          <Border x:Name="KeyBorder" Style="{StaticResource WtpBrownBox}">
+            <Picker x:Name="KeyPicker"
+                    WidthRequest="50"
+                    HeightRequest="28"
+                    FontSize="11"
+                    TextColor="#000000"
+                    BackgroundColor="White"
+                    VerticalOptions="Fill"
+                    HorizontalOptions="Fill" />
+          </Border>
+        </VerticalStackLayout>
+
+        <!-- Concert key label -->
+        <Label x:Name="ConcertKeyLabel"
+               Grid.Column="2"
+               FontSize="11"
+               TextColor="#333333"
+               HorizontalOptions="Center"
+               VerticalOptions="Center" />
+
+      </Grid>
+
+      <!-- ── Row 1: Scale / Tune picker centered ── -->
+      <VerticalStackLayout Grid.Row="1"
+                           HorizontalOptions="Center"
+                           VerticalOptions="Center"
+                           Spacing="6">
+        <Border HeightRequest="48" Padding="8,4"
+                Background="#8B4513" Stroke="Black" StrokeThickness="2">
+          <Border.StrokeShape>
+            <RoundRectangle CornerRadius="8" />
+          </Border.StrokeShape>
+          <Picker x:Name="ScaleTunePicker"
+                  WidthRequest="350"
+                  HeightRequest="60"
+                  FontSize="22"
+                  TextColor="#000000"
+                  BackgroundColor="White"
+                  VerticalOptions="Fill"
+                  HorizontalOptions="Fill" />
+        </Border>
+      </VerticalStackLayout>
+
+      <!-- ── Row 2: Repeat / Background Color buttons (evenly spaced) ── -->
+      <Grid x:Name="RepeatButtonRow"
+            Grid.Row="2"
+            Margin="12,0,12,8"
+            ColumnDefinitions="*,*,*,*"
+            ColumnSpacing="8"
+            HorizontalOptions="Fill">
+
+        <!-- Scale mode: Repeat (spans cols 0-1 when visible) -->
+        <Button x:Name="AutoRepeatScaleButton"
+                Grid.Column="0"
+                Grid.ColumnSpan="2"
+                Text="Repeat"
+                Style="{StaticResource WtpBrownButton}"
+                HeightRequest="44"
+                HorizontalOptions="Fill"
+                VerticalOptions="Fill"
+                Clicked="OnAutoRepeatScaleClicked"
+                IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsScaleRepeatButtonVisible}" />
+
+        <!-- Random mode: Repeat New -->
+        <Button x:Name="AutoRepeatNewButton"
+                Grid.Column="0"
+                Text="Repeat New"
+                Style="{StaticResource WtpBrownButton}"
+                HeightRequest="44"
+                HorizontalOptions="Fill"
+                VerticalOptions="Fill"
+                Clicked="OnAutoRepeatNewClicked"
+                IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsRandomRepeatButtonsVisible}" />
+
+        <!-- Random mode: Repeat Same -->
+        <Button x:Name="AutoRepeatSameButton"
+                Grid.Column="1"
+                Text="Repeat Same"
+                Style="{StaticResource WtpBrownButton}"
+                HeightRequest="44"
+                HorizontalOptions="Fill"
+                VerticalOptions="Fill"
+                Clicked="OnAutoRepeatSameClicked"
+                IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsRandomRepeatButtonsVisible}" />
+
+        <!-- Placeholder col 2 keeps Background Color in col 3 -->
+        <BoxView Grid.Column="2" IsVisible="False" />
+
+        <!-- Background Color -->
+        <Button Grid.Column="3"
+                Text="Background Color"
+                Style="{StaticResource WtpBrownButton}"
+                HeightRequest="44"
+                HorizontalOptions="Fill"
+                VerticalOptions="Fill"
+                Clicked="OnColorButtonClicked" />
+
+      </Grid>
+
+    </Grid>
+
+    <!-- Color picker dialog overlay (full-page, above everything) -->
+    <controls:ColorPickerDialog x:Name="ColorPickerDialog"
+                                IsVisible="False" />
+
+  </Grid>
+
+</ContentPage>

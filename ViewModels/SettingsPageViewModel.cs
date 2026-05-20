@@ -91,6 +91,8 @@ namespace musicmate.ViewModels
                     break;
                 case nameof(NoteSessionService.V2StaffMode):
                     OnPropertyChanged(nameof(V2StaffMode)); break;
+                case nameof(NoteSessionService.StaffDisplayMode):
+                    OnPropertyChanged(nameof(StaffDisplayModeDisplay)); break;
                 case nameof(NoteSessionService.V2TimeSignature):
                     OnPropertyChanged(nameof(V2TimeSignature)); break;
                 case nameof(NoteSessionService.V2SmallestNote):
@@ -431,6 +433,22 @@ namespace musicmate.ViewModels
                 {
                     _session.V2StaffMode = value;
                     OnPropertyChanged(nameof(V2StaffMode));
+                }
+            }
+        }
+
+        public string[] StaffDisplayModeOptions => NoteSessionService.StaffDisplayModeOptions;
+
+        public string StaffDisplayModeDisplay
+        {
+            get => _session?.StaffDisplayModeDisplay ?? "Classic";
+            set
+            {
+                if ((_session?.StaffDisplayModeDisplay ?? "Classic") == value) return;
+                if (_session != null)
+                {
+                    _session.StaffDisplayModeDisplay = value;
+                    OnPropertyChanged(nameof(StaffDisplayModeDisplay));
                 }
             }
         }

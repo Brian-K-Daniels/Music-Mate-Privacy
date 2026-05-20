@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Collections.Generic;
 using Microsoft.Maui.Storage;
 
-namespace musicmate.Pages.ViewModels
+namespace musicmate.ViewModels
 {
     public class SettingsViewModel : INotifyPropertyChanged
     {

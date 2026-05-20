@@ -19,6 +19,7 @@ namespace musicmate
                 GoHomeCommand = new Command(async () => await GoToAsync("//MainPage"));
 
                 // Register routes for navigation
+                Routing.RegisterRoute("WhatToPlayPage", typeof(Pages.WhatToPlayPage));
                 Routing.RegisterRoute("SettingsPage", typeof(Pages.SettingsPage));
                 Routing.RegisterRoute("StatisticsPages", typeof(Pages.StatisticsPages));
                 Routing.RegisterRoute("AboutPage", typeof(Pages.AboutPage));

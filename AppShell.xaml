@@ -25,29 +25,36 @@
     </Style>
   </Shell.Resources>
 
+  <FlyoutItem Title="What to Play">
+    <ShellContent
+        Route="WhatToPlayPage"
+        ContentTemplate="{DataTemplate local:WhatToPlayPage}" />
+  </FlyoutItem>
+
   <FlyoutItem Title="Home">
     <ShellContent
         Route="MainPage"
         ContentTemplate="{DataTemplate local:MainPage}" />
   </FlyoutItem>
-  
+
   <FlyoutItem Title="Settings" >
     <ShellContent
         Route="SettingsPage"
         ContentTemplate="{DataTemplate local:SettingsPage}" />
   </FlyoutItem>
-  
+
   <FlyoutItem Title="Statistics" >
     <ShellContent
         Route="StatisticsPages"
         ContentTemplate="{DataTemplate local:StatisticsPages}" />
   </FlyoutItem>
-  
+
   <FlyoutItem Title="Advanced">
     <ShellContent
         Route="AdvancedPage"
         ContentTemplate="{DataTemplate local:AdvancedPage}" />
   </FlyoutItem>
+
   <FlyoutItem Title="About" >
     <ShellContent
         Route="AboutPage"

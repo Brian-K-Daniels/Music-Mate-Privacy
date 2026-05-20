@@ -209,6 +209,21 @@
                      IsVisible="False"
                      InputTransparent="True" />
 
+              <!-- V3 two-staff display (shown when StaffDisplayMode is V3) -->
+              <Border x:Name="V3StaffBorder"
+                      Stroke="MediumPurple"
+                      StrokeThickness="2"
+                      StrokeShape="RoundRectangle 8"
+                      BackgroundColor="{Binding PanelBackgroundColor}"
+                      Padding="0"
+                      IsVisible="False"
+                      VerticalOptions="Start">
+                <GraphicsView x:Name="V3StaffGraphicsView"
+                              HeightRequest="240"
+                              BackgroundColor="{Binding PanelBackgroundColor}"
+                              Margin="0" />
+              </Border>
+
               <!-- Tuner mode: staff canvas on left (wider), note/freq info on right -->
               <Grid x:Name="TunerGrid" ColumnDefinitions="3*,2*" IsVisible="False">
                 <Border x:Name="TunerBorder"
@@ -324,7 +339,36 @@
                     MinimumWidthRequest="140"
                     HorizontalOptions="Fill"
                     VerticalOptions="Fill"
+                    IsVisible="{Binding Source={x:Reference mainPage}, Path=IsNotV3Mode}"
                     Clicked="OnColorButtonClicked" />
+
+            <!-- V3 mode: compact pickers inline with Play/Stop buttons -->
+            <HorizontalStackLayout x:Name="V3BottomPickersLayout"
+                                   Grid.Column="2" Grid.ColumnSpan="3"
+                                   Spacing="4" VerticalOptions="Center"
+                                   IsVisible="{Binding Source={x:Reference mainPage}, Path=IsV3Mode}">
+              <Label Text="Instrument " FontSize="10" TextColor="#333333" VerticalOptions="Center" Margin="2,0,0,0"/>
+              <Border Style="{StaticResource CompactBrownBox}">
+                <Picker x:Name="V3HomeInstrumentPicker"
+                        WidthRequest="90" HeightRequest="28" FontSize="10"
+                        TextColor="#000000" BackgroundColor="White"
+                        VerticalOptions="Fill" HorizontalOptions="Fill" />
+              </Border>
+              <Label Text="Key" FontSize="10" TextColor="#333333" VerticalOptions="Center"/>
+              <Border Style="{StaticResource CompactBrownBox}">
+                <Picker x:Name="V3HomeKeyPicker"
+                        WidthRequest="50" HeightRequest="28" FontSize="10"
+                        TextColor="#000000" BackgroundColor="White"
+                        VerticalOptions="Fill" HorizontalOptions="Fill" />
+              </Border>
+              <Label x:Name="V3HomeConcertKeyLabel" FontSize="10" TextColor="#333333" VerticalOptions="Center"/>
+              <Border Style="{StaticResource CompactBrownBox}">
+                <Picker x:Name="V3HomeScaleTunePicker"
+                        WidthRequest="140" HeightRequest="28" FontSize="10"
+                        TextColor="#000000" BackgroundColor="White"
+                        VerticalOptions="Fill" HorizontalOptions="Fill" />
+              </Border>
+            </HorizontalStackLayout>
 
           </Grid>
         </VerticalStackLayout>
