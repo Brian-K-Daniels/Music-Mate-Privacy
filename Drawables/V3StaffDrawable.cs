@@ -139,22 +139,29 @@ namespace musicmate.Drawables
             float lowerBot = lowerTop + StaffLineSpacing * 4f;
 
             // ── Compute px-per-beat ───────────────────────────────────────────────
-            // In two-octave scale mode squeeze notes so both halves fit the staff width.
+            // Scale notes to fill the available staff width exactly.  Each staff is
+            // laid out from its own first note, so spans must be measured relative to
+            // that start beat — not as absolute beat positions — otherwise a lower staff
+            // that begins at beat 16 would report a span of 32 and halve pxPerBeat.
             float lineWidth0 = dirtyRect.Width - _leftMargin - RightMargin;
             float pxPerBeat  = ScrollPxPerBeat;
-            if (UpperHasEndBar && (UpperNotes.Count > 0 || LowerNotes.Count > 0))
+            if (UpperNotes.Count > 0 || LowerNotes.Count > 0)
             {
-                double upperSpan = UpperNotes.Count > 0
-                    ? (UpperNotes[^1].BeatPosition ?? 0.0) + UpperNotes[^1].BeatDuration
+                double upperStart = UpperNotes.Count > 0 ? (UpperNotes[0].BeatPosition ?? 0.0) : 0.0;
+                double upperSpan  = UpperNotes.Count > 0
+                    ? (UpperNotes[^1].BeatPosition ?? 0.0) + UpperNotes[^1].BeatDuration - upperStart
                     : 0.0;
-                double lowerSpan = LowerNotes.Count > 0
-                    ? (LowerNotes[^1].BeatPosition ?? 0.0) + LowerNotes[^1].BeatDuration
+
+                double lowerStart = LowerNotes.Count > 0 ? (LowerNotes[0].BeatPosition ?? 0.0) : 0.0;
+                double lowerSpan  = LowerNotes.Count > 0
+                    ? (LowerNotes[^1].BeatPosition ?? 0.0) + LowerNotes[^1].BeatDuration - lowerStart
                     : 0.0;
+
                 double maxSpan = Math.Max(upperSpan, lowerSpan);
                 if (maxSpan > 0.0)
                 {
                     float fitted = (lineWidth0 - NoteHeadRadius * 2f) / (float)maxSpan;
-                    pxPerBeat = Math.Min(fitted, ScrollPxPerBeat);
+                    pxPerBeat = fitted;
                 }
             }
             LastComputedPxPerBeat = pxPerBeat;
@@ -256,18 +263,53 @@ namespace musicmate.Drawables
             }
 
             // Notes
+            // barCancelledAccidentals: pitch-classes whose key-sig accidental was cancelled
+            // (overridden) within the current bar. Cleared at every bar line.
+            // When a key-sig note appears later in the same bar, its accidental must be
+            // shown explicitly (not suppressed) because the cancellation is still in effect.
             var accHistory = new Dictionary<(char, int), Accidental>();
+            var barCancelledAccidentals = new HashSet<(char, int)>();
+            int barBeatIdx = 0; // index into sorted barBeats for bar-boundary detection
+            var sortedBarBeats = barBeats.OrderBy(b => b).ToList();
             double beatCursor = 0;
             for (int i = 0; i < notes.Count; i++)
             {
                 var note        = notes[i];
                 double beatAnchor = note.BeatPosition ?? beatCursor;
+
+                // Advance past any bar lines that occur at or before this note's beat position.
+                // Each crossing resets the within-bar cancelled-accidental tracking.
+                while (barBeatIdx < sortedBarBeats.Count && sortedBarBeats[barBeatIdx] <= beatAnchor + 1e-9)
+                {
+                    barCancelledAccidentals.Clear();
+                    barBeatIdx++;
+                }
+
                 float slotWidth   = (float)(note.BeatDuration * pxPerBeat);
                 float nx          = LeftMargin + scrollOffsetPx + (float)(beatAnchor * pxPerBeat) + slotWidth * 0.5f;
                 var state         = (states.Length > i) ? states[i] : V2NoteState.Pending;
 
                 if (!note.IsRest)
-                    accHistory[(note.Letter, note.Octave)] = note.Accidental;
+                {
+                    var key = (note.Letter, note.Octave);
+                    // If this note's accidental differs from what the key signature implies for
+                    // this pitch-class, record the cancellation so later notes in the same bar
+                    // know they must show the key-sig accidental explicitly.
+                    if (IsAccidentalInKeySig(note))
+                    {
+                        // Note matches key sig — no longer cancelled in this bar.
+                        barCancelledAccidentals.Remove(key);
+                    }
+                    else if (IsNoteInKeySig(note))
+                    {
+                        // This pitch-class is governed by the key sig, but the current note
+                        // deviates (e.g. natural cancelling a key-sig sharp/flat, or a different
+                        // accidental). Record the cancellation so later notes in the same bar
+                        // that return to the key-sig accidental must show it explicitly.
+                        barCancelledAccidentals.Add(key);
+                    }
+                    accHistory[key] = note.Accidental;
+                }
 
                 if (nx < clipLeft || nx > clipRight) { beatCursor += note.BeatDuration; continue; }
 
@@ -283,7 +325,7 @@ namespace musicmate.Drawables
                     float ny = NoteY(note, staffTop, staffMid);
                     DrawNote(canvas, note.Duration, nx, ny, staffTop, staffBot, ink, state, fadeAlpha);
                     DrawLedgerLines(canvas, note, nx, staffTop, staffBot, ink, fadeAlpha);
-                    DrawAccidental(canvas, note, nx, ny, ink, accHistory, fadeAlpha);
+                    DrawAccidental(canvas, note, nx, ny, ink, accHistory, barCancelledAccidentals, fadeAlpha);
 
                     var nameDisplay = _session.V2NoteNameDisplay;
                     bool showName = nameDisplay == "All notes"
@@ -575,6 +617,7 @@ namespace musicmate.Drawables
 
         private void DrawAccidental(ICanvas canvas, GeneratedNote note, float x, float y,
                                     Color ink, Dictionary<(char, int), Accidental>? history,
+                                    HashSet<(char, int)>? barCancelled,
                                     byte fadeAlpha)
         {
             canvas.SaveState();
@@ -592,7 +635,16 @@ namespace musicmate.Drawables
 
                 if (history != null) history[(note.Letter, note.Octave)] = eff;
                 if (eff == Accidental.None) return;
-                if (IsAccidentalInKeySig(note)) return;
+
+                // Suppress key-sig accidentals unless this pitch-class had its key-sig
+                // accidental cancelled earlier in the same bar — in that case the accidental
+                // must be shown explicitly to restore the key-signature pitch.
+                if (IsAccidentalInKeySig(note))
+                {
+                    if (barCancelled == null || !barCancelled.Contains((note.Letter, note.Octave)))
+                        return;
+                    // Falls through: accidental will be drawn as a reminder.
+                }
 
                 string glyph = eff switch
                 {
@@ -747,6 +799,29 @@ namespace musicmate.Drawables
                 : note.Accidental == Accidental.Sharp;
             if (!typeMatch) return false;
 
+            char[] flatLetters  = { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
+            char[] sharpLetters = { 'F', 'C', 'G', 'D', 'A', 'E', 'B' };
+            char[] letters = useFlats ? flatLetters : sharpLetters;
+            for (int i = 0; i < Math.Min(accCount, letters.Length); i++)
+                if (letters[i] == note.Letter) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Returns true if this note's letter is governed by the key signature
+        /// (i.e. the key sig applies a sharp or flat to this pitch-class),
+        /// regardless of the accidental currently on the note.
+        /// Used to detect when a key-sig note is given a different accidental,
+        /// cancelling the key sig within the bar.
+        /// </summary>
+        private bool IsNoteInKeySig(GeneratedNote note)
+        {
+            string key = _session.Key;
+            string scale = _session.SelectedScale;
+            int accCount = GetAccidentalCount(key, scale);
+            if (accCount == 0) return false;
+
+            bool useFlats = IsKeyFlat(key);
             char[] flatLetters  = { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
             char[] sharpLetters = { 'F', 'C', 'G', 'D', 'A', 'E', 'B' };
             char[] letters = useFlats ? flatLetters : sharpLetters;

@@ -352,21 +352,24 @@
                 <Picker x:Name="V3HomeInstrumentPicker"
                         WidthRequest="90" HeightRequest="28" FontSize="10"
                         TextColor="#000000" BackgroundColor="White"
-                        VerticalOptions="Fill" HorizontalOptions="Fill" />
+                        VerticalOptions="Fill" HorizontalOptions="Fill"
+                        SelectedIndexChanged="V3HomeInstrumentPicker_SelectedIndexChanged" />
               </Border>
               <Label Text="Key" FontSize="10" TextColor="#333333" VerticalOptions="Center"/>
               <Border Style="{StaticResource CompactBrownBox}">
                 <Picker x:Name="V3HomeKeyPicker"
                         WidthRequest="50" HeightRequest="28" FontSize="10"
                         TextColor="#000000" BackgroundColor="White"
-                        VerticalOptions="Fill" HorizontalOptions="Fill" />
+                        VerticalOptions="Fill" HorizontalOptions="Fill"
+                        SelectedIndexChanged="V3HomeKeyPicker_SelectedIndexChanged" />
               </Border>
               <Label x:Name="V3HomeConcertKeyLabel" FontSize="10" TextColor="#333333" VerticalOptions="Center"/>
               <Border Style="{StaticResource CompactBrownBox}">
                 <Picker x:Name="V3HomeScaleTunePicker"
                         WidthRequest="140" HeightRequest="28" FontSize="10"
                         TextColor="#000000" BackgroundColor="White"
-                        VerticalOptions="Fill" HorizontalOptions="Fill" />
+                        VerticalOptions="Fill" HorizontalOptions="Fill"
+                        SelectedIndexChanged="V3HomeScaleTunePickerChanged" />
               </Border>
             </HorizontalStackLayout>
 

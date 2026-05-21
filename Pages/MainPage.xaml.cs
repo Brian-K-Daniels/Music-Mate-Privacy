@@ -29,6 +29,7 @@ namespace musicmate.Pages
         private bool _isRunning = false;
         private bool _isBelowThreshold = true;
         private bool _isProgrammaticColorConfirm = false;
+        private bool _suppressPickerSync = false;
         private string? _savedInstrumentForPlayback = null;
         private int _savedInstrumentIndexForPlayback = -1;
 
@@ -273,7 +274,7 @@ namespace musicmate.Pages
             {
                 InitializeComponent();
 
-                // Resolve V3 home bottom-row pickers (generated field may be stale; use FindByName)
+                // V3 home bottom-row pickers — resolved here; populated in OnAppearing
                 _v3HomeInstrumentPicker = this.FindByName<Picker>("V3HomeInstrumentPicker")!;
                 _v3HomeKeyPicker        = this.FindByName<Picker>("V3HomeKeyPicker")!;
                 _v3HomeScaleTunePicker  = this.FindByName<Picker>("V3HomeScaleTunePicker")!;
@@ -397,9 +398,10 @@ namespace musicmate.Pages
                         {
                             // V3: the cycle is managed by SyncV3NoteStates / RefreshV3UpperStaffAsync.
                             // A full session-end here means both staffs are complete.
-                            // In two-octave scale mode (UpperHasEndBar) this is a true end-of-sequence:
-                            // run the normal summary + AutoRepeat path instead of silently regenerating.
-                            if (_v3Drawable != null && _v3Drawable.UpperHasEndBar)
+                            // In two-octave scale mode (UpperHasEndBar) OR Practice Tune mode this is
+                            // a true end-of-sequence: run the normal summary + AutoRepeat path.
+                            if ((_v3Drawable != null && _v3Drawable.UpperHasEndBar)
+                                || _session.Tune == "Practice Tune")
                             {
                                 // Fall through to the standard summary / AutoRepeat flow below.
                             }
@@ -539,18 +541,14 @@ namespace musicmate.Pages
 
                 ScaleTunePicker.SelectedIndexChanged += OnScaleTunePickerChanged;
 
-                // V3 home bottom-row pickers — mirror of the main pickers
                 _v3HomeInstrumentPicker.ItemsSource = instrumentOptions.Select(s => s.Split(',')[0].Trim()).ToArray();
                 _v3HomeInstrumentPicker.SelectedIndex = InstrumentPicker.SelectedIndex;
-                _v3HomeInstrumentPicker.SelectedIndexChanged += V3HomeInstrumentPicker_SelectedIndexChanged;
 
                 _v3HomeKeyPicker.ItemsSource = KeyPicker.ItemsSource;
                 _v3HomeKeyPicker.SelectedIndex = KeyPicker.SelectedIndex;
-                _v3HomeKeyPicker.SelectedIndexChanged += V3HomeKeyPicker_SelectedIndexChanged;
 
                 _v3HomeScaleTunePicker.ItemsSource = scaleTuneOptions;
                 _v3HomeScaleTunePicker.SelectedIndex = ScaleTunePicker.SelectedIndex;
-                _v3HomeScaleTunePicker.SelectedIndexChanged += V3HomeScaleTunePickerChanged;
 
                 InstrumentPicker.SelectedIndexChanged += InstrumentPicker_SelectedIndexChanged;
                 KeyPicker.SelectedIndexChanged += OnKeyPickerChangedWithPrompt;
@@ -1571,6 +1569,26 @@ namespace musicmate.Pages
             IsAutoRepeatVisible = _session.Tune != "Tuner";
             DeviceDisplay.Current.KeepScreenOn = true;
 
+            // Populate V3 home pickers here — visual tree is guaranteed ready after InitializeComponent
+            // XAML wires the SelectedIndexChanged events; we only need to populate ItemsSource + index.
+            _v3HomeScaleTunePicker ??= this.FindByName<Picker>("V3HomeScaleTunePicker");
+            _v3HomeInstrumentPicker ??= this.FindByName<Picker>("V3HomeInstrumentPicker");
+            _v3HomeKeyPicker ??= this.FindByName<Picker>("V3HomeKeyPicker");
+            _v3HomeConcertKeyLabel ??= this.FindByName<Label>("V3HomeConcertKeyLabel");
+            if (_v3HomeScaleTunePicker != null && _v3HomeScaleTunePicker.ItemsSource == null)
+                UpdateScaleTunePicker();
+            if (_v3HomeInstrumentPicker != null && _v3HomeInstrumentPicker.ItemsSource == null)
+            {
+                var instrumentOptions = NoteSessionService.InstrumentOptions.Cast<string>().ToArray();
+                _v3HomeInstrumentPicker.ItemsSource = instrumentOptions.Select(s => s.Split(',')[0].Trim()).ToArray();
+                _v3HomeInstrumentPicker.SelectedIndex = InstrumentPicker.SelectedIndex;
+            }
+            if (_v3HomeKeyPicker != null && _v3HomeKeyPicker.ItemsSource == null)
+            {
+                _v3HomeKeyPicker.ItemsSource = KeyPicker.ItemsSource;
+                _v3HomeKeyPicker.SelectedIndex = KeyPicker.SelectedIndex;
+            }
+
 #if DEBUG
             if (_session.AutoStart && _session.Tune != "Tuner")
             {
@@ -1722,6 +1740,8 @@ namespace musicmate.Pages
                 {
                     Debug.WriteLine("[Audio] Below RMS threshold, ignoring");
                     _isBelowThreshold = true;
+                    // Notify session so consecutive same-pitch notes can be distinguished
+                    _session.NotifySilence();
                 }
                 _pitchBufferPos = 0;
                 return;
@@ -2343,13 +2363,15 @@ async Task UpdateNoteStatsDatabaseAsync()
             if (e.PropertyName == nameof(_session.SelectedScale) ||
                 e.PropertyName == nameof(NoteSessionService.Instrument) ||
                 e.PropertyName == nameof(NoteSessionService.Key) ||
-                e.PropertyName == nameof(NoteSessionService.Tune))
+                e.PropertyName == nameof(NoteSessionService.Tune) ||
+                e.PropertyName == nameof(NoteSessionService.CurrentTune))
             {
                 // Saved notes are for a specific scale/key/tune — invalidate them when any of those change
                 // so the next repeat generates fresh notes for the new selection rather than restoring stale ones.
                 if (e.PropertyName == nameof(_session.SelectedScale) ||
                     e.PropertyName == nameof(NoteSessionService.Key) ||
-                    e.PropertyName == nameof(NoteSessionService.Tune))
+                    e.PropertyName == nameof(NoteSessionService.Tune) ||
+                    e.PropertyName == nameof(NoteSessionService.CurrentTune))
                 {
                     _savedNotesToRepeat = null;
                 }
@@ -2361,7 +2383,9 @@ async Task UpdateNoteStatsDatabaseAsync()
 
             if (e.PropertyName == nameof(_session.SelectedScale) ||
                 e.PropertyName == nameof(NoteSessionService.Key) ||
-                e.PropertyName == nameof(NoteSessionService.Instrument))
+                e.PropertyName == nameof(NoteSessionService.Instrument) ||
+                e.PropertyName == nameof(NoteSessionService.Tune) ||
+                e.PropertyName == nameof(NoteSessionService.CurrentTune))
             {
                 UpdateConcertKeyLabel();
                 UpdateScaleTunePicker();
@@ -2514,20 +2538,33 @@ async Task UpdateNoteStatsDatabaseAsync()
                 : _session.Tune == "Practice Tune" ? (_session.CurrentTune?.Title ?? string.Empty)
                 : _session.SelectedScale;
             var idx = Array.IndexOf(items, selection);
-            if (idx >= 0 && ScaleTunePicker.SelectedIndex != idx)
-                ScaleTunePicker.SelectedIndex = idx;
-            // Keep V3 home picker in sync
-            if (V3HomeScaleTunePicker.ItemsSource is string[] v3Items)
+            _suppressPickerSync = true;
+            try
             {
-                var v3Idx = Array.IndexOf(v3Items, selection);
-                if (v3Idx >= 0 && V3HomeScaleTunePicker.SelectedIndex != v3Idx)
-                    V3HomeScaleTunePicker.SelectedIndex = v3Idx;
+                if (idx >= 0 && ScaleTunePicker.SelectedIndex != idx)
+                    ScaleTunePicker.SelectedIndex = idx;
+                // Keep V3 home picker in sync — populate ItemsSource on first call if needed
+                if (_v3HomeScaleTunePicker != null)
+                {
+                    if (_v3HomeScaleTunePicker.ItemsSource == null)
+                        _v3HomeScaleTunePicker.ItemsSource = items;
+                    if (_v3HomeScaleTunePicker.ItemsSource is string[] v3Items)
+                    {
+                        var v3Idx = Array.IndexOf(v3Items, selection);
+                        if (v3Idx >= 0 && _v3HomeScaleTunePicker.SelectedIndex != v3Idx)
+                            _v3HomeScaleTunePicker.SelectedIndex = v3Idx;
+                    }
+                }
+            }
+            finally
+            {
+                _suppressPickerSync = false;
             }
         }
 
         private void V3HomeInstrumentPicker_SelectedIndexChanged(object? sender, EventArgs e)
         {
-            var idx = V3HomeInstrumentPicker.SelectedIndex;
+            var idx = _v3HomeInstrumentPicker.SelectedIndex;
             if (idx < 0) return;
             var fullInstrument = NoteSessionService.InstrumentOptions[idx];
             _session.Instrument = fullInstrument;
@@ -2538,41 +2575,58 @@ async Task UpdateNoteStatsDatabaseAsync()
 
         private async void V3HomeKeyPicker_SelectedIndexChanged(object? sender, EventArgs e)
         {
-            var selectedKey = V3HomeKeyPicker.SelectedItem?.ToString();
+            var selectedKey = _v3HomeKeyPicker.SelectedItem?.ToString();
             if (selectedKey == null) return;
             var shortKey = selectedKey.Split(',')[0].Trim();
             if (IsPremiumKey(shortKey) && !StatusService.Instance.IsPremiumUser)
             {
                 var purchased = await PremiumPromptHelper.ShowAsync(this,
-                    onDecline: () => V3HomeKeyPicker.SelectedIndex = _lastFreeKeyIndex);
+                    onDecline: () => _v3HomeKeyPicker.SelectedIndex = _lastFreeKeyIndex);
                 if (!purchased) return;
             }
-            else { _lastFreeKeyIndex = V3HomeKeyPicker.SelectedIndex; }
+            else { _lastFreeKeyIndex = _v3HomeKeyPicker.SelectedIndex; }
             _session.Key = shortKey;
-            if (KeyPicker.SelectedIndex != V3HomeKeyPicker.SelectedIndex)
-                KeyPicker.SelectedIndex = V3HomeKeyPicker.SelectedIndex;
+            if (KeyPicker.SelectedIndex != _v3HomeKeyPicker.SelectedIndex)
+                KeyPicker.SelectedIndex = _v3HomeKeyPicker.SelectedIndex;
             UpdateConcertKeyLabel();
         }
 
-        private async void V3HomeScaleTunePickerChanged(object? sender, EventArgs e)
+        private void V3HomeScaleTunePickerChanged(object? sender, EventArgs e)
         {
-            if (V3HomeScaleTunePicker.SelectedItem is not string selected) return;
-            if (ScaleTunePicker.SelectedIndex != V3HomeScaleTunePicker.SelectedIndex)
-                ScaleTunePicker.SelectedIndex = V3HomeScaleTunePicker.SelectedIndex;
-            // Delegate to main handler
-            await Task.CompletedTask;
-            OnScaleTunePickerChanged(V3HomeScaleTunePicker, e);
+            System.Diagnostics.Debug.WriteLine($"[PickerDBG] V3HomeScaleTunePickerChanged fired. suppress={_suppressPickerSync} idx={_v3HomeScaleTunePicker.SelectedIndex} item='{_v3HomeScaleTunePicker.SelectedItem}'");
+            if (_suppressPickerSync) return;
+            var v3Items = _v3HomeScaleTunePicker.ItemsSource as string[];
+            var v3Idx = _v3HomeScaleTunePicker.SelectedIndex;
+            System.Diagnostics.Debug.WriteLine($"[PickerDBG] v3Items null={v3Items==null} v3Idx={v3Idx} len={v3Items?.Length}");
+            if (v3Items == null || v3Idx < 0 || v3Idx >= v3Items.Length) return;
+            // Sync the hidden ScaleTunePicker index silently (it is not visible in V3 mode,
+            // so its SelectedIndexChanged event is unreliable — always handle directly here).
+            _suppressPickerSync = true;
+            try { ScaleTunePicker.SelectedIndex = v3Idx; }
+            finally { _suppressPickerSync = false; }
+            // Always delegate to the main handler, passing _v3HomeScaleTunePicker as sender
+            // so the correct item is read by index from the visible picker.
+            OnScaleTunePickerChanged(_v3HomeScaleTunePicker, e);
         }
 
         private async void OnScaleTunePickerChanged(object? sender, EventArgs e)
         {
-            if (ScaleTunePicker.SelectedItem is not string selected) return;
+            System.Diagnostics.Debug.WriteLine($"[PickerDBG] OnScaleTunePickerChanged fired. suppress={_suppressPickerSync} sender={sender?.GetType().Name}");
+            if (_suppressPickerSync) return;
+            var sourcePicker = (sender as Picker) ?? ScaleTunePicker;
+            var items = sourcePicker.ItemsSource as string[];
+            var idx = sourcePicker.SelectedIndex;
+            System.Diagnostics.Debug.WriteLine($"[PickerDBG] sourcePicker={sourcePicker.GetType().Name} idx={idx} items null={items==null} len={items?.Length}");
+            if (items == null || idx < 0 || idx >= items.Length) return;
+            var selected = items[idx];
+            System.Diagnostics.Debug.WriteLine($"[PickerDBG] selected='{selected}'");
 
             // Check if the selection is a practice tune title
             var practiceTune = musicmate.Models.TuneLibrary.All.FirstOrDefault(t => t.Title == selected);
+            System.Diagnostics.Debug.WriteLine($"[PickerDBG] practiceTune={practiceTune?.Title ?? "null"} TuneLibrary.All count={musicmate.Models.TuneLibrary.All.Count}");
             if (practiceTune != null)
             {
-                _lastValidScaleTuneIndex = ScaleTunePicker.SelectedIndex;
+                _lastValidScaleTuneIndex = sourcePicker.SelectedIndex;
                 _session.SelectPracticeTune(practiceTune);
                 Preferences.Default.Set("SelectedTune", selected);
                 IsAutoRepeatVisible = true;
@@ -2583,7 +2637,7 @@ async Task UpdateNoteStatsDatabaseAsync()
 
             if (selected == "Random" || selected == "Tuner")
             {
-                _lastValidScaleTuneIndex = ScaleTunePicker.SelectedIndex;
+                _lastValidScaleTuneIndex = sourcePicker.SelectedIndex;
                 _session.Tune = selected;
                 Preferences.Default.Set("SelectedTune", selected);
                 IsAutoRepeatVisible = selected == "Random";
@@ -2600,7 +2654,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                     return;
             }
 
-            _lastValidScaleTuneIndex = ScaleTunePicker.SelectedIndex;
+            _lastValidScaleTuneIndex = sourcePicker.SelectedIndex;
             _session.Tune = "Selected Scale";
             _session.SelectedScale = selected;
             Preferences.Default.Set("SelectedTune", "Selected Scale");

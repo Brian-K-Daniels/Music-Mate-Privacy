@@ -154,12 +154,9 @@ namespace musicmate.Drawables
 
             // Draw staff lines
             var staffLineLeftMargin = 8f;
-            // Classic Tuner uses TunerGrid where the staff canvas is wide and the text column
-            // lives to the right — keep the original 2/3 cutoff so lines don't overrun the text.
-            // V2 Tuner constrains V2StaffBorder to a narrow fixed width, so no cutoff needed there.
-            var staffLineRightMargin = (_session.Tune == "Tuner" && !_session.V2StaffMode)
-                ? 2 * dirtyRect.Width / 3
-                : 8f;
+            // The tuner text column is outside the TunerBorder canvas (separate Grid column),
+            // so no right-margin cutoff is needed — fill to the right edge with a small margin.
+            var staffLineRightMargin = 8f;
             for (int i = 0; i < 5; i++)
             {
                 var y = staffCoreTop + i * staffSpacing;

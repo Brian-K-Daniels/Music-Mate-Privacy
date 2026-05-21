@@ -1044,6 +1044,12 @@ namespace musicmate.Services
         public readonly Dictionary<int, (int Wrong, int Cents)> NoteFeedbacks = new();
         public DateTime IgnoreAudioUntilUtc { get; private set; } = DateTime.MinValue;
         private int? _lockedPitchClassAfterAdvance;
+        /// <summary>
+        /// When two consecutive practice-tune notes share the same pitch class, require
+        /// a silence gap between them so the sustained audio from the first note cannot
+        /// immediately trigger the second.
+        /// </summary>
+        private bool _requireSilenceBeforeNote;
         private enum AccidentalPreference    { Auto, Sharps, Flats }
         public static readonly string[] AvailableScales = new[]
         {
@@ -1107,6 +1113,7 @@ namespace musicmate.Services
             CurrentNoteIndex = 0;
             IgnoreAudioUntilUtc = DateTime.MinValue;
             _lockedPitchClassAfterAdvance = null;
+            _requireSilenceBeforeNote = false;
             _pitchMedianHistory.Clear();
 
             // Clear timing data and stats
@@ -1244,6 +1251,11 @@ namespace musicmate.Services
                 _lockedPitchClassAfterAdvance = null;
             }
 
+            // If a silence gap is required (consecutive same-pitch notes), block until
+            // silence clears the flag via NotifySilence().
+            if (_requireSilenceBeforeNote)
+                return false;
+
             StatusService.Instance.StatusMessage = $"Expected: {expectedNote}, Heard: {heardNote}, {result.cents}¢, Notes: {NotesToDraw.Count}";
 
             var curFeedback = NoteFeedbacks.TryGetValue(idx, out var v2) ? v2 : (Wrong: 0, Cents: 0);
@@ -1295,8 +1307,16 @@ namespace musicmate.Services
                 if (CurrentNoteIndex >= NotesToDraw.Count)
                 {
                     CurrentNoteIndex = NotesToDraw.Count; // Stay at the end
+                    _requireSilenceBeforeNote = false;
                     FinalizeSessionStats();
                     _ = SessionCompletedAsync?.Invoke();
+                }
+                else if (Tune == "Practice Tune"
+                         && Mod12(NotesToDraw[CurrentNoteIndex].Midi) == detectedPcWritten)
+                {
+                    // Next note has the same pitch class — require a silence gap so the
+                    // sustained audio from this note cannot auto-trigger the next one.
+                    _requireSilenceBeforeNote = true;
                 }
                 return true;
             }
@@ -1541,6 +1561,16 @@ namespace musicmate.Services
         public bool ShouldIgnoreAudio(DateTime utcNow)
         {
             return utcNow < IgnoreAudioUntilUtc;
+        }
+
+        /// <summary>
+        /// Called by the audio pipeline when RMS drops below the silence threshold.
+        /// Clears the consecutive-same-pitch silence requirement so the next note
+        /// can be matched as soon as the player plays it.
+        /// </summary>
+        public void NotifySilence()
+        {
+            _requireSilenceBeforeNote = false;
         }
         public (string WrittenName, int CentsDeviation) MapPitch(double freq)
         {
@@ -2288,6 +2318,7 @@ namespace musicmate.Services
         {
             CurrentTune = tune ?? throw new ArgumentNullException(nameof(tune));
             Tune = "Practice Tune";
+            OnPropertyChanged(nameof(CurrentTune));
         }
 
         public List<string> TuneOptions { get; } = new() { "Selected Scale", "Random", "Tuner", "Practice Tune" };

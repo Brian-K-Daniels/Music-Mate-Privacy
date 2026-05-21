@@ -181,6 +181,9 @@ namespace musicmate.Pages
                         UpdateKeyPickerVisibility();
                         UpdateScaleTunePickerSelection();
                         break;
+                    case nameof(NoteSessionService.CurrentTune):
+                        UpdateScaleTunePickerSelection();
+                        break;
                     case nameof(NoteSessionService.Key):
                         UpdateKeyPickerSelection();
                         UpdateConcertKeyLabel();

@@ -611,6 +611,8 @@ namespace musicmate.Pages
                 {
                     Debug.WriteLine("[Audio] Below RMS threshold, ignoring");
                     _isBelowThreshold = true;
+                    // Notify session so consecutive same-pitch notes can be distinguished
+                    _session.NotifySilence();
                 }
                 _pitchBufferPos = 0;
                 return;
