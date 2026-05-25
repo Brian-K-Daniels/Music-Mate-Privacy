@@ -37,8 +37,8 @@
                 BackgroundColor="Transparent"
                 TextColor="white"
                 FontSize="18"
-                Padding="0"
-                WidthRequest="32" />
+                Padding="12,0"
+                WidthRequest="56" />
         <Label Text="Statistics"
                TextColor="white"
                FontAttributes="Bold"

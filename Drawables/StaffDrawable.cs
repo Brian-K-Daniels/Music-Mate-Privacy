@@ -187,12 +187,9 @@ namespace musicmate.Drawables
             // Accidentals that deviate from the key signature (e.g. raised 6th/7th in melodic minor,
             // raised 7th in harmonic minor) are drawn per-note in DrawNoteWithLedger — they are NOT
             // part of the key signature.
-            // Chromatic scale, Tuner, Practice Tune, and Random mode show no key signature.
-            // Random mode draws from across the note range regardless of scale, so there is no
-            // single tonal centre; showing a key signature there would be misleading.
+            // Chromatic scale, Tuner, and Practice Tune show no key signature.
             var accidentalCount = (_session.Tune == "Tuner"
                                    || _session.Tune == "Practice Tune"
-                                   || _session.Tune == "Random"
                                    || _session.SelectedScale == "Chromatic")
                 ? 0
                 : GetAccidentalCountForScale(_session.GetConcertKey(), _session.SelectedScale);

@@ -674,7 +674,7 @@ namespace musicmate.Services
                     _lowestNote = value;
                     Preferences.Set("musicmate.LowestNote", _lowestNote);
                     OnPropertyChanged(nameof(LowestNote));
-                    if (Tune == "Random")
+                    if (IsRandomMode)
                     {
                         _ = UpdateRandomSelectedNotesDisplayAsync();
                     }
@@ -692,7 +692,7 @@ namespace musicmate.Services
                     _highestNote = value;
                     Preferences.Set("musicmate.HighestNote", _highestNote);
                     OnPropertyChanged(nameof(HighestNote));
-                    if (Tune == "Random")
+                    if (IsRandomMode)
                     {
                         _ = UpdateRandomSelectedNotesDisplayAsync();
                     }
@@ -878,7 +878,7 @@ namespace musicmate.Services
         }
         private async Task UpdateRandomSelectedNotesDisplayAsync()
         {
-            if (Tune == "Random")
+            if (IsRandomMode)
             {
                 var notes = await BuildRandomSequenceAsync();
                 RandomSelectedNotesDisplay = notes.Length > 0
@@ -1460,14 +1460,23 @@ namespace musicmate.Services
 
             while (unused.Count > 0)
             {
+                // Build weighted candidates excluding any that are the same sounding pitch as the previous note
+                int prevMidi = NoteNameToMidi(result[^1]);
                 var candidates = new List<(int idx, int weight)>();
                 foreach (var nextIdx in unused)
                 {
                     int interval = Math.Abs(nextIdx - currentIdx);
                     if (interval == 0) continue;
+                    // Reject if same sounding pitch as previous note
+                    if (NoteNameToMidi(availableNotes[nextIdx]) == prevMidi) continue;
                     if (intervalWeights.TryGetValue(interval, out int weight))
                         candidates.Add((nextIdx, weight));
                 }
+
+                // Fallback: all unused notes that are not the same sounding pitch as previous
+                var nonRepeatUnused = unused
+                    .Where(i => NoteNameToMidi(availableNotes[i]) != prevMidi)
+                    .ToList();
 
                 int chosenIdx;
                 if (candidates.Count > 0)
@@ -1486,8 +1495,14 @@ namespace musicmate.Services
                         }
                     }
                 }
+                else if (nonRepeatUnused.Count > 0)
+                {
+                    // No interval-weighted candidate found; pick any non-repeating note
+                    chosenIdx = nonRepeatUnused[rand.Next(nonRepeatUnused.Count)];
+                }
                 else
                 {
+                    // Only one note remains and it is the same pitch — allow it (safe fallback)
                     chosenIdx = unused[rand.Next(unused.Count)];
                 }
 
@@ -1497,62 +1512,72 @@ namespace musicmate.Services
             }
 
             // --- Accidental logic ---
-            // Use all scale-note MIDIs to detect enharmonic collisions
-            var allScaleNoteMidis = new HashSet<int>(availableNotes.Select(n => NoteNameToMidi(n)));
+            // Build all non-scale MIDIs within the playable range as the accidental pool.
+            int minMidi = NoteNameToMidi(LowestNote);
+            int maxMidi = NoteNameToMidi(HighestNote);
+            var scaleMidis = new HashSet<int>(availableNotes.Select(n => NoteNameToMidi(n)));
 
-            if (StatusService.Instance.IsPremiumUser && AccidentalPercent > 0 && result.Count > 0)
+            // Collect every chromatic pitch in range that is NOT a scale tone.
+            var accidentalPool = new List<string>();
+            if (StatusService.Instance.IsPremiumUser && AccidentalPercent > 0)
+            {
+                bool useFlats = KeyUsesFlats(Key);
+                for (int midi = minMidi; midi <= maxMidi; midi++)
+                {
+                    if (scaleMidis.Contains(midi)) continue;
+                    accidentalPool.Add(MidiToNoteName(midi, useFlats));
+                }
+            }
+
+            if (StatusService.Instance.IsPremiumUser && AccidentalPercent > 0 && accidentalPool.Count > 0 && result.Count > 0)
             {
                 int count = (int)Math.Round(result.Count * AccidentalPercent / 100.0);
                 var indices = Enumerable.Range(0, result.Count).OrderBy(_ => rand.Next()).Take(count).ToList();
-                var (flatPcs, sharpPcs) = GetAccidentalSetsForScale(Key, SelectedScale);
 
-                for (int i = 0; i < result.Count; i++)
+                foreach (int i in indices)
                 {
-                    if (!indices.Contains(i))
-                        continue;
+                    // Determine which accidental notes would not repeat the adjacent notes
+                    int prevSounding = i > 0 ? NoteNameToMidi(result[i - 1]) : -1;
+                    int nextSounding = i < result.Count - 1 ? NoteNameToMidi(result[i + 1]) : -1;
 
-                    var note = result[i];
-                    var baseName = new string(note.TakeWhile(c => !char.IsDigit(c)).ToArray());
-                    var octave = new string(note.SkipWhile(c => !char.IsDigit(c)).ToArray());
-                    var letter = char.ToUpperInvariant(baseName[0]).ToString();
+                    var validAccidentals = accidentalPool
+                        .Where(n =>
+                        {
+                            int m = NoteNameToMidi(n);
+                            return m != prevSounding && m != nextSounding;
+                        })
+                        .ToList();
 
-                    string candidateNote;
-                    if (baseName.Contains('#'))
+                    if (validAccidentals.Count == 0)
+                        validAccidentals = accidentalPool; // fallback: allow any accidental note
+
+                    result[i] = validAccidentals[rand.Next(validAccidentals.Count)];
+                }
+            }
+
+            // Final safety pass: enforce no-adjacent-repeat and in-range for every note
+            if (result.Count >= 2)
+            {
+                for (int i = 1; i < result.Count; i++)
+                {
+                    if (NoteNameToMidi(result[i]) == NoteNameToMidi(result[i - 1]))
                     {
-                        // Key-sig sharp tone → naturalize (displays as ♮)
-                        candidateNote = letter + octave;
+                        // Replace with any note in availableNotes (or accidentalPool if enabled)
+                        // that is different from both neighbours
+                        int prevM = NoteNameToMidi(result[i - 1]);
+                        int nextM = i < result.Count - 1 ? NoteNameToMidi(result[i + 1]) : -1;
+                        var allOptions = availableNotes
+                            .Concat(StatusService.Instance.IsPremiumUser && AccidentalPercent > 0 ? accidentalPool : Enumerable.Empty<string>())
+                            .Where(n =>
+                            {
+                                int m = NoteNameToMidi(n);
+                                return m != prevM && m != nextM;
+                            })
+                            .ToList();
+                        if (allOptions.Count > 0)
+                            result[i] = allOptions[rand.Next(allOptions.Count)];
+                        // If allOptions is empty (single-note range), leave as-is
                     }
-                    else if (baseName.Contains('b'))
-                    {
-                        // Key-sig flat tone → naturalize (displays as ♮)
-                        candidateNote = letter + octave;
-                    }
-                    else
-                    {
-                        // Natural scale tone → add chromatic accidental away from key-sig tendency
-                        var pc = Mod12(NoteNameToMidi(note));
-                        string accidental;
-                        if (flatPcs.Contains(pc))
-                            accidental = "#";
-                        else if (sharpPcs.Contains(pc))
-                            accidental = "b";
-                        else
-                            accidental = rand.Next(2) == 0 ? "#" : "b";
-                        candidateNote = letter + accidental + octave;
-                    }
-
-                    if (string.IsNullOrEmpty(candidateNote) || candidateNote == note)
-                        continue;
-
-                    int candidateMidi = NoteNameToMidi(candidateNote);
-                    int minMidi = NoteNameToMidi(LowestNote);
-                    int maxMidi = NoteNameToMidi(HighestNote);
-
-                    // Reject if enharmonically identical to any scale tone, or out of range
-                    if (allScaleNoteMidis.Contains(candidateMidi) || candidateMidi < minMidi || candidateMidi > maxMidi)
-                        continue;
-
-                    result[i] = candidateNote;
                 }
             }
 
@@ -1739,11 +1764,12 @@ namespace musicmate.Services
                         }
                         else
                         {
-                            var freq = MidiToFreq(mn.MidiNumber);
+                            var adjustedMidi = ApplyKeySignatureToMidi(mn.SpelledName, mn.MidiNumber, Key);
+                            var freq = MidiToFreq(adjustedMidi);
                             var noteIdx = NotesToDraw.Count;
                             NotesToDraw.Add(new NoteInfo
                             {
-                                Midi       = mn.MidiNumber,
+                                Midi       = adjustedMidi,
                                 Name       = mn.SpelledName,
                                 TargetFreq = freq,
                                 X          = slotX,
@@ -1761,7 +1787,7 @@ namespace musicmate.Services
             CurrentTune = null;
 
             string[] sequence;
-            if (Tune == "Random")
+            if (IsRandomMode)
             {
                 sequence = await BuildRandomSequenceAsync();
             }
@@ -2321,7 +2347,26 @@ namespace musicmate.Services
             OnPropertyChanged(nameof(CurrentTune));
         }
 
-        public List<string> TuneOptions { get; } = new() { "Selected Scale", "Random", "Tuner", "Practice Tune" };
+        public List<string> TuneOptions { get; } = new() { "Selected Scale", "Tuner", "Practice Tune" };
+
+        private const string PrefIsRandomModeKey = "musicmate.IsRandomMode";
+        private bool _isRandomMode = Preferences.Get("musicmate.IsRandomMode", false);
+        /// <summary>
+        /// When true, note generation draws a random sequence from the current
+        /// key/scale pool instead of playing the scale or practice tune in order.
+        /// Persisted independently of the Tune picker selection.
+        /// </summary>
+        public bool IsRandomMode
+        {
+            get => _isRandomMode;
+            set
+            {
+                if (_isRandomMode == value) return;
+                _isRandomMode = value;
+                Preferences.Set(PrefIsRandomModeKey, value);
+                OnPropertyChanged(nameof(IsRandomMode));
+            }
+        }
 
         private bool _sessionCompleted = true;
         public bool SessionCompleted 
@@ -2459,6 +2504,49 @@ namespace musicmate.Services
             if (diff > 6) diff -= 12;
             else if (diff < -6) diff += 12;
             return diff;
+        }
+
+        /// <summary>
+        /// Adjusts <paramref name="midi"/> for any key-signature accidental implied by
+        /// <paramref name="key"/> when the note name has no explicit accidental.
+        /// For example, "B4" in key F (one flat: B♭) returns midi - 1.
+        /// Notes that already carry an explicit '#' or 'b' are returned unchanged.
+        /// </summary>
+        public static int ApplyKeySignatureToMidi(string noteName, int midi, string key)
+        {
+            if (string.IsNullOrWhiteSpace(noteName)) return midi;
+            var raw = noteName.Trim();
+            // If the note already has an explicit accidental, the score spells it explicitly — leave it.
+            if (raw.Contains('#') || (raw.Length > 1 && raw[1] == 'b')) return midi;
+
+            char letter = char.ToUpperInvariant(raw[0]);
+            var sigAcc = GetSignatureAccidentalForLetter(letter, GetAccidentalCountForKey(key));
+            return sigAcc switch
+            {
+                "#" => midi + 1,
+                "b" => midi - 1,
+                _   => midi
+            };
+        }
+
+        /// <summary>Returns the number of sharps (positive) or flats (negative) for a major key.</summary>
+        private static int GetAccidentalCountForKey(string key) => key switch
+        {
+            "C"  =>  0, "G"  =>  1, "D"  =>  2, "A"  =>  3, "E"  =>  4, "B"  =>  5,
+            "F#" =>  6, "C#" =>  7,
+            "F"  => -1, "Bb" => -2, "Eb" => -3, "Ab" => -4, "Db" => -5,
+            "Gb" => -6, "Cb" => -7,
+            _    =>  0
+        };
+
+        private static string? GetSignatureAccidentalForLetter(char letter, int signatureCount)
+        {
+            if (signatureCount == 0) return null;
+            var sharpsOrder = new[] { 'F', 'C', 'G', 'D', 'A', 'E', 'B' };
+            var flatsOrder  = new[] { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
+            if (signatureCount > 0)
+                return sharpsOrder.Take(signatureCount).Contains(letter) ? "#" : null;
+            return flatsOrder.Take(Math.Abs(signatureCount)).Contains(letter) ? "b" : null;
         }
     }
 }

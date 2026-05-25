@@ -110,14 +110,13 @@ namespace musicmate.Pages
 
                 // ── Scale / Tune picker ──────────────────────────────────────────
                 var practiceTuneTitles = TuneLibrary.All.Select(t => t.Title).ToArray();
-                var scaleTuneOptions   = new[] { "Tuner", "Random" }
+                var scaleTuneOptions   = new[] { "Tuner" }
                     .Concat(practiceTuneTitles)
                     .Concat(NoteSessionService.AvailableScales)
                     .ToArray();
                 ScaleTunePicker.ItemsSource = scaleTuneOptions;
 
-                var initialSelection = _session.Tune == "Random"       ? "Random"
-                    : _session.Tune == "Tuner"                         ? "Tuner"
+                var initialSelection = _session.Tune == "Tuner"        ? "Tuner"
                     : _session.Tune == "Practice Tune"                 ? (_session.CurrentTune?.Title ?? practiceTuneTitles[0])
                     : _session.SelectedScale;
                 var stIdx = Array.IndexOf(scaleTuneOptions, initialSelection);
@@ -166,6 +165,9 @@ namespace musicmate.Pages
             UpdateConcertKeyLabel();
             UpdateRepeatButtonsVisibility();
             UpdateRepeatButtonColors();
+            // Sync Random checkbox and warning from session state
+            RandomModeCheckBox.IsChecked = _session.IsRandomMode;
+            RandomModeWarningLabel.IsVisible = _session.IsRandomMode && _session.Tune == "Practice Tune";
         }
 
         // ── Session → UI sync ────────────────────────────────────────────────────
@@ -194,6 +196,11 @@ namespace musicmate.Pages
                     case nameof(NoteSessionService.SelectedScale):
                         UpdateScaleTunePickerSelection();
                         UpdateConcertKeyLabel();
+                        break;
+                    case nameof(NoteSessionService.IsRandomMode):
+                        UpdateRepeatButtonsVisibility();
+                        RandomModeCheckBox.IsChecked = _session.IsRandomMode;
+                        RandomModeWarningLabel.IsVisible = _session.IsRandomMode && _session.Tune == "Practice Tune";
                         break;
                 }
             });
@@ -226,8 +233,7 @@ namespace musicmate.Pages
         private void UpdateScaleTunePickerSelection()
         {
             if (ScaleTunePicker.ItemsSource is not string[] items) return;
-            var selection = _session.Tune == "Random"       ? "Random"
-                : _session.Tune == "Tuner"                  ? "Tuner"
+            var selection = _session.Tune == "Tuner"        ? "Tuner"
                 : _session.Tune == "Practice Tune"          ? (_session.CurrentTune?.Title ?? string.Empty)
                 : _session.SelectedScale;
             var idx = Array.IndexOf(items, selection);
@@ -251,7 +257,7 @@ namespace musicmate.Pages
 
         private void UpdateRepeatButtonsVisibility()
         {
-            var isRandom = _session.Tune == "Random";
+            var isRandom = _session.IsRandomMode;
             var isTuner  = _session.Tune == "Tuner";
             IsRandomRepeatButtonsVisible = !isTuner && isRandom;
             IsScaleRepeatButtonVisible   = !isTuner && !isRandom;
@@ -346,7 +352,7 @@ namespace musicmate.Pages
                 return;
             }
 
-            if (selected is "Random" or "Tuner")
+            if (selected == "Tuner")
             {
                 _lastValidScaleTuneIndex = ScaleTunePicker.SelectedIndex;
                 _session.Tune = selected;
@@ -408,6 +414,26 @@ namespace musicmate.Pages
                     _savedNotesToRepeat = new List<NoteInfo>(_session.NotesToDraw);
             }
             UpdateRepeatButtonColors();
+        }
+
+        // ── Random checkbox handlers ─────────────────────────────────────────────
+
+        private void OnRandomModeCheckBoxChanged(object? sender, CheckedChangedEventArgs e)
+        {
+            ApplyRandomModeChange(e.Value);
+        }
+
+        private void OnRandomModeLabelTapped(object? sender, EventArgs e)
+        {
+            RandomModeCheckBox.IsChecked = !RandomModeCheckBox.IsChecked;
+        }
+
+        private void ApplyRandomModeChange(bool isRandom)
+        {
+            _session.IsRandomMode = isRandom;
+            bool isPracticeTune = _session.Tune == "Practice Tune";
+            RandomModeWarningLabel.IsVisible = isRandom && isPracticeTune;
+            UpdateRepeatButtonsVisibility();
         }
 
         // ── Navigation ───────────────────────────────────────────────────────────

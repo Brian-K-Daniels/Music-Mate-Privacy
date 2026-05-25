@@ -387,7 +387,9 @@ namespace musicmate.Drawables
 
             string key   = _session.Key;
             string scale = _session.SelectedScale;
-            int accCount = _session.Tune == "Tuner" ? 0 : GetAccidentalCount(key, scale);
+            bool suppressKeySig = _session.Tune == "Tuner"
+                || _session.Tune == "Practice Tune" || scale == "Chromatic";
+            int accCount = suppressKeySig ? 0 : GetAccidentalCount(key, scale);
 
             float keySigEnd = clefWidth + accCount * symSlot + keySigGap;
             return keySigEnd + timeSigW + minMargin;
@@ -409,8 +411,10 @@ namespace musicmate.Drawables
                 const float symH     = 60f;  //  2026.05.15 1814  30f;  // bounding-box height for each symbol
                 const float symW     = 36f;  //  2026.05.15 1814  18f;  // bounding-box width for each symbol
 
-                // Key signature is suppressed only in Tuner mode.
-                if (_session.Tune == "Tuner") return startX;
+                // Suppress key signature for Tuner, Practice Tune, and Chromatic.
+                if (_session.Tune == "Tuner"
+                    || _session.Tune == "Practice Tune" || _session.SelectedScale == "Chromatic")
+                    return startX;
 
                 string key   = _session.Key;
                 string scale = _session.SelectedScale;

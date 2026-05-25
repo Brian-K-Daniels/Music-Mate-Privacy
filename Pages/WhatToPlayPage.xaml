@@ -19,8 +19,8 @@
                 BackgroundColor="Transparent"
                 TextColor="White"
                 FontSize="18"
-                Padding="0"
-                WidthRequest="32" />
+                Padding="12,0"
+                WidthRequest="56" />
         <Label Text="What to Play"
                TextColor="White"
                FontAttributes="Bold"
@@ -164,7 +164,7 @@
 
       </Grid>
 
-      <!-- ── Row 1: Scale / Tune picker centered ── -->
+      <!-- ── Row 1: Scale / Tune picker + Random checkbox centered ── -->
       <VerticalStackLayout Grid.Row="1"
                            HorizontalOptions="Center"
                            VerticalOptions="Center"
@@ -183,6 +183,31 @@
                   VerticalOptions="Fill"
                   HorizontalOptions="Fill" />
         </Border>
+        <!-- Random checkbox row -->
+        <HorizontalStackLayout Spacing="6" HorizontalOptions="Center" VerticalOptions="Center" Margin="0,4,0,0">
+          <CheckBox x:Name="RandomModeCheckBox"
+                    IsChecked="{Binding IsRandomMode, Mode=TwoWay}"
+                    Color="#8B4513"
+                    HeightRequest="36"
+                    WidthRequest="36"
+                    VerticalOptions="Center"
+                    CheckedChanged="OnRandomModeCheckBoxChanged" />
+          <Label Text="Random"
+                 FontSize="16"
+                 FontAttributes="Bold"
+                 TextColor="#333333"
+                 VerticalOptions="Center">
+            <Label.GestureRecognizers>
+              <TapGestureRecognizer Tapped="OnRandomModeLabelTapped" />
+            </Label.GestureRecognizers>
+          </Label>
+          <Label x:Name="RandomModeWarningLabel"
+                 Text="⚠ Select a scale for Random mode"
+                 FontSize="12"
+                 TextColor="DarkRed"
+                 IsVisible="False"
+                 VerticalOptions="Center" />
+        </HorizontalStackLayout>
       </VerticalStackLayout>
 
       <!-- ── Row 2: Repeat / Background Color buttons (evenly spaced) ── -->

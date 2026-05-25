@@ -80,29 +80,121 @@ namespace musicmate.Drawables
         /// </summary>
         public bool UpperHasEndBar { get; set; } = false;
 
-        // ── Layout constants ──────────────────────────────────────────────────────
-        private const float StaffLineSpacing = 12.6f;
-        private const float NoteHeadRadius   = 6.3f;
-        private const float StemLength       = 36f;
-        private const float TopMargin        = 18f;
-        private const float BottomMargin     = 18f;
-        private const float StaffGap         = 32.4f;  // pixels between bottom of upper staff and top of lower staff
-        private const float ScrollPxPerBeat  = 48f;
-        private const float RightMargin      = 16f;
+        // ── Fixed horizontal constants ─────────────────────────────────────────
+        private const float ScrollPxPerBeat = 48f;
+        private const float RightMargin     = 16f;
 
         private float _leftMargin = 115f;
         private float LeftMargin => _leftMargin;
 
-        // ── Cached layout output ──────────────────────────────────────────────────
+        /// <summary>
+        /// Available canvas height set by the page before calling ComputeRequiredHeight/ComputeGapMidY.
+        /// The drawable scales all staff geometry to fit exactly this height.
+        /// </summary>
+        public float AvailableHeight { get; set; } = 300f;
+
+        // ── Cached layout ─────────────────────────────────────────────────────────
 
         /// <summary>Pixels-per-beat as computed during the most recent <see cref="Draw"/> call.</summary>
         public float LastComputedPxPerBeat { get; private set; }
+
+        private struct V3Layout
+        {
+            public float Sls;          // pixels per staff space (line spacing)
+            public float HS;           // half-space = Sls/2
+            public float NoteHeadR;    // notehead radius
+            public float StemLen;      // stem length
+            public float UpperTop, UpperMid, UpperBot;
+            public float LowerTop,  LowerMid,  LowerBot;
+            public float GapMidY;
+            public float TotalHeight;
+        }
+        private V3Layout _layout;
 
         // ── Constructor ───────────────────────────────────────────────────────────
         public V3StaffDrawable(NoteSessionService session, ThemeService theme)
         {
             _session = session;
             _theme   = theme;
+        }
+
+        // ── Ordered layout pipeline ──────────────────────────────────────────────
+        /// <summary>
+        /// Steps 1–8: determine note ranges, derive staff-line spacing so the complete
+        /// note range (both staffs + gap) fills <paramref name="availH"/> exactly, then
+        /// compute all staff Y positions.  Must be called before any drawing.
+        /// </summary>
+        private void ComputeLayout(float availH)
+        {
+            if (availH <= 0f) availH = 300f;
+
+            // Step 3 & 4: diatonic-step range for each staff
+            int minS1 = 0, maxS1 = 0, minS2 = 0, maxS2 = 0;
+            bool hasU = false, hasL = false;
+            foreach (var n in UpperNotes)
+            {
+                if (n.IsRest) continue;
+                int s = DiatonicStepsFromB4(n.Letter, n.Octave);
+                if (!hasU) { minS1 = maxS1 = s; hasU = true; }
+                else { if (s < minS1) minS1 = s; if (s > maxS1) maxS1 = s; }
+            }
+            foreach (var n in LowerNotes)
+            {
+                if (n.IsRest) continue;
+                int s = DiatonicStepsFromB4(n.Letter, n.Octave);
+                if (!hasL) { minS2 = maxS2 = s; hasL = true; }
+                else { if (s < minS2) minS2 = s; if (s > maxS2) maxS2 = s; }
+            }
+
+            // Extra half-spaces beyond the 5-line staff (step -4 = top line, +4 = bottom line).
+            // Add 3 half-spaces clearance each side for noteheads, accidentals, labels, stems.
+            int eA1 = Math.Max(0, -4 - minS1) + 3;
+            int eB1 = Math.Max(0,  maxS1 - 4) + 3;
+            int eA2 = Math.Max(0, -4 - minS2) + 3;
+            int eB2 = Math.Max(0,  maxS2 - 4) + 3;
+
+            // Step 3 & 4: n1/n2 = half-spaces needed per staff (8 = 4 spaces × 2 half-spaces)
+            int n1 = 8 + eA1 + eB1;
+            int n2 = 8 + eA2 + eB2;
+            const int gapHS = 6;   // gap between staffs in half-spaces (user const ≈ 6)
+
+            // Step 5: derive sls so all content fills availH exactly
+            float sls = 2f * availH / (n1 + n2 + gapHS);
+            sls = Math.Clamp(sls, 6f, 20f);
+            float hs = sls / 2f;
+
+            // Step 6: scale notehead radius and stem length proportionally
+            float noteHeadR = sls / 2f;
+            float stemLen   = sls * 2.83f;
+
+            // Step 7: compute staff Y positions
+            float upperTop = eA1 * hs;
+            float upperMid = upperTop + 2f * sls;
+            float upperBot = upperTop + 4f * sls;
+
+            float gapStartY = upperBot + eB1 * hs;
+            float gapMidY   = gapStartY + gapHS * hs * 0.5f;
+
+            float lowerTop  = gapStartY + gapHS * hs;
+            float lowerMid  = lowerTop + 2f * sls;
+            float lowerBot  = lowerTop + 4f * sls;
+            float totalH    = lowerBot + eB2 * hs;
+
+            _layout = new V3Layout
+            {
+                Sls        = sls,
+                HS         = hs,
+                NoteHeadR  = noteHeadR,
+                StemLen    = stemLen,
+                UpperTop   = upperTop,
+                UpperMid   = upperMid,
+                UpperBot   = upperBot,
+                LowerTop   = lowerTop,
+                LowerMid   = lowerMid,
+                LowerBot   = lowerBot,
+                GapMidY    = gapMidY,
+                TotalHeight = totalH
+            };
         }
 
         // ── IDrawable ─────────────────────────────────────────────────────────────
@@ -124,25 +216,18 @@ namespace musicmate.Drawables
                 return;
             }
 
+            // Step 8 & 9: compute layout, then draw
+            ComputeLayout(dirtyRect.Height);
             _leftMargin = ComputeHeaderWidth();
 
-            // ── Upper staff geometry ──────────────────────────────────────────────
-            float upperTop = TopMargin + StaffLineSpacing * 2f;
-            AdjustForHighNotes(UpperNotes, ref upperTop);
-            float upperMid = upperTop + StaffLineSpacing * 2f;
-            float upperBot = upperTop + StaffLineSpacing * 4f;
-
-            // ── Lower staff geometry ──────────────────────────────────────────────
-            float lowerTop = upperBot + StaffGap + StaffLineSpacing * 2f;
-            AdjustForHighNotes(LowerNotes, ref lowerTop, upperBot + StaffGap);
-            float lowerMid = lowerTop + StaffLineSpacing * 2f;
-            float lowerBot = lowerTop + StaffLineSpacing * 4f;
+            float upperTop = _layout.UpperTop;
+            float upperMid = _layout.UpperMid;
+            float upperBot = _layout.UpperBot;
+            float lowerTop = _layout.LowerTop;
+            float lowerMid = _layout.LowerMid;
+            float lowerBot = _layout.LowerBot;
 
             // ── Compute px-per-beat ───────────────────────────────────────────────
-            // Scale notes to fill the available staff width exactly.  Each staff is
-            // laid out from its own first note, so spans must be measured relative to
-            // that start beat — not as absolute beat positions — otherwise a lower staff
-            // that begins at beat 16 would report a span of 32 and halve pxPerBeat.
             float lineWidth0 = dirtyRect.Width - _leftMargin - RightMargin;
             float pxPerBeat  = ScrollPxPerBeat;
             if (UpperNotes.Count > 0 || LowerNotes.Count > 0)
@@ -160,14 +245,15 @@ namespace musicmate.Drawables
                 double maxSpan = Math.Max(upperSpan, lowerSpan);
                 if (maxSpan > 0.0)
                 {
-                    float fitted = (lineWidth0 - NoteHeadRadius * 2f) / (float)maxSpan;
+                    float fitted = (lineWidth0 - _layout.NoteHeadR * 2f) / (float)maxSpan;
                     pxPerBeat = fitted;
                 }
             }
             LastComputedPxPerBeat = pxPerBeat;
 
             // ── Static layout: no scrolling ──────────────────────────────────────
-            float upperScroll = 0f;
+            double upperStartBeat = UpperNotes.Count > 0 ? (UpperNotes[0].BeatPosition ?? 0.0) : 0.0;
+            float upperScroll = -(float)(upperStartBeat * pxPerBeat);
             double lowerStartBeat = LowerNotes.Count > 0 ? (LowerNotes[0].BeatPosition ?? 0.0) : 0.0;
             float lowerScroll = -(float)(lowerStartBeat * pxPerBeat);
 
@@ -194,25 +280,25 @@ namespace musicmate.Drawables
             bool isActive, int currentIdx, bool isFinalStaff = false, bool hasEndSingleBar = false)
         {
             float lineWidth = dirtyRect.Width - LeftMargin - RightMargin;
-            float clipLeft  = LeftMargin - NoteHeadRadius * 4f;
-            float clipRight = LeftMargin + lineWidth + NoteHeadRadius * 4f;
+            float clipLeft  = LeftMargin - _layout.NoteHeadR * 4f;
+            float clipRight = LeftMargin + lineWidth + _layout.NoteHeadR * 4f;
 
             // Staff lines
             canvas.StrokeColor = ink;
             canvas.StrokeSize  = 1.5f;
             for (int i = 0; i < 5; i++)
             {
-                float y = staffTop + i * StaffLineSpacing;
+                float y = staffTop + i * _layout.Sls;
                 canvas.DrawLine(dirtyRect.X, y, LeftMargin + lineWidth, y);
             }
 
-
-            // Clef
+            // Clef — scale font size so the glyph fills the staff height
             canvas.SaveState();
             canvas.FontColor = ink;
-            canvas.FontSize  = 60f;
-            float clefH = staffBot - staffTop + StaffLineSpacing * 3.2f;
-            canvas.DrawString("𝄞", dirtyRect.X + 2f, staffTop, 54f, clefH,
+            canvas.FontSize  = _layout.Sls * 5f;   // 60 at sls=12
+            float clefW = _layout.Sls * 4.5f;       // 54 at sls=12
+            float clefH = staffBot - staffTop + _layout.Sls * 3.2f;
+            canvas.DrawString("𝄞", dirtyRect.X + 2f, staffTop, clefW, clefH,
                 HorizontalAlignment.Left, VerticalAlignment.Top);
             canvas.RestoreState();
 
@@ -267,6 +353,47 @@ namespace musicmate.Drawables
             // (overridden) within the current bar. Cleared at every bar line.
             // When a key-sig note appears later in the same bar, its accidental must be
             // shown explicitly (not suppressed) because the cancellation is still in effect.
+
+            // Pre-pass: identify pairs of consecutive eighth notes that share a beat
+            // (beat-on + beat-and), so they can be beamed together.
+            // beamPairs[i] = (partner index, stemUp)
+            var beamPairs = new Dictionary<int, (int partner, bool stemUp)>();
+            {
+                double cur = 0;
+                for (int i = 0; i < notes.Count - 1; i++)
+                {
+                    var n0 = notes[i];
+                    var n1 = notes[i + 1];
+                    double pos0 = n0.BeatPosition ?? cur;
+                    double pos1 = n1.BeatPosition ?? (pos0 + n0.BeatDuration);
+
+                    bool canBeam = !n0.IsRest && !n1.IsRest
+                        && n0.Duration == NoteDuration.Eighth
+                        && n1.Duration == NoteDuration.Eighth
+                        && Math.Abs(pos1 - pos0 - 0.5) < 1e-9   // second note is exactly an eighth after the first
+                        && Math.Abs(pos0 % 1.0) < 1e-9;          // first note falls on a whole beat
+
+                    if (canBeam)
+                    {
+                        float staffMidLocal = staffTop + _layout.Sls * 2f;
+                        float ny0 = NoteY(n0, staffTop, staffMidLocal);
+                        float ny1 = NoteY(n1, staffTop, staffMidLocal);
+                        // Use the note farthest from staff midline to decide direction.
+                        // Standard: stem up when note is below midline.
+                        float mid = staffTop + _layout.Sls * 2f;
+                        bool stemUp = (Math.Abs(ny0 - mid) >= Math.Abs(ny1 - mid))
+                            ? ny0 > mid
+                            : ny1 > mid;
+                        beamPairs[i]     = (i + 1, stemUp);
+                        beamPairs[i + 1] = (i,     stemUp);
+                    }
+
+                    cur = pos0 + n0.BeatDuration;
+                }
+            }
+            // Stores stem-tip positions for beamed notes: index → (x, y, color)
+            var beamStemTips = new Dictionary<int, (float x, float y, Color color)>();
+
             var accHistory = new Dictionary<(char, int), Accidental>();
             var barCancelledAccidentals = new HashSet<(char, int)>();
             int barBeatIdx = 0; // index into sorted barBeats for bar-boundary detection
@@ -323,7 +450,16 @@ namespace musicmate.Drawables
                 else
                 {
                     float ny = NoteY(note, staffTop, staffMid);
-                    DrawNote(canvas, note.Duration, nx, ny, staffTop, staffBot, ink, state, fadeAlpha);
+
+                    bool isBeamed = beamPairs.ContainsKey(i);
+                    bool? forceStemUp = isBeamed ? beamPairs[i].stemUp : (bool?)null;
+                    DrawNote(canvas, note.Duration, nx, ny, staffTop, staffBot, ink, state, fadeAlpha,
+                             forceStemUp, isBeamed,
+                             out float stemTipX, out float stemTipY);
+                    if (isBeamed)
+                        beamStemTips[i] = (stemTipX, stemTipY,
+                            GetNoteColor(state, ink, fadeAlpha));
+
                     DrawLedgerLines(canvas, note, nx, staffTop, staffBot, ink, fadeAlpha);
                     DrawAccidental(canvas, note, nx, ny, ink, accHistory, barCancelledAccidentals, fadeAlpha);
 
@@ -336,6 +472,25 @@ namespace musicmate.Drawables
 
                 beatCursor += note.BeatDuration;
             }
+
+            // Draw beams connecting paired eighth-note stem tips
+            var drawnBeams = new HashSet<int>();
+            foreach (var kv in beamPairs)
+            {
+                int idx = kv.Key;
+                int partner = kv.Value.partner;
+                if (drawnBeams.Contains(idx) || !beamStemTips.TryGetValue(idx, out var t0)
+                    || !beamStemTips.TryGetValue(partner, out var t1))
+                    continue;
+                drawnBeams.Add(idx);
+                drawnBeams.Add(partner);
+
+                canvas.SaveState();
+                canvas.StrokeColor = t0.color;
+                canvas.StrokeSize  = 4f;
+                canvas.DrawLine(t0.x, t0.y, t1.x, t1.y);
+                canvas.RestoreState();
+            }
         }
 
         private static double SumBeats(List<GeneratedNote> notes, int from, int to)
@@ -346,78 +501,53 @@ namespace musicmate.Drawables
             return s;
         }
 
-        // ── Layout helpers ────────────────────────────────────────────────────────
+        // ── Layout public API ─────────────────────────────────────────────────────
 
-        private static void AdjustForHighNotes(List<GeneratedNote> notes, ref float staffTop, float minTop = TopMargin)
+        /// <summary>
+        /// Y coordinate of the midpoint of the gap between the upper and lower staffs.
+        /// Used by the page to centre the Start/Stop button.
+        /// </summary>
+        public float ComputeGapMidY()
         {
-            float fixedTop = staffTop;
-            float minNoteY = fixedTop;
-            float fixedMid = fixedTop + StaffLineSpacing * 2f;
-            foreach (var n in notes)
-            {
-                if (n.IsRest) continue;
-                float ny = NoteY(n, fixedTop, fixedMid);
-                float topEdge = ny - NoteHeadRadius;
-                if (topEdge < minNoteY) minNoteY = topEdge;
-            }
-            float push = Math.Max(0f, minTop - minNoteY);
-            staffTop += push;
+            ComputeLayout(AvailableHeight);
+            return _layout.GapMidY;
         }
 
         /// <summary>
-        /// Total canvas height required to fit both staffs without clipping.
-        /// Call this after updating note lists to resize the <c>GraphicsView</c>.
+        /// Total canvas height to allocate.  Equal to <see cref="AvailableHeight"/> by
+        /// construction — the layout scales to exactly fill the available space.
         /// </summary>
         public float ComputeRequiredHeight()
         {
-            float upperTop = TopMargin + StaffLineSpacing * 2f;
-            AdjustForHighNotes(UpperNotes, ref upperTop);
-            float upperBot = upperTop + StaffLineSpacing * 4f;
-
-            float lowerTop = upperBot + StaffGap + StaffLineSpacing * 2f;
-            AdjustForHighNotes(LowerNotes, ref lowerTop, upperBot + StaffGap);
-            float lowerBot = lowerTop + StaffLineSpacing * 4f;
-
-            // Notes and ledger lines below the lower staff
-            float maxY = lowerBot;
-            float lowerMid = lowerTop + StaffLineSpacing * 2f;
-            foreach (var n in LowerNotes)
-            {
-                if (n.IsRest) continue;
-                float ny = NoteY(n, lowerTop, lowerMid);
-                // Ledger lines extend from staffBot+StaffLineSpacing in steps down to ny
-                float bottomEdge = ny > lowerBot + 2f
-                    ? ny + NoteHeadRadius
-                    : ny + NoteHeadRadius;
-                if (bottomEdge > maxY) maxY = bottomEdge;
-            }
-
-            return maxY + BottomMargin;
+            ComputeLayout(AvailableHeight);
+            return _layout.TotalHeight;
         }
 
         // ── Header metrics ────────────────────────────────────────────────────────
 
         private float ComputeHeaderWidth()
         {
-            const float clefWidth = 54f;
-            const float symSlot   = 14f;
+            float clefWidth = _layout.Sls * 4.5f;     // 54 at sls=12
+            float symSlot   = _layout.Sls * 1.17f;    // 14 at sls=12
             const float keySigGap = 6f;
             const float timeSigW  = 24f + 8f;
             const float minMargin = 8f;
 
             string key   = _session.Key;
             string scale = _session.SelectedScale;
-            int accCount = _session.Tune == "Tuner" ? 0 : GetAccidentalCount(key, scale);
+            bool suppressKeySig = _session.Tune == "Tuner"
+                || _session.Tune == "Practice Tune" || scale == "Chromatic";
+            int accCount = suppressKeySig ? 0 : GetAccidentalCount(key, scale);
             float keySigEnd = clefWidth + accCount * symSlot + keySigGap;
             return keySigEnd + timeSigW + minMargin;
         }
 
         // ── Note geometry ─────────────────────────────────────────────────────────
 
-        private static float NoteY(GeneratedNote note, float staffTop, float staffMid)
+        private float NoteY(GeneratedNote note, float staffTop, float staffMid)
         {
             int steps = DiatonicStepsFromB4(note.Letter, note.Octave);
-            return staffMid + steps * (StaffLineSpacing / 2f);
+            return staffMid + steps * _layout.HS;
         }
 
         private static int DiatonicStepsFromB4(char letter, int octave)
@@ -437,14 +567,26 @@ namespace musicmate.Drawables
         private static Color ApplyAlpha(Color c, byte alpha)
             => Color.FromRgba(c.Red, c.Green, c.Blue, alpha / 255f);
 
+        private static Color GetNoteColor(V2NoteState state, Color ink, byte fadeAlpha) => state switch
+        {
+            V2NoteState.Current => ApplyAlpha(Color.FromArgb("#007BFF"), fadeAlpha),
+            V2NoteState.Correct => ApplyAlpha(Color.FromArgb("#22AA44"), fadeAlpha),
+            V2NoteState.Wrong   => ApplyAlpha(Color.FromArgb("#CC2222"), fadeAlpha),
+            _ => ApplyAlpha(Colors.Black, (byte)(fadeAlpha * 0.85f))
+        };
+
         private void DrawNote(ICanvas canvas, NoteDuration duration, float x, float y,
                               float staffTop, float staffBot, Color ink,
-                              V2NoteState state, byte fadeAlpha)
+                              V2NoteState state, byte fadeAlpha,
+                              bool? forceStemUp, bool isBeamed,
+                              out float stemTipX, out float stemTipY)
         {
+            stemTipX = x;
+            stemTipY = y;
             canvas.SaveState();
             try
             {
-                float r = NoteHeadRadius;
+                float r = _layout.NoteHeadR;
 
                 Color noteColor;
                 switch (state)
@@ -466,7 +608,7 @@ namespace musicmate.Drawables
                         noteColor = ApplyAlpha(Color.FromArgb("#CC2222"), fadeAlpha);
                         break;
                     default:
-                        noteColor = Color.FromRgba(ink.Red, ink.Green, ink.Blue, (fadeAlpha / 255f) * 0.7f);
+                        noteColor = ApplyAlpha(Colors.Black, (byte)(fadeAlpha * 0.85f));
                         break;
                 }
 
@@ -488,43 +630,50 @@ namespace musicmate.Drawables
 
                 if (duration != NoteDuration.Whole)
                 {
-                    bool stemUp = y > (staffTop + (staffBot - staffTop) * 0.5f);
+                    bool stemUp = forceStemUp ?? (y > (staffTop + (staffBot - staffTop) * 0.5f));
                     float stemX  = stemUp ? x + r : x - r;
                     float stemY  = stemUp ? y - r * 0.75f : y + r * 0.75f;
-                    float stemEnd = stemUp ? stemY - StemLength : stemY + StemLength;
+                    float stemEnd = stemUp ? stemY - _layout.StemLen : stemY + _layout.StemLen;
                     canvas.StrokeColor = noteColor;
                     canvas.StrokeSize  = 2f;
                     canvas.DrawLine(stemX, stemY, stemX, stemEnd);
 
-                    if (duration == NoteDuration.Eighth)
-                    {
-                        canvas.StrokeSize = 2f;
-                        if (stemUp)
-                        {
-                            canvas.DrawLine(stemX, stemEnd, stemX + 12f, stemEnd + 10f);
-                            canvas.DrawLine(stemX + 12f, stemEnd + 10f, stemX + 6f, stemEnd + 18f);
-                        }
-                        else
-                        {
-                            canvas.DrawLine(stemX, stemEnd, stemX + 12f, stemEnd - 10f);
-                            canvas.DrawLine(stemX + 12f, stemEnd - 10f, stemX + 6f, stemEnd - 18f);
-                        }
-                    }
+                    stemTipX = stemX;
+                    stemTipY = stemEnd;
 
-                    if (duration == NoteDuration.Sixteenth)
+                    // Individual flag — suppressed for beamed notes (beam drawn after all notes)
+                    if (!isBeamed)
                     {
-                        for (int f = 0; f < 2; f++)
+                        if (duration == NoteDuration.Eighth)
                         {
-                            float off = f * (stemUp ? 10f : -10f);
+                            canvas.StrokeSize = 2f;
                             if (stemUp)
                             {
-                                canvas.DrawLine(stemX, stemEnd + off, stemX + 12f, stemEnd + 10f + off);
-                                canvas.DrawLine(stemX + 12f, stemEnd + 10f + off, stemX + 6f, stemEnd + 18f + off);
+                                canvas.DrawLine(stemX, stemEnd, stemX + 12f, stemEnd + 10f);
+                                canvas.DrawLine(stemX + 12f, stemEnd + 10f, stemX + 6f, stemEnd + 18f);
                             }
                             else
                             {
-                                canvas.DrawLine(stemX, stemEnd + off, stemX + 12f, stemEnd - 10f + off);
-                                canvas.DrawLine(stemX + 12f, stemEnd - 10f + off, stemX + 6f, stemEnd - 18f + off);
+                                canvas.DrawLine(stemX, stemEnd, stemX + 12f, stemEnd - 10f);
+                                canvas.DrawLine(stemX + 12f, stemEnd - 10f, stemX + 6f, stemEnd - 18f);
+                            }
+                        }
+
+                        if (duration == NoteDuration.Sixteenth)
+                        {
+                            for (int f = 0; f < 2; f++)
+                            {
+                                float off = f * (stemUp ? 10f : -10f);
+                                if (stemUp)
+                                {
+                                    canvas.DrawLine(stemX, stemEnd + off, stemX + 12f, stemEnd + 10f + off);
+                                    canvas.DrawLine(stemX + 12f, stemEnd + 10f + off, stemX + 6f, stemEnd + 18f + off);
+                                }
+                                else
+                                {
+                                    canvas.DrawLine(stemX, stemEnd + off, stemX + 12f, stemEnd - 10f + off);
+                                    canvas.DrawLine(stemX + 12f, stemEnd - 10f + off, stemX + 6f, stemEnd - 18f + off);
+                                }
                             }
                         }
                     }
@@ -540,7 +689,7 @@ namespace musicmate.Drawables
             canvas.SaveState();
             try
             {
-                float r = NoteHeadRadius;
+                float r = _layout.NoteHeadR;
                 if (state == V2NoteState.Current)
                 {
                     canvas.FillColor   = ApplyAlpha(Color.FromArgb("#007BFF"), (byte)(fadeAlpha * 0.19f));
@@ -564,10 +713,10 @@ namespace musicmate.Drawables
                 switch (duration)
                 {
                     case NoteDuration.Whole:
-                        canvas.FillRectangle(x - 8f, staffTop + StaffLineSpacing - 5f, 16f, 5f);
+                        canvas.FillRectangle(x - r * 1.3f, staffTop + _layout.Sls - r * 0.8f, r * 2.6f, r * 0.8f);
                         break;
                     case NoteDuration.Half:
-                        canvas.FillRectangle(x - 8f, staffMid, 16f, 5f);
+                        canvas.FillRectangle(x - r * 1.3f, staffMid, r * 2.6f, r * 0.8f);
                         break;
                     case NoteDuration.Quarter:
                         canvas.DrawLine(x,      staffMid - 10f, x + 4f, staffMid - 6f);
@@ -594,22 +743,22 @@ namespace musicmate.Drawables
             canvas.SaveState();
             try
             {
-                float staffMid  = staffTop + StaffLineSpacing * 2f;
+                float staffMid  = staffTop + _layout.Sls * 2f;
                 float ny        = NoteY(note, staffTop, staffMid);
-                float ledgerHW  = NoteHeadRadius * 2.2f;
+                float ledgerHW  = _layout.NoteHeadR * 2.2f;
 
                 canvas.StrokeColor = ApplyAlpha(ink, fadeAlpha);
                 canvas.StrokeSize  = 1.5f;
 
                 if (ny < staffTop - 2f)
                 {
-                    float cur = staffTop - StaffLineSpacing;
-                    while (cur >= ny - 2f) { canvas.DrawLine(x - ledgerHW, cur, x + ledgerHW, cur); cur -= StaffLineSpacing; }
+                    float cur = staffTop - _layout.Sls;
+                    while (cur >= ny - 2f) { canvas.DrawLine(x - ledgerHW, cur, x + ledgerHW, cur); cur -= _layout.Sls; }
                 }
                 if (ny > staffBot + 2f)
                 {
-                    float cur = staffBot + StaffLineSpacing;
-                    while (cur <= ny + 2f) { canvas.DrawLine(x - ledgerHW, cur, x + ledgerHW, cur); cur += StaffLineSpacing; }
+                    float cur = staffBot + _layout.Sls;
+                    while (cur <= ny + 2f) { canvas.DrawLine(x - ledgerHW, cur, x + ledgerHW, cur); cur += _layout.Sls; }
                 }
             }
             finally { canvas.RestoreState(); }
@@ -661,7 +810,7 @@ namespace musicmate.Drawables
                 const float symH = 60f, symW = 36f;
                 float fontSize = isFlat ? 48f : 30f;
                 float yAdjust  = isFlat ? 0.66f : 0.38f;
-                float boxLeft  = x + NoteHeadRadius - 2f - symW;
+                float boxLeft  = x + _layout.NoteHeadR - 2f - symW;
                 float yTop     = y - symH * yAdjust;
 
                 canvas.FontColor = ApplyAlpha(ink, fadeAlpha);
@@ -681,8 +830,8 @@ namespace musicmate.Drawables
                 canvas.FontColor = ApplyAlpha(ink, fadeAlpha);
                 canvas.FontSize  = 11;
                 float labelY = ny > (staffTop + staffBot) / 2f
-                    ? ny + NoteHeadRadius + 5f
-                    : ny - NoteHeadRadius - 15f;
+                    ? ny + _layout.NoteHeadR + 5f
+                    : ny - _layout.NoteHeadR - 15f;
                 canvas.DrawString(note.SpelledName, x - 14f, labelY, 28f, 14f,
                     HorizontalAlignment.Center, VerticalAlignment.Top);
             }
@@ -698,7 +847,9 @@ namespace musicmate.Drawables
             const float symH    = 60f;
             const float symW    = 36f;
 
-            if (_session.Tune == "Tuner") return startX;
+            if (_session.Tune == "Tuner"
+                || _session.Tune == "Practice Tune" || _session.SelectedScale == "Chromatic")
+                return startX;
 
             int accCount = GetAccidentalCount(_session.Key, _session.SelectedScale);
             if (accCount == 0) return startX;
@@ -710,18 +861,19 @@ namespace musicmate.Drawables
             int[] sharpSteps = { -4, -1, -5, -2,  1, -3,  0 };
             int[] steps = useFlats ? flatSteps : sharpSteps;
 
+            float scaledSlot = symSlot * _layout.Sls / 12f;
             canvas.SaveState();
             canvas.FontColor = ink;
-            canvas.FontSize  = useFlats ? 48f : 30f;
+            canvas.FontSize  = useFlats ? _layout.Sls * 4f : _layout.Sls * 2.5f;
             float sigX = startX;
             for (int i = 0; i < Math.Min(accCount, steps.Length); i++)
             {
-                float yCenter = staffMid + steps[i] * (StaffLineSpacing / 2f);
+                float yCenter = staffMid + steps[i] * _layout.HS;
                 float yAdjust = useFlats ? 0.66f : 0.38f;
                 float yTop    = yCenter - symH * yAdjust;
                 canvas.DrawString(glyph, sigX, yTop, symW, symH,
                     HorizontalAlignment.Center, VerticalAlignment.Top);
-                sigX += symSlot;
+                sigX += scaledSlot;
             }
             canvas.RestoreState();
             return sigX;
@@ -740,16 +892,17 @@ namespace musicmate.Drawables
                 float tsX = keySigEndX + 6f;
                 float boxW = 24f;
 
+                float tsFontSize = Math.Max(10f, _layout.Sls * 1.83f);  // 22 at sls=12
                 canvas.FontColor = ink;
-                canvas.FontSize  = 22;
+                canvas.FontSize  = tsFontSize;
                 canvas.Font      = Microsoft.Maui.Graphics.Font.DefaultBold;
 
-                float halfH   = StaffLineSpacing * 2f;
-                float topY    = staffTop + (halfH - 22f) * 0.5f;
-                float bottomY = staffMid + (halfH - 22f) * 0.5f;
+                float halfH   = _layout.Sls * 2f;
+                float topY    = staffTop + (halfH - tsFontSize) * 0.5f;
+                float bottomY = staffMid + (halfH - tsFontSize) * 0.5f;
 
-                canvas.DrawString(parts[0], tsX, topY,    boxW, 22f, HorizontalAlignment.Center, VerticalAlignment.Top);
-                canvas.DrawString(parts[1], tsX, bottomY, boxW, 22f, HorizontalAlignment.Center, VerticalAlignment.Top);
+                canvas.DrawString(parts[0], tsX, topY,    boxW, tsFontSize, HorizontalAlignment.Center, VerticalAlignment.Top);
+                canvas.DrawString(parts[1], tsX, bottomY, boxW, tsFontSize, HorizontalAlignment.Center, VerticalAlignment.Top);
                 canvas.Font = Microsoft.Maui.Graphics.Font.Default;
             }
             finally { canvas.RestoreState(); }
