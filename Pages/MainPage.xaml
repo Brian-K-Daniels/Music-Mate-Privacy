@@ -12,7 +12,7 @@
              BackgroundColor="#F7F7F7">
 
   <Shell.TitleView>
-    <Grid ColumnDefinitions="Auto,*,Auto" HeightRequest="30" VerticalOptions="Center"
+    <Grid ColumnDefinitions="Auto,Auto,*,Auto" HeightRequest="30" VerticalOptions="Center"
           BackgroundColor="#8B0000">
       <Label Text="Home  "
              TextColor="White"
@@ -29,13 +29,28 @@
              Margin="0,8,0,0"
              HorizontalOptions="Start"
              VerticalOptions="End"
-             Grid.Column="1"/>
+             Grid.Column="2"/>
+      <Button x:Name="V3StartStopButton"
+              Text="●"
+              FontSize="22"
+              TextColor="Green"
+              BackgroundColor="Transparent"
+              BorderColor="Transparent"
+              BorderWidth="0"
+              HeightRequest="30"
+              WidthRequest="38"
+              Padding="0"
+              HorizontalOptions="Start"
+              VerticalOptions="Center"
+              IsVisible="{Binding Source={x:Reference mainPage}, Path=IsV3Mode}"
+              Clicked="OnStartStopToggleClicked"
+              Grid.Column="1" />
       <Image Source="logo.png"
              HeightRequest="32"
              WidthRequest="32"
              VerticalOptions="Center"
              HorizontalOptions="End"
-             Grid.Column="2" />
+             Grid.Column="3" />
     </Grid>
   </Shell.TitleView>
 
@@ -225,23 +240,6 @@
                               Margin="0" />
               </Border>
 
-              <!-- V3 Start/Stop overlay: center midway between lower line of upper staff and upper line of lower staff, aligned with time signature -->
-              <Button x:Name="V3StartStopButton"
-                      Text="●"
-                      FontSize="48"
-                      TextColor="Green"
-                      BackgroundColor="Transparent"
-                      BorderColor="Transparent"
-                      BorderWidth="0"
-                      CornerRadius="8"
-                      HeightRequest="55"
-                      WidthRequest="80"
-                      Padding="0"
-                      HorizontalOptions="Start"
-                      VerticalOptions="Start"
-                      Margin="20,90,0,0"
-                      IsVisible="{Binding Source={x:Reference mainPage}, Path=IsV3Mode}"
-                      Clicked="OnStartStopToggleClicked" />
 
               <!-- Tuner mode: staff canvas on left (wider), note/freq info on right -->
               <Grid x:Name="TunerGrid" ColumnDefinitions="3*,2*" IsVisible="False">

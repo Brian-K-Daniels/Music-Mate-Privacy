@@ -977,7 +977,21 @@ namespace musicmate.Pages
                     bool isScaleMode = !_session.IsRandomMode;
                     int loMidi = NoteSessionService.NoteNameToMidi(_session.LowestNote);
                     int hiMidi = NoteSessionService.NoteNameToMidi(_session.HighestNote);
-                    bool isTwoOctave = isScaleMode && (hiMidi - loMidi) >= 24;
+                    // Use the two-staff split only when the range contains at least two tonic
+                    // notes (i.e. an octave-bounded scale walk tonic-to-tonic is possible).
+                    // This avoids picking the wrong peak when the raw range spans > 12 semitones
+                    // but holds only a single tonic (e.g. C4–F5 in Bb major).
+                    bool isTwoOctave = false;
+                    if (isScaleMode && loMidi >= 0 && hiMidi > loMidi)
+                    {
+                        int tonicPc = ((NoteSessionService.NoteNameToMidi($"{_session.Key}4") % 12) + 12) % 12;
+                        int tOctStart = loMidi;
+                        while (tOctStart <= hiMidi && ((tOctStart % 12 + 12) % 12) != tonicPc) tOctStart++;
+                        int tOctEnd = hiMidi;
+                        while (tOctEnd >= loMidi && ((tOctEnd % 12 + 12) % 12) != tonicPc) tOctEnd--;
+                        if (tOctStart == tOctEnd) tOctStart -= 12;
+                        isTwoOctave = tOctStart < tOctEnd;
+                    }
 
                     if (isTwoOctave)
                     {
@@ -1549,12 +1563,8 @@ namespace musicmate.Pages
 
             _v3Drawable.AvailableHeight      = availH;
             var h   = _v3Drawable.ComputeRequiredHeight();
-            var mid = _v3Drawable.ComputeGapMidY();
             V3StaffGraphicsView.HeightRequest = h;
             V3StaffBorder.HeightRequest       = h;
-            // Centre button vertically in the gap: offset = midY - half button height
-            float buttonHalf = (float)(_v3StartStopButton.HeightRequest > 0 ? _v3StartStopButton.HeightRequest / 2.0 : 27.5);
-            _v3StartStopButton.Margin = new Thickness(_v3StartStopButton.Margin.Left, mid - buttonHalf, 0, 0);
         }
 
         private void SetButtonStates(bool isRunning)
@@ -1589,7 +1599,7 @@ namespace musicmate.Pages
                 {
                     _playCts?.Cancel();
                     _audio.StopCapture();
-                    StatusService.Instance.StatusMessage = "Stopped. Tap circle to listen, arrowhead to play.";
+                    StatusService.Instance.StatusMessage = "Stopped. Tap circle to listen, arrowhead (scroll down) to play.";
                     _session.SessionCompleted = true;
                 }
                 catch (Exception ex)
@@ -1642,7 +1652,6 @@ namespace musicmate.Pages
             if (_session.AutoStart && _session.Tune != "Tuner")
             {
                 AutoRepeat = true;
-                StatusService.Instance.IsPremiumUser = true;
             }
 #endif
 
@@ -1888,7 +1897,12 @@ namespace musicmate.Pages
                                 int upperPitchCount = _v3Drawable?.UpperNotes.Count(n => !n.IsRest) ?? 0;
                                 if (_session.CurrentNoteIndex == upperPitchCount && _v3Drawable != null
                                     && _v3Drawable.LowerAlpha >= 1f && !_v3Drawable.UpperHasEndBar)
-                                    _ = RefreshV3LowerStaffAsync();
+                                {
+                                    // No lower-staff refresh here: replacing lower notes while
+                                    // the player is about to play them causes a display/session
+                                    // mismatch.  The session will complete and AutoRepeat will
+                                    // generate a fresh set.
+                                }
                             }
                             SyncV3NoteStates();
                         }
@@ -2082,7 +2096,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                 // Any new session clears the post-autoplay results freeze.
                 _freezeStaff = false;
 
-                StatusService.Instance.StatusMessage = "Listening";
+                StatusService.Instance.StatusMessage = "Listening, tap red square to stop";
                 Debug.WriteLine($"[Start] Starting listening, playBack={playBack}");
                 SetButtonStates(true);
 

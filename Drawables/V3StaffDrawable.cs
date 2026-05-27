@@ -5,20 +5,16 @@ using musicmate.Services;
 namespace musicmate.Drawables
 {
     /// <summary>
-    /// V3 endless two-staff drawable.
+    /// V3 two-staff drawable.
     /// Renders an upper and a lower treble staff inside a single <see cref="ICanvas"/>.
     /// Reading order follows standard sheet music: upper staff first, then lower staff.
     ///
-    /// <para><b>Scroll behaviour:</b> the active staff (the one being played) scrolls so
-    /// the current note is pinned at <c>TargetZoneX</c>.  The inactive staff shows its
-    /// notes statically (all visible at once).</para>
-    ///
-    /// <para><b>Transitions / fade:</b>  when new notes are loaded onto a staff while the
+    /// <para><b>Transitions / fade:</b> when new notes are loaded onto a staff while the
     /// player is on the other staff, set the corresponding alpha array to 0 and animate
     /// it toward 1 from the page layer.  The drawable reads <see cref="UpperAlpha"/> and
     /// <see cref="LowerAlpha"/> and applies them uniformly to every note on that staff.</para>
     ///
-    /// <para><b>Feedback:</b> no feedback row.  Instead, noteheads are coloured:
+    /// <para><b>Feedback:</b> noteheads are coloured:
     /// blue = current target, red = one or more wrong attempts (still pending),
     /// green = correct, muted = pending future.</para>
     /// </summary>
@@ -88,8 +84,8 @@ namespace musicmate.Drawables
         private float LeftMargin => _leftMargin;
 
         /// <summary>
-        /// Available canvas height set by the page before calling ComputeRequiredHeight/ComputeGapMidY.
-        /// The drawable scales all staff geometry to fit exactly this height.
+        /// Available canvas height set by the page before calling <see cref="ComputeRequiredHeight"/>.
+        /// The drawable scales staff geometry to fill this height, reserving space for the OS home bar.
         /// </summary>
         public float AvailableHeight { get; set; } = 300f;
 
@@ -106,7 +102,6 @@ namespace musicmate.Drawables
             public float StemLen;      // stem length
             public float UpperTop, UpperMid, UpperBot;
             public float LowerTop,  LowerMid,  LowerBot;
-            public float GapMidY;
             public float TotalHeight;
         }
         private V3Layout _layout;
@@ -124,11 +119,17 @@ namespace musicmate.Drawables
         /// note range (both staffs + gap) fills <paramref name="availH"/> exactly, then
         /// compute all staff Y positions.  Must be called before any drawing.
         /// </summary>
+        // Approximate height of the iOS/Android system home-indicator bar at the bottom of the screen.
+        private const float BottomBarReserve = 34f;
+
         private void ComputeLayout(float availH)
         {
             if (availH <= 0f) availH = 300f;
 
-            // Step 3 & 4: diatonic-step range for each staff
+            // Reserve space for the OS home-indicator bar so notes are never hidden behind it.
+            float usableH = availH - BottomBarReserve;
+
+            // Diatonic-step range for each staff.
             int minS1 = 0, maxS1 = 0, minS2 = 0, maxS2 = 0;
             bool hasU = false, hasL = false;
             foreach (var n in UpperNotes)
@@ -146,54 +147,55 @@ namespace musicmate.Drawables
                 else { if (s < minS2) minS2 = s; if (s > maxS2) maxS2 = s; }
             }
 
-            // Extra half-spaces beyond the 5-line staff (step -4 = top line, +4 = bottom line).
-            // Add 3 half-spaces clearance each side for noteheads, accidentals, labels, stems.
-            int eA1 = Math.Max(0, -4 - minS1) + 3;
-            int eB1 = Math.Max(0,  maxS1 - 4) + 3;
-            int eA2 = Math.Max(0, -4 - minS2) + 3;
-            int eB2 = Math.Max(0,  maxS2 - 4) + 3;
+            // Half-spaces of clearance beyond the 5-line staff boundaries.
+            // eA = above-top clearance, eB = below-bottom clearance.
+            // A fixed breathing-room constant pads both the top of the upper staff
+            // and the bottom of the lower staff so noteheads are never clipped.
+            const int breathing = 3;
+            int eA1 = Math.Max(0, -4 - minS1) + breathing;
+            int eB1 = Math.Max(0,  maxS1 - 4) + breathing;
+            int eA2 = Math.Max(0, -4 - minS2) + breathing;
+            int eB2 = Math.Max(0,  maxS2 - 4) + breathing;
 
-            // Step 3 & 4: n1/n2 = half-spaces needed per staff (8 = 4 spaces × 2 half-spaces)
-            int n1 = 8 + eA1 + eB1;
-            int n2 = 8 + eA2 + eB2;
-            const int gapHS = 6;   // gap between staffs in half-spaces (user const ≈ 6)
+            // Total half-spaces consumed by the two staffs (each staff = 8 hs for 5 lines / 4 spaces).
+            float totalHalfSpaces = (float)(8 + eA1 + eB1 + 8 + eA2 + eB2);
 
-            // Step 5: derive sls so all content fills availH exactly
-            float sls = 2f * availH / (n1 + n2 + gapHS);
-            sls = Math.Clamp(sls, 6f, 20f);
+            // Derive sls so the two staffs fill usableH, then clamp to a comfortable range.
+            float sls = usableH / (totalHalfSpaces / 2f);
+            sls = Math.Clamp(sls, 6f, 14f);
             float hs = sls / 2f;
 
-            // Step 6: scale notehead radius and stem length proportionally
             float noteHeadR = sls / 2f;
             float stemLen   = sls * 2.83f;
 
-            // Step 7: compute staff Y positions
+            // Staff Y positions — no extra gap between the staffs beyond the natural breathing room.
             float upperTop = eA1 * hs;
             float upperMid = upperTop + 2f * sls;
             float upperBot = upperTop + 4f * sls;
 
-            float gapStartY = upperBot + eB1 * hs;
-            float gapMidY   = gapStartY + gapHS * hs * 0.5f;
+            float lowerTop = upperBot + eB1 * hs + eA2 * hs;
+            float lowerMid = lowerTop + 2f * sls;
+            float lowerBot = lowerTop + 4f * sls;
+            float contentH = lowerBot + eB2 * hs;
 
-            float lowerTop  = gapStartY + gapHS * hs;
-            float lowerMid  = lowerTop + 2f * sls;
-            float lowerBot  = lowerTop + 4f * sls;
-            float totalH    = lowerBot + eB2 * hs;
+            // Distribute unused space equally above the top and below the bottom (and the
+            // middle gap between the staffs already receives eB1+eA2 half-spaces of padding).
+            float slack  = Math.Max(0f, usableH - contentH);
+            float vOffset = slack / 2f;
 
             _layout = new V3Layout
             {
-                Sls        = sls,
-                HS         = hs,
-                NoteHeadR  = noteHeadR,
-                StemLen    = stemLen,
-                UpperTop   = upperTop,
-                UpperMid   = upperMid,
-                UpperBot   = upperBot,
-                LowerTop   = lowerTop,
-                LowerMid   = lowerMid,
-                LowerBot   = lowerBot,
-                GapMidY    = gapMidY,
-                TotalHeight = totalH
+                Sls         = sls,
+                HS          = hs,
+                NoteHeadR   = noteHeadR,
+                StemLen     = stemLen,
+                UpperTop    = upperTop + vOffset,
+                UpperMid    = upperMid + vOffset,
+                UpperBot    = upperBot + vOffset,
+                LowerTop    = lowerTop + vOffset,
+                LowerMid    = lowerMid + vOffset,
+                LowerBot    = lowerBot + vOffset,
+                TotalHeight = contentH + vOffset
             };
         }
 
@@ -419,26 +421,24 @@ namespace musicmate.Drawables
                 if (!note.IsRest)
                 {
                     var key = (note.Letter, note.Octave);
-                    // If this note's accidental differs from what the key signature implies for
-                    // this pitch-class, record the cancellation so later notes in the same bar
-                    // know they must show the key-sig accidental explicitly.
-                    if (IsAccidentalInKeySig(note))
-                    {
-                        // Note matches key sig — no longer cancelled in this bar.
-                        barCancelledAccidentals.Remove(key);
-                    }
-                    else if (IsNoteInKeySig(note))
+                    if (!IsAccidentalInKeySig(note) && IsNoteInKeySig(note))
                     {
                         // This pitch-class is governed by the key sig, but the current note
-                        // deviates (e.g. natural cancelling a key-sig sharp/flat, or a different
-                        // accidental). Record the cancellation so later notes in the same bar
+                        // deviates. Record the cancellation so later notes in the same bar
                         // that return to the key-sig accidental must show it explicitly.
                         barCancelledAccidentals.Add(key);
                     }
-                    accHistory[key] = note.Accidental;
                 }
 
-                if (nx < clipLeft || nx > clipRight) { beatCursor += note.BeatDuration; continue; }
+                if (nx < clipLeft || nx > clipRight)
+                {
+                    // Still update accidental history for off-screen notes so on-screen notes
+                    // that follow get the correct natural/reminder logic.
+                    if (!note.IsRest)
+                        accHistory[(note.Letter, note.Octave)] = note.Accidental;
+                    beatCursor += note.BeatDuration;
+                    continue;
+                }
 
                 // Apply fade alpha to note color opacity
                 byte fadeAlpha = (byte)Math.Clamp((int)(alpha * 255), 0, 255);
@@ -504,23 +504,13 @@ namespace musicmate.Drawables
         // ── Layout public API ─────────────────────────────────────────────────────
 
         /// <summary>
-        /// Y coordinate of the midpoint of the gap between the upper and lower staffs.
-        /// Used by the page to centre the Start/Stop button.
-        /// </summary>
-        public float ComputeGapMidY()
-        {
-            ComputeLayout(AvailableHeight);
-            return _layout.GapMidY;
-        }
-
-        /// <summary>
         /// Total canvas height to allocate.  Equal to <see cref="AvailableHeight"/> by
         /// construction — the layout scales to exactly fill the available space.
         /// </summary>
         public float ComputeRequiredHeight()
         {
             ComputeLayout(AvailableHeight);
-            return _layout.TotalHeight;
+            return AvailableHeight;   // always fill the available space; no wasted bottom gap
         }
 
         // ── Header metrics ────────────────────────────────────────────────────────
@@ -788,7 +778,8 @@ namespace musicmate.Drawables
                 // Suppress key-sig accidentals unless this pitch-class had its key-sig
                 // accidental cancelled earlier in the same bar — in that case the accidental
                 // must be shown explicitly to restore the key-signature pitch.
-                if (IsAccidentalInKeySig(note))
+                bool isKeySigAcc = IsAccidentalInKeySig(note);
+                if (isKeySigAcc)
                 {
                     if (barCancelled == null || !barCancelled.Contains((note.Letter, note.Octave)))
                         return;
@@ -817,6 +808,11 @@ namespace musicmate.Drawables
                 canvas.FontSize  = fontSize;
                 canvas.DrawString(glyph, boxLeft, yTop, symW, symH,
                     HorizontalAlignment.Center, VerticalAlignment.Top);
+
+                // Reminder drawn — clear the cancellation so this key-sig note does not
+                // continue to show an accidental for every subsequent appearance in the bar.
+                if (isKeySigAcc)
+                    barCancelled?.Remove((note.Letter, note.Octave));
             }
             finally { canvas.RestoreState(); }
         }
@@ -869,7 +865,7 @@ namespace musicmate.Drawables
             for (int i = 0; i < Math.Min(accCount, steps.Length); i++)
             {
                 float yCenter = staffMid + steps[i] * _layout.HS;
-                float yAdjust = useFlats ? 0.66f : 0.38f;
+                float yAdjust = useFlats ? 0.78f : 0.38f;
                 float yTop    = yCenter - symH * yAdjust;
                 canvas.DrawString(glyph, sigX, yTop, symW, symH,
                     HorizontalAlignment.Center, VerticalAlignment.Top);

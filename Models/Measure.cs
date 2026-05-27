@@ -98,6 +98,19 @@ namespace musicmate.Models
             return BeatsUsed + note.Duration.ToBeatValue() > BeatsAvailable + 1e-9;
         }
 
+        /// <summary>
+        /// Removes trailing rest <see cref="GeneratedNote"/> slots from the end of the measure.
+        /// Stops at the last pitched note so the sequence ends cleanly.
+        /// </summary>
+        public void TrimTrailingRests()
+        {
+            int lastPitched = -1;
+            for (int i = 0; i < _generatedNotes.Count; i++)
+                if (!_generatedNotes[i].IsRest) lastPitched = i;
+            if (lastPitched >= 0 && lastPitched < _generatedNotes.Count - 1)
+                _generatedNotes.RemoveRange(lastPitched + 1, _generatedNotes.Count - lastPitched - 1);
+        }
+
         public override string ToString() =>
             $"Measure [{TimeSignature}  {BeatsUsed:0.##}/{BeatsAvailable} beats, " +
             $"{_notes.Count + _generatedNotes.Count} note(s), Full={IsFull}]";

@@ -60,8 +60,8 @@ namespace musicmate.Services
     {
         private static readonly HashSet<string> FreeScales = new() { "Major", "Harmonic Minor" };
         private static readonly HashSet<string> FreeKeys = new() { "C", "F", "Bb", "G", "D" };
-        private const string FreeLowestNote = "C4";
-        private const string FreeHighestNote = "F5";
+        private const string FreeLowestNote = "A3";
+        private const string FreeHighestNote = "G5";
 
         public NoteSessionService()
         {
@@ -1460,22 +1460,22 @@ namespace musicmate.Services
 
             while (unused.Count > 0)
             {
-                // Build weighted candidates excluding any that are the same sounding pitch as the previous note
-                int prevMidi = NoteNameToMidi(result[^1]);
+                // Build weighted candidates excluding any that are the same pitch class as the previous note
+                int prevPc = NoteNameToMidi(result[^1]) % 12;
                 var candidates = new List<(int idx, int weight)>();
                 foreach (var nextIdx in unused)
                 {
                     int interval = Math.Abs(nextIdx - currentIdx);
                     if (interval == 0) continue;
-                    // Reject if same sounding pitch as previous note
-                    if (NoteNameToMidi(availableNotes[nextIdx]) == prevMidi) continue;
+                    // Reject if same pitch class as previous note (catches octave duplicates)
+                    if (NoteNameToMidi(availableNotes[nextIdx]) % 12 == prevPc) continue;
                     if (intervalWeights.TryGetValue(interval, out int weight))
                         candidates.Add((nextIdx, weight));
                 }
 
-                // Fallback: all unused notes that are not the same sounding pitch as previous
+                // Fallback: all unused notes that are not the same pitch class as previous
                 var nonRepeatUnused = unused
-                    .Where(i => NoteNameToMidi(availableNotes[i]) != prevMidi)
+                    .Where(i => NoteNameToMidi(availableNotes[i]) % 12 != prevPc)
                     .ToList();
 
                 int chosenIdx;
@@ -1536,15 +1536,15 @@ namespace musicmate.Services
 
                 foreach (int i in indices)
                 {
-                    // Determine which accidental notes would not repeat the adjacent notes
-                    int prevSounding = i > 0 ? NoteNameToMidi(result[i - 1]) : -1;
-                    int nextSounding = i < result.Count - 1 ? NoteNameToMidi(result[i + 1]) : -1;
+                    // Determine which accidental notes would not repeat the adjacent notes (by pitch class)
+                    int prevPc2 = i > 0 ? NoteNameToMidi(result[i - 1]) % 12 : -1;
+                    int nextPc2 = i < result.Count - 1 ? NoteNameToMidi(result[i + 1]) % 12 : -1;
 
                     var validAccidentals = accidentalPool
                         .Where(n =>
                         {
-                            int m = NoteNameToMidi(n);
-                            return m != prevSounding && m != nextSounding;
+                            int pc = NoteNameToMidi(n) % 12;
+                            return pc != prevPc2 && pc != nextPc2;
                         })
                         .ToList();
 
@@ -1555,28 +1555,31 @@ namespace musicmate.Services
                 }
             }
 
-            // Final safety pass: enforce no-adjacent-repeat and in-range for every note
+            // Final safety pass: enforce no-adjacent-repeat by pitch class.
+            // Run up to two passes so a fix at position i doesn't create a new conflict at i+1.
             if (result.Count >= 2)
             {
-                for (int i = 1; i < result.Count; i++)
+                var allPool = availableNotes
+                    .Concat(StatusService.Instance.IsPremiumUser && AccidentalPercent > 0 ? accidentalPool : Enumerable.Empty<string>())
+                    .ToList();
+                for (int pass = 0; pass < 2; pass++)
                 {
-                    if (NoteNameToMidi(result[i]) == NoteNameToMidi(result[i - 1]))
+                    for (int i = 1; i < result.Count; i++)
                     {
-                        // Replace with any note in availableNotes (or accidentalPool if enabled)
-                        // that is different from both neighbours
-                        int prevM = NoteNameToMidi(result[i - 1]);
-                        int nextM = i < result.Count - 1 ? NoteNameToMidi(result[i + 1]) : -1;
-                        var allOptions = availableNotes
-                            .Concat(StatusService.Instance.IsPremiumUser && AccidentalPercent > 0 ? accidentalPool : Enumerable.Empty<string>())
-                            .Where(n =>
-                            {
-                                int m = NoteNameToMidi(n);
-                                return m != prevM && m != nextM;
-                            })
-                            .ToList();
-                        if (allOptions.Count > 0)
-                            result[i] = allOptions[rand.Next(allOptions.Count)];
-                        // If allOptions is empty (single-note range), leave as-is
+                        if (NoteNameToMidi(result[i]) % 12 == NoteNameToMidi(result[i - 1]) % 12)
+                        {
+                            int prevPc3 = NoteNameToMidi(result[i - 1]) % 12;
+                            int nextPc3 = i < result.Count - 1 ? NoteNameToMidi(result[i + 1]) % 12 : -1;
+                            var options = allPool
+                                .Where(n =>
+                                {
+                                    int pc = NoteNameToMidi(n) % 12;
+                                    return pc != prevPc3 && pc != nextPc3;
+                                })
+                                .ToList();
+                            if (options.Count > 0)
+                                result[i] = options[rand.Next(options.Count)];
+                        }
                     }
                 }
             }
@@ -2393,7 +2396,7 @@ namespace musicmate.Services
         }
 
         /// <summary>Returns the natural (no-accidental) pitch-class 0–11 for a letter A–G.</summary>
-        private static int NaturalPcForLetter(char letter) => letter switch
+        public static int NaturalPcForLetter(char letter) => letter switch
         {
             'C' => 0, 'D' => 2, 'E' => 4, 'F' => 5,
             'G' => 7, 'A' => 9, 'B' => 11, _ => 0
@@ -2404,7 +2407,7 @@ namespace musicmate.Services
         /// accidental by comparing <paramref name="targetMidi"/> with the nearest natural
         /// pitch of that letter.
         /// </summary>
-        private static string SpellNote(char letter, int targetMidi)
+        public static string SpellNote(char letter, int targetMidi)
         {
             var naturalPC  = NaturalPcForLetter(letter);
             var letterOctave = (targetMidi - naturalPC) / 12;

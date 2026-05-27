@@ -134,13 +134,10 @@ namespace musicmate.Services
             {
                 var sortedPool = pool.OrderBy(m => m).ToList();
                 var walk = new List<int>(sortedPool);
-                // Add descending portion: reverse of pool minus both endpoints to avoid
-                // repeating the top or bottom tonic — the turnaround has exactly one note.
-                for (int d = sortedPool.Count - 2; d > 0; d--)
+                // Add descending portion: reverse of pool excluding only the top note
+                // (already present as the turnaround peak), ending on the bottom tonic.
+                for (int d = sortedPool.Count - 2; d >= 0; d--)
                     walk.Add(sortedPool[d]);
-                // Do NOT append the bottom tonic: the walk ends one step above it so that
-                // when the queue wraps the bottom tonic appears exactly once (start of the
-                // next ascending pass), giving the natural …D4 | C4 D4… turnaround.
                 // When appending a batch, resume the walk at the correct position so
                 // the descending branch continues instead of jumping back to the bottom.
                 int walkLen = walk.Count;
@@ -161,6 +158,10 @@ namespace musicmate.Services
 
             for (int mi = 0; mi < MeasureCount; mi++)
             {
+                // Stop generating measures once the scale walk is complete.
+                if (UseScaleOrder && (scaleQueue == null || scaleQueue.Count == 0))
+                    break;
+
                 var measure        = new Measure(TimeSignature);
                 double localCursor = 0.0;              // beats used within this measure
                 int absoluteMi     = StartMeasureIndex + mi;
@@ -174,7 +175,10 @@ namespace musicmate.Services
                     bool isRest = RhythmVarietyPercent > 0 && rng.Next(8) == 0;
 
                     GeneratedNote note;
-                    if (isRest)
+                    // In scale-order mode, once the queue is exhausted the scale is complete.
+                    // Fill any remaining beats in the measure (and any trailing measures) with rests.
+                    bool scaleExhausted = UseScaleOrder && (scaleQueue == null || scaleQueue.Count == 0);
+                    if (isRest || scaleExhausted)
                     {
                         note = GeneratedNote.Rest(dur,
                             measureIndex:  absoluteMi,
@@ -185,23 +189,11 @@ namespace musicmate.Services
                         int pitch;
                         if (scaleQueue != null && scaleQueue.Count > 0)
                         {
-                            // Scale-order mode: consume next note from the walk queue;
-                            // refill the queue when exhausted so the phrase loops seamlessly.
                             pitch = scaleQueue.Dequeue();
-                            if (scaleQueue.Count == 0)
-                            {
-                                var sortedPool2 = pool.OrderBy(m => m).ToList();
-                                var walk2 = new List<int>(sortedPool2);
-                                for (int d = sortedPool2.Count - 2; d > 0; d--)
-                                    walk2.Add(sortedPool2[d]);
-                                // No trailing tonic: the walk ends on the note above the bottom,
-                                // so the bottom tonic appears naturally at the start of each cycle.
-                                scaleQueue = new Queue<int>(walk2);
-                            }
                         }
                         else
                         {
-                            pitch = PickPitch(rng, pool);
+                            pitch = PickPitch(rng, pool, prevPitch);
                         }
                         note = BuildNote(pitch, dur, absoluteMi,
                             globalBeatCursor + localCursor, globalNoteIndex, prevPitch);
@@ -217,6 +209,11 @@ namespace musicmate.Services
                 globalBeatCursor += TimeSignature.TotalBeats;
                 measures.Add(measure);
             }
+
+            // In scale-order mode, trim any trailing rests from the final measure
+            // so the sequence ends cleanly on the last pitched note (the tonic).
+            if (UseScaleOrder && measures.Count > 0)
+                measures[measures.Count - 1].TrimTrailingRests();
 
             return measures;
         }
@@ -265,6 +262,13 @@ namespace musicmate.Services
                 int octaveEnd = maxMidi;
                 while (octaveEnd >= minMidi && ((octaveEnd % 12 + 12) % 12) != tonicPc)
                     octaveEnd--;
+
+                // If both searches landed on the same tonic the user's range holds less than
+                // one complete octave.  Step the lower bound back one octave so we always
+                // display a full tonic-to-tonic span (e.g. Bb3→Bb4 when LowestNote=C4,
+                // or G3→G4 when LowestNote=A3).
+                if (octaveStart == octaveEnd)
+                    octaveStart -= 12;
 
                 // Use the tonic-bounded range only when at least one complete octave fits.
                 if (octaveStart < octaveEnd)
@@ -400,9 +404,56 @@ namespace musicmate.Services
             return fitting[^1].Key;
         }
 
-        /// <summary>Picks a random MIDI number from the pool.</summary>
-        private static int PickPitch(Random rng, List<int> pool)
-            => pool[rng.Next(pool.Count)];
+        /// <summary>
+        /// Picks a random MIDI number from the pool, avoiding the same pitch class
+        /// as <paramref name="prevMidi"/> to prevent adjacent same-pitch-class repeats
+        /// (e.g. C4 immediately followed by C5).
+        /// Falls back to any pool note when every candidate shares the pitch class.
+        /// </summary>
+        private static int PickPitch(Random rng, List<int> pool, int prevMidi = -1)
+        {
+            if (prevMidi < 0 || pool.Count <= 1)
+                return pool[rng.Next(pool.Count)];
+
+            int prevPc = prevMidi % 12;
+
+            // Build a weighted candidate list.  Candidates that repeat the previous pitch-class
+            // are excluded.  Weight each remaining pitch inversely by its semitone distance from
+            // the previous note so that small steps are much more common than large leaps.
+            // Weight formula: w = max(1, 13 - distance), giving:
+            //   unison/octave displacement excluded; half-step → 12; whole-step → 11; …; 12st → 1
+            var weighted = new List<(int midi, int weight)>(pool.Count);
+            int totalWeight = 0;
+            foreach (int m in pool)
+            {
+                if (m % 12 == prevPc) continue;          // skip same pitch-class
+                int dist = Math.Abs(m - prevMidi);
+                // Collapse octave jumps to their within-octave equivalent for weighting
+                // so that e.g. a 12-semitone leap is weighted the same as a 0-semitone step
+                // (which is excluded anyway) rather than being treated as distance 12.
+                int semitones = dist % 12;
+                if (semitones == 0) semitones = 12;      // octave leap: treat as largest step
+                int weight = Math.Max(1, 13 - semitones);
+                weighted.Add((m, weight));
+                totalWeight += weight;
+            }
+
+            if (weighted.Count == 0)
+            {
+                // Fallback: all candidates had the same pitch-class as previous — just pick any.
+                return pool[rng.Next(pool.Count)];
+            }
+
+            int roll = rng.Next(totalWeight);
+            int cumulative = 0;
+            foreach (var (midi, weight) in weighted)
+            {
+                cumulative += weight;
+                if (roll < cumulative)
+                    return midi;
+            }
+            return weighted[weighted.Count - 1].midi;
+        }
 
         /// <summary>
         /// Constructs a <see cref="GeneratedNote"/> from a raw MIDI number.
@@ -422,7 +473,39 @@ namespace musicmate.Services
                     preferFlats = midi < prevMidi;  // descending → flat; ascending → sharp
             }
 
-            string spelledName = NoteSessionService.MidiToNoteName(midi, preferFlats);
+            // Use key-signature-aware letter assignment for 7-note scales so that
+            // notes like E# appear instead of F♮ in sharp keys (e.g. F# major).
+            string spelledName;
+            var scaleDegreeIntervals = GetScaleDegreeIntervals(Scale);
+            if (scaleDegreeIntervals != null)
+            {
+                int pc = ((midi % 12) + 12) % 12;
+                int tonicPc = ((NoteSessionService.NoteNameToMidi($"{Key}4") % 12) + 12) % 12;
+                int degree = -1;
+                for (int i = 0; i < scaleDegreeIntervals.Length; i++)
+                {
+                    if (((tonicPc + scaleDegreeIntervals[i]) % 12) == pc)
+                    { degree = i; break; }
+                }
+                if (degree >= 0)
+                {
+                    // Determine the correct letter from the tonic letter + degree offset.
+                    char[] scaleLetters = { 'A', 'B', 'C', 'D', 'E', 'F', 'G' };
+                    char tonicLetter = char.ToUpperInvariant(Key[0]);
+                    int tonicLetterIdx = Array.IndexOf(scaleLetters, tonicLetter);
+                    char degLetter = scaleLetters[(tonicLetterIdx + degree) % 7];
+                    spelledName = NoteSessionService.SpellNote(degLetter, midi);
+                }
+                else
+                {
+                    // Chromatic (non-scale) note: direction-based spelling.
+                    spelledName = NoteSessionService.MidiToNoteName(midi, preferFlats);
+                }
+            }
+            else
+            {
+                spelledName = NoteSessionService.MidiToNoteName(midi, preferFlats);
+            }
             double freq        = MidiToFreq(midi);
 
             // Parse letter, accidental, octave from the spelled name.
@@ -523,6 +606,29 @@ namespace musicmate.Services
                 if (keySigLetters[i] == char.ToUpperInvariant(letter)) return true;
             return false;
         }
+
+        /// <summary>
+        /// Returns the 7 semitone intervals from the tonic (excluding the octave repeat) for
+        /// standard 7-note scales, or null for pentatonic/chromatic/non-standard scales.
+        /// Used to assign the correct letter to each scale degree so notes like E# are
+        /// spelled properly instead of F♮ in keys like F# major.
+        /// </summary>
+        private static int[]? GetScaleDegreeIntervals(string scale) => scale switch
+        {
+            "Major" or "Ionian"                               => new[] { 0, 2, 4, 5, 7, 9, 11 },
+            "Natural Minor" or "Aeolian"                      => new[] { 0, 2, 3, 5, 7, 8, 10 },
+            "Harmonic Minor"                                  => new[] { 0, 2, 3, 5, 7, 8, 11 },
+            "Melodic Minor" or "Jazz Melodic Minor"           => new[] { 0, 2, 3, 5, 7, 9, 11 },
+            "Dorian"                                          => new[] { 0, 2, 3, 5, 7, 9, 10 },
+            "Phrygian"                                        => new[] { 0, 1, 3, 5, 7, 8, 10 },
+            "Lydian"                                          => new[] { 0, 2, 4, 6, 7, 9, 11 },
+            "Mixolydian"                                      => new[] { 0, 2, 4, 5, 7, 9, 10 },
+            "Locrian"                                         => new[] { 0, 1, 3, 5, 6, 8, 10 },
+            "Harmonic Major"                                  => new[] { 0, 2, 4, 5, 7, 8, 11 },
+            "Phrygian Dominant"                               => new[] { 0, 1, 4, 5, 7, 8, 10 },
+            "Double Harmonic"                                 => new[] { 0, 1, 4, 5, 7, 8, 11 },
+            _                                                 => null
+        };
 
         /// <summary>Circle-of-fifths accidental count — mirrors the drawable's logic.</summary>
         private static int GetKeySigAccidentalCount(string key, string scale)

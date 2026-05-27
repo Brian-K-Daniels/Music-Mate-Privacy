@@ -443,7 +443,7 @@ namespace musicmate.Drawables
                     // Compute the vertical centre of this symbol on the staff,
                     // then offset up by half the bounding box so DrawString centres it.
                     float yCenter = staffMid + steps[i] * (StaffLineSpacing / 2f);
-                    float yAdjust = useFlats ? 0.66f : 0.38f;
+                    float yAdjust = useFlats ? 0.78f : 0.38f;
                     float yTop    = yCenter  - symH * yAdjust;  //  2026.05.15 1818   0.55f;  // optical centre of ♭/♯ glyph
                     canvas.DrawString(glyph, sigX, yTop, symW, symH,
                         HorizontalAlignment.Center, VerticalAlignment.Top);
@@ -922,7 +922,7 @@ namespace musicmate.Drawables
                 const float symW     = 36f;
                 const float rightGap = 2f;   // gap between accidental right edge and notehead left
                 float fontSize = isFlat ? 48f : 30f;
-                float yAdjust  = isFlat ? 0.66f : 0.38f;
+                float yAdjust  = isFlat ? 0.78f : 0.38f;
 
                 float boxLeft = x + NoteHeadRadius - rightGap - symW;  //  2026.05.16 1106   - NoteHeadRadius - rightGap - symW;
                 float yTop    = y - symH * yAdjust;
