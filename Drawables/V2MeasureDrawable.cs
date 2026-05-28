@@ -315,6 +315,61 @@ namespace musicmate.Drawables
             float clipLeft  = LeftMargin - NoteHeadRadius * 4f;
             float clipRight = LeftMargin + lineWidth + NoteHeadRadius * 4f;
 
+            // ── Beaming pre-pass ──────────────────────────────────────────────────
+            // Groups consecutive eighth/sixteenth notes within the same beat and bar into
+            // beam groups. Groups of 1 keep individual flags; groups of 2+ get beam bars.
+            // beamGroup[i] = (groupId, stemUp) for each beamed note.
+            var beamGroup = new Dictionary<int, (int groupId, bool stemUp)>();
+            {
+                float mid = staffTop + StaffLineSpacing * 2f;
+                var sortedBars = MeasureBarBeats.OrderBy(b => b).ToList();
+                int groupId = 0;
+                double cur = 0.0;
+                int i = 0;
+                while (i < Notes.Count)
+                {
+                    var n = Notes[i];
+                    double pos = n.BeatPosition ?? cur;
+                    bool isBeamable = !n.IsRest
+                        && (n.Duration == NoteDuration.Eighth || n.Duration == NoteDuration.Sixteenth)
+                        && Math.Abs(pos % 0.5) < 1e-6;
+                    if (!isBeamable) { cur = pos + n.BeatDuration; i++; continue; }
+                    double nextBarBeat = double.MaxValue;
+                    foreach (var bb in sortedBars)
+                        if (bb > pos + 1e-9) { nextBarBeat = bb; break; }
+                    var groupIndices = new List<int>();
+                    double groupEnd = pos;
+                    int j = i;
+                    while (j < Notes.Count)
+                    {
+                        var nj = Notes[j];
+                        double pj = nj.BeatPosition ?? groupEnd;
+                        if (nj.IsRest || (nj.Duration != NoteDuration.Eighth && nj.Duration != NoteDuration.Sixteenth)) break;
+                        if (pj >= nextBarBeat - 1e-9) break;
+                        if (pj - pos > 1.0 + 1e-9) break;
+                        groupIndices.Add(j);
+                        groupEnd = pj + nj.BeatDuration;
+                        j++;
+                    }
+                    if (groupIndices.Count >= 2)
+                    {
+                        bool stemUp = false; float maxDist = -1f;
+                        foreach (var gi in groupIndices)
+                        {
+                            float ny = NoteY(Notes[gi], staffTop, mid);
+                            float dist = Math.Abs(ny - mid);
+                            if (dist > maxDist) { maxDist = dist; stemUp = ny > mid; }
+                        }
+                        foreach (var gi in groupIndices)
+                            beamGroup[gi] = (groupId, stemUp);
+                        groupId++;
+                    }
+                    cur = groupEnd; i = j;
+                }
+            }
+            // stem tip store: index → (x, y, noteColor, duration)
+            var beamStemTips = new Dictionary<int, (float x, float y, Color color, NoteDuration dur)>();
+
             // ── Draw notes ────────────────────────────────────────────────────────
             // Pre-build an accidental history for courtesy-natural tracking.
             // Key = (letter, octave), Value = last Accidental seen for that pitch.
@@ -350,7 +405,12 @@ namespace musicmate.Drawables
                 else
                 {
                     float ny = NoteY(note, staffTop, staffMid);
-                    DrawNote(canvas, note.Duration, nx, ny, staffTop, staffBot, ink, state);
+                    bool isBeamed = beamGroup.ContainsKey(i);
+                    bool? forceStemUp = isBeamed ? beamGroup[i].stemUp : (bool?)null;
+                    DrawNote(canvas, note.Duration, nx, ny, staffTop, staffBot, ink, state,
+                             forceStemUp, isBeamed, out float stX, out float stY, out Color stColor);
+                    if (isBeamed)
+                        beamStemTips[i] = (stX, stY, stColor, note.Duration);
                     DrawLedgerLines(canvas, note, nx, staffTop, staffBot, ink);
                     DrawAccidental(canvas, note, nx, ny, ink, accidentalHistory);
 
@@ -363,6 +423,55 @@ namespace musicmate.Drawables
                 }
 
                 beatCursor += note.BeatDuration;
+            }
+
+            // ── Post-pass: draw beam bars ─────────────────────────────────────────
+            // Primary beam connects all stem tips; secondary beam drawn for sixteenth runs.
+            const float BeamThick = 4f;
+            const float BeamGap   = 3f;
+            var groupTips = new Dictionary<int, List<(int ni, float x, float y, Color color, NoteDuration dur)>>();
+            foreach (var kv in beamGroup)
+            {
+                int ni = kv.Key; int gid = kv.Value.groupId;
+                if (!beamStemTips.TryGetValue(ni, out var tip)) continue;
+                if (!groupTips.TryGetValue(gid, out var list))
+                    groupTips[gid] = list = new();
+                list.Add((ni, tip.x, tip.y, tip.color, tip.dur));
+            }
+            foreach (var gkv in groupTips)
+            {
+                var tips = gkv.Value;
+                if (tips.Count < 2) continue;
+                tips.Sort((a, b) => a.x.CompareTo(b.x));
+                bool grpStemUp = beamGroup[tips[0].ni].stemUp;
+                float x0 = tips[0].x, y0 = tips[0].y;
+                float x1 = tips[^1].x, y1 = tips[^1].y;
+                float maxTilt = StaffLineSpacing * 0.5f;
+                if (Math.Abs(y1 - y0) > maxTilt) y1 = y0 + Math.Sign(y1 - y0) * maxTilt;
+                float BeamY(float x) => x0 == x1 ? y0 : y0 + (y1 - y0) * ((x - x0) / (x1 - x0));
+                var beamColor = tips.FirstOrDefault(t => t.color != default).color;
+                if (beamColor == default) beamColor = Color.FromRgba(0f, 0f, 0f, 0.85f);
+                canvas.SaveState();
+                canvas.StrokeColor = beamColor;
+                canvas.StrokeSize = BeamThick;
+                canvas.DrawLine(x0, y0, x1, y1);
+                float secondaryOff = grpStemUp ? (BeamThick + BeamGap) : -(BeamThick + BeamGap);
+                for (int ti = 0; ti < tips.Count; ti++)
+                {
+                    if (tips[ti].dur != NoteDuration.Sixteenth) continue;
+                    int segStart = ti;
+                    while (ti + 1 < tips.Count && tips[ti + 1].dur == NoteDuration.Sixteenth) ti++;
+                    int segEnd = ti;
+                    float sx0 = tips[segStart].x, sx1 = tips[segEnd].x;
+                    if (segStart == segEnd)
+                    {
+                        float halfSlot = (x1 - x0) / Math.Max(tips.Count - 1, 1) * 0.5f;
+                        if (segStart == 0) sx1 = sx0 + halfSlot; else sx0 = sx1 - halfSlot;
+                    }
+                    canvas.StrokeSize = BeamThick;
+                    canvas.DrawLine(sx0, BeamY(sx0) + secondaryOff, sx1, BeamY(sx1) + secondaryOff);
+                }
+                canvas.RestoreState();
             }
 
             // ── Feedback row ──────────────────────────────────────────────────────
@@ -635,15 +744,18 @@ namespace musicmate.Drawables
         }
 
         private void DrawNote(ICanvas canvas, NoteDuration duration, float x, float y,
-                              float staffTop, float staffBot, Color ink, V2NoteState state)
+                              float staffTop, float staffBot, Color ink, V2NoteState state,
+                              bool? forceStemUp, bool isBeamed,
+                              out float stemTipX, out float stemTipY, out Color noteColor)
         {
+            stemTipX = x; stemTipY = y;
             canvas.SaveState();   //  2026.05.16 0846
+            noteColor = Color.FromRgba(0f, 0f, 0f, 0.85f);
             try
             { 
                 float r = NoteHeadRadius;
 
                 // State-based highlight box and notehead color
-                Color noteColor;
                 switch (state)
                 {
                     case V2NoteState.Current:
@@ -686,43 +798,48 @@ namespace musicmate.Drawables
                 // Stem (all except whole note)
                 if (duration != NoteDuration.Whole)
                 {
-                    bool stemUp = y > (staffTop + (staffBot - staffTop) * 0.5f);
+                    bool stemUp = forceStemUp ?? (y > (staffTop + (staffBot - staffTop) * 0.5f));
                     float stemX = stemUp ? x + r : x - r;
                     float stemY = stemUp ? y - r * 0.75f : y + r * 0.75f;
                     float stemEnd = stemUp ? stemY - StemLength : stemY + StemLength;
                     canvas.StrokeColor = noteColor;
                     canvas.StrokeSize  = 2f;
                     canvas.DrawLine(stemX, stemY, stemX, stemEnd);
+                    stemTipX = stemX; stemTipY = stemEnd;
 
-                    if (duration == NoteDuration.Eighth)
+                    // Individual flag — suppressed for beamed notes (beam bars drawn in post-pass)
+                    if (!isBeamed)
                     {
-                        canvas.StrokeSize = 2f;
-                        if (stemUp)
+                        if (duration == NoteDuration.Eighth)
                         {
-                            canvas.DrawLine(stemX, stemEnd, stemX + 12f, stemEnd + 10f);
-                            canvas.DrawLine(stemX + 12f, stemEnd + 10f, stemX + 6f, stemEnd + 18f);
-                        }
-                        else
-                        {
-                            canvas.DrawLine(stemX, stemEnd, stemX + 12f, stemEnd - 10f);
-                            canvas.DrawLine(stemX + 12f, stemEnd - 10f, stemX + 6f, stemEnd - 18f);
-                        }
-                    }
-
-                    if (duration == NoteDuration.Sixteenth)
-                    {
-                        for (int f = 0; f < 2; f++)
-                        {
-                            float offset = f * (stemUp ? 10f : -10f);
+                            canvas.StrokeSize = 2f;
                             if (stemUp)
                             {
-                                canvas.DrawLine(stemX, stemEnd + offset, stemX + 12f, stemEnd + 10f + offset);
-                                canvas.DrawLine(stemX + 12f, stemEnd + 10f + offset, stemX + 6f, stemEnd + 18f + offset);
+                                canvas.DrawLine(stemX, stemEnd, stemX + 12f, stemEnd + 10f);
+                                canvas.DrawLine(stemX + 12f, stemEnd + 10f, stemX + 6f, stemEnd + 18f);
                             }
                             else
                             {
-                                canvas.DrawLine(stemX, stemEnd + offset, stemX + 12f, stemEnd - 10f + offset);
-                                canvas.DrawLine(stemX + 12f, stemEnd - 10f + offset, stemX + 6f, stemEnd - 18f + offset);
+                                canvas.DrawLine(stemX, stemEnd, stemX + 12f, stemEnd - 10f);
+                                canvas.DrawLine(stemX + 12f, stemEnd - 10f, stemX + 6f, stemEnd - 18f);
+                            }
+                        }
+
+                        if (duration == NoteDuration.Sixteenth)
+                        {
+                            for (int f = 0; f < 2; f++)
+                            {
+                                float offset = f * (stemUp ? 10f : -10f);
+                                if (stemUp)
+                                {
+                                    canvas.DrawLine(stemX, stemEnd + offset, stemX + 12f, stemEnd + 10f + offset);
+                                    canvas.DrawLine(stemX + 12f, stemEnd + 10f + offset, stemX + 6f, stemEnd + 18f + offset);
+                                }
+                                else
+                                {
+                                    canvas.DrawLine(stemX, stemEnd + offset, stemX + 12f, stemEnd - 10f + offset);
+                                    canvas.DrawLine(stemX + 12f, stemEnd - 10f + offset, stemX + 6f, stemEnd - 18f + offset);
+                                }
                             }
                         }
                     }

@@ -356,45 +356,97 @@ namespace musicmate.Drawables
             // When a key-sig note appears later in the same bar, its accidental must be
             // shown explicitly (not suppressed) because the cancellation is still in effect.
 
-            // Pre-pass: identify pairs of consecutive eighth notes that share a beat
-            // (beat-on + beat-and), so they can be beamed together.
-            // beamPairs[i] = (partner index, stemUp)
-            var beamPairs = new Dictionary<int, (int partner, bool stemUp)>();
+            // ── Beaming pre-pass ──────────────────────────────────────────────────
+            // Group consecutive eighth/sixteenth notes that belong to the same beat group
+            // and do not cross a bar line. Each group will have its stems drawn without
+            // individual flags; instead, beam bars are drawn after all notes in a pass.
+            //
+            // Rules:
+            //   • Only eighth (0.5 beat) and sixteenth (0.25 beat) notes are beamed.
+            //   • A group starts at any beat boundary (beat 1, 2, 3, 4 of the bar) and
+            //     collects notes until the group's total duration fills one beat (1.0 beat)
+            //     or a rest/quarter/bar-line is encountered.
+            //   • Groups of a single note keep their individual flag (not beamed).
+            //   • Stem direction is determined by the note in the group farthest from the
+            //     staff midline (the "extreme" note decides for the whole group).
+            //
+            // beamGroup[i] = (groupId, stemUp)  for every note that belongs to a beam group.
+            var beamGroup = new Dictionary<int, (int groupId, bool stemUp)>();
             {
-                double cur = 0;
-                for (int i = 0; i < notes.Count - 1; i++)
+                float mid = staffTop + _layout.Sls * 2f;
+                var sortedBars = barBeats.OrderBy(b => b).ToList();
+                int groupId = 0;
+                double cur = 0.0;
+                int i = 0;
+                while (i < notes.Count)
                 {
-                    var n0 = notes[i];
-                    var n1 = notes[i + 1];
-                    double pos0 = n0.BeatPosition ?? cur;
-                    double pos1 = n1.BeatPosition ?? (pos0 + n0.BeatDuration);
+                    var n = notes[i];
+                    double pos = n.BeatPosition ?? cur;
 
-                    bool canBeam = !n0.IsRest && !n1.IsRest
-                        && n0.Duration == NoteDuration.Eighth
-                        && n1.Duration == NoteDuration.Eighth
-                        && Math.Abs(pos1 - pos0 - 0.5) < 1e-9   // second note is exactly an eighth after the first
-                        && Math.Abs(pos0 % 1.0) < 1e-9;          // first note falls on a whole beat
+                    // Only beam eighth or sixteenth non-rest notes that start on a beat boundary
+                    // (positions that are multiples of 0.5 within the bar, i.e. pos % 0.5 ≈ 0).
+                    bool isBeamable = !n.IsRest
+                        && (n.Duration == NoteDuration.Eighth || n.Duration == NoteDuration.Sixteenth)
+                        && Math.Abs(pos % 0.5) < 1e-6;
 
-                    if (canBeam)
+                    if (!isBeamable)
                     {
-                        float staffMidLocal = staffTop + _layout.Sls * 2f;
-                        float ny0 = NoteY(n0, staffTop, staffMidLocal);
-                        float ny1 = NoteY(n1, staffTop, staffMidLocal);
-                        // Use the note farthest from staff midline to decide direction.
-                        // Standard: stem up when note is below midline.
-                        float mid = staffTop + _layout.Sls * 2f;
-                        bool stemUp = (Math.Abs(ny0 - mid) >= Math.Abs(ny1 - mid))
-                            ? ny0 > mid
-                            : ny1 > mid;
-                        beamPairs[i]     = (i + 1, stemUp);
-                        beamPairs[i + 1] = (i,     stemUp);
+                        cur = pos + n.BeatDuration;
+                        i++;
+                        continue;
                     }
 
-                    cur = pos0 + n0.BeatDuration;
+                    // Determine the bar boundary immediately after this note's position,
+                    // so we never beam across a bar line.
+                    double nextBarBeat = double.MaxValue;
+                    foreach (var bb in sortedBars)
+                        if (bb > pos + 1e-9) { nextBarBeat = bb; break; }
+
+                    // Collect a run of consecutive beamable notes within 1 beat and the same bar.
+                    var groupIndices = new List<int>();
+                    double groupEnd = pos;
+                    int j = i;
+                    while (j < notes.Count)
+                    {
+                        var nj = notes[j];
+                        double pj = nj.BeatPosition ?? groupEnd;
+                        // Stop if a rest or unbeamable duration is encountered.
+                        if (nj.IsRest || (nj.Duration != NoteDuration.Eighth && nj.Duration != NoteDuration.Sixteenth))
+                            break;
+                        // Stop if this note crosses into the next bar.
+                        if (pj >= nextBarBeat - 1e-9)
+                            break;
+                        // Stop if adding this note would exceed a full beat from the group start.
+                        if (pj - pos > 1.0 + 1e-9)
+                            break;
+                        groupIndices.Add(j);
+                        groupEnd = pj + nj.BeatDuration;
+                        j++;
+                    }
+
+                    // Only form a beam group when there are at least 2 notes.
+                    if (groupIndices.Count >= 2)
+                    {
+                        // Stem direction: the note farthest from the staff midline decides for all.
+                        bool stemUp = false;
+                        float maxDist = -1f;
+                        foreach (var gi in groupIndices)
+                        {
+                            float ny = NoteY(notes[gi], staffTop, mid);
+                            float dist = Math.Abs(ny - mid);
+                            if (dist > maxDist) { maxDist = dist; stemUp = ny > mid; }
+                        }
+                        foreach (var gi in groupIndices)
+                            beamGroup[gi] = (groupId, stemUp);
+                        groupId++;
+                    }
+
+                    cur = groupEnd;
+                    i = j;  // skip past the whole group
                 }
             }
-            // Stores stem-tip positions for beamed notes: index → (x, y, color)
-            var beamStemTips = new Dictionary<int, (float x, float y, Color color)>();
+            // Stores stem-tip positions for beamed notes: index → (x, y, color, duration)
+            var beamStemTips = new Dictionary<int, (float x, float y, Color color, NoteDuration dur)>();
 
             var accHistory = new Dictionary<(char, int), Accidental>();
             var barCancelledAccidentals = new HashSet<(char, int)>();
@@ -451,14 +503,14 @@ namespace musicmate.Drawables
                 {
                     float ny = NoteY(note, staffTop, staffMid);
 
-                    bool isBeamed = beamPairs.ContainsKey(i);
-                    bool? forceStemUp = isBeamed ? beamPairs[i].stemUp : (bool?)null;
+                    bool isBeamed = beamGroup.ContainsKey(i);
+                    bool? forceStemUp = isBeamed ? beamGroup[i].stemUp : (bool?)null;
                     DrawNote(canvas, note.Duration, nx, ny, staffTop, staffBot, ink, state, fadeAlpha,
                              forceStemUp, isBeamed,
                              out float stemTipX, out float stemTipY);
                     if (isBeamed)
                         beamStemTips[i] = (stemTipX, stemTipY,
-                            GetNoteColor(state, ink, fadeAlpha));
+                            GetNoteColor(state, ink, fadeAlpha), note.Duration);
 
                     DrawLedgerLines(canvas, note, nx, staffTop, staffBot, ink, fadeAlpha);
                     DrawAccidental(canvas, note, nx, ny, ink, accHistory, barCancelledAccidentals, fadeAlpha);
@@ -473,22 +525,95 @@ namespace musicmate.Drawables
                 beatCursor += note.BeatDuration;
             }
 
-            // Draw beams connecting paired eighth-note stem tips
-            var drawnBeams = new HashSet<int>();
-            foreach (var kv in beamPairs)
+            // ── Post-pass: draw beam bars for each beam group ─────────────────────
+            // For each group: draw a primary beam (eighth-note beam) connecting all
+            // stem tips.  For any sixteenth notes in the group, draw a secondary beam
+            // (offset by one beam-thickness) above/below the primary beam.
+            // Both beams slope gently to follow the average pitch contour.
+            // Beam bar thickness and spacing constants:
+            const float BeamThick   = 4f;   // thickness of one beam bar
+            const float BeamGap     = 3f;   // gap between primary and secondary beam
+
+            // Build per-group stem tip lists from beamGroup and beamStemTips.
+            var groupTips = new Dictionary<int, List<(int noteIdx, float x, float y, Color color, NoteDuration dur)>>();
+            foreach (var kv in beamGroup)
             {
-                int idx = kv.Key;
-                int partner = kv.Value.partner;
-                if (drawnBeams.Contains(idx) || !beamStemTips.TryGetValue(idx, out var t0)
-                    || !beamStemTips.TryGetValue(partner, out var t1))
-                    continue;
-                drawnBeams.Add(idx);
-                drawnBeams.Add(partner);
+                int ni  = kv.Key;
+                int gid = kv.Value.groupId;
+                if (!beamStemTips.TryGetValue(ni, out var tip)) continue;
+                if (!groupTips.TryGetValue(gid, out var list))
+                    groupTips[gid] = list = new();
+                list.Add((ni, tip.x, tip.y, tip.color, tip.dur));
+            }
+
+            foreach (var gkv in groupTips)
+            {
+                var tips = gkv.Value;
+                if (tips.Count < 2) continue;
+                // Sort tips by X so the beam is drawn left-to-right.
+                tips.Sort((a, b) => a.x.CompareTo(b.x));
+
+                // Determine stem direction from the first tip (all share the same direction).
+                // stemUp → beam is above the note heads → primary beam connects top stem tips.
+                bool grpStemUp = beamGroup[tips[0].noteIdx].stemUp;
+
+                // Use the leftmost and rightmost stem-tip Y to define the beam slope.
+                float x0 = tips[0].x,  y0 = tips[0].y;
+                float x1 = tips[^1].x, y1 = tips[^1].y;
+
+                // Cap the slope so the beam doesn't tilt more than half a staff space
+                // over the group's width — gentle slope for engraving quality.
+                float maxTilt = _layout.Sls * 0.5f;
+                if (Math.Abs(y1 - y0) > maxTilt)
+                    y1 = y0 + Math.Sign(y1 - y0) * maxTilt;
+
+                // Helper: interpolate Y along the beam line at a given X.
+                float BeamY(float x) => x0 == x1 ? y0 : y0 + (y1 - y0) * ((x - x0) / (x1 - x0));
+
+                // Use the first non-pending color; fall back to ink.
+                var beamColor = tips.FirstOrDefault(t => t.color != default).color;
+                if (beamColor == default) beamColor = ApplyAlpha(Colors.Black, 220);
 
                 canvas.SaveState();
-                canvas.StrokeColor = t0.color;
-                canvas.StrokeSize  = 4f;
-                canvas.DrawLine(t0.x, t0.y, t1.x, t1.y);
+                canvas.StrokeColor = beamColor;
+
+                // ── Primary beam (connects all stems — represents the eighth-note beam) ──
+                canvas.StrokeSize = BeamThick;
+                canvas.DrawLine(x0, y0, x1, y1);
+
+                // ── Secondary beam (sixteenth notes only) ─────────────────────────────
+                // Only draw a partial secondary beam for a note when it is a sixteenth.
+                // The secondary beam is offset by (BeamThick + BeamGap) toward the note heads.
+                float secondaryOffset = grpStemUp ? (BeamThick + BeamGap) : -(BeamThick + BeamGap);
+                for (int ti = 0; ti < tips.Count; ti++)
+                {
+                    if (tips[ti].dur != NoteDuration.Sixteenth) continue;
+                    // Extend the secondary beam segment to cover this note and any adjacent
+                    // sixteenth notes so the beam is continuous within a sixteenth run.
+                    int segStart = ti;
+                    while (ti + 1 < tips.Count && tips[ti + 1].dur == NoteDuration.Sixteenth)
+                        ti++;
+                    int segEnd = ti;
+
+                    float sx0 = tips[segStart].x;
+                    float sx1 = tips[segEnd].x;
+                    // For an isolated sixteenth at the edge of the group, extend the beam
+                    // half a slot inward so it is clearly visible.
+                    if (segStart == segEnd)
+                    {
+                        float halfSlot = (x1 - x0) / Math.Max(tips.Count - 1, 1) * 0.5f;
+                        if (segStart == 0)
+                            sx1 = sx0 + halfSlot;
+                        else
+                            sx0 = sx1 - halfSlot;
+                    }
+
+                    canvas.StrokeSize = BeamThick;
+                    canvas.DrawLine(
+                        sx0, BeamY(sx0) + secondaryOffset,
+                        sx1, BeamY(sx1) + secondaryOffset);
+                }
+
                 canvas.RestoreState();
             }
         }
