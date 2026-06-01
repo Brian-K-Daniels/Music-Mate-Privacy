@@ -180,6 +180,24 @@
 
           </VerticalStackLayout>
 
+          <!-- Session result banner: shown after a session completes, hidden while playing -->
+          <Border x:Name="SessionResultBanner"
+                  IsVisible="False"
+                  BackgroundColor="#1A5C1A"
+                  Stroke="#2E8B2E"
+                  StrokeShape="RoundRectangle 8"
+                  StrokeThickness="1"
+                  Padding="10,6"
+                  Margin="8,0,8,4">
+            <Label x:Name="SessionResultLabel"
+                   Text=""
+                   FontSize="15"
+                   FontAttributes="Bold"
+                   TextColor="White"
+                   HorizontalOptions="Center"
+                   HorizontalTextAlignment="Center" />
+          </Border>
+
           <!-- Staff area: control buttons + staff/tuner panel + color button -->
         <VerticalStackLayout Spacing="0" HorizontalOptions="Fill">
           <Grid ColumnDefinitions="*" HorizontalOptions="Fill">
@@ -300,9 +318,9 @@
             <!-- Start/Stop (non-V3 modes only) -->
             <Button x:Name="StartStopButton"
                     Grid.Column="1"
-                    Text="⏹"
+                    Text="●"
                     FontSize="26"
-                    TextColor="Green"
+                    TextColor="#008000"
                     BackgroundColor="#F7F7F7"
                     BorderColor="#F7F7F7"
                     BorderWidth="1"

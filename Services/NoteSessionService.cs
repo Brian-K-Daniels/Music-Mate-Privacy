@@ -913,6 +913,15 @@ namespace musicmate.Services
                 OnPropertyChanged(nameof(Instrument));
             }
         }
+
+        /// <summary>
+        /// The child difficulty level (1–100) selected on ChildHomePage before this session
+        /// started.  0 means the session was started from the standard practice pages, not
+        /// from ChildHomePage, and no child-level SessionResult should be recorded.
+        ///
+        /// Not persisted here — ChildHomePage owns persistence via Preferences("ChildHome.Level").
+        /// </summary>
+        public int ChildLevel { get; set; } = 0;
         public string Key
         {
             get => _key;
@@ -1997,10 +2006,22 @@ namespace musicmate.Services
         {
             return concertMidi - GetInstrumentTransposeOffset();
         }
-        private static string TransposeKey(string key, int semitones)
+        public static string TransposeKey(string key, int semitones)
         {
             var midi = NoteNameToMidi($"{key}4") + semitones;
             return MidiToNoteName(midi, KeyUsesFlats(key)).TrimEnd('0', '1', '2', '3', '4', '5', '6', '7', '8', '9');
+        }
+
+        /// <summary>
+        /// Returns the transpose offset (semitones) for the given short instrument key
+        /// (e.g. "Bb", "Eb", "C"). Looks up the first segment of each InstrumentOptions entry.
+        /// Returns 0 if not found (concert pitch / C instrument).
+        /// </summary>
+        public static int GetTransposeOffsetForShortKey(string shortKey)
+        {
+            var key = shortKey?.Trim() ?? string.Empty;
+            var idx = Array.FindIndex(InstrumentOptions, o => o.Split(',')[0].Trim() == key);
+            return (idx >= 0 && idx < InstrumentTransposeOffsets.Length) ? InstrumentTransposeOffsets[idx] : 0;
         }
         private static string[] RespellToAvoidConsecutiveSameLetter(string[] notes, bool preferFlats)
         {

@@ -55,65 +55,82 @@
   </Shell.TitleView>
 
   <ScrollView>
-    <VerticalStackLayout x:Name="AdvancedMainLayount" Spacing="16" HorizontalOptions="Fill" Padding="16, 8">
-        <VerticalStackLayout Spacing="10" HorizontalOptions="Fill">
-        <Grid ColumnDefinitions="250,Auto,80" ColumnSpacing="8" HorizontalOptions="Fill"
-              RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
-            <!-- Pitch Tolerance -->
-            <Label Grid.Row="0" Grid.Column="0" Text="Pitch Tolerance (cents)" FontSize="12" VerticalOptions="Center"/>
+    <VerticalStackLayout x:Name="AdvancedMainLayout" Spacing="16" HorizontalOptions="Fill" Padding="16, 8">
+      <!-- Advanced Settings Section -->
+      <Frame BorderColor="#8B4513" CornerRadius="10" Padding="12" Margin="0,0,0,0" BackgroundColor="#F8F8FF">
+        <VerticalStackLayout Spacing="10">
+          <Label Text="Advanced Audio &amp; Pitch Settings" FontAttributes="Bold" FontSize="16" TextColor="#8B4513"/>
+
+          <Grid ColumnDefinitions="160,*,60" RowSpacing="8" >
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <Label Grid.Row="0" Grid.Column="0" Text="Pitch Tolerance (cents)" VerticalOptions="Center"/>
             <Slider Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Tolerance, Mode=TwoWay}"/>
-            <Label Grid.Row="0" Grid.Column="2" Text="{Binding Tolerance}" FontSize="12" VerticalOptions="Center" TextColor="{Binding ContrastingTextColor}"/>
+            <Label Grid.Row="0" Grid.Column="2" Text="{Binding Tolerance}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
 
-            <!-- RMS Threshold -->
-            <Label Grid.Row="1" Grid.Column="0" Text="RMS Threshold" FontSize="12" VerticalOptions="Center"/>
+            <Label Grid.Row="1" Grid.Column="0" Text="RMS Threshold" VerticalOptions="Center"/>
             <Slider Grid.Row="1" Grid.Column="1" Minimum="0.0" Maximum="0.1" Value="{Binding RmsThreshold, Mode=TwoWay}"/>
-            <Label Grid.Row="1" Grid.Column="2" Text="{Binding RmsThreshold, StringFormat='{0:F3}'}" FontSize="12" VerticalOptions="Center" TextColor="{Binding ContrastingTextColor}"/>
+            <Label Grid.Row="1" Grid.Column="2" Text="{Binding RmsThreshold, StringFormat='{0:F3}'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
 
-            <!-- Cooldown -->
-            <Label Grid.Row="2" Grid.Column="0" Text="Cooldown (ms)" FontSize="12" VerticalOptions="Center"/>
+            <Label Grid.Row="2" Grid.Column="0" Text="Cooldown (ms)" VerticalOptions="Center"/>
             <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="300" Value="{Binding CooldownMs, Mode=TwoWay}"/>
-            <Label Grid.Row="2" Grid.Column="2" Text="{Binding CooldownMs}" FontSize="12" VerticalOptions="Center" TextColor="{Binding ContrastingTextColor}"/>
+            <Label Grid.Row="2" Grid.Column="2" Text="{Binding CooldownMs}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
 
-            <!-- Pitch Offset -->
-            <Label Grid.Row="3" Grid.Column="0" Text="Pitch Offset (cents)" FontSize="12" VerticalOptions="Center"/>
+            <Label Grid.Row="3" Grid.Column="0" Text="Pitch Offset (cents)" VerticalOptions="Center"/>
             <Slider Grid.Row="3" Grid.Column="1" Minimum="-50" Maximum="50" Value="{Binding PitchOffsetCents, Mode=TwoWay}"/>
-            <Label Grid.Row="3" Grid.Column="2" Text="{Binding PitchOffsetCents, StringFormat='{0:F1} cents'}" FontSize="12" VerticalOptions="Center" TextColor="{Binding ContrastingTextColor}"/>
-
-            <!-- Delay Between Repeats -->
-            <Label Grid.Row="4" Grid.Column="0" Text="Delay Between Repeats (secs)" FontSize="12" VerticalOptions="Center"/>
-            <Slider Grid.Row="4" Grid.Column="1" Minimum="0" Maximum="20" Value="{Binding RepeatDelaySeconds, Mode=TwoWay}"/>
-            <Label Grid.Row="4" Grid.Column="2" Text="{Binding RepeatDelaySeconds, StringFormat='Delay: {0:F1} sec'}" FontSize="12" VerticalOptions="Center" TextColor="{Binding ContrastingTextColor}"/>
-
-            <!-- Wrong debounce for wrong-counts -->
-            <Label Grid.Row="5" Grid.Column="0" Text="Wrong Debounce (ms)" FontSize="12" VerticalOptions="Center"/>
-            <Slider Grid.Row="5" Grid.Column="1" Minimum="0" Maximum="2000" Value="{Binding WrongDebounceMs, Mode=TwoWay}"/>
-            <Label Grid.Row="5" Grid.Column="2" Text="{Binding WrongDebounceMs}" FontSize="12" VerticalOptions="Center" TextColor="{Binding ContrastingTextColor}"/>
-
-            <!-- Pitch window size for detection -->
-            <Label Grid.Row="6" Grid.Column="0" Text="Pitch Window Size" FontSize="12" VerticalOptions="Center"/>
-            <Slider Grid.Row="6" Grid.Column="1" Minimum="512" Maximum="16384" Value="{Binding PitchWindowSize, Mode=TwoWay}"/>
-            <Label Grid.Row="6" Grid.Column="2" Text="{Binding PitchWindowSize}" FontSize="12" VerticalOptions="Center" TextColor="{Binding ContrastingTextColor}"/>
-
-            <!-- Smoothing window size (median smoothing) -->
-            <Label Grid.Row="7" Grid.Column="0" Text="Smoothing Window" FontSize="12" VerticalOptions="Center"/>
-            <Slider Grid.Row="7" Grid.Column="1" Minimum="1" Maximum="11" Value="{Binding SmoothingWindowSize, Mode=TwoWay}"/>
-            <Label Grid.Row="7" Grid.Column="2" Text="{Binding SmoothingWindowSize}" FontSize="12" VerticalOptions="Center" TextColor="{Binding ContrastingTextColor}"/>
-
-            <!-- Pitch confidence threshold -->
-            <Label Grid.Row="8" Grid.Column="0" Text="Pitch Confidence" FontSize="12" VerticalOptions="Center"/>
-            <Slider Grid.Row="8" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding PitchConfidenceThreshold, Mode=TwoWay}"/>
-            <Label Grid.Row="8" Grid.Column="2" Text="{Binding PitchConfidenceThreshold, StringFormat='{0:F2}'}" FontSize="12" VerticalOptions="Center" TextColor="{Binding ContrastingTextColor}"/>
-            
-            <!-- Reset to defaults button -->
-            <Button Grid.Row="9" Grid.Column="1"
-                    Text="Reset all to defaults"
-                    FontSize="12"
-                    VerticalOptions="Center"
-                    HorizontalOptions="Center"
-                    BackgroundColor="Orange"
-                    Clicked="OnResetClicked" />
+            <Label Grid.Row="3" Grid.Column="2" Text="{Binding PitchOffsetCents, StringFormat='{0:F1}'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
           </Grid>
+
+          <Button Text="Reset Advanced Settings" Clicked="OnResetAdvancedClicked" BackgroundColor="#0078D7" TextColor="White"/>
         </VerticalStackLayout>
+      </Frame>
+
+      <!-- LevelUp Criteria Section -->
+      <Frame BorderColor="#8B4513" CornerRadius="10" Padding="12" Margin="0,16,0,0" BackgroundColor="#FFF8F0">
+        <VerticalStackLayout Spacing="10">
+          <Label Text="Level Advancement Criteria" FontAttributes="Bold" FontSize="16" TextColor="#8B4513"/>
+
+          <Grid ColumnDefinitions="160,*,60,80" RowSpacing="8" >
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <Label Grid.Row="0" Grid.Column="0" Text="Sessions Required to Advance" VerticalOptions="Center"/>
+            <Slider Grid.Row="0" Grid.Column="1" Minimum="1" Maximum="10" Value="{Binding SessionCount, Mode=TwoWay}"/>
+            <Label Grid.Row="0" Grid.Column="2" Text="{Binding SessionCount}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+            <Label Grid.Row="0" Grid.Column="3" Text="{Binding CurrentSessionNotesCount}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+
+            <Label Grid.Row="1" Grid.Column="0" Text="Minimum Pitch Accuracy (%)" VerticalOptions="Center"/>
+            <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding MinPitchAccuracyPercent, Mode=TwoWay}"/>
+            <Label Grid.Row="1" Grid.Column="2" Text="{Binding MinPitchAccuracyPercent, StringFormat='{0:F0}%'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+            <Label Grid.Row="1" Grid.Column="3" Text="{Binding CurrentSessionPitchAccuracyPercent, StringFormat='{0:F0}%'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+
+            <Label Grid.Row="2" Grid.Column="0" Text="Minimum Timing Consistency (%)" VerticalOptions="Center"/>
+            <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding MinTimingAccuracyPercent, Mode=TwoWay}"/>
+            <Label Grid.Row="2" Grid.Column="2" Text="{Binding MinTimingAccuracyPercent, StringFormat='{0:F0}%'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+            <Label Grid.Row="2" Grid.Column="3" Text="{Binding CurrentSessionTimingAccuracyPercent, StringFormat='{0:F0}%'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+
+            <Label Grid.Row="3" Grid.Column="0" Text="Minimum Overall Accuracy (%)" VerticalOptions="Center"/>
+            <Slider Grid.Row="3" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding MinOverallAccuracyPercent, Mode=TwoWay}"/>
+            <Label Grid.Row="3" Grid.Column="2" Text="{Binding MinOverallAccuracyPercent, StringFormat='{0:F0}%'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+            <Label Grid.Row="3" Grid.Column="3" Text="{Binding CurrentSessionOverallAccuracyPercent, StringFormat='{0:F0}%'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+
+            <Label Grid.Row="4" Grid.Column="0" Text="Minimum Notes Per Session" VerticalOptions="Center"/>
+            <Slider Grid.Row="4" Grid.Column="1" Minimum="1" Maximum="20" Value="{Binding MinNotesPerSession, Mode=TwoWay}"/>
+            <Label Grid.Row="4" Grid.Column="2" Text="{Binding MinNotesPerSession}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+            <Label Grid.Row="4" Grid.Column="3" Text="{Binding CurrentSessionNotesCount}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+          </Grid>
+
+          <Button Text="Reset Criteria" Clicked="OnResetCriteriaClicked" BackgroundColor="#0078D7" TextColor="White"/>
+        </VerticalStackLayout>
+      </Frame>
     </VerticalStackLayout>
   </ScrollView>
 </ContentPage>

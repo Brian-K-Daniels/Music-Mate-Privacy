@@ -1,0 +1,121 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="musicmate.Pages.ChildHomePage"
+             Shell.NavBarIsVisible="True"
+             Title="Home"
+             BackgroundColor="#1A6B3C">
+
+    <ScrollView>
+        <VerticalStackLayout Spacing="28" Padding="24,32,24,40" HorizontalOptions="Center"
+                             MaximumWidthRequest="420">
+
+            <!-- Logo + title -->
+            <VerticalStackLayout Spacing="4" HorizontalOptions="Center">
+                <Image Source="logo.png" HeightRequest="80" WidthRequest="80" HorizontalOptions="Center" />
+                <Label Text="Music Mate"
+                       FontSize="36"
+                       FontAttributes="Bold"
+                       TextColor="White"
+                       HorizontalOptions="Center" />
+            </VerticalStackLayout>
+
+            <!-- Instrument picker -->
+            <VerticalStackLayout Spacing="8">
+                <Label Text="Instrument"
+                       FontSize="18"
+                       FontAttributes="Bold"
+                       TextColor="White"
+                       HorizontalOptions="Center" />
+                <Border x:Name="InstrumentPickerBorder"
+                        BackgroundColor="White"
+                        Stroke="#CCCCCC"
+                        StrokeThickness="2"
+                        Padding="16,14">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="10"/>
+                    </Border.StrokeShape>
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnInstrumentTapped" />
+                    </Border.GestureRecognizers>
+                    <Label x:Name="InstrumentPickerLabel"
+                           Text="Tap here and pick your instrument. Then swipe up/down."
+                           FontSize="12"
+                           TextColor="#888888"
+                           VerticalOptions="Center"
+                           InputTransparent="True" />
+                </Border>
+            </VerticalStackLayout>
+
+            <!-- Level control -->
+            <VerticalStackLayout Spacing="8">
+                <Label Text="Level"
+                       FontSize="18"
+                       FontAttributes="Bold"
+                       TextColor="White"
+                       HorizontalOptions="Center" />
+                <HorizontalStackLayout Spacing="16" HorizontalOptions="Center">
+                    <Button x:Name="LevelDownButton"
+                            Text="&#x2212;"
+                            Pressed="OnLevelDownPressed"
+                            Released="OnLevelButtonReleased"
+                            FontSize="26"
+                            FontAttributes="Bold"
+                            WidthRequest="64"
+                            HeightRequest="64"
+                            BackgroundColor="#8B4513"
+                            TextColor="White"
+                            CornerRadius="32" />
+                    <Border BackgroundColor="White"
+                            Stroke="#CCCCCC"
+                            StrokeThickness="2"
+                            Padding="16,8"
+                            MinimumWidthRequest="90">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="10"/>
+                        </Border.StrokeShape>
+                        <Label x:Name="LevelLabel"
+                               Text="1"
+                               FontSize="30"
+                               FontAttributes="Bold"
+                               TextColor="#1A6B3C"
+                               HorizontalOptions="Center"
+                               VerticalOptions="Center" />
+                    </Border>
+                    <Button x:Name="LevelUpButton"
+                            Text="+"
+                            Pressed="OnLevelUpPressed"
+                            Released="OnLevelButtonReleased"
+                            FontSize="26"
+                            FontAttributes="Bold"
+                            WidthRequest="64"
+                            HeightRequest="64"
+                            BackgroundColor="#2E8B57"
+                            TextColor="White"
+                            CornerRadius="32"
+                            BorderColor="White"
+                            BorderWidth="2" />
+                </HorizontalStackLayout>
+                <Label x:Name="LevelDescLabel"
+                       Text="Beginner"
+                       FontSize="15"
+                       TextColor="#CCFFCC"
+                       HorizontalOptions="Center" />
+            </VerticalStackLayout>
+
+            <!-- Start button -->
+            <Button x:Name="StartButton"
+                    Text="▶  Start"
+                    Clicked="OnStartClicked"
+                    FontSize="26"
+                    FontAttributes="Bold"
+                    BackgroundColor="#F5C518"
+                    TextColor="#1A1A1A"
+                    HeightRequest="68"
+                    CornerRadius="34"
+                    HorizontalOptions="Fill"
+                    Margin="0,16,0,0" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

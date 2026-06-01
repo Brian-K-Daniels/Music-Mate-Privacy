@@ -70,7 +70,9 @@ namespace musicmate.ViewModels
                 case nameof(NoteSessionService.PlaybackBpm):
                     OnPropertyChanged(nameof(PlaybackBpm)); break;
                 case nameof(NoteSessionService.CorrectThreshold):
-                    OnPropertyChanged(nameof(CorrectThreshold)); break;
+                    OnPropertyChanged(nameof(CorrectThreshold));
+                    OnPropertyChanged(nameof(OmitSliderValue));
+                    break;
                 case nameof(NoteSessionService.MinCorrectCount):
                     OnPropertyChanged(nameof(MinCorrectCount)); break;
                 case nameof(NoteSessionService.AutoStart):
@@ -286,12 +288,14 @@ namespace musicmate.ViewModels
                 {
                     _session.CorrectThreshold = clamped;
                     OnPropertyChanged(nameof(CorrectThreshold));
+                    OnPropertyChanged(nameof(OmitSliderValue));
                 }
                 else
                 {
                     _correctThreshold = clamped;
                     Preferences.Set("musicmate.CorrectThreshold", _correctThreshold);
                     OnPropertyChanged(nameof(CorrectThreshold));
+                    OnPropertyChanged(nameof(OmitSliderValue));
                 }
             }
         }
@@ -588,6 +592,24 @@ namespace musicmate.ViewModels
             }
         }
         public string MaxSessionDbSizeDisplay => $"Max Session DB size: {(int)MaxSessionDbSizeMb} MB";
+
+        // ── Rolling per-note attempt history limit ────────────────────────────
+        // Persisted as "MaxAttemptsPerNote" in app preferences.
+        // Default = 100.  Grouping key = WrittenNoteName + Instrument.
+        private int _maxAttemptsPerNote = Preferences.Default.Get("MaxAttemptsPerNote", 100);
+        public int MaxAttemptsPerNote
+        {
+            get => _maxAttemptsPerNote;
+            set
+            {
+                var clamped = Math.Max(10, Math.Min(1000, value));
+                if (_maxAttemptsPerNote == clamped) return;
+                _maxAttemptsPerNote = clamped;
+                // Persist so NoteAttemptDatabase.SaveAttemptAsync picks up the new limit immediately.
+                Preferences.Default.Set("MaxAttemptsPerNote", clamped);
+                OnPropertyChanged(nameof(MaxAttemptsPerNote));
+            }
+        }
 
         // ── Storage info (read-only, refreshed on page appear) ────────────────
         private double _sessionDbSizeMb;

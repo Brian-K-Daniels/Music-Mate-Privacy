@@ -32,8 +32,12 @@ namespace musicmate
 
             string noteDbPath = Path.Combine(FileSystem.AppDataDirectory, "notestats.db3");
             string sessionDbPath = Path.Combine(FileSystem.AppDataDirectory, "sessions.db3");
+            string sessionResultDbPath = Path.Combine(FileSystem.AppDataDirectory, "session_results.db3");
+            string noteAttemptDbPath = Path.Combine(FileSystem.AppDataDirectory, "note_attempts.db3");
             builder.Services.AddSingleton(new NoteDatabase(noteDbPath));
             builder.Services.AddSingleton(new SessionDatabase(sessionDbPath));
+            builder.Services.AddSingleton(new SessionResultDatabase(sessionResultDbPath));
+            builder.Services.AddSingleton(new NoteAttemptDatabase(noteAttemptDbPath));
 
             builder.Services.AddSingleton<IOrientationService, OrientationService>();
             builder.Services.AddSingleton<StatusService>();

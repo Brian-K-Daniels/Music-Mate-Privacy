@@ -159,6 +159,16 @@
                 OnColor="#8B4513" HorizontalOptions="End" />
       </Grid>
 
+      <!-- Max attempts kept per note (rolling window) -->
+      <Grid ColumnDefinitions="200,*,60" ColumnSpacing="4" VerticalOptions="Center">
+        <Label Grid.Column="0" Text="Attempts kept per note" />
+        <Slider Grid.Column="1" Minimum="10" Maximum="1000"
+                Value="{Binding MaxAttemptsPerNote, Mode=TwoWay}"
+                Style="{StaticResource SliderStyle}" />
+        <Label Grid.Column="2" Text="{Binding MaxAttemptsPerNote, StringFormat='{0:F0}'}"
+               HorizontalTextAlignment="End" />
+      </Grid>
+
     
 
       <!-- Memory usage info -->

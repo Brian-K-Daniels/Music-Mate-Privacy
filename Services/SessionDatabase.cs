@@ -166,3 +166,82 @@ public class SessionDatabase
             }
         }
 }
+
+// ── Child-home session results ──────────────────────────────────────────────
+
+/// <summary>
+/// Persists <see cref="musicmate.Models.SessionResult"/> rows — one per
+/// completed child-home practice session.  Lives in its own SQLite file
+/// ("session_results.db") so it does not interfere with the existing
+/// SessionDatabase or NoteDatabase tables.
+/// </summary>
+public class SessionResultDatabase
+{
+    private readonly SQLiteAsyncConnection _db;
+    private readonly string _dbPath;
+
+    public string DatabasePath => _dbPath;
+
+    public SessionResultDatabase(string dbPath)
+    {
+        _dbPath = dbPath;
+        _db = new SQLiteAsyncConnection(dbPath);
+    }
+
+    public async Task InitializeAsync()
+    {
+        await _db.CreateTableAsync<musicmate.Models.SessionResult>();
+    }
+
+    /// <summary>Insert a new result row.  Returns the auto-assigned Id.</summary>
+    public async Task<int> InsertAsync(musicmate.Models.SessionResult result)
+    {
+        try
+        {
+            Utils.Log($"[SessionResultDatabase] Saving: Level={result.Level}, " +
+                      $"Instrument={result.Instrument}, Correct={result.CorrectPitchCount}/{result.TotalNotes}, " +
+                      $"Overall={result.OverallAccuracyPercent:F1}%");
+            return await _db.InsertAsync(result);
+        }
+        catch (Exception ex)
+        {
+            Utils.Log($"[SessionResultDatabase] InsertAsync error: {ex}");
+            throw;
+        }
+    }
+
+    /// <summary>All results, newest first.</summary>
+    public Task<List<musicmate.Models.SessionResult>> GetAllAsync()
+        => _db.Table<musicmate.Models.SessionResult>()
+              .OrderByDescending(r => r.DateTime)
+              .ToListAsync();
+
+    /// <summary>
+    /// Results for a specific level, newest first.
+    /// FUTURE (level-up criteria): call GetByLevelAsync(level, last: N) and check
+    /// whether the last N sessions all exceeded a target OverallAccuracyPercent.
+    /// </summary>
+    public Task<List<musicmate.Models.SessionResult>> GetByLevelAsync(int level)
+        => _db.Table<musicmate.Models.SessionResult>()
+              .Where(r => r.Level == level)
+              .OrderByDescending(r => r.DateTime)
+              .ToListAsync();
+
+    /// <summary>
+    /// Results for a specific level AND instrument, newest first.
+    /// Used by <see cref="LevelUpService"/> to apply Rule 2 (same level + same
+    /// instrument only) directly in SQL rather than filtering in memory.
+    /// </summary>
+    public Task<List<musicmate.Models.SessionResult>> GetByLevelAndInstrumentAsync(
+        int level, string instrument)
+        => _db.Table<musicmate.Models.SessionResult>()
+              .Where(r => r.Level == level && r.Instrument == instrument)
+              .OrderByDescending(r => r.DateTime)
+              .ToListAsync();
+
+    public Task<int> DeleteByIdAsync(int id)
+        => _db.Table<musicmate.Models.SessionResult>().DeleteAsync(r => r.Id == id);
+
+    public Task<int> ClearAllAsync()
+        => _db.DeleteAllAsync<musicmate.Models.SessionResult>();
+}

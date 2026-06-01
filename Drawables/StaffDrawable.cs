@@ -192,7 +192,7 @@ namespace musicmate.Drawables
                                    || _session.Tune == "Practice Tune"
                                    || _session.SelectedScale == "Chromatic")
                 ? 0
-                : GetAccidentalCountForScale(_session.GetConcertKey(), _session.SelectedScale);
+                : GetAccidentalCountForScale(_session.Key, _session.SelectedScale);
             var accScale = 1.5f;
             var accWidth = headW * accScale;
             // Slightly wider spacing so key-signature symbols have breathing room in dense keys (e.g. 7 flats).
@@ -475,13 +475,14 @@ namespace musicmate.Drawables
                 var note = notes[i];
                 float pitchY = GetYForSpelledNote(note, middleLineY, spacing);
 
-                // ♯  — crossing bars should straddle the target staff line/space:
-                //        centre the glyph box on pitchY → drawBoxTopY = pitchY - glyphSize * 0.50
-                // ♭  — oval body sits at ≈ 70 % of the glyph bounding-box height;
-                //        shift box up so the oval lands on pitchY → drawBoxTopY = pitchY - glyphSize * 0.70
+                // ♯  — crossing bars sit at ≈ 50 % of the glyph bounding-box; factor = 0.50
+                //        centres the bars on pitchY.
+                // ♭  — oval body sits at ≈ 60 % of the glyph bounding-box height;
+                //        factor = 0.62 shifts the box up so the oval lands on pitchY.
                 float drawBoxTopY = isFlat
-                    ? pitchY - glyphSize * 0.70f
-                    : pitchY - glyphSize * 0.50f;
+                    ? pitchY - glyphSize * 0.5f  // flat   2026.05.30 0957  0.62f
+                    : pitchY - glyphSize * 0.7f;// sharp .4 int the space below, .45 same, .55 bit higher
+                                                // .7 perfect
 
                 float x = startX + i * (symbolSpacing + 2f);
 
@@ -714,11 +715,15 @@ namespace musicmate.Drawables
                     canvas.FontSize = accSize;
                     canvas.FontColor = strokeColor;
 
-                    // ♯ / ♮ : centre glyph box on the note's pitch position.
-                    // ♭     : oval body is at ≈ 70 % of glyph height — shift box up so oval lands on pitch.
+                    // ♯ : crossing bars at ≈ 50 % of glyph box → factor 0.50.
+                    // ♮ : visual centre sits lower in box (≈ 55 %) → factor 0.55.
+                    // ♭ : oval body at ≈ 62 % of glyph box → factor 0.62.
+                    bool isNatural = accidentalGlyph == "♮";
                     var drawY = isAccFlat
-                        ? noteY - accSize * 0.70f
-                        : noteY - accSize * 0.50f;
+                        ? noteY - accSize * 0.62f      // flat
+                        : isNatural
+                            ? noteY - accSize * 0.70f  // natural was .55  //  2026.05.30 1004  
+                            : noteY - accSize * 0.50f; // sharp
 
                     const float mmToDp = 160f / 25.4f;
                     var accX = isAccFlat
@@ -738,7 +743,7 @@ namespace musicmate.Drawables
             canvas.RestoreState();
         }
 
-        // Draw a centered tuner-style note (used in Tuner mode), including ♯/♭ when appropriate.
+        // Draw a centered tuner-style note
         private void DrawCenteredNote(ICanvas canvas, string noteName, float centerX, float staffTop, float spacing, float headH, float headW,
                         Color fillColor, Color strokeColor)
         {

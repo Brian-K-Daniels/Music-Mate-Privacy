@@ -105,6 +105,12 @@
     <MauiXaml Update="Pages\AboutPage.xaml">
       <Generator>MSBuild:Compile</Generator>
     </MauiXaml>
+    <MauiXaml Update="Pages\AdvancePage.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </MauiXaml>
+    <MauiXaml Update="Pages\ChildHomePage.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </MauiXaml>
     <MauiXaml Update="Pages\MainPage.xaml">
       <Generator>MSBuild:Compile</Generator>
     </MauiXaml>

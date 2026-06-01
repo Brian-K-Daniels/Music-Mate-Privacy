@@ -4,6 +4,7 @@
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:local="clr-namespace:musicmate.Pages"
+    xmlns:pages="clr-namespace:musicmate.Pages"
     x:Name="AppShellInstance"
     Title="MusicMate"
     FlyoutBehavior="Flyout"
@@ -25,13 +26,20 @@
     </Style>
   </Shell.Resources>
 
+  <!-- Simple child-friendly Home page: instrument, level, and Start button -->
+  <FlyoutItem Title="Home">
+    <ShellContent
+        Route="ChildHomePage"
+        ContentTemplate="{DataTemplate local:ChildHomePage}" />
+  </FlyoutItem>
+
   <FlyoutItem Title="What to Play">
     <ShellContent
         Route="WhatToPlayPage"
         ContentTemplate="{DataTemplate local:WhatToPlayPage}" />
   </FlyoutItem>
 
-  <FlyoutItem Title="Home">
+  <FlyoutItem Title="Practice">
     <ShellContent
         Route="MainPage"
         ContentTemplate="{DataTemplate local:MainPage}" />

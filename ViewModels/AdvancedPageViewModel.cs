@@ -1,4 +1,4 @@
-    using System.ComponentModel;
+using System.ComponentModel;
 using musicmate.Services;
 using Microsoft.Maui.Storage;
 using Microsoft.Maui.Graphics;
@@ -7,6 +7,27 @@ namespace musicmate.ViewModels
 {
     public class AdvancedPageViewModel : INotifyPropertyChanged
     {
+        // --- Actual values from the current session ---
+        public int CurrentSessionNotesCount => _session.NotesToDraw?.Count ?? 0;
+        public double CurrentSessionPitchAccuracyPercent
+        {
+            get
+            {
+                var (correct, wrong, percent) = _session.GetSessionCorrectWrongTotals();
+                return double.IsNaN(percent) ? 0.0 : percent;
+            }
+        }
+        public double CurrentSessionTimingAccuracyPercent
+        {
+            get
+            {
+                // If you have a timing accuracy metric, expose it here. Placeholder:
+                // For now, return 0.0; replace with actual timing accuracy if available.
+                return 0.0;
+            }
+        }
+        public double CurrentSessionOverallAccuracyPercent => CurrentSessionPitchAccuracyPercent; // Placeholder: use pitch accuracy
+        public int CurrentSessionCount => 1; // Placeholder: set to 1, or expose actual session count if tracked
         private readonly ThemeService _themeService;
         private readonly NoteSessionService _session;
         
@@ -148,6 +169,49 @@ namespace musicmate.ViewModels
             set { Preferences.Default.Set("RepeatDelaySeconds", value); OnPropertyChanged(nameof(RepeatDelaySeconds)); }
         }
 
+        // LevelUp Criteria Properties
+        public int SessionCount
+        {
+            get => Preferences.Default.Get("LevelUp.SessionCount", LevelUpService.DefaultSessionCount);
+            set { Preferences.Default.Set("LevelUp.SessionCount", value); OnPropertyChanged(nameof(SessionCount)); }
+        }
+        public double MinPitchAccuracyPercent
+        {
+            get => Preferences.Default.Get("LevelUp.MinPitchPct", LevelUpService.DefaultMinPitchAccuracyPercent);
+            set { Preferences.Default.Set("LevelUp.MinPitchPct", value); OnPropertyChanged(nameof(MinPitchAccuracyPercent)); }
+        }
+        public double MinTimingAccuracyPercent
+        {
+            get => Preferences.Default.Get("LevelUp.MinTimingPct", LevelUpService.DefaultMinTimingAccuracyPercent);
+            set { Preferences.Default.Set("LevelUp.MinTimingPct", value); OnPropertyChanged(nameof(MinTimingAccuracyPercent)); }
+        }
+        public double MinOverallAccuracyPercent
+        {
+            get => Preferences.Default.Get("LevelUp.MinOverallPct", LevelUpService.DefaultMinOverallAccuracyPercent);
+            set { Preferences.Default.Set("LevelUp.MinOverallPct", value); OnPropertyChanged(nameof(MinOverallAccuracyPercent)); }
+        }
+        public int MinNotesPerSession
+        {
+            get => Preferences.Default.Get("LevelUp.MinNotes", LevelUpService.DefaultMinNotesPerSession);
+            set { Preferences.Default.Set("LevelUp.MinNotes", value); OnPropertyChanged(nameof(MinNotesPerSession)); }
+        }
+
+        public void ResetLevelUpDefaults()
+        {
+            SessionCount = LevelUpService.DefaultSessionCount;
+            MinPitchAccuracyPercent = LevelUpService.DefaultMinPitchAccuracyPercent;
+            MinTimingAccuracyPercent = LevelUpService.DefaultMinTimingAccuracyPercent;
+            MinOverallAccuracyPercent = LevelUpService.DefaultMinOverallAccuracyPercent;
+            MinNotesPerSession = LevelUpService.DefaultMinNotesPerSession;
+        }
+
+        public void ResetAdvancedSettings()
+        {
+            Tolerance = 50; // or your app's default
+            RmsThreshold = 0.02f; // or your app's default
+            CooldownMs = 100; // or your app's default
+            PitchOffsetCents = 0.0; // or your app's default
+        }
 
         public event PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged(string propertyName)
