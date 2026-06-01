@@ -446,6 +446,12 @@ namespace musicmate.Pages
                         }
 
                         await UpdateNoteStatsDatabaseAsync();
+
+                        // Capture current level and instrument BEFORE potential level-up
+                        // so marquee displays progress for the level that was just completed.
+                        int levelForMarquee = _session.ChildLevel;
+                        string shortInstrumentForMarquee = _session.Instrument?.Split(',')[0].Trim() ?? "";
+
                         // SaveSessionStatAsync also saves SessionResult and checks level-up
                         // for child sessions; returns the new level if advanced, else null.
                         int? newChildLevel = await SaveSessionStatAsync();
@@ -473,8 +479,8 @@ namespace musicmate.Pages
                         // Show level-up progress: session count, rolling averages, and note count
                         try
                         {
-                            // Get recent qualifying sessions for this instrument/level
-                            var rows = await _sessionResultDb.GetByLevelAndInstrumentAsync(_session.ChildLevel, _session.Instrument);
+                            // Get recent qualifying sessions for the level that was just completed
+                            var rows = await _sessionResultDb.GetByLevelAndInstrumentAsync(levelForMarquee, shortInstrumentForMarquee);
                             var qualifying = rows
                                 .Where(r => r.TotalNotes >= Services.LevelUpService.MinNotesPerSession)
                                 .Where(r => !(r.TotalNotes > 0 && r.OverallAccuracyPercent == 0))
@@ -491,10 +497,15 @@ namespace musicmate.Pages
                                 })
                                 : 100.0;
                             int noteCount = (int)correct + (int)wrong;
+#if DEBUG
                             // Debug info: show qualifying session details
                             string debug = string.Join(" | ", qualifying.Select(r => $"L{r.Level} {r.Instrument} Pch={r.PitchAccuracyPercent:F1} Tmg={(r.AverageTimingMs > 0 ? (100.0 - r.TimingStdDevMs / r.AverageTimingMs * 100.0).ToString("F1") : "-")} Ovrl={r.OverallAccuracyPercent:F1} N={r.TotalNotes}"));
                             StatusService.Instance.StatusMessage =
                                 $"ssns={recent.Count}/{sessionCount}, Pch={avgPitch:F1}%, Tmg={avgTiming:F1}%, Overall={avgOverall:F1}%, Notes={noteCount}  [Q:{qualifying.Count}] {debug}";
+#else
+                            StatusService.Instance.StatusMessage =
+                                $"ssns={recent.Count}/{sessionCount}, Pch={avgPitch:F1}%, Tmg={avgTiming:F1}%, Overall={avgOverall:F1}%, Notes={noteCount}";
+#endif
                         }
                         catch (Exception ex)
                         {

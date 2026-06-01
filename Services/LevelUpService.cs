@@ -71,59 +71,62 @@ public static class LevelUpService
     public const double DefaultMinTimingAccuracyPercent = 75.0;
     public const double DefaultMinOverallAccuracyPercent = 80.0;
     public const int DefaultMinNotesPerSession = 4;
-    public const double DefaultMinOverallAccuracyFloor = 60.0; // New: minimum floor for any session in group
+    public const double DefaultMinOverallAccuracyFloor = 60.0; // Minimum floor for any session in group
+
+    // ── Preference keys ────────────────────────────────────────────────────
+    private const string PrefLevelKey = "ChildHome.Level";
+
+    // ── Threshold constants ────────────────────────────────────────────────
+    // Adjust here to change level-up sensitivity; nowhere else.
+
+    /// <summary>
+    /// Number of consecutive qualifying sessions that must all meet the
+    /// accuracy thresholds before a level-up is awarded.  Default = 3.
+    /// </summary>
+    public static int SessionCount
+        => Preferences.Default.Get("LevelUp.SessionCount", DefaultSessionCount);
+
+    /// <summary>
+    /// Minimum pitch accuracy (%) required in every qualifying session.
+    /// Default = 85.
+    /// </summary>
+    public static double MinPitchAccuracyPercent
+        => Preferences.Default.Get("LevelUp.MinPitchPct", DefaultMinPitchAccuracyPercent);
+
+    /// <summary>
+    /// Minimum timing accuracy (%) required when timing data is available.
+    /// Timing is measured as a regularity score: lower stdDev relative to
+    /// meanBeat = more consistent.  Currently the stored value is 0 when
+    /// fewer than 2 notes were played; in that case the check is skipped
+    /// (Rule 7).  Default = 75.
+    /// </summary>
+    public static double MinTimingAccuracyPercent
+        => Preferences.Default.Get("LevelUp.MinTimingPct", DefaultMinTimingAccuracyPercent);
+
+    /// <summary>
+    /// Minimum overall accuracy (%) required in every qualifying session.
+    /// Currently overall == pitch accuracy; will blend timing once it is
+    /// calibrated.  Default = 80.
+    /// </summary>
+    public static double MinOverallAccuracyPercent
+        => Preferences.Default.Get("LevelUp.MinOverallPct", DefaultMinOverallAccuracyPercent);
+
+    /// <summary>
+    /// Minimum number of non-rest note slots a session must contain to be
+    /// counted as a qualifying session.  Very short sessions are excluded
+    /// because their accuracy percentages are statistically unreliable.
+    /// Default = 4.
+    /// </summary>
+    public static int MinNotesPerSession
+        => Preferences.Default.Get("LevelUp.MinNotes", DefaultMinNotesPerSession);
+
     /// <summary>
     /// Minimum overall accuracy (%) required for any session in the rolling group (floor).
+    /// No session can be below this value, even if the rolling average is acceptable.
     /// Default = 60.
     /// </summary>
     public static double MinOverallAccuracyFloor
         => Preferences.Default.Get("LevelUp.MinOverallAccuracyFloor", DefaultMinOverallAccuracyFloor);
-        // ── Preference keys ────────────────────────────────────────────────────
-        private const string PrefLevelKey = "ChildHome.Level";
-
-        // ── Threshold constants ────────────────────────────────────────────────
-        // Adjust here to change level-up sensitivity; nowhere else.
-
-        /// <summary>
-        /// Number of consecutive qualifying sessions that must all meet the
-        /// accuracy thresholds before a level-up is awarded.  Default = 3.
-        /// </summary>
-        public static int SessionCount
-            => Preferences.Default.Get("LevelUp.SessionCount", DefaultSessionCount);
-
-        /// <summary>
-        /// Minimum pitch accuracy (%) required in every qualifying session.
-        /// Default = 85.
-        /// </summary>
-        public static double MinPitchAccuracyPercent
-            => Preferences.Default.Get("LevelUp.MinPitchPct", DefaultMinPitchAccuracyPercent);
-
-        /// <summary>
-        /// Minimum timing accuracy (%) required when timing data is available.
-        /// Timing is measured as a regularity score: lower stdDev relative to
-        /// meanBeat = more consistent.  Currently the stored value is 0 when
-        /// fewer than 2 notes were played; in that case the check is skipped
-        /// (Rule 7).  Default = 75.
-        /// </summary>
-        public static double MinTimingAccuracyPercent
-            => Preferences.Default.Get("LevelUp.MinTimingPct", DefaultMinTimingAccuracyPercent);
-
-        /// <summary>
-        /// Minimum overall accuracy (%) required in every qualifying session.
-        /// Currently overall == pitch accuracy; will blend timing once it is
-        /// calibrated.  Default = 80.
-        /// </summary>
-        public static double MinOverallAccuracyPercent
-            => Preferences.Default.Get("LevelUp.MinOverallPct", DefaultMinOverallAccuracyPercent);
-
-        /// <summary>
-        /// Minimum number of non-rest note slots a session must contain to be
-        /// counted as a qualifying session.  Very short sessions are excluded
-        /// because their accuracy percentages are statistically unreliable.
-        /// Default = 8.
-        /// </summary>
-        public static int MinNotesPerSession
-            => Preferences.Default.Get("LevelUp.MinNotes", DefaultMinNotesPerSession);
 
         // ── Entry point ────────────────────────────────────────────────────────
 
