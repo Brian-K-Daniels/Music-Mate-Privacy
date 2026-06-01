@@ -489,17 +489,14 @@ namespace musicmate.Pages
                             var recent = qualifying.Take(sessionCount).ToList();
                             double avgPitch = recent.Count > 0 ? recent.Average(r => r.PitchAccuracyPercent) : 0.0;
                             double avgOverall = recent.Count > 0 ? recent.Average(r => r.OverallAccuracyPercent) : 0.0;
-                            var timingSessions = recent.Where(r => r.AverageTimingMs > 0).ToList();
+                            var timingSessions = recent.Where(r => r.TimingAccuracyPercent.HasValue).ToList();
                             double avgTiming = timingSessions.Count > 0
-                                ? timingSessions.Average(r => {
-                                    double cv = r.TimingStdDevMs / r.AverageTimingMs * 100.0;
-                                    return Math.Max(0, 100.0 - cv);
-                                })
+                                ? timingSessions.Average(r => r.TimingAccuracyPercent!.Value)
                                 : 100.0;
                             int noteCount = (int)correct + (int)wrong;
 #if DEBUG
                             // Debug info: show qualifying session details
-                            string debug = string.Join(" | ", qualifying.Select(r => $"L{r.Level} {r.Instrument} Pch={r.PitchAccuracyPercent:F1} Tmg={(r.AverageTimingMs > 0 ? (100.0 - r.TimingStdDevMs / r.AverageTimingMs * 100.0).ToString("F1") : "-")} Ovrl={r.OverallAccuracyPercent:F1} N={r.TotalNotes}"));
+                            string debug = string.Join(" | ", qualifying.Select(r => $"L{r.Level} {r.Instrument} Pch={r.PitchAccuracyPercent:F1} Tmg={r.TimingAccuracyPercent?.ToString("F1") ?? "-"} Ovrl={r.OverallAccuracyPercent:F1} N={r.TotalNotes}"));
                             StatusService.Instance.StatusMessage =
                                 $"ssns={recent.Count}/{sessionCount}, Pch={avgPitch:F1}%, Tmg={avgTiming:F1}%, Overall={avgOverall:F1}%, Notes={noteCount}  [Q:{qualifying.Count}] {debug}";
 #else
@@ -2561,9 +2558,19 @@ async Task UpdateNoteStatsDatabaseAsync()
             var (correct, wrong, apc) = _session.GetSessionCorrectWrongTotals();
             var total = correct + wrong;
             var pc = total > 0 ? (double)correct * 100.0 / total : 0.0;
+            #pragma warning disable CS0618 // Type or member is obsolete
             var (meanBpm, stdBpm) = _session.GetFinalBpmStats();
+            #pragma warning restore CS0618
             var hi = _session.NotesToDraw.OrderByDescending(n => n.Midi).FirstOrDefault();
             var lo = _session.NotesToDraw.OrderBy(n => n.Midi).FirstOrDefault();
+
+            // Get timing accuracy (null when <3 notes)
+            double? timingAccuracyPercent = _session.GetTimingAccuracyPercent();
+
+            // Blend pitch and timing into overall accuracy
+            double overallAccuracy = timingAccuracyPercent.HasValue
+                ? (apc + timingAccuracyPercent.Value) / 2.0
+                : apc;
 
             var stat = new SessionStat
             {
@@ -2578,7 +2585,12 @@ async Task UpdateNoteStatsDatabaseAsync()
                 Pc = apc,
                 PcRaw = pc,
                 Tp = meanBpm ?? 0,
-                Ts = stdBpm ?? 0
+                Ts = stdBpm ?? 0,
+                // New timing/accuracy fields
+                Level = _session.ChildLevel,
+                Pch = apc,
+                Tmg = timingAccuracyPercent ?? 0.0,
+                Ovrl = overallAccuracy
             };
 
             await _sessionDb.InsertAsync(stat);
@@ -2592,7 +2604,7 @@ async Task UpdateNoteStatsDatabaseAsync()
             Utils.Log($"[LevelUpDebug] _session.ChildLevel={_session.ChildLevel}, _sessionResultDb null?={_sessionResultDb == null}");
             if (_session.ChildLevel > 0)
             {
-                await SaveSessionResultAsync(apc, meanBpm, stdBpm);
+                await SaveSessionResultAsync(apc);
 
                 if (_sessionResultDb != null)
                 {
@@ -2641,15 +2653,15 @@ async Task UpdateNoteStatsDatabaseAsync()
         ///   • We store the mean absolute value so it is always a positive "closeness" number.
         ///
         /// Timing:
-        ///   • Converted from BPM statistics already computed by NoteSessionService.
-        ///   • ms-per-beat = 60000 / meanBpm; stdDev in ms = 60000 * stdDevBpm / meanBpm².
+        ///   • Sourced from NoteSessionService.GetTimingAccuracyPercent() — computed via
+        ///     least-squares onset fitting.
+        ///   • Null when fewer than 3 notes were played (insufficient for regression).
         ///
         /// FUTURE (level-up criteria): after saving, query
         ///   var recent = await _sessionResultDb.GetByLevelAsync(_session.ChildLevel);
         ///   and check whether the last N sessions all exceed a target accuracy.
         /// </summary>
-        private async Task SaveSessionResultAsync(double pitchAccuracyPercent,
-                                                   double? meanBpm, double? stdBpm)
+        private async Task SaveSessionResultAsync(double pitchAccuracyPercent)
         {
             if (_sessionResultDb == null) return;
 
@@ -2677,11 +2689,14 @@ async Task UpdateNoteStatsDatabaseAsync()
                         avgCents = centsList.Average();
                 }
 
-                // Convert BPM statistics to milliseconds.
-                double avgTimingMs  = meanBpm.HasValue && meanBpm.Value > 0
-                    ? 60000.0 / meanBpm.Value : 0;
-                double stdTimingMs  = (meanBpm.HasValue && meanBpm.Value > 0 && stdBpm.HasValue)
-                    ? 60000.0 * stdBpm.Value / (meanBpm.Value * meanBpm.Value) : 0;
+                // Get timing accuracy from least-squares onset fitting
+                double? timingAccuracyPercent = _session.GetTimingAccuracyPercent();
+
+                // Blend pitch and timing into overall accuracy.
+                // When timing data is unavailable (< 3 notes), fall back to pitch only.
+                double overallAccuracy = timingAccuracyPercent.HasValue
+                    ? (pitchAccuracyPercent + timingAccuracyPercent.Value) / 2.0
+                    : pitchAccuracyPercent;
 
                 var result = new Models.SessionResult
                 {
@@ -2693,11 +2708,8 @@ async Task UpdateNoteStatsDatabaseAsync()
                     WrongPitchCount        = (int)wrongCount,
                     PitchAccuracyPercent   = pitchAccuracyPercent,
                     AveragePitchErrorCents = avgCents,
-                    AverageTimingMs        = avgTimingMs,
-                    TimingStdDevMs         = stdTimingMs,
-                    // Overall: currently pitch accuracy only.
-                    // FUTURE: blend with timing accuracy once timing scoring is calibrated.
-                    OverallAccuracyPercent = pitchAccuracyPercent,
+                    TimingAccuracyPercent  = timingAccuracyPercent,
+                    OverallAccuracyPercent = overallAccuracy,
                 };
 
                 await _sessionResultDb.InsertAsync(result);
@@ -2706,7 +2718,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                           $"Correct={result.CorrectPitchCount}/{result.TotalNotes}, " +
                           $"Pitch={result.PitchAccuracyPercent:F1}%, " +
                           $"AvgCents={result.AveragePitchErrorCents:F1}, " +
-                          $"AvgTimingMs={result.AverageTimingMs:F0}");
+                          $"Timing={result.TimingAccuracyPercent?.ToString("F1") ?? "N/A"}%");
             }
             catch (Exception ex)
             {

@@ -52,16 +52,26 @@ namespace musicmate.Models
         public double AveragePitchErrorCents { get; set; }
 
         /// <summary>
-        /// Mean inter-note interval in milliseconds (timing regularity).
-        /// Sourced from NoteSessionService.GetFinalBpmStats — converted from BPM.
-        /// Null / 0 when timing data is unavailable (e.g., fewer than 2 notes played).
+        /// Timing accuracy percentage (0–100) computed via least-squares onset fitting.
+        /// Measures how closely the player follows the written rhythm, allowing for
+        /// tempo variations. Null when fewer than 3 notes were played.
         /// </summary>
+        public double? TimingAccuracyPercent { get; set; }
+
+        // ── Deprecated timing fields (kept for database compatibility) ────────
+
+        /// <summary>
+        /// [DEPRECATED] Mean inter-note interval in milliseconds.
+        /// Use TimingAccuracyPercent instead.
+        /// </summary>
+        [System.Obsolete("Use TimingAccuracyPercent for least-squares onset timing")]
         public double AverageTimingMs { get; set; }
 
         /// <summary>
-        /// Timing standard deviation in milliseconds.
-        /// Lower = more rhythmically consistent.
+        /// [DEPRECATED] Timing standard deviation in milliseconds.
+        /// Use TimingAccuracyPercent instead.
         /// </summary>
+        [System.Obsolete("Use TimingAccuracyPercent for least-squares onset timing")]
         public double TimingStdDevMs { get; set; }
 
         // ── Overall ────────────────────────────────────────────────────────────

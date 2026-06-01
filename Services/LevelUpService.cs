@@ -95,10 +95,9 @@ public static class LevelUpService
 
     /// <summary>
     /// Minimum timing accuracy (%) required when timing data is available.
-    /// Timing is measured as a regularity score: lower stdDev relative to
-    /// meanBeat = more consistent.  Currently the stored value is 0 when
-    /// fewer than 2 notes were played; in that case the check is skipped
-    /// (Rule 7).  Default = 75.
+    /// Timing is measured using least-squares onset fitting: notes with
+    /// smaller deviations from the fitted beat timeline score higher.
+    /// Default = 75.
     /// </summary>
     public static double MinTimingAccuracyPercent
         => Preferences.Default.Get("LevelUp.MinTimingPct", DefaultMinTimingAccuracyPercent);
@@ -184,13 +183,10 @@ public static class LevelUpService
                 // Compute rolling averages
                 double avgPitch = recent.Average(r => r.PitchAccuracyPercent);
                 double avgOverall = recent.Average(r => r.OverallAccuracyPercent);
-                // For timing, only include sessions with timing data
-                var timingSessions = recent.Where(r => r.AverageTimingMs > 0).ToList();
+                // For timing, only include sessions with timing data (at least 3 notes for regression)
+                var timingSessions = recent.Where(r => r.TimingAccuracyPercent.HasValue).ToList();
                 double avgTiming = timingSessions.Count > 0
-                    ? timingSessions.Average(r => {
-                        double cv = r.TimingStdDevMs / r.AverageTimingMs * 100.0;
-                        return Math.Max(0, 100.0 - cv);
-                    })
+                    ? timingSessions.Average(r => r.TimingAccuracyPercent!.Value)
                     : 100.0; // If no timing data, treat as perfect
 
                 Utilities.Utils.Log($"[LevelUpDebug] Rolling averages: Pitch={avgPitch:F1}, Timing={avgTiming:F1}, Overall={avgOverall:F1}");

@@ -197,15 +197,16 @@
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="32" />   <!-- delete icon -->
               <ColumnDefinition Width="150" />  <!-- Date -->
-              <ColumnDefinition Width="106" />  <!-- Scale -->
-              <ColumnDefinition Width="36" />   <!-- Key -->
+              <ColumnDefinition Width="50" />   <!-- Level -->
               <ColumnDefinition Width="80" />   <!-- Correct % -->
-              <ColumnDefinition Width="64" />   <!-- Tempo -->
-              <ColumnDefinition Width="96" />   <!-- Tempo CV (wider to show percent) -->
-              <ColumnDefinition Width="110" />  <!-- Instrument -->
+              <ColumnDefinition Width="60" />   <!-- Pch -->
+              <ColumnDefinition Width="60" />   <!-- Tmg -->
+              <ColumnDefinition Width="60" />   <!-- Ovrl -->
+              <ColumnDefinition Width="36" />   <!-- Key -->
+              <ColumnDefinition Width="106" />  <!-- Scale -->
               <ColumnDefinition Width="44" />   <!-- Hi -->
               <ColumnDefinition Width="44" />   <!-- Lo -->
-              <ColumnDefinition Width="96" />   <!-- Tempo SD (wider) -->
+              <ColumnDefinition Width="110" />  <!-- Instrument -->
             </Grid.ColumnDefinitions>
 
             <Label Text="" Grid.Column="0" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
@@ -220,22 +221,14 @@
             </Border>
 
             <Border Grid.Column="2" BackgroundColor="Transparent" Padding="4,0">
-              <Label Text="{Binding ScaleHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding LevelHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Scale" />
+                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Level" />
               </Border.GestureRecognizers>
             </Border>
 
             <Border Grid.Column="3" BackgroundColor="Transparent" Padding="4,0">
-              <Label Text="{Binding KeyHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Key" />
-              </Border.GestureRecognizers>
-            </Border>
-
-            <Border Grid.Column="4" BackgroundColor="Transparent" Padding="4,0">
               <Label Text="{Binding CorrectPercentHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
@@ -243,31 +236,47 @@
               </Border.GestureRecognizers>
             </Border>
 
-            <Border Grid.Column="5" BackgroundColor="Transparent" Padding="4,0">
-              <Label Text="{Binding TempoHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+            <Border Grid.Column="4" BackgroundColor="Transparent" Padding="4,0">
+              <Label Text="{Binding PchHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Tempo" />
+                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Pch" />
+              </Border.GestureRecognizers>
+            </Border>
+
+            <Border Grid.Column="5" BackgroundColor="Transparent" Padding="4,0">
+              <Label Text="{Binding TmgHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
+              <Border.GestureRecognizers>
+                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Tmg" />
               </Border.GestureRecognizers>
             </Border>
 
             <Border Grid.Column="6" BackgroundColor="Transparent" Padding="4,0">
-              <Label Text="{Binding TempoCVHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding OvrlHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="TempoCV" />
+                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Ovrl" />
               </Border.GestureRecognizers>
             </Border>
 
             <Border Grid.Column="7" BackgroundColor="Transparent" Padding="4,0">
-              <Label Text="{Binding InstrumentHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding KeyHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Instrument" />
+                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Key" />
               </Border.GestureRecognizers>
             </Border>
 
             <Border Grid.Column="8" BackgroundColor="Transparent" Padding="4,0">
+              <Label Text="{Binding ScaleHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
+              <Border.GestureRecognizers>
+                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Scale" />
+              </Border.GestureRecognizers>
+            </Border>
+
+            <Border Grid.Column="9" BackgroundColor="Transparent" Padding="4,0">
               <Label Text="{Binding HiHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
@@ -275,7 +284,7 @@
               </Border.GestureRecognizers>
             </Border>
 
-            <Border Grid.Column="9" BackgroundColor="Transparent" Padding="4,0">
+            <Border Grid.Column="10" BackgroundColor="Transparent" Padding="4,0">
               <Label Text="{Binding LoHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
@@ -283,11 +292,11 @@
               </Border.GestureRecognizers>
             </Border>
 
-            <Border Grid.Column="10" BackgroundColor="Transparent" Padding="4,0">
-              <Label Text="{Binding TempoSDHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+            <Border Grid.Column="11" BackgroundColor="Transparent" Padding="4,0">
+              <Label Text="{Binding InstrumentHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="TempoSD" />
+                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Instrument" />
               </Border.GestureRecognizers>
             </Border>
           </Grid>
@@ -302,39 +311,42 @@
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="32" />
                       <ColumnDefinition Width="150" />
-                      <ColumnDefinition Width="106" />
-                      <ColumnDefinition Width="36" />
+                      <ColumnDefinition Width="50" />
                       <ColumnDefinition Width="80" />
-                      <ColumnDefinition Width="64" />
-                      <ColumnDefinition Width="96" />
+                      <ColumnDefinition Width="60" />
+                      <ColumnDefinition Width="60" />
+                      <ColumnDefinition Width="60" />
+                      <ColumnDefinition Width="36" />
+                      <ColumnDefinition Width="106" />
+                      <ColumnDefinition Width="44" />
+                      <ColumnDefinition Width="44" />
                       <ColumnDefinition Width="110" />
-                      <ColumnDefinition Width="44" />
-                      <ColumnDefinition Width="44" />
-                      <ColumnDefinition Width="96" />
                     </Grid.ColumnDefinitions>
 
                     <Button Text="🗑" Grid.Column="0" WidthRequest="20" HeightRequest="20" Clicked="OnDeleteSessionStatClicked"
                             CommandParameter="{Binding Id}" BackgroundColor="#CC3333" TextColor="White" FontSize="10" Padding="0" CornerRadius="4" />
                     <Label Text="{Binding Dt, StringFormat='{0:yyyy-MM-dd HH:mm}'}" Grid.Column="1" FontSize="10" TextColor="{Binding ContrastingTextColor}"
                            LineBreakMode="NoWrap" Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Sc}" Grid.Column="2" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding Level}" Grid.Column="2" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                           Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
+                    <Label Text="{Binding Pc, StringFormat='{0:F1}'}" Grid.Column="3" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                           Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
+                    <Label Text="{Binding Pch, StringFormat='{0:F1}'}" Grid.Column="4" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                           Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
+                    <Label Text="{Binding Tmg, StringFormat='{0:F1}'}" Grid.Column="5" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                           Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
+                    <Label Text="{Binding Ovrl, StringFormat='{0:F1}'}" Grid.Column="6" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                           Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
+                    <Label Text="{Binding DisplayKey}" Grid.Column="7" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                           Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
+                    <Label Text="{Binding Sc}" Grid.Column="8" FontSize="10" TextColor="{Binding ContrastingTextColor}"
                            LineBreakMode="TailTruncation" Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding DisplayKey}" Grid.Column="3" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding Hi}" Grid.Column="9" FontSize="10" TextColor="{Binding ContrastingTextColor}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Pc, StringFormat='{0:F1}'}" Grid.Column="4" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding Lo}" Grid.Column="10" FontSize="10" TextColor="{Binding ContrastingTextColor}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Tp, StringFormat='{0:F1}'}" Grid.Column="5" FontSize="10" TextColor="{Binding ContrastingTextColor}"
-                           Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Cf, StringFormat='{}{0:F1}%'}" Grid.Column="6" FontSize="10" TextColor="{Binding ContrastingTextColor}"
-                           Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Instrument}" Grid.Column="7" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding Instrument}" Grid.Column="11" FontSize="10" TextColor="{Binding ContrastingTextColor}"
                            LineBreakMode="TailTruncation" Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Hi}" Grid.Column="8" FontSize="10" TextColor="{Binding ContrastingTextColor}"
-                           Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Lo}" Grid.Column="9" FontSize="10" TextColor="{Binding ContrastingTextColor}"
-                           Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Ts, StringFormat='{0:F1}'}" Grid.Column="10" FontSize="10" TextColor="{Binding ContrastingTextColor}"
-                           Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
                   </Grid>
                 </DataTemplate>
               </BindableLayout.ItemTemplate>

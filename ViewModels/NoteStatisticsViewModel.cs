@@ -188,26 +188,34 @@ namespace musicmate.ViewModels
 
         // Sort indicator properties for Session Stats
         public string DateSortIndicator => _sessionCurrentSortColumn == "Date" ? (_sessionIsAscending ? "▲" : "▼") : "";
-        public string ScaleSortIndicator => _sessionCurrentSortColumn == "Scale" ? (_sessionIsAscending ? "▲" : "▼") : "";
-        public string KeySortIndicator => _sessionCurrentSortColumn == "Key" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string LevelSortIndicator => _sessionCurrentSortColumn == "Level" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string CorrectPercentSortIndicator => _sessionCurrentSortColumn == "CorrectPercent" ? (_sessionIsAscending ? "▲" : "▼") : "";
-        public string TempoSortIndicator => _sessionCurrentSortColumn == "Tempo" ? (_sessionIsAscending ? "▲" : "▼") : "";
-        public string TempoCVSortIndicator => _sessionCurrentSortColumn == "TempoCV" ? (_sessionIsAscending ? "▲" : "▼") : "";
-        public string InstrumentSortIndicator => _sessionCurrentSortColumn == "Instrument" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string PchSortIndicator => _sessionCurrentSortColumn == "Pch" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string TmgSortIndicator => _sessionCurrentSortColumn == "Tmg" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string OvrlSortIndicator => _sessionCurrentSortColumn == "Ovrl" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string KeySortIndicator => _sessionCurrentSortColumn == "Key" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string ScaleSortIndicator => _sessionCurrentSortColumn == "Scale" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string HiSortIndicator => _sessionCurrentSortColumn == "Hi" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string LoSortIndicator => _sessionCurrentSortColumn == "Lo" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string InstrumentSortIndicator => _sessionCurrentSortColumn == "Instrument" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string TempoSortIndicator => _sessionCurrentSortColumn == "Tempo" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string TempoCVSortIndicator => _sessionCurrentSortColumn == "TempoCV" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string TempoSDSortIndicator => _sessionCurrentSortColumn == "TempoSD" ? (_sessionIsAscending ? "▲" : "▼") : "";
 
         // Combined header label text for session columns (text + arrow in one binding)
         public string DateHeader => "Date " + DateSortIndicator;
-        public string ScaleHeader => "Scale " + ScaleSortIndicator;
-        public string KeyHeader => "Key " + KeySortIndicator;
+        public string LevelHeader => "Level " + LevelSortIndicator;
         public string CorrectPercentHeader => "Correct % " + CorrectPercentSortIndicator;
-        public string TempoHeader => "Tempo " + TempoSortIndicator;
-        public string TempoCVHeader => "Tempo CV " + TempoCVSortIndicator;
-        public string InstrumentHeader => "Instrument " + InstrumentSortIndicator;
+        public string PchHeader => "Pch " + PchSortIndicator;
+        public string TmgHeader => "Tmg " + TmgSortIndicator;
+        public string OvrlHeader => "Ovrl " + OvrlSortIndicator;
+        public string KeyHeader => "Key " + KeySortIndicator;
+        public string ScaleHeader => "Scale " + ScaleSortIndicator;
         public string HiHeader => "Hi " + HiSortIndicator;
         public string LoHeader => "Lo " + LoSortIndicator;
+        public string InstrumentHeader => "Instrument " + InstrumentSortIndicator;
+        public string TempoHeader => "Tempo " + TempoSortIndicator;
+        public string TempoCVHeader => "Tempo CV " + TempoCVSortIndicator;
         public string TempoSDHeader => "Tempo SD " + TempoSDSortIndicator;
 
         // Returns a sort key for a note name such as "C#4" or "Bb3".
@@ -294,30 +302,42 @@ namespace musicmate.ViewModels
                 "Date" => _sessionIsAscending
                     ? SessionStats.OrderBy(s => s.Dt)
                     : SessionStats.OrderByDescending(s => s.Dt),
-                "Scale" => _sessionIsAscending
-                    ? SessionStats.OrderBy(s => s.Sc)
-                    : SessionStats.OrderByDescending(s => s.Sc),
-                "Key" => _sessionIsAscending
-                    ? SessionStats.OrderBy(s => s.Key)
-                    : SessionStats.OrderByDescending(s => s.Key),
+                "Level" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.Level)
+                    : SessionStats.OrderByDescending(s => s.Level),
                 "CorrectPercent" => _sessionIsAscending
                     ? SessionStats.OrderBy(s => s.Pc)
                     : SessionStats.OrderByDescending(s => s.Pc),
-                "Tempo" => _sessionIsAscending
-                    ? SessionStats.OrderBy(s => s.Tp)
-                    : SessionStats.OrderByDescending(s => s.Tp),
-                "TempoCV" => _sessionIsAscending
-                    ? SessionStats.OrderBy(s => s.Cf)
-                    : SessionStats.OrderByDescending(s => s.Cf),
-                "Instrument" => _sessionIsAscending
-                    ? SessionStats.OrderBy(s => s.Instrument)
-                    : SessionStats.OrderByDescending(s => s.Instrument),
+                "Pch" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.Pch)
+                    : SessionStats.OrderByDescending(s => s.Pch),
+                "Tmg" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.Tmg)
+                    : SessionStats.OrderByDescending(s => s.Tmg),
+                "Ovrl" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.Ovrl)
+                    : SessionStats.OrderByDescending(s => s.Ovrl),
+                "Key" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.Key)
+                    : SessionStats.OrderByDescending(s => s.Key),
+                "Scale" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.Sc)
+                    : SessionStats.OrderByDescending(s => s.Sc),
                 "Hi" => _sessionIsAscending
                     ? SessionStats.OrderBy(s => s.Hi)
                     : SessionStats.OrderByDescending(s => s.Hi),
                 "Lo" => _sessionIsAscending
                     ? SessionStats.OrderBy(s => s.Lo)
                     : SessionStats.OrderByDescending(s => s.Lo),
+                "Instrument" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.Instrument)
+                    : SessionStats.OrderByDescending(s => s.Instrument),
+                "Tempo" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.Tp)
+                    : SessionStats.OrderByDescending(s => s.Tp),
+                "TempoCV" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.Cf)
+                    : SessionStats.OrderByDescending(s => s.Cf),
                 "TempoSD" => _sessionIsAscending
                     ? SessionStats.OrderBy(s => s.Ts)
                     : SessionStats.OrderByDescending(s => s.Ts),
@@ -330,24 +350,32 @@ namespace musicmate.ViewModels
 
             // Update all sort indicators
             OnPropertyChanged(nameof(DateSortIndicator));
-            OnPropertyChanged(nameof(ScaleSortIndicator));
-            OnPropertyChanged(nameof(KeySortIndicator));
+            OnPropertyChanged(nameof(LevelSortIndicator));
             OnPropertyChanged(nameof(CorrectPercentSortIndicator));
-            OnPropertyChanged(nameof(TempoSortIndicator));
-            OnPropertyChanged(nameof(TempoCVSortIndicator));
-            OnPropertyChanged(nameof(InstrumentSortIndicator));
+            OnPropertyChanged(nameof(PchSortIndicator));
+            OnPropertyChanged(nameof(TmgSortIndicator));
+            OnPropertyChanged(nameof(OvrlSortIndicator));
+            OnPropertyChanged(nameof(KeySortIndicator));
+            OnPropertyChanged(nameof(ScaleSortIndicator));
             OnPropertyChanged(nameof(HiSortIndicator));
             OnPropertyChanged(nameof(LoSortIndicator));
+            OnPropertyChanged(nameof(InstrumentSortIndicator));
+            OnPropertyChanged(nameof(TempoSortIndicator));
+            OnPropertyChanged(nameof(TempoCVSortIndicator));
             OnPropertyChanged(nameof(TempoSDSortIndicator));
             OnPropertyChanged(nameof(DateHeader));
-            OnPropertyChanged(nameof(ScaleHeader));
-            OnPropertyChanged(nameof(KeyHeader));
+            OnPropertyChanged(nameof(LevelHeader));
             OnPropertyChanged(nameof(CorrectPercentHeader));
-            OnPropertyChanged(nameof(TempoHeader));
-            OnPropertyChanged(nameof(TempoCVHeader));
-            OnPropertyChanged(nameof(InstrumentHeader));
+            OnPropertyChanged(nameof(PchHeader));
+            OnPropertyChanged(nameof(TmgHeader));
+            OnPropertyChanged(nameof(OvrlHeader));
+            OnPropertyChanged(nameof(KeyHeader));
+            OnPropertyChanged(nameof(ScaleHeader));
             OnPropertyChanged(nameof(HiHeader));
             OnPropertyChanged(nameof(LoHeader));
+            OnPropertyChanged(nameof(InstrumentHeader));
+            OnPropertyChanged(nameof(TempoHeader));
+            OnPropertyChanged(nameof(TempoCVHeader));
             OnPropertyChanged(nameof(TempoSDHeader));
         }
     }

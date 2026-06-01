@@ -780,9 +780,9 @@ namespace musicmate.Services
         }
 
         public string BpmStatsDisplay =>
-            _meanBpm is not null && _stddevBpm is not null
-                ? $"Mean BPM: {_meanBpm.Value:F1} (±{_stddevBpm.Value:F1})"
-                : "BPM: N/A";
+            _timingAccuracyPercent.HasValue
+                ? $"Timing: {_timingAccuracyPercent.Value:F1}%"
+                : "Timing: N/A";
 
         private void NotifyBpmStatsChanged()
         {
@@ -1076,10 +1076,15 @@ namespace musicmate.Services
         private static readonly int[] NeapolitanMinorUp = new[] { 0, 1, 3, 5, 7, 8, 11, 12 };
         private static readonly int[] NeapolitanMajorUp = new[] { 0, 1, 3, 5, 7, 9, 11, 12 };
 
-        // Timing and BPM stats
-        private readonly Stopwatch _noteStopwatch = new();
-        private readonly List<double> _intervalsSeconds = new();
+        // Timing: onset-based linear regression (least-squares fit)
+        private readonly Stopwatch _sessionStopwatch = new();
+        private readonly List<(double OnsetMs, double ExpectedBeat)> _onsetData = new();
+        private double? _timingAccuracyPercent;
+
+        // Deprecated BPM fields (kept for compatibility until all references are removed)
+        [Obsolete("Use least-squares onset timing instead")]
         private double? _meanBpm;
+        [Obsolete("Use least-squares onset timing instead")]
         private double? _stddevBpm;
         public string? Tune
         {
@@ -1126,9 +1131,12 @@ namespace musicmate.Services
             _pitchMedianHistory.Clear();
 
             // Clear timing data and stats
-            _intervalsSeconds.Clear();
+            _onsetData.Clear();
+            _timingAccuracyPercent = null;
+            #pragma warning disable CS0618 // Type or member is obsolete
             _meanBpm = null;
             _stddevBpm = null;
+            #pragma warning restore CS0618
             _lastCorrectNoteUtc = null;
             OmitMsAvgThreshold = Preferences.Get(PrefOmitMsAvgThresholdKey, 500);
             _lastWrongTimePerIndex.Clear();
@@ -1138,8 +1146,8 @@ namespace musicmate.Services
             _tunerPrevWrittenMidi = null;// reset direction tracking for next session
             // ensure persisted value is reloaded
             _wrongDebounceMs = Preferences.Get(PrefWrongDebounceMsKey, DefaultDebounceMs);
-            _noteStopwatch.Reset();
-            _noteStopwatch.Start();
+            _sessionStopwatch.Reset();
+            _sessionStopwatch.Start();
         }
 
         /// <summary>
@@ -1153,9 +1161,9 @@ namespace musicmate.Services
             {
                 SessionCompleted = true;
                 IgnoreAudioUntilUtc = DateTime.MinValue;
-                if (_noteStopwatch.IsRunning)
+                if (_sessionStopwatch.IsRunning)
                 {
-                    _noteStopwatch.Stop();
+                    _sessionStopwatch.Stop();
                 }
             }
             catch
@@ -1163,46 +1171,115 @@ namespace musicmate.Services
                 // Swallow exceptions to keep stop operation best-effort
             }
         }
-        public void RecordIntervalIfNeeded()
+        /// <summary>
+        /// Records the onset time and expected beat position for the note that was just
+        /// played correctly. Called from UpdateFeedbackForCurrent when a note advances.
+        /// </summary>
+        private void RecordOnsetIfNeeded(int noteIndex)
         {
-          if (_noteStopwatch.IsRunning && CurrentNoteIndex > 0 && _intervalsSeconds.Count < NotesToDraw.Count - 1)
-          {
-            var elapsed = _noteStopwatch.Elapsed.TotalSeconds;
-            _intervalsSeconds.Add(elapsed);
-            _noteStopwatch.Restart();
-          }
-          else if (!_noteStopwatch.IsRunning)
-          {
-            _noteStopwatch.Restart();
-          }
+            if (!_sessionStopwatch.IsRunning || noteIndex >= NotesToDraw.Count)
+                return;
+
+            double onsetMs = _sessionStopwatch.Elapsed.TotalMilliseconds;
+            double expectedBeat = CalculateExpectedBeatPosition(noteIndex);
+            _onsetData.Add((onsetMs, expectedBeat));
         }
+
+        /// <summary>
+        /// Calculates the expected beat position for a note based on the sum of
+        /// all note durations (including rests) up to that index.
+        /// Whole note = 4 beats, Half = 2, Quarter = 1, Eighth = 0.5, Sixteenth = 0.25.
+        /// </summary>
+        private double CalculateExpectedBeatPosition(int noteIndex)
+        {
+            double beatPosition = 0.0;
+            for (int i = 0; i < noteIndex && i < NotesToDraw.Count; i++)
+            {
+                var note = NotesToDraw[i];
+                if (note.Duration.HasValue)
+                    beatPosition += note.Duration.Value.ToBeatValue();
+                else
+                    beatPosition += 1.0; // Default to quarter note for scale/random mode
+            }
+            return beatPosition;
+        }
+        /// <summary>
+        /// Computes timing accuracy using least-squares linear regression.
+        /// Fits ActualOnsetTimeMs = StartOffsetMs + MsPerBeat * ExpectedBeatStart
+        /// and scores each note based on its timing error relative to adaptive thresholds.
+        /// </summary>
         public void FinalizeSessionStats()
         {
-            //Utils.Log("FinalizeSessionStats");
-            if (_intervalsSeconds.Count < 1)
+            // Need at least 3 notes for meaningful linear regression
+            if (_onsetData.Count < 3)
             {
-                _meanBpm = null;
-                _stddevBpm = null;
+                _timingAccuracyPercent = null;
                 NotifyBpmStatsChanged();
                 return;
             }
-            var bpms = _intervalsSeconds.Select(sec => sec > 0 ? 60.0 / sec : 0).Where(bpm => bpm > 0).ToArray();
-            if (bpms.Length == 0)
+
+            // Check for zero variance in expected beats (would cause divide-by-zero)
+            var beatValues = _onsetData.Select(d => d.ExpectedBeat).ToArray();
+            if (beatValues.Distinct().Count() < 2)
             {
-                _meanBpm = null;
-                _stddevBpm = null;
+                _timingAccuracyPercent = null;
                 NotifyBpmStatsChanged();
                 return;
             }
-            var mean = bpms.Average();
-            var stddev = Math.Sqrt(bpms.Select(bpm => Math.Pow(bpm - mean, 2)).Average());
-            _meanBpm = mean;
-            _stddevBpm = stddev;
+
+            // Least-squares linear regression: y = mx + b
+            // y = ActualOnsetMs, x = ExpectedBeat
+            int n = _onsetData.Count;
+            double sumX = _onsetData.Sum(d => d.ExpectedBeat);
+            double sumY = _onsetData.Sum(d => d.OnsetMs);
+            double sumXY = _onsetData.Sum(d => d.ExpectedBeat * d.OnsetMs);
+            double sumX2 = _onsetData.Sum(d => d.ExpectedBeat * d.ExpectedBeat);
+
+            // Slope (MsPerBeat) and intercept (StartOffsetMs)
+            double msPerBeat = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+            double startOffsetMs = (sumY - msPerBeat * sumX) / n;
+
+            // Compute timing score for each note
+            var noteScores = new List<double>();
+            double sixteenthMs = msPerBeat * 0.25;
+            double goodThresholdMs = sixteenthMs * 0.25;
+            double badThresholdMs = sixteenthMs * 1.00;
+
+            foreach (var (onsetMs, expectedBeat) in _onsetData)
+            {
+                double expectedFittedMs = startOffsetMs + msPerBeat * expectedBeat;
+                double timingErrorMs = Math.Abs(onsetMs - expectedFittedMs);
+
+                double noteScore;
+                if (timingErrorMs <= goodThresholdMs)
+                    noteScore = 100.0;
+                else if (timingErrorMs >= badThresholdMs)
+                    noteScore = 0.0;
+                else
+                    noteScore = 100.0 * (1.0 - (timingErrorMs - goodThresholdMs) / (badThresholdMs - goodThresholdMs));
+
+                noteScores.Add(noteScore);
+            }
+
+            _timingAccuracyPercent = noteScores.Average();
             NotifyBpmStatsChanged();
         }
+        /// <summary>
+        /// Returns timing accuracy percentage from least-squares onset fitting.
+        /// Null when fewer than 3 notes were played or expected beats have no variance.
+        /// </summary>
+        public double? GetTimingAccuracyPercent() => _timingAccuracyPercent;
+
+        /// <summary>
+        /// [DEPRECATED] Returns old BPM-based timing stats for backward compatibility.
+        /// Use GetTimingAccuracyPercent() instead.
+        /// </summary>
+        [Obsolete("Use GetTimingAccuracyPercent() for least-squares onset timing")]
         public (double? MeanBpm, double? StdDevBpm) GetFinalBpmStats()
         {
+            #pragma warning disable CS0618
             return (_meanBpm, _stddevBpm);
+            #pragma warning restore CS0618
         }
         public bool UpdateFeedbackForCurrent(double freq, (bool correct, int cents) result)
         {
@@ -1292,8 +1369,8 @@ namespace musicmate.Services
             } 
             if (result.correct)
             {
-                // Timing: record interval (skip first note)
-                RecordIntervalIfNeeded();
+                // Timing: record onset time and expected beat position
+                RecordOnsetIfNeeded(idx);
 
                 // Update feedback: update cents only on correct
                 CorrectNoteIndices.Add(idx);

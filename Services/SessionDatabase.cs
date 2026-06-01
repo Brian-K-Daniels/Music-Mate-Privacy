@@ -22,8 +22,14 @@ public class SessionStat
     public string Lo { get; set; } = "";  // Lowest note
     public double Pc { get; set; }        // % correct
     public double PcRaw { get; set; }     // % correct raw (before any adjustments)
-    public double Tp { get; set; }        // Tempo (mean BPM)
-    public double Ts { get; set; }        // Tempo StdDev     
+    public double Tp { get; set; }        // Tempo (mean BPM) - DEPRECATED, use Tmg instead
+    public double Ts { get; set; }        // Tempo StdDev - DEPRECATED
+
+    // New timing/accuracy fields
+    public int Level { get; set; }        // Child level (0 for adult mode)
+    public double Pch { get; set; }       // Pitch accuracy %
+    public double Tmg { get; set; }       // Timing accuracy %
+    public double Ovrl { get; set; }      // Overall accuracy %
     // Coefficient of variation as percentage (100 * Ts / Tp). Computed on demand, not stored in DB.
     [Ignore]
     public double Cf
@@ -69,6 +75,7 @@ public class SessionDatabase
         await _db.CreateTableAsync<SessionStat>();
         await EnsureTuneColumnAsync();
         await EnsureInstrumentColumnAsync();  // NEW: Ensure Instrument column exists
+        await EnsureNewAccuracyColumnsAsync();  // Ensure new timing/accuracy columns exist
     }
 
     private async Task EnsureTuneColumnAsync()
@@ -86,6 +93,27 @@ public class SessionDatabase
         if (columns.All(c => !string.Equals(c.Name, nameof(SessionStat.Instrument), StringComparison.OrdinalIgnoreCase)))
         {
             await _db.ExecuteAsync($"ALTER TABLE {nameof(SessionStat)} ADD COLUMN {nameof(SessionStat.Instrument)} TEXT NOT NULL DEFAULT ''");
+        }
+    }
+
+    private async Task EnsureNewAccuracyColumnsAsync()
+    {
+        var columns = await _db.GetTableInfoAsync(nameof(SessionStat));
+        if (columns.All(c => !string.Equals(c.Name, nameof(SessionStat.Level), StringComparison.OrdinalIgnoreCase)))
+        {
+            await _db.ExecuteAsync($"ALTER TABLE {nameof(SessionStat)} ADD COLUMN {nameof(SessionStat.Level)} INTEGER NOT NULL DEFAULT 0");
+        }
+        if (columns.All(c => !string.Equals(c.Name, nameof(SessionStat.Pch), StringComparison.OrdinalIgnoreCase)))
+        {
+            await _db.ExecuteAsync($"ALTER TABLE {nameof(SessionStat)} ADD COLUMN {nameof(SessionStat.Pch)} REAL NOT NULL DEFAULT 0.0");
+        }
+        if (columns.All(c => !string.Equals(c.Name, nameof(SessionStat.Tmg), StringComparison.OrdinalIgnoreCase)))
+        {
+            await _db.ExecuteAsync($"ALTER TABLE {nameof(SessionStat)} ADD COLUMN {nameof(SessionStat.Tmg)} REAL NOT NULL DEFAULT 0.0");
+        }
+        if (columns.All(c => !string.Equals(c.Name, nameof(SessionStat.Ovrl), StringComparison.OrdinalIgnoreCase)))
+        {
+            await _db.ExecuteAsync($"ALTER TABLE {nameof(SessionStat)} ADD COLUMN {nameof(SessionStat.Ovrl)} REAL NOT NULL DEFAULT 0.0");
         }
     }
 
