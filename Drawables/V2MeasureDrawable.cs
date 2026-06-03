@@ -59,8 +59,8 @@ namespace musicmate.Drawables
         private const float PixelsPerBeat     = 60f;  // base px/beat for static (fit-all) mode
 
         // Scrolling mode: fixed px per beat so notes extend beyond the view width.
-        // 72 px/beat gives a quarter note a comfortable slot on a phone.
-        private const float ScrollPxPerBeat   = 48f;   // 2/3 of original 72 px per beat
+        // 42 px/beat balances comfortable spacing with fitting more measures on screen.
+        private const float ScrollPxPerBeat   = 42f;   // reduced from 48 for better fit
 
         // The canvas X at which the current note is always pinned in scroll mode.
         // Sits at LeftMargin + one extra beat-slot so there is a little look-ahead to the left.
@@ -265,6 +265,7 @@ namespace musicmate.Drawables
             // ── Draw measure bar lines (only when inside the visible area) ────────
             // Pre-compute X ranges of notes that are current or just played so we can
             // skip any bar line that would cut through such a note.
+            // Also protect the accidental space to the left of any note that has one.
             var protectedRanges = new System.Collections.Generic.List<(float left, float right)>();
             {
                 double bc = 0;
@@ -276,9 +277,21 @@ namespace musicmate.Drawables
                         double ba  = Notes[i].BeatPosition ?? bc;
                         float  sw  = (float)(Notes[i].BeatDuration * pxPerBeat);
                         float  nx2 = LeftMargin + scrollOffsetPx + (float)(ba * pxPerBeat) + sw * 0.5f;
-                        // Guard only the notehead itself — previously NoteHeadRadius*6 was far too wide
-                        // and blocked nearly every bar line that was near a played note.
-                        protectedRanges.Add((nx2 - NoteHeadRadius * 1.5f, nx2 + NoteHeadRadius * 1.5f));
+
+                        // Base protection for the notehead
+                        float leftEdge  = nx2 - NoteHeadRadius * 1.5f;
+                        float rightEdge = nx2 + NoteHeadRadius * 1.5f;
+
+                        // Extend left edge to protect accidental space if present
+                        var note = Notes[i];
+                        if (!note.IsRest && note.Accidental != Accidental.None)
+                        {
+                            const float AccidentalWidth = 36f;
+                            const float AccidentalGap   = 2f;
+                            leftEdge = nx2 - NoteHeadRadius - AccidentalGap - AccidentalWidth;
+                        }
+
+                        protectedRanges.Add((leftEdge, rightEdge));
                     }
                     bc += Notes[i].BeatDuration;
                 }
@@ -312,8 +325,10 @@ namespace musicmate.Drawables
             // ── Clip drawing to the staff area so notes don't overrun ─────────────
             // (MAUI ICanvas does not expose SaveState/RestoreState in all renderers,
             //  so we skip notes that are outside the visible X range instead.)
-            float clipLeft  = LeftMargin - NoteHeadRadius * 4f;
-            float clipRight = LeftMargin + lineWidth + NoteHeadRadius * 4f;
+            // Allow extra room for ledger lines, stems, flags and beams so notes in the
+            // final bar (and beams that extend rightwards) are not prematurely clipped.
+            float clipLeft  = LeftMargin - NoteHeadRadius * 6f - StemLength;
+            float clipRight = LeftMargin + lineWidth + NoteHeadRadius * 8f + StemLength;
 
             // ── Beaming pre-pass ──────────────────────────────────────────────────
             // Groups consecutive eighth/sixteenth notes within the same beat and bar into
@@ -538,7 +553,7 @@ namespace musicmate.Drawables
                 // Positive = lower on staff.  Each step = StaffLineSpacing / 2.
                 // Flats  order: Bb  Eb  Ab  Db  Gb  Cb  Fb
                 //                B4  E5  A4  D5  G4  C5  F4
-                int[] flatSteps  = {  0, -3,  1, -2,  2, -1,  3 };
+                int[] flatSteps  = {  0, -3,  1, -2,  2, -1,  3 };  // Bb Eb Ab Db Gb Cb Fb
                 // Sharps order: F#  C#  G#  D#  A#  E#  B#
                 //                F5  C5  G5  D5  A4  E5  B4
                 int[] sharpSteps = { -4, -1, -5, -2,  1, -3,  0 };
@@ -552,8 +567,8 @@ namespace musicmate.Drawables
                     // Compute the vertical centre of this symbol on the staff,
                     // then offset up by half the bounding box so DrawString centres it.
                     float yCenter = staffMid + steps[i] * (StaffLineSpacing / 2f);
-                    float yAdjust = useFlats ? 0.78f : 0.38f;
-                    float yTop    = yCenter  - symH * yAdjust;  //  2026.05.15 1818   0.55f;  // optical centre of ♭/♯ glyph
+                    float yAdjust = useFlats ? 0.5f : 0.38f;  // optical center of glyph within bounding box
+                    float yTop    = yCenter  - symH * yAdjust;
                     canvas.DrawString(glyph, sigX, yTop, symW, symH,
                         HorizontalAlignment.Center, VerticalAlignment.Top);
                     sigX += symSlot;
@@ -798,10 +813,16 @@ namespace musicmate.Drawables
                 // Stem (all except whole note)
                 if (duration != NoteDuration.Whole)
                 {
-                    bool stemUp = forceStemUp ?? (y > (staffTop + (staffBot - staffTop) * 0.5f));
+                    // Stem direction: notes ABOVE middle line stem DOWN; notes BELOW middle stem UP
+                    float staffMiddle = staffTop + (staffBot - staffTop) * 0.5f;
+                    bool stemUp = forceStemUp ?? (y >= staffMiddle);  // note at/below middle → stem up
                     float stemX = stemUp ? x + r : x - r;
                     float stemY = stemUp ? y - r * 0.75f : y + r * 0.75f;
-                    float stemEnd = stemUp ? stemY - StemLength : stemY + StemLength;
+                    // For beamed notes, shorten stems so they terminate at a reasonable
+                    // distance and do not project beyond the beam when beam bars are drawn
+                    // in the post-pass. Non-beamed notes keep the full StemLength.
+                    float actualStemLen = isBeamed ? StemLength * 0.6f : StemLength;
+                    float stemEnd = stemUp ? stemY - actualStemLen : stemY + actualStemLen;
                     canvas.StrokeColor = noteColor;
                     canvas.StrokeSize  = 2f;
                     canvas.DrawLine(stemX, stemY, stemX, stemEnd);
@@ -1039,7 +1060,7 @@ namespace musicmate.Drawables
                 const float symW     = 36f;
                 const float rightGap = 2f;   // gap between accidental right edge and notehead left
                 float fontSize = isFlat ? 48f : 30f;
-                float yAdjust  = isFlat ? 0.78f : 0.38f;
+                float yAdjust  = isFlat ? 0.5f : 0.38f;  // optical center of glyph
 
                 float boxLeft = x + NoteHeadRadius - rightGap - symW;  //  2026.05.16 1106   - NoteHeadRadius - rightGap - symW;
                 float yTop    = y - symH * yAdjust;

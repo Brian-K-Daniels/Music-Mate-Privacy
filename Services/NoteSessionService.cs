@@ -277,6 +277,26 @@ namespace musicmate.Services
                 }
             }
         }
+
+        /// <summary>
+        /// Maximum melodic interval in semitones allowed between consecutive notes.
+        /// Set by <see cref="DifficultyLevelMapper.ApplyToSession"/> to enforce
+        /// level-based interval limits in random-mode generation.
+        /// 0 = no limit (open melodic range).
+        /// </summary>
+        private int _maxMelodicIntervalSemitones = 0;
+        public int MaxMelodicIntervalSemitones
+        {
+            get => _maxMelodicIntervalSemitones;
+            set
+            {
+                if (_maxMelodicIntervalSemitones != value)
+                {
+                    _maxMelodicIntervalSemitones = value;
+                    OnPropertyChanged(nameof(MaxMelodicIntervalSemitones));
+                }
+            }
+        }
         public string[] WhiteKeyNoteNames { get; } =
             Enumerable.Range(21, 88) // MIDI 21 (A0) to 108 (C8)
                 .Select(midi => MidiToNoteName(midi, false))

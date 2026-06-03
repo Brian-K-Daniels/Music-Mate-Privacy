@@ -77,8 +77,14 @@ namespace musicmate.Drawables
         public bool UpperHasEndBar { get; set; } = false;
 
         // ── Fixed horizontal constants ─────────────────────────────────────────
-        private const float ScrollPxPerBeat = 48f;
+        private const float ScrollPxPerBeat = 42f;   // reduced from 48 for better fit
         private const float RightMargin     = 16f;
+
+        // V3 uniform spacing constants
+        private const float ItemSpacing      = 46f;   // fixed horizontal spacing per item (reduced from 52)
+        private const float AccidentalWidth  = 40f;   // extra width reserved when a note has an accidental
+        private const float BarLeftPadding   = 12f;   // minimum space from bar line to first item in bar
+        private const float BarRightPadding  = 12f;   // minimum space from last item in bar to next bar line
 
         private float _leftMargin = 115f;
         private float LeftMargin => _leftMargin;
@@ -229,44 +235,33 @@ namespace musicmate.Drawables
             float lowerMid = _layout.LowerMid;
             float lowerBot = _layout.LowerBot;
 
-            // ── Compute px-per-beat ───────────────────────────────────────────────
+            // ── Compute px-per-beat (V3 uses proportional spacing) ───────────────
             float lineWidth0 = dirtyRect.Width - _leftMargin - RightMargin;
-            float pxPerBeat  = ScrollPxPerBeat;
-            if (UpperNotes.Count > 0 || LowerNotes.Count > 0)
-            {
-                double upperStart = UpperNotes.Count > 0 ? (UpperNotes[0].BeatPosition ?? 0.0) : 0.0;
-                double upperSpan  = UpperNotes.Count > 0
-                    ? (UpperNotes[^1].BeatPosition ?? 0.0) + UpperNotes[^1].BeatDuration - upperStart
-                    : 0.0;
-
-                double lowerStart = LowerNotes.Count > 0 ? (LowerNotes[0].BeatPosition ?? 0.0) : 0.0;
-                double lowerSpan  = LowerNotes.Count > 0
-                    ? (LowerNotes[^1].BeatPosition ?? 0.0) + LowerNotes[^1].BeatDuration - lowerStart
-                    : 0.0;
-
-                double maxSpan = Math.Max(upperSpan, lowerSpan);
-                if (maxSpan > 0.0)
-                {
-                    float fitted = (lineWidth0 - _layout.NoteHeadR * 2f) / (float)maxSpan;
-                    pxPerBeat = fitted;
-                }
-            }
+            // Each staff calculates its own spacing based on its total beat duration
+            // to ensure optimal note density and prevent uneven gaps
+            float pxPerBeat = 36f;  // default fallback
             LastComputedPxPerBeat = pxPerBeat;
 
-            // ── Static layout: no scrolling ──────────────────────────────────────
-            double upperStartBeat = UpperNotes.Count > 0 ? (UpperNotes[0].BeatPosition ?? 0.0) : 0.0;
-            float upperScroll = -(float)(upperStartBeat * pxPerBeat);
-            double lowerStartBeat = LowerNotes.Count > 0 ? (LowerNotes[0].BeatPosition ?? 0.0) : 0.0;
-            float lowerScroll = -(float)(lowerStartBeat * pxPerBeat);
+            // ── Static layout: no scrolling (each staff is self-contained) ──────────
+            float upperScroll = 0f;
+            float lowerScroll = 0f;
 
-            // ── Draw both staffs ──────────────────────────────────────────────────
+            // ── Draw both staffs with independent spacing ────────────────────────
+            // Upper staff: calculate spacing based on upper notes only
+            double upperTotalBeats = UpperNotes.Sum(n => n.BeatDuration);
+            float upperPxPerBeat = upperTotalBeats > 0 ? Math.Max(32f, lineWidth0 / (float)upperTotalBeats) : 36f;
+
             DrawStaff(canvas, dirtyRect, ink, upperTop, upperMid, upperBot,
-                      UpperNotes, UpperBarBeats, UpperNoteStates, upperScroll, pxPerBeat,
+                      UpperNotes, UpperBarBeats, UpperNoteStates, upperScroll, upperPxPerBeat,
                       UpperAlpha, IsUpperActive, IsUpperActive ? ActiveNoteIndex : -1,
                       isFinalStaff: LowerNotes.Count == 0, hasEndSingleBar: UpperHasEndBar && LowerNotes.Count > 0);
 
+            // Lower staff: calculate spacing based on lower notes only
+            double lowerTotalBeats = LowerNotes.Sum(n => n.BeatDuration);
+            float lowerPxPerBeat = lowerTotalBeats > 0 ? Math.Max(32f, lineWidth0 / (float)lowerTotalBeats) : 36f;
+
             DrawStaff(canvas, dirtyRect, ink, lowerTop, lowerMid, lowerBot,
-                      LowerNotes, LowerBarBeats, LowerNoteStates, lowerScroll, pxPerBeat,
+                      LowerNotes, LowerBarBeats, LowerNoteStates, lowerScroll, lowerPxPerBeat,
                       LowerAlpha, !IsUpperActive, !IsUpperActive ? ActiveNoteIndex : -1,
                       isFinalStaff: true);
         }
@@ -282,8 +277,10 @@ namespace musicmate.Drawables
             bool isActive, int currentIdx, bool isFinalStaff = false, bool hasEndSingleBar = false)
         {
             float lineWidth = dirtyRect.Width - LeftMargin - RightMargin;
-            float clipLeft  = LeftMargin - _layout.NoteHeadR * 4f;
-            float clipRight = LeftMargin + lineWidth + _layout.NoteHeadR * 4f;
+            // Allow extra room for ledger lines, stems, flags and beams so notes in the
+            // final bar (and beams that extend rightwards) are not prematurely clipped.
+            float clipLeft  = LeftMargin - _layout.NoteHeadR * 6f - _layout.StemLen;
+            float clipRight = LeftMargin + lineWidth + _layout.NoteHeadR * 8f + _layout.StemLen;
 
             // Staff lines
             canvas.StrokeColor = ink;
@@ -308,46 +305,93 @@ namespace musicmate.Drawables
             float keySigEndX = DrawKeySignature(canvas, staffTop, staffMid, ink);
             DrawTimeSignature(canvas, staffTop, staffMid, ink, keySigEndX);
 
-            // Measure bar lines
+            // Measure bar lines - protected from overlapping notes with accidentals
+            // Build protected ranges for active notes to prevent bar line overlap
+            var protectedRanges = new System.Collections.Generic.List<(float left, float right)>();
+            {
+                double beatPos = 0;
+                for (int i = 0; i < notes.Count; i++)
+                {
+                    var note = notes[i];
+                    var st = (states.Length > i) ? states[i] : V2NoteState.Pending;
+                    double noteAnchor = note.BeatPosition ?? beatPos;
+                    if (st == V2NoteState.Current || st == V2NoteState.Correct || st == V2NoteState.Wrong)
+                    {
+                        // V3 proportional spacing
+                        float baseX = LeftMargin + scrollOffsetPx + (float)noteAnchor * pxPerBeat;
+                        float accOffset = 0f;
+                        if (!note.IsRest && note.Accidental != Accidental.None)
+                            accOffset = AccidentalWidth * 0.5f;
+                        float nx2 = baseX + accOffset + BarLeftPadding;
+
+                        // Base protection for the notehead
+                        float leftEdge  = nx2 - _layout.NoteHeadR * 1.5f;
+                        float rightEdge = nx2 + _layout.NoteHeadR * 1.5f;
+
+                        // Extend left edge to protect accidental space if present
+                        if (!note.IsRest && note.Accidental != Accidental.None)
+                        {
+                            const float AccidentalGap = 2f;
+                            leftEdge = nx2 - _layout.NoteHeadR - AccidentalGap - AccidentalWidth;
+                        }
+
+                        protectedRanges.Add((leftEdge, rightEdge));
+                    }
+                    beatPos += note.BeatDuration;
+                }
+            }
+
+            // V3: bar lines are drawn at measure boundaries using beat positions
             canvas.StrokeColor = ink;
             canvas.StrokeSize  = 2f;
-            foreach (var barBeat in barBeats)
+            // Draw bar lines at each barBeat position
+            foreach (var beatPos in barBeats)
             {
-                float bx = LeftMargin + scrollOffsetPx + (float)(barBeat * pxPerBeat);
-                if (bx < LeftMargin || bx > LeftMargin + lineWidth) continue;
-                canvas.DrawLine(bx, staffTop - 2f, bx, staffBot + 2f);
+                float bx = LeftMargin + scrollOffsetPx + (float)beatPos * pxPerBeat;
+                if (bx >= LeftMargin && bx <= LeftMargin + lineWidth + 60f)  // extend range for end bars
+                {
+                    // Check if this bar line falls inside any protected note zone
+                    bool blocked = false;
+                    foreach (var (left, right) in protectedRanges)
+                        if (bx >= left && bx <= right) { blocked = true; break; }
+                    if (!blocked)
+                        canvas.DrawLine(bx, staffTop - 2f, bx, staffBot + 2f);
+                }
             }
 
             // Single end bar — drawn at the end of the upper staff when a lower staff follows
-            // (ascending half ends here; descending half continues below).
             if (hasEndSingleBar && notes.Count > 0)
             {
                 var last = notes[notes.Count - 1];
-                double lastEndBeat = (last.BeatPosition ?? 0.0) + last.BeatDuration;
-                float endX = LeftMargin + scrollOffsetPx + (float)(lastEndBeat * pxPerBeat);
-                if (endX >= LeftMargin && endX <= LeftMargin + lineWidth)
-                {
-                    canvas.StrokeColor = ink;
-                    canvas.StrokeSize  = 2f;
-                    canvas.DrawLine(endX, staffTop - 2f, endX, staffBot + 2f);
-                    canvas.StrokeSize  = 1f;
-                }
+                double lastBeat = last.BeatPosition ?? 0;
+                float lastNoteX = LeftMargin + scrollOffsetPx + (float)lastBeat * pxPerBeat;
+                float accOffset = 0f;
+                if (!last.IsRest && last.Accidental != Accidental.None)
+                    accOffset = AccidentalWidth * 0.5f;
+                float endX = lastNoteX + accOffset + _layout.NoteHeadR * 2f + BarRightPadding + (float)(last.BeatDuration * pxPerBeat * 0.7);
+                // Always draw end bar, even if slightly beyond visible width
+                canvas.StrokeColor = ink;
+                canvas.StrokeSize  = 2f;
+                canvas.DrawLine(endX, staffTop - 2f, endX, staffBot + 2f);
+                canvas.StrokeSize  = 1f;
             }
 
-            // Final double bar — only on the last staff, and only when the end falls within the visible width.
+            // Final double bar — always drawn on the last staff to properly close the music
             if (isFinalStaff && notes.Count > 0)
             {
                 var last = notes[notes.Count - 1];
-                double lastEndBeat = (last.BeatPosition ?? 0.0) + last.BeatDuration;
-                float endX = LeftMargin + scrollOffsetPx + (float)(lastEndBeat * pxPerBeat);
-                if (endX >= LeftMargin && endX <= LeftMargin + lineWidth)
-                {
-                    canvas.StrokeSize = 2f;
-                    canvas.DrawLine(endX,      staffTop - 2f, endX,      staffBot + 2f);
-                    canvas.StrokeSize = 4f;
-                    canvas.DrawLine(endX + 4f, staffTop - 2f, endX + 4f, staffBot + 2f);
-                    canvas.StrokeSize = 1f;
-                }
+                double lastBeat = last.BeatPosition ?? 0;
+                float lastNoteX = LeftMargin + scrollOffsetPx + (float)lastBeat * pxPerBeat;
+                float accOffset = 0f;
+                if (!last.IsRest && last.Accidental != Accidental.None)
+                    accOffset = AccidentalWidth * 0.5f;
+                float endX = lastNoteX + accOffset + _layout.NoteHeadR * 2f + BarRightPadding + (float)(last.BeatDuration * pxPerBeat * 0.7);
+                // Always draw final double bar
+                canvas.StrokeSize = 2f;
+                canvas.DrawLine(endX,      staffTop - 2f, endX,      staffBot + 2f);
+                canvas.StrokeSize = 4f;
+                canvas.DrawLine(endX + 4f, staffTop - 2f, endX + 4f, staffBot + 2f);
+                canvas.StrokeSize = 1f;
             }
 
             // Notes
@@ -466,8 +510,15 @@ namespace musicmate.Drawables
                     barBeatIdx++;
                 }
 
-                float slotWidth   = (float)(note.BeatDuration * pxPerBeat);
-                float nx          = LeftMargin + scrollOffsetPx + (float)(beatAnchor * pxPerBeat) + slotWidth * 0.5f;
+                // V3 proportional spacing: position by beat offset for accurate rhythm display
+                float baseX = LeftMargin + scrollOffsetPx + (float)beatAnchor * pxPerBeat;
+
+                // Reserve extra space if the note has an accidental
+                float accOffset = 0f;
+                if (!note.IsRest && note.Accidental != Accidental.None)
+                    accOffset = AccidentalWidth * 0.5f;  // shift note right to make room for accidental
+
+                float nx = baseX + accOffset + BarLeftPadding;  // add bar padding to all notes
                 var state         = (states.Length > i) ? states[i] : V2NoteState.Pending;
 
                 if (!note.IsRest)
@@ -561,9 +612,9 @@ namespace musicmate.Drawables
                 float x0 = tips[0].x,  y0 = tips[0].y;
                 float x1 = tips[^1].x, y1 = tips[^1].y;
 
-                // Cap the slope so the beam doesn't tilt more than half a staff space
-                // over the group's width — gentle slope for engraving quality.
-                float maxTilt = _layout.Sls * 0.5f;
+                // Cap the slope so the beam doesn't tilt excessively
+                // — allow up to 1.5 staff spaces for natural melodic contour.
+                float maxTilt = _layout.Sls * 1.5f;
                 if (Math.Abs(y1 - y0) > maxTilt)
                     y1 = y0 + Math.Sign(y1 - y0) * maxTilt;
 
@@ -745,10 +796,15 @@ namespace musicmate.Drawables
 
                 if (duration != NoteDuration.Whole)
                 {
-                    bool stemUp = forceStemUp ?? (y > (staffTop + (staffBot - staffTop) * 0.5f));
+                    // Stem direction: notes ABOVE middle line stem DOWN; notes BELOW middle stem UP
+                    float staffMiddle = staffTop + (staffBot - staffTop) * 0.5f;
+                    bool stemUp = forceStemUp ?? (y >= staffMiddle);  // note at/below middle → stem up
                     float stemX  = stemUp ? x + r : x - r;
                     float stemY  = stemUp ? y - r * 0.75f : y + r * 0.75f;
-                    float stemEnd = stemUp ? stemY - _layout.StemLen : stemY + _layout.StemLen;
+                    // Shorten stems for beamed notes so they terminate near the beam
+                    // baseline and do not project past the beam when beam bars are drawn.
+                    float actualStemLen = isBeamed ? _layout.StemLen * 0.6f : _layout.StemLen;
+                    float stemEnd = stemUp ? stemY - actualStemLen : stemY + actualStemLen;
                     canvas.StrokeColor = noteColor;
                     canvas.StrokeSize  = 2f;
                     canvas.DrawLine(stemX, stemY, stemX, stemEnd);
@@ -925,7 +981,7 @@ namespace musicmate.Drawables
                 bool isFlat = eff == Accidental.Flat || eff == Accidental.DoubleFlat;
                 const float symH = 60f, symW = 36f;
                 float fontSize = isFlat ? 48f : 30f;
-                float yAdjust  = isFlat ? 0.66f : 0.38f;
+                float yAdjust  = isFlat ? 0.5f : 0.38f;  // optical center of glyph
                 float boxLeft  = x + _layout.NoteHeadR - 2f - symW;
                 float yTop     = y - symH * yAdjust;
 
@@ -978,7 +1034,9 @@ namespace musicmate.Drawables
             bool useFlats = IsKeyFlat(_session.Key);
             string glyph  = useFlats ? "♭" : "♯";
 
-            int[] flatSteps  = { 0, -3,  1, -2,  2, -1,  3 };
+            // Flat positions: Bb Eb Ab Db Gb Cb Fb
+            // Bb is on middle line (B4), Eb top space (E5), Ab 2nd space (A4), etc.
+            int[] flatSteps  = { 0, -3,  1, -2,  2, -1,  3 };  // Bb Eb Ab Db Gb Cb Fb
             int[] sharpSteps = { -4, -1, -5, -2,  1, -3,  0 };
             int[] steps = useFlats ? flatSteps : sharpSteps;
 
@@ -990,7 +1048,7 @@ namespace musicmate.Drawables
             for (int i = 0; i < Math.Min(accCount, steps.Length); i++)
             {
                 float yCenter = staffMid + steps[i] * _layout.HS;
-                float yAdjust = useFlats ? 0.78f : 0.38f;
+                float yAdjust = useFlats ? 0.5f : 0.38f;  // optical center of glyph within bounding box
                 float yTop    = yCenter - symH * yAdjust;
                 canvas.DrawString(glyph, sigX, yTop, symW, symH,
                     HorizontalAlignment.Center, VerticalAlignment.Top);

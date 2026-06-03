@@ -247,7 +247,9 @@ namespace musicmate.Pages
                           $"Key={difficulty.ForceKey}, Accidentals={difficulty.AccidentalPercent}%, " +
                           $"V2Smallest={difficulty.V2SmallestNote}, RandomMode={difficulty.UseRandomMode}");
 
-                DifficultyLevelMapper.ApplyToSession(difficulty, _session);
+                // Apply difficulty and allow non-Classic staff modes so V2/V3 and
+                // level-driven rhythm changes take effect on the Main page.
+                DifficultyLevelMapper.ApplyToSession(difficulty, _session, forceClassicMode: false);
 
                 Utils.Log($"[ChildHome] Session after apply → BPM={_session.PlaybackBpm}, " +
                           $"LowestNote={_session.LowestNote}, HighestNote={_session.HighestNote}, " +

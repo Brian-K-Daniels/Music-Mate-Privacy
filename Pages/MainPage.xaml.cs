@@ -313,6 +313,9 @@ namespace musicmate.Pages
                 _audio = ServiceHelper.GetService<IAudioCaptureService>()!;
                 _player = ServiceHelper.GetService<IAudioPlaybackService>()!;
 
+                // Force V3 mode at all levels when starting from Home page
+                _session.StaffDisplayMode = StaffDisplayMode.V3;
+
                 BindingContext = _session;
                 StaffBorder.BindingContext = _theme_service;
                 StaffGraphicsView.BindingContext = _theme_service;
@@ -786,7 +789,9 @@ namespace musicmate.Pages
                 ScaleWalkOffset      = _v2NextGlobalNoteIndex,
                 // Pass through the accidental-density setting so V2 random mode
                 // inserts chromatic tones at the same rate the user configured.
-                AccidentalPercent    = _session.IsRandomMode ? _session.AccidentalPercent : 0
+                AccidentalPercent    = _session.IsRandomMode ? _session.AccidentalPercent : 0,
+                // Apply level-based maximum melodic interval in random mode.
+                MaxMelodicIntervalSemitones = _session.IsRandomMode ? _session.MaxMelodicIntervalSemitones : 0
             };
             Debug.WriteLine($"[V2Gen] Tune={_session.Tune} Random={_session.IsRandomMode} AccPct={_session.AccidentalPercent} EffectiveAccPct={(_session.IsRandomMode ? _session.AccidentalPercent : 0)}");
             return gen;

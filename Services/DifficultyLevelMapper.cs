@@ -230,13 +230,15 @@ namespace musicmate.Services
             session.V2SmallestNote = settings.V2SmallestNote;
             session.V2RhythmMode   = settings.V2RhythmMode;
 
+            // ── Max melodic interval ─────────────────────────────────────────────
+            // Applied in random mode to guide the generator toward stepwise motion at
+            // lower levels and progressively open the melodic range as skill improves.
+            session.MaxMelodicIntervalSemitones = settings.MaxMelodicIntervalSemitones;
+
             // TODO: Apply SuggestedScale to session.SelectedScale once the child home
             //       page has a scale selector (keeping "Major" for now).
 
             // TODO: Apply SuggestedNoteCount once NoteSessionService has a NoteCount cap.
-
-            // TODO: Apply MaxMelodicIntervalSemitones once BuildRandomSequenceAsync
-            //       supports a per-session max-interval parameter.
         }
 
         // ── Private formula helpers ─────────────────────────────────────────────
@@ -285,9 +287,9 @@ namespace musicmate.Services
 
         private static string CalcV2SmallestNote(int level) => level switch
         {
-            <= 25 => "Quarter",
-            <= 60 => "Eighth",
-            _     => "Sixteenth",
+            <= 15 => "Quarter",     // Levels 1-15: Quarter notes only (beginner)
+            <= 40 => "Eighth",      // Levels 16-40: Eighth notes introduced (early intermediate)
+            _     => "Sixteenth",   // Levels 41+: Sixteenth notes (intermediate+)
         };
 
         /// <summary>

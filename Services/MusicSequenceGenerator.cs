@@ -104,6 +104,13 @@ namespace musicmate.Services
         /// </summary>
         public int AccidentalPercent { get; set; } = 0;
 
+        /// <summary>
+        /// Maximum melodic interval in semitones allowed between consecutive notes.
+        /// Only enforced in random mode (<see cref="UseScaleOrder"/> = false).
+        /// 0 = no limit (full range allowed).
+        /// </summary>
+        public int MaxMelodicIntervalSemitones { get; set; } = 0;
+
         // ── Public API ────────────────────────────────────────────────────────────
 
         /// <summary>
@@ -174,6 +181,10 @@ namespace musicmate.Services
                     // Occasionally insert a rest (roughly 1-in-8 chance when variety is on).
                     bool isRest = RhythmVarietyPercent > 0 && rng.Next(8) == 0;
 
+                    // Detect phrase endings: last note of every 2nd or 4th measure.
+                    bool isPhraseEnding = (mi + 1) % 4 == 0 || (mi + 1) % 2 == 0;
+                    bool isLastNoteOfMeasure = measure.BeatsRemaining - dur.ToBeatValue() < 1e-9;
+
                     GeneratedNote note;
                     // In scale-order mode, once the queue is exhausted the scale is complete.
                     // Fill any remaining beats in the measure (and any trailing measures) with rests.
@@ -193,7 +204,7 @@ namespace musicmate.Services
                         }
                         else
                         {
-                            pitch = PickPitch(rng, pool, prevPitch);
+                            pitch = PickPitch(rng, pool, prevPitch, isPhraseEnding && isLastNoteOfMeasure);
                         }
                         note = BuildNote(pitch, dur, absoluteMi,
                             globalBeatCursor + localCursor, globalNoteIndex, prevPitch);
@@ -405,42 +416,92 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// Picks a random MIDI number from the pool, avoiding the same pitch class
-        /// as <paramref name="prevMidi"/> to prevent adjacent same-pitch-class repeats
-        /// (e.g. C4 immediately followed by C5).
-        /// Falls back to any pool note when every candidate shares the pitch class.
+        /// Picks a random MIDI number from the pool using guided melodic weighting.
+        /// Prefers stepwise motion, occasional skips, rare larger leaps, more frequent
+        /// tonic/chord tones, and phrase endings on the tonic.
+        /// Avoids adjacent same-pitch-class repeats (e.g. C4→C5).
         /// </summary>
-        private static int PickPitch(Random rng, List<int> pool, int prevMidi = -1)
+        /// <param name="isPhraseEnding">True if this is the last note of a phrase (measure 2, 4, etc.)</param>
+        private int PickPitch(Random rng, List<int> pool, int prevMidi = -1, bool isPhraseEnding = false)
         {
             if (prevMidi < 0 || pool.Count <= 1)
                 return pool[rng.Next(pool.Count)];
 
             int prevPc = prevMidi % 12;
+            var scalePcs = GetScalePitchClasses(Key, Scale);
+            int tonicPc = ((NoteSessionService.NoteNameToMidi($"{Key}4") % 12) + 12) % 12;
 
-            // Build a weighted candidate list.  Candidates that repeat the previous pitch-class
-            // are excluded.  Weight each remaining pitch inversely by its semitone distance from
-            // the previous note so that small steps are much more common than large leaps.
-            // Weight formula: w = max(1, 13 - distance), giving:
-            //   unison/octave displacement excluded; half-step → 12; whole-step → 11; …; 12st → 1
+            // Determine chord tones: tonic (1), third (3), fifth (5) of the scale
+            var degreeIntervals = GetScaleDegreeIntervals(Scale);
+            HashSet<int> chordTonePcs = new HashSet<int>();
+            if (degreeIntervals != null && degreeIntervals.Length >= 5)
+            {
+                chordTonePcs.Add(tonicPc);                                           // 1
+                chordTonePcs.Add((tonicPc + degreeIntervals[2]) % 12);              // 3
+                chordTonePcs.Add((tonicPc + degreeIntervals[4]) % 12);              // 5
+            }
+
             var weighted = new List<(int midi, int weight)>(pool.Count);
             int totalWeight = 0;
+
             foreach (int m in pool)
             {
-                if (m % 12 == prevPc) continue;          // skip same pitch-class
+                if (m % 12 == prevPc) continue;  // skip same pitch-class repeats
+
+                int pc = (m % 12 + 12) % 12;
                 int dist = Math.Abs(m - prevMidi);
-                // Collapse octave jumps to their within-octave equivalent for weighting
-                // so that e.g. a 12-semitone leap is weighted the same as a 0-semitone step
-                // (which is excluded anyway) rather than being treated as distance 12.
+
+                // ── Max interval cap ──────────────────────────────────────────────
+                // If MaxMelodicIntervalSemitones > 0, exclude candidates beyond the limit.
+                if (MaxMelodicIntervalSemitones > 0 && dist > MaxMelodicIntervalSemitones)
+                    continue;
+
                 int semitones = dist % 12;
-                if (semitones == 0) semitones = 12;      // octave leap: treat as largest step
-                int weight = Math.Max(1, 13 - semitones);
-                weighted.Add((m, weight));
-                totalWeight += weight;
+                if (semitones == 0) semitones = 12;  // octave leap
+
+                // ── Base interval weight ──────────────────────────────────────────
+                // Strongly favor small intervals; discourage large leaps.
+                // Scale degrees (diatonic steps) get extra boost.
+                int baseWeight = semitones switch
+                {
+                    1 or 2  => 100,  // half-step or whole-step: very common
+                    3 or 4  => 60,   // minor/major third: common skip
+                    5       => 40,   // perfect fourth: occasional skip
+                    7       => 35,   // perfect fifth: occasional skip
+                    6       => 20,   // tritone: rare but allowed
+                    8 or 9  => 15,   // minor/major sixth: rare leap
+                    10 or 11 => 8,   // minor/major seventh: very rare leap
+                    12      => 5,    // octave: very rare
+                    _       => 1
+                };
+
+                // ── Scale-degree boost ────────────────────────────────────────────
+                // Notes in the current scale get 2× weight; chromatic notes allowed but rarer.
+                if (scalePcs.Contains(pc))
+                    baseWeight *= 2;
+
+                // ── Chord-tone boost ──────────────────────────────────────────────
+                // Tonic, third, and fifth get extra weight for harmonic stability.
+                if (chordTonePcs.Contains(pc))
+                    baseWeight = (int)(baseWeight * 1.5);
+
+                // ── Tonic extra boost ─────────────────────────────────────────────
+                // Tonic is especially common for phrase endings and stability.
+                if (pc == tonicPc)
+                {
+                    if (isPhraseEnding)
+                        baseWeight = (int)(baseWeight * 5.0);  // very strong preference at phrase endings
+                    else
+                        baseWeight = (int)(baseWeight * 1.3);  // general preference elsewhere
+                }
+
+                weighted.Add((m, Math.Max(1, baseWeight)));
+                totalWeight += Math.Max(1, baseWeight);
             }
 
             if (weighted.Count == 0)
             {
-                // Fallback: all candidates had the same pitch-class as previous — just pick any.
+                // Fallback: all candidates had same pitch-class — pick any.
                 return pool[rng.Next(pool.Count)];
             }
 
