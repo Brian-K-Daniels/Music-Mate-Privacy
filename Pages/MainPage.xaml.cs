@@ -379,7 +379,8 @@ namespace musicmate.Pages
                 V2StaffGraphicsView.SetBinding(GraphicsView.BackgroundColorProperty, new Binding("PanelBackgroundColor"));
 
                 // V3 staff drawable setup
-                _v3Drawable = new Drawables.V3StaffDrawable(_session, _theme_service);
+                var safeAreaService = ServiceHelper.GetService<ISafeAreaService>();
+                _v3Drawable = new Drawables.V3StaffDrawable(_session, _theme_service, safeAreaService);
                 V3StaffGraphicsView.Drawable = _v3Drawable;
                 V3StaffGraphicsView.SetBinding(GraphicsView.BackgroundColorProperty, new Binding("PanelBackgroundColor"));
 
@@ -1172,7 +1173,52 @@ namespace musicmate.Pages
                         var genLower = BuildV2Generator(V3MeasuresPerStaff);
                         var lowerMeasures = genLower.GenerateSequence();
                         lowerFlat     = MusicSequenceGenerator.Flatten(lowerMeasures);
+
+                        // Re-offset lower staff beat positions to start at 0 (independent staff)
+                        double lowerBeatShift = lowerFlat.Count > 0 ? (lowerFlat[0].BeatPosition ?? 0.0) : 0.0;
+                        if (lowerBeatShift > 0.0)
+                        {
+                            for (int i = 0; i < lowerFlat.Count; i++)
+                            {
+                                var n = lowerFlat[i];
+                                lowerFlat[i] = new GeneratedNote
+                                {
+                                    MidiNumber       = n.MidiNumber,
+                                    Letter           = n.Letter,
+                                    Octave           = n.Octave,
+                                    Accidental       = n.Accidental,
+                                    SpelledName      = n.SpelledName,
+                                    TargetFrequency  = n.TargetFrequency,
+                                    Duration         = n.Duration,
+                                    IsRest           = n.IsRest,
+                                    MeasureIndex     = n.MeasureIndex,
+                                    BeatPosition     = (n.BeatPosition ?? 0.0) - lowerBeatShift,
+                                    IsPlayedCorrectly = n.IsPlayedCorrectly
+                                };
+                            }
+                        }
+
                         lowerBarBeats = ComputeNewBarBeats(lowerFlat, existingLower);
+
+#if DEBUG
+                        Debug.WriteLine($"[V3 Standard] Upper: {upperFlat.Count} notes ({upperFlat.Count(n => !n.IsRest)} pitched), Lower: {lowerFlat.Count} notes ({lowerFlat.Count(n => !n.IsRest)} pitched), lowerBeatShift: {lowerBeatShift:F2}");
+
+                        // Log ALL upper staff content
+                        Debug.WriteLine($"[V3 Upper] Bar beats: {string.Join(", ", upperBarBeats)}");
+                        for (int i = 0; i < upperFlat.Count; i++)
+                        {
+                            var n = upperFlat[i];
+                            Debug.WriteLine($"  [{i}] {(n.IsRest ? "REST" : n.SpelledName)} {n.Duration} @ beat {n.BeatPosition:F2}, measure {n.MeasureIndex}");
+                        }
+
+                        // Log ALL lower staff content
+                        Debug.WriteLine($"[V3 Lower] Bar beats: {string.Join(", ", lowerBarBeats)}");
+                        for (int i = 0; i < lowerFlat.Count; i++)
+                        {
+                            var n = lowerFlat[i];
+                            Debug.WriteLine($"  [{i}] {(n.IsRest ? "REST" : n.SpelledName)} {n.Duration} @ beat {n.BeatPosition:F2}, measure {n.MeasureIndex}");
+                        }
+#endif
 
                         _v3LowerMeasureIndex    = _v2NextMeasureIndex + lowerMeasures.Count;
                         _v3LowerBeatOffset      = _v2NextBeatOffset + lowerMeasures.Count * (double)genLower.TimeSignature.TotalBeats;

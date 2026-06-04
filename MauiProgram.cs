@@ -42,6 +42,11 @@ namespace musicmate
             builder.Services.AddSingleton<IOrientationService, OrientationService>();
             builder.Services.AddSingleton<StatusService>();
             builder.Services.AddSingleton<ThemeService>();
+            #if ANDROID
+                builder.Services.AddSingleton<ISafeAreaService, musicmate.Platforms.Android.SafeAreaService>();
+            #else
+                builder.Services.AddSingleton<ISafeAreaService>(sp => new FallbackSafeAreaService());
+            #endif
 #if DEBUG
             // Debug: local stub allows free "purchase" and a Restore button to reset it.
             builder.Services.AddSingleton<IStoreService, LocalStoreService>();

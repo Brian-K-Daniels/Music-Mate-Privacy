@@ -251,7 +251,7 @@ namespace musicmate.Pages
                 // level-driven rhythm changes take effect on the Main page.
                 DifficultyLevelMapper.ApplyToSession(difficulty, _session, forceClassicMode: false);
 
-                Utils.Log($"[ChildHome] Session after apply → BPM={_session.PlaybackBpm}, " +
+                Utils.Log($"[ChildHome] Session after apply → Level={_session.ChildLevel}, " +
                           $"LowestNote={_session.LowestNote}, HighestNote={_session.HighestNote}, " +
                           $"Key={_session.Key}, IsRandomMode={_session.IsRandomMode}");
 

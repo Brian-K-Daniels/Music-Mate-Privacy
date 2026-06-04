@@ -251,10 +251,12 @@
                       BackgroundColor="{Binding PanelBackgroundColor}"
                       Padding="0"
                       IsVisible="False"
+                      HorizontalOptions="Fill"
                       VerticalOptions="Start">
                 <GraphicsView x:Name="V3StaffGraphicsView"
                               HeightRequest="240"
                               BackgroundColor="{Binding PanelBackgroundColor}"
+                              HorizontalOptions="Fill"
                               Margin="0" />
               </Border>
 
