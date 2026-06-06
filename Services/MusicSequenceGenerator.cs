@@ -465,13 +465,13 @@ namespace musicmate.Services
                 int baseWeight = semitones switch
                 {
                     1 or 2  => 100,  // half-step or whole-step: very common
-                    3 or 4  => 60,   // minor/major third: common skip
-                    5       => 40,   // perfect fourth: occasional skip
-                    7       => 35,   // perfect fifth: occasional skip
-                    6       => 20,   // tritone: rare but allowed
-                    8 or 9  => 15,   // minor/major sixth: rare leap
-                    10 or 11 => 8,   // minor/major seventh: very rare leap
-                    12      => 5,    // octave: very rare
+                    3 or 4  => 50,   // minor/major third: common skip      (was 60)
+                    5       => 25,   // perfect fourth: occasional skip     (was 40)
+                    7       => 12,   // perfect fifth: rare leap            (was 35)
+                    6       => 8,    // tritone: very rare                  (was 20)
+                    8 or 9  => 4,    // minor/major sixth: very rare leap   (was 15)
+                    10 or 11 => 2,   // minor/major seventh: almost never   (was 8)
+                    12      => 1,    // octave: almost never                (was 5)
                     _       => 1
                 };
 

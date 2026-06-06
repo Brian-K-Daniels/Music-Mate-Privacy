@@ -229,6 +229,16 @@
                 TextColor="Black" BackgroundColor="White" FontSize="12" />
       </Grid>
 
+      <!-- TEMP DEBUG: remove with Debug/V3LayoutTestTune.cs -->
+      <BoxView HeightRequest="1" Color="#CC6600" Margin="0,4,0,2" />
+      <Label Text="V3 layout debug" FontAttributes="Bold" FontSize="13" TextColor="#CC6600" />
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" VerticalOptions="Center">
+        <Label Grid.Column="0" Text="Use fixed V3 test tune" FontSize="12" />
+        <Switch x:Name="UseFixedV3TestTuneSwitch"
+                Grid.Column="1"
+                Toggled="OnUseFixedV3TestTuneToggled" />
+      </Grid>
+
       <!-- ── Reset to defaults ────────────────────────────────────────── -->
       <BoxView HeightRequest="1" Color="#8B4513" Margin="0,6,0,2" />
       <Button Text="Reset to defaults"

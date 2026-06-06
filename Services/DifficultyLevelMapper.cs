@@ -10,11 +10,6 @@ namespace musicmate.Services
     // ──────────────────────────────────────────────────────────────────────────────
     public record PracticeDifficultySettings
     {
-        // ── Connected to NoteSessionService ────────────────────────────────────
-
-        /// <summary>Metronome / playback tempo in beats per minute (30–400).</summary>
-        public int PlaybackBpm { get; init; }
-
         /// <summary>
         /// Percentage of scale notes that may be replaced with chromatic accidentals (0–100).
         /// Only applied when the user has premium access.
@@ -104,12 +99,6 @@ namespace musicmate.Services
         //  61–80   Advanced
         //  81–100  Expert
 
-        // ── BPM range ───────────────────────────────────────────────────────────
-        // Level 1 → 50 BPM (slow enough for beginners to find each note)
-        // Level 100 → 160 BPM (demanding but achievable)
-        private const int BpmAtLevel1   = 50;
-        private const int BpmAtLevel100 = 160;
-
         // ── Note-range milestones (written pitch) ────────────────────────────────
         // Range widens progressively so beginners work on a single octave.
         // Each entry: (startLevel, loMidi, hiMidi, loName, hiName)
@@ -162,7 +151,6 @@ namespace musicmate.Services
 
             return new PracticeDifficultySettings
             {
-                PlaybackBpm            = CalcBpm(level),
                 AccidentalPercent      = CalcAccidentalPercent(level),
                 LowestNote             = range.Lo,
                 HighestNote            = range.Hi,
@@ -206,9 +194,6 @@ namespace musicmate.Services
             // ForceKey progresses gently from "C" (level 1) through "G", "F", etc.
             session.Key = settings.ForceKey;
 
-            // ── BPM ──────────────────────────────────────────────────────────────
-            session.PlaybackBpm = settings.PlaybackBpm;
-
             // ── Accidental % ─────────────────────────────────────────────────────
             // Only honoured by NoteSessionService when the user has premium access.
             session.AccidentalPercent = settings.AccidentalPercent;
@@ -242,10 +227,6 @@ namespace musicmate.Services
         }
 
         // ── Private formula helpers ─────────────────────────────────────────────
-
-        /// <summary>Linear BPM interpolation across the full 1–100 range.</summary>
-        private static int CalcBpm(int level) =>
-            (int)Math.Round(Lerp(BpmAtLevel1, BpmAtLevel100, (level - 1) / 99.0));
 
         /// <summary>
         /// Accidentals stay at 0 % until level 26, then rise linearly to
@@ -321,12 +302,13 @@ namespace musicmate.Services
             (int)Math.Round(Lerp(6, 20, (level - 1) / 99.0));
 
         /// <summary>
-        /// Maximum melodic interval in semitones: starts at a 4th (5 semitones) for
-        /// beginners and opens to a 12th (19 semitones) for experts.
-        /// TODO: wire into BuildRandomSequenceAsync once a per-session cap exists.
+        /// Maximum melodic interval in semitones: starts at a major 2nd (2 semitones) for
+        /// beginners — enforcing almost entirely stepwise motion — and opens to a minor 6th
+        /// (8 semitones) at level 100.  The soft weight table in MusicSequenceGenerator further
+        /// biases the generator toward steps even within this cap.
         /// </summary>
         private static int CalcMaxInterval(int level) =>
-            (int)Math.Round(Lerp(5, 19, (level - 1) / 99.0));
+            (int)Math.Round(Lerp(2, 8, (level - 1) / 99.0));
 
         // ── Utility ─────────────────────────────────────────────────────────────
 

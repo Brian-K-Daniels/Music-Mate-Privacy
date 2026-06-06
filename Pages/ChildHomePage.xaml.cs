@@ -242,7 +242,7 @@ namespace musicmate.Pages
                 var difficulty = DifficultyLevelMapper.GetSettingsForLevel(
                     _selectedLevel, shortInstrumentKey);
 
-                Utils.Log($"[ChildHome] Level={_selectedLevel} → BPM={difficulty.PlaybackBpm}, " +
+                Utils.Log($"[ChildHome] Level={_selectedLevel}, " +
                           $"Range={difficulty.LowestNote}–{difficulty.HighestNote}, " +
                           $"Key={difficulty.ForceKey}, Accidentals={difficulty.AccidentalPercent}%, " +
                           $"V2Smallest={difficulty.V2SmallestNote}, RandomMode={difficulty.UseRandomMode}");

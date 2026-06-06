@@ -3,6 +3,7 @@ using musicmate.Controls;
 using musicmate.Drawables;
 using musicmate.Models;
 using musicmate.Services;
+using musicmate.V3LayoutDebug;
 using musicmate.Utilities;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -1015,7 +1016,35 @@ namespace musicmate.Pages
                 var existingUpper = new HashSet<double>();
                 var existingLower = new HashSet<double>();
 
-                if (_session.Tune == "Practice Tune" && _session.CurrentTune != null)
+                if (V3LayoutTestTune.IsEnabled)
+                {
+                    var testTune = V3LayoutTestTune.Create();
+                    V3LayoutTestTune.LogContents(testTune);
+
+                    var allNotes = BuildV2NotesFromTune(testTune, _session.Key);
+                    int splitAt = testTune.Measures.Count / 2;
+                    double splitBeat = 0.0;
+                    for (int m = 0; m < splitAt && m < testTune.Measures.Count; m++)
+                        foreach (var mn in testTune.Measures[m].Notes)
+                            splitBeat += mn.Duration.ToBeatValue();
+
+                    upperFlat     = allNotes.Where(n => (n.BeatPosition ?? 0) < splitBeat).ToList();
+                    lowerFlat     = allNotes.Where(n => (n.BeatPosition ?? 0) >= splitBeat).ToList();
+                    upperBarBeats = ComputeNewBarBeats(upperFlat, existingUpper);
+                    lowerBarBeats = ComputeNewBarBeats(lowerFlat, existingLower);
+
+                    _v2NextMeasureIndex    = testTune.Measures.Count;
+                    _v2NextBeatOffset      = allNotes.Sum(n => n.BeatDuration);
+                    _v2NextGlobalNoteIndex = allNotes.Count(n => !n.IsRest);
+                    _v3LowerMeasureIndex    = _v2NextMeasureIndex;
+                    _v3LowerBeatOffset      = _v2NextBeatOffset;
+                    _v3LowerGlobalNoteIndex = _v2NextGlobalNoteIndex;
+                    if (_v3Drawable != null) _v3Drawable.UpperHasEndBar = false;
+
+                    StatusService.Instance.StatusMessage =
+                        "V3 fixed test tune (see debug log for bar beats)";
+                }
+                else if (_session.Tune == "Practice Tune" && _session.CurrentTune != null)
                 {
                     // Split tune measures between upper and lower staff.
                     var allNotes = BuildV2NotesFromTune(_session.CurrentTune, _session.Key);
@@ -1350,6 +1379,7 @@ namespace musicmate.Pages
             // ── Transition: player just moved onto lower staff → refresh upper ────
             // Skip in two-octave scale mode: the sequence is a fixed complete walk.
             if (!isUpperActive && _v3Drawable.UpperAlpha >= 1f && _session.Tune != "Practice Tune"
+                && !V3LayoutTestTune.IsEnabled
                 && !_v3Drawable.UpperHasEndBar)
             {
                 // Check whether we're on the first note of the lower staff (just transitioned).
@@ -1365,7 +1395,7 @@ namespace musicmate.Pages
         /// </summary>
         private async Task RefreshV3UpperStaffAsync()
         {
-            if (_v3Drawable == null || _session.Tune == "Practice Tune") return;
+            if (_v3Drawable == null || _session.Tune == "Practice Tune" || V3LayoutTestTune.IsEnabled) return;
             try
             {
                 var gen      = BuildV2Generator(V3MeasuresPerStaff);
@@ -1416,7 +1446,7 @@ namespace musicmate.Pages
         /// </summary>
         private async Task RefreshV3LowerStaffAsync()
         {
-            if (_v3Drawable == null || _session.Tune == "Practice Tune") return;
+            if (_v3Drawable == null || _session.Tune == "Practice Tune" || V3LayoutTestTune.IsEnabled) return;
             try
             {
                 var gen      = BuildV2Generator(V3MeasuresPerStaff);

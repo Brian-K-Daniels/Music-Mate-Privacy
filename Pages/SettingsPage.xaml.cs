@@ -1,4 +1,5 @@
 using System;
+using musicmate.V3LayoutDebug;
 using musicmate.Utilities;
 using Microsoft.Maui.Controls;
 using musicmate.Services;
@@ -59,6 +60,13 @@ namespace musicmate.Pages
             base.OnAppearing();
             _viewModel?.RefreshStorageInfo();
             _ = CheckPremiumStatusAsync();
+            if (UseFixedV3TestTuneSwitch != null)
+                UseFixedV3TestTuneSwitch.IsToggled = V3LayoutTestTune.IsEnabled;
+        }
+
+        private void OnUseFixedV3TestTuneToggled(object? sender, ToggledEventArgs e)
+        {
+            V3LayoutTestTune.SetEnabled(e.Value);
         }
 
         private static async Task CheckPremiumStatusAsync()

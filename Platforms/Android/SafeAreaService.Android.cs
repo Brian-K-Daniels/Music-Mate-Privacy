@@ -1,6 +1,5 @@
 using Android.Views;
 using musicmate.Services;
-using Microsoft.Maui.Controls.Compatibility.Platform.Android;
 
 namespace musicmate.Platforms.Android
 {
@@ -12,32 +11,23 @@ namespace musicmate.Platforms.Android
             {
                 var activity = Platform.CurrentActivity;
                 if (activity?.Window == null)
-                {
-                    // Fallback: assume landscape camera cutout on the right
-                    return (0f, 0f, 80f, 0f);
-                }
+                    return ZeroInsets;
 
                 var rootView = activity.Window.DecorView.RootView;
                 if (rootView == null)
-                {
-                    return (0f, 0f, 80f, 0f);
-                }
+                    return ZeroInsets;
 
                 var insets = rootView.RootWindowInsets;
                 if (insets == null)
-                {
-                    return (0f, 0f, 80f, 0f);
-                }
+                    return ZeroInsets;
 
                 var displayCutout = insets.DisplayCutout;
                 if (displayCutout == null)
-                {
-                    // No cutout detected
-                    return (0f, 0f, 0f, 0f);
-                }
+                    return ZeroInsets;
 
-                // Convert from pixels to device-independent units
                 var density = rootView.Context?.Resources?.DisplayMetrics?.Density ?? 1f;
+                if (density <= 0f)
+                    density = 1f;
 
                 float left = displayCutout.SafeInsetLeft / density;
                 float top = displayCutout.SafeInsetTop / density;
@@ -48,9 +38,11 @@ namespace musicmate.Platforms.Android
             }
             catch
             {
-                // Fallback: assume landscape camera cutout on the right
-                return (0f, 0f, 80f, 0f);
+                return ZeroInsets;
             }
         }
+
+        private static (float Left, float Top, float Right, float Bottom) ZeroInsets =>
+            (0f, 0f, 0f, 0f);
     }
 }
