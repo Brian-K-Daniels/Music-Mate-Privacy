@@ -1,4 +1,5 @@
 using Android.Views;
+using AndroidX.Core.View;
 using musicmate.Services;
 
 namespace musicmate.Platforms.Android
@@ -7,6 +8,10 @@ namespace musicmate.Platforms.Android
     {
         public (float Left, float Top, float Right, float Bottom) GetSafeAreaInsets()
         {
+            // DisplayCutout / SafeInset* require API 28+; min SDK is 21.
+            if (!OperatingSystem.IsAndroidVersionAtLeast(28))
+                return ZeroInsets;
+
             try
             {
                 var activity = Platform.CurrentActivity;
@@ -19,7 +24,12 @@ namespace musicmate.Platforms.Android
 
                 var insets = rootView.RootWindowInsets;
                 if (insets == null)
+                {
+                    // Insets can be null on the first draw before the window is laid out.
+                    // Request a fresh pass; return zero rather than guessing a cutout margin.
+                    ViewCompat.RequestApplyInsets(rootView);
                     return ZeroInsets;
+                }
 
                 var displayCutout = insets.DisplayCutout;
                 if (displayCutout == null)

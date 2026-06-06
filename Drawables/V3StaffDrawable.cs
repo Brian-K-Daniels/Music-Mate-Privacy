@@ -129,6 +129,23 @@ namespace musicmate.Drawables
         private float KeySigGlyphWidth() => AccidentalSymbolWidth();
 
         /// <summary>
+        /// Horizontal advance between key-sig symbols (tight cluster).
+        /// Draw box width stays <see cref="KeySigGlyphWidth"/>; slot matches V2 (~14px at sls=12).
+        /// </summary>
+        private float KeySigSymbolSlot()
+        {
+            float symW = KeySigGlyphWidth();
+            return Math.Max(_layout.Sls * 1.17f, symW * 0.38f);
+        }
+
+        /// <summary>Total horizontal span of <paramref name="accCount"/> key-sig symbols (tight slots + last glyph width).</summary>
+        private float KeySigDrawnWidth(int accCount)
+        {
+            if (accCount <= 0) return 0f;
+            return (accCount - 1) * KeySigSymbolSlot() + KeySigGlyphWidth();
+        }
+
+        /// <summary>
         /// Available canvas height set by the page before calling <see cref="ComputeRequiredHeight"/>.
         /// The drawable scales staff geometry to fill this height, reserving space for the OS home bar.
         /// </summary>
@@ -314,13 +331,19 @@ namespace musicmate.Drawables
 
                 // Base X position from beat position
                 float idealX = LeftMargin + (float)beatPos * pxPerBeat;
-                if (beatPos < 1e-6)
-                    idealX = Math.Max(idealX, LeftMargin + StaffStartExtraPad);
 
                 // Reserve accidental space only for accidentals drawn beside the note (not key-sig spellings).
-                bool hasAcc = !note.IsRest && note.Accidental != Accidental.None && !IsAccidentalInKeySig(note);
+                bool hasAcc = !note.IsRest && WillReserveAccidentalSpace(note);
                 bool isFlatAcc = hasAcc && IsFlatBodyAccidental(note.Accidental);
                 float accWidth = hasAcc ? AccidentalReserveWidth(isFlatAcc) : 0f;
+
+                if (beatPos < 1e-6)
+                {
+                    // First slot: ~one note-head gap after time sig to left edge of note/rest/accidental.
+                    float firstItemLeft = _headerMetrics.TimeSigRightRel + _layout.NoteHeadR;
+                    float minCenter = firstItemLeft + accWidth + _layout.NoteHeadR;
+                    idealX = Math.Max(idealX, minCenter);
+                }
 
                 // Minimum spacing between notes (including accidental space)
                 const float MinNoteGap = 8f;
@@ -1016,20 +1039,20 @@ namespace musicmate.Drawables
                 {
                     if (delta < minMelodyDelta)
                     {
-                        Utilities.Utils.Log(
+                        V3Log(
                             $"[V3Layout WARN] {staffLabel} i={i}: drawn X delta {delta:F1} < {minMelodyDelta} " +
                             $"(prev={prevDrawnX:F1} cur={drawnX:F1})");
                     }
 
                     if (Math.Abs(stemX - prevStemX) < 0.5f)
                     {
-                        Utilities.Utils.Log(
+                        V3Log(
                             $"[V3Layout WARN] {staffLabel} i={i}: stem X {stemX:F1} same as previous {prevStemX:F1}");
                     }
 
                     if (Math.Abs(drawnX - stemX) < 1f)
                     {
-                        Utilities.Utils.Log(
+                        V3Log(
                             $"[V3Layout WARN] {staffLabel} i={i}: notehead X {drawnX:F1} equals stem X {stemX:F1}");
                     }
                 }
@@ -1115,9 +1138,10 @@ namespace musicmate.Drawables
                 HorizontalAlignment.Left, VerticalAlignment.Top);
             canvas.RestoreState();
 
-            // Key signature + time signature
-            DrawKeySignature(canvas, staffTop, staffMid, ink);
-            DrawTimeSignature(canvas, staffTop, staffMid, ink, _headerMetrics.TimeSigX);
+            // Key signature + time signature (time sig placed after last drawn accidental box)
+            const float keySigGap = 4f;
+            float keySigEndX = DrawKeySignature(canvas, staffTop, staffMid, ink);
+            DrawTimeSignature(canvas, staffTop, staffMid, ink, keySigEndX + keySigGap);
 
             // Bar lines (using pre-computed positions)
             canvas.StrokeColor = ink;
@@ -1164,7 +1188,7 @@ namespace musicmate.Drawables
                 // Key-sig pitch-class cancelled only when this note explicitly contradicts the sig
                 // (e.g. B♮ in F major). None does not cancel — implied key-sig pitch needs no glyph.
                 if (!note.IsRest && note.Accidental != Accidental.None
-                    && !IsAccidentalInKeySig(note) && IsNoteInKeySig(note))
+                    && !IsAccidentalInKeySig(note.Accidental, note.Letter) && IsNoteInKeySig(note))
                 {
                     barCancelledAccidentals.Add((note.Letter, note.Octave));
                 }
@@ -1260,21 +1284,24 @@ namespace musicmate.Drawables
                     continue;
                 }
 
-                // Find the half-beat group this note belongs to
-                // In 4/4: 0.0-0.5, 0.5-1.0, 1.0-1.5, 1.5-2.0, 2.0-2.5, 2.5-3.0, 3.0-3.5, 3.5-4.0
-                double halfBeatStart = Math.Floor(pos * 2.0) / 2.0;
-                double halfBeatEnd = halfBeatStart + 0.5;
+                // Eighths beam within half-beat groups; sixteenths beam within a full beat.
+                double groupStart = n.Duration == NoteDuration.Sixteenth
+                    ? Math.Floor(pos + 1e-9)
+                    : Math.Floor(pos * 2.0) / 2.0;
+                double groupEnd = n.Duration == NoteDuration.Sixteenth
+                    ? groupStart + 1.0
+                    : groupStart + 0.5;
 
                 int currentMeasure = n.MeasureIndex ?? 0;
 
-                // Collect consecutive beamable notes within the same half-beat group and measure
+                // Collect consecutive beamable notes within the same beat/half-beat group and measure
                 var groupIndices = new List<int>();
                 int j = i;
 
                 while (j < notes.Count)
                 {
                     var nj = notes[j];
-                    double pj = nj.BeatPosition ?? halfBeatEnd;
+                    double pj = nj.BeatPosition ?? groupEnd;
 
                     // Stop if we hit a rest or unbeamable duration
                     if (nj.IsRest || (nj.Duration != NoteDuration.Eighth && nj.Duration != NoteDuration.Sixteenth))
@@ -1284,8 +1311,16 @@ namespace musicmate.Drawables
                     if ((nj.MeasureIndex ?? currentMeasure) != currentMeasure)
                         break;
 
-                    // Stop if this note starts outside our half-beat group
-                    if (pj >= halfBeatEnd + 1e-6)
+                    // Sixteenths only group with other sixteenths in the same beat
+                    if (n.Duration == NoteDuration.Sixteenth && nj.Duration != NoteDuration.Sixteenth)
+                        break;
+                    if (n.Duration == NoteDuration.Eighth && nj.Duration == NoteDuration.Sixteenth)
+                        break;
+
+                    // Stop if this note starts outside our beam group window
+                    if (pj < groupStart - 1e-6)
+                        break;
+                    if (pj >= groupEnd + 1e-6)
                         break;
 
                     groupIndices.Add(j);
@@ -1432,6 +1467,8 @@ namespace musicmate.Drawables
             public float KeySigStartX { get; init; }
             public float KeySigEndX { get; init; }
             public float TimeSigX { get; init; }
+            /// <summary>Right edge of the time signature, relative to <c>safeLeft</c>.</summary>
+            public float TimeSigRightRel { get; init; }
             /// <summary>Offset from <c>safeLeft</c> to the first note beat-0 anchor (center X).</summary>
             public float LeftMargin { get; init; }
         }
@@ -1439,13 +1476,10 @@ namespace musicmate.Drawables
         private StaffHeaderMetrics ComputeHeaderMetrics(float safeLeft)
         {
             const float clefPad = 2f;
-            const float keySigGap = 6f;
+            const float keySigGap = 4f;
             const float timeSigW = 24f;
-            const float minMargin = 8f;
 
             float clefWidth = _layout.Sls * 4.5f;
-            float symW      = KeySigGlyphWidth();
-            float symSlot   = Math.Max(_layout.Sls * 1.17f, symW * 0.38f);
 
             string key   = _session.Key;
             string scale = _session.SelectedScale;
@@ -1455,18 +1489,21 @@ namespace musicmate.Drawables
 
             float clefX = safeLeft + clefPad;
             float keySigStartX = safeLeft + clefWidth;
-            float keySigEndX = keySigStartX + accCount * symSlot;
+            float keySigEndX = keySigStartX + KeySigDrawnWidth(accCount);
             float timeSigX = keySigEndX + keySigGap;
-            float leftMargin = (timeSigX - safeLeft) + timeSigW + minMargin;
+            float timeSigRightRel = timeSigX - safeLeft + timeSigW;
+            // Gap from time sig to first item (note/rest/accidental) ≈ one note-head width.
+            float leftMargin = timeSigRightRel + _layout.NoteHeadR + _layout.NoteHeadR;
 
             return new StaffHeaderMetrics
             {
-                ClefX         = clefX,
-                ClefWidth     = clefWidth,
-                KeySigStartX  = keySigStartX,
-                KeySigEndX    = keySigEndX,
-                TimeSigX      = timeSigX,
-                LeftMargin    = leftMargin
+                ClefX           = clefX,
+                ClefWidth       = clefWidth,
+                KeySigStartX    = keySigStartX,
+                KeySigEndX      = keySigEndX,
+                TimeSigX        = timeSigX,
+                TimeSigRightRel = timeSigRightRel,
+                LeftMargin      = leftMargin
             };
         }
 
@@ -1695,37 +1732,18 @@ namespace musicmate.Drawables
                                     HashSet<(char, int)>? barCancelled,
                                     byte fadeAlpha)
         {
+            if (!TryResolveBodyAccidental(note, history, barCancelled, out var eff, out bool draw))
+                return;
+
+            if (history != null && draw && eff != Accidental.None)
+                history[(note.Letter, note.Octave)] = eff;
+
+            if (!draw || eff == Accidental.None)
+                return;
+
             canvas.SaveState();
             try
             {
-                var eff = note.Accidental;
-
-                // Courtesy ♮: same letter+octave was chromatic earlier in this measure only.
-                if (eff == Accidental.None && history != null
-                    && note.Accidental != Accidental.Natural)
-                {
-                    if (history.TryGetValue((note.Letter, note.Octave), out var prev)
-                        && (prev == Accidental.Sharp || prev == Accidental.Flat
-                            || prev == Accidental.DoubleSharp || prev == Accidental.DoubleFlat))
-                        eff = Accidental.Natural;
-                }
-
-                if (eff == Accidental.None) return;
-
-                if (history != null)
-                    history[(note.Letter, note.Octave)] = eff;
-
-                // Suppress key-sig accidentals unless this pitch-class had its key-sig
-                // accidental cancelled earlier in the same bar — in that case the accidental
-                // must be shown explicitly to restore the key-signature pitch.
-                bool isKeySigAcc = IsAccidentalInKeySig(note);
-                if (isKeySigAcc)
-                {
-                    if (barCancelled == null || !barCancelled.Contains((note.Letter, note.Octave)))
-                        return;
-                    // Falls through: accidental will be drawn as a reminder.
-                }
-
                 string glyph = eff switch
                 {
                     Accidental.Sharp       => "♯",
@@ -1743,6 +1761,11 @@ namespace musicmate.Drawables
                 float boxLeft = layout.HasAccidental
                     ? layout.AccidentalX
                     : AccidentalBoxLeft(layout.X, isFlat);
+
+                // Never paint body accidentals over the key signature / time signature header.
+                float headerRight = _headerMetrics.TimeSigRightRel + _layout.NoteHeadR;
+                if (boxLeft < headerRight)
+                    return;
 
                 canvas.FontColor = ApplyAlpha(ink, fadeAlpha);
 
@@ -1764,12 +1787,60 @@ namespace musicmate.Drawables
                         HorizontalAlignment.Center, VerticalAlignment.Center);
                 }
 
-                // Reminder drawn — clear the cancellation so this key-sig note does not
-                // continue to show an accidental for every subsequent appearance in the bar.
-                if (isKeySigAcc)
+                // Key-sig reminder drawn — clear cancellation for this letter+octave in the bar.
+                if (IsAccidentalInKeySig(eff, note.Letter))
                     barCancelled?.Remove((note.Letter, note.Octave));
             }
             finally { canvas.RestoreState(); }
+        }
+
+        /// <summary>
+        /// Resolves the single body accidental to draw (StaffDrawable deviation rules).
+        /// Returns false when the note should not alter bar accidental state.
+        /// </summary>
+        private bool TryResolveBodyAccidental(
+            GeneratedNote note,
+            Dictionary<(char, int), Accidental>? history,
+            HashSet<(char, int)>? barCancelled,
+            out Accidental eff,
+            out bool draw)
+        {
+            eff = note.Accidental;
+            draw = false;
+            var pitchKey = (note.Letter, note.Octave);
+            string? sigAcc = GetSignatureAccidentalForLetter(note.Letter);
+
+            // Courtesy after a chromatic on this letter+octave earlier in the measure.
+            if (eff == Accidental.None && history != null
+                && history.TryGetValue(pitchKey, out var prev)
+                && (prev == Accidental.Sharp || prev == Accidental.Flat
+                    || prev == Accidental.DoubleSharp || prev == Accidental.DoubleFlat))
+            {
+                // Restore key-sig pitch with ♯/♭; otherwise cancel with ♮ (e.g. Ab → A).
+                if (sigAcc == "#")      eff = Accidental.Sharp;
+                else if (sigAcc == "b") eff = Accidental.Flat;
+                else                    eff = Accidental.Natural;
+            }
+
+            if (eff == Accidental.None)
+                return true;
+
+            // ♮ only when cancelling a key-signature alteration on this letter.
+            if (eff == Accidental.Natural)
+            {
+                draw = sigAcc != null;
+                return true;
+            }
+
+            // ♯/♭ already implied by the key signature — omit unless restored after cancellation.
+            if (IsAccidentalInKeySig(eff, note.Letter))
+            {
+                draw = barCancelled != null && barCancelled.Contains(pitchKey);
+                return true;
+            }
+
+            draw = true;
+            return true;
         }
 
         private void DrawNoteName(ICanvas canvas, GeneratedNote note, float x, float ny,
@@ -1796,7 +1867,7 @@ namespace musicmate.Drawables
             float scaleRef = _layout.Sls / 12f;
             float symH     = 60f * scaleRef;
             float symW     = KeySigGlyphWidth();
-            float symSlot  = Math.Max(_layout.Sls * 1.17f, symW * 0.38f);
+            float symSlot  = KeySigSymbolSlot();
 
             if (_session.Tune == "Tuner"
                 || _session.Tune == "Practice Tune" || _session.SelectedScale == "Chromatic")
@@ -1806,7 +1877,7 @@ namespace musicmate.Drawables
             if (accCount == 0)
                 return _headerMetrics.KeySigStartX;
 
-            Utilities.Utils.Log($"[V3] KeySig key={_session.Key} scale={_session.SelectedScale} count={accCount}");
+            V3Log($"[V3] KeySig key={_session.Key} scale={_session.SelectedScale} count={accCount}");
 
             bool useFlats = IsKeyFlat(_session.Key);
             string glyph  = useFlats ? "♭" : "♯";
@@ -1840,7 +1911,7 @@ namespace musicmate.Drawables
                 sigX += symSlot;
             }
             canvas.RestoreState();
-            return sigX;
+            return _headerMetrics.KeySigStartX + KeySigDrawnWidth(accCount);
         }
 
         private void DrawTimeSignature(ICanvas canvas, float staffTop, float staffMid,
@@ -1901,26 +1972,52 @@ namespace musicmate.Drawables
         private static bool IsKeyFlat(string key)
             => key is "F" or "Bb" or "Eb" or "Ab" or "Db" or "Gb" or "Cb";
 
-        private bool IsAccidentalInKeySig(GeneratedNote note)
+        private bool WillReserveAccidentalSpace(GeneratedNote note)
         {
-            if (note.Accidental == Accidental.None || note.Accidental == Accidental.Natural) return false;
+            if (note.Accidental == Accidental.None) return false;
+            if (note.Accidental == Accidental.Natural)
+                return GetSignatureAccidentalForLetter(note.Letter) != null;
+            return !IsAccidentalInKeySig(note.Accidental, note.Letter);
+        }
 
-            string key = _session.Key;
-            string scale = _session.SelectedScale;
-            int accCount = GetAccidentalCount(key, scale);
+        private string? GetSignatureAccidentalForLetter(char letter)
+        {
+            int accCount = GetAccidentalCount(_session.Key, _session.SelectedScale);
+            if (accCount == 0) return null;
+
+            bool useFlats = IsKeyFlat(_session.Key);
+            char[] flatLetters  = { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
+            char[] sharpLetters = { 'F', 'C', 'G', 'D', 'A', 'E', 'B' };
+            char[] letters = useFlats ? flatLetters : sharpLetters;
+            for (int i = 0; i < Math.Min(accCount, letters.Length); i++)
+            {
+                if (letters[i] == letter)
+                    return useFlats ? "b" : "#";
+            }
+            return null;
+        }
+
+        private bool IsAccidentalInKeySig(GeneratedNote note)
+            => IsAccidentalInKeySig(note.Accidental, note.Letter);
+
+        private bool IsAccidentalInKeySig(Accidental accidental, char letter)
+        {
+            if (accidental == Accidental.None || accidental == Accidental.Natural) return false;
+
+            int accCount = GetAccidentalCount(_session.Key, _session.SelectedScale);
             if (accCount == 0) return false;
 
-            bool useFlats = IsKeyFlat(key);
+            bool useFlats = IsKeyFlat(_session.Key);
             bool typeMatch = useFlats
-                ? note.Accidental == Accidental.Flat
-                : note.Accidental == Accidental.Sharp;
+                ? accidental == Accidental.Flat
+                : accidental == Accidental.Sharp;
             if (!typeMatch) return false;
 
             char[] flatLetters  = { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
             char[] sharpLetters = { 'F', 'C', 'G', 'D', 'A', 'E', 'B' };
             char[] letters = useFlats ? flatLetters : sharpLetters;
             for (int i = 0; i < Math.Min(accCount, letters.Length); i++)
-                if (letters[i] == note.Letter) return true;
+                if (letters[i] == letter) return true;
             return false;
         }
 
@@ -1946,5 +2043,11 @@ namespace musicmate.Drawables
                 if (letters[i] == note.Letter) return true;
             return false;
         }
+
+#if DEBUG
+        private static void V3Log(string message) => Utilities.Utils.Log(message);
+#else
+        private static void V3Log(string message) { }
+#endif
     }
 }
