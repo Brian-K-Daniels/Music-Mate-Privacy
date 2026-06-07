@@ -34,6 +34,11 @@ namespace musicmate.Services
         /// </summary>
         public string V2RhythmMode { get; init; } = "Simple";
 
+        /// <summary>
+        /// Syncopation level for V2 generation: "None", "Simple", or "Full".
+        /// </summary>
+        public string V2Syncopation { get; init; } = "None";
+
         // ── Connected: mode and key ────────────────────────────────────────────
 
         /// <summary>
@@ -156,6 +161,7 @@ namespace musicmate.Services
                 HighestNote            = range.Hi,
                 V2SmallestNote         = CalcV2SmallestNote(level),
                 V2RhythmMode           = level <= 40 ? "Simple" : "Mixed",
+                V2Syncopation          = CalcV2Syncopation(level),
                 UseRandomMode          = true,
                 ForceKey               = forceKey,
 
@@ -214,6 +220,7 @@ namespace musicmate.Services
             // ── V2 rhythm ────────────────────────────────────────────────────────
             session.V2SmallestNote = settings.V2SmallestNote;
             session.V2RhythmMode   = settings.V2RhythmMode;
+            session.V2Syncopation  = settings.V2Syncopation;
 
             // ── Max melodic interval ─────────────────────────────────────────────
             // Applied in random mode to guide the generator toward stepwise motion at
@@ -271,6 +278,16 @@ namespace musicmate.Services
             <= 15 => "Quarter",     // Levels 1-15: Quarter notes only (beginner)
             <= 40 => "Eighth",      // Levels 16-40: Eighth notes introduced (early intermediate)
             _     => "Sixteenth",   // Levels 41+: Sixteenth notes (intermediate+)
+        };
+
+        /// <summary>
+        /// Syncopation stays off for beginners, mild at mid levels, full at advanced+.
+        /// </summary>
+        private static string CalcV2Syncopation(int level) => level switch
+        {
+            <= 40 => "None",
+            <= 70 => "Simple",
+            _     => "Full"
         };
 
         /// <summary>

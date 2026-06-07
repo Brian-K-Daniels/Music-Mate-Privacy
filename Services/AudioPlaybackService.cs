@@ -34,14 +34,11 @@ namespace musicmate.Services
 
                     await using var tone = BuildToneStream(f, noteSeconds, volume);
                     using var player = _audioManager.CreatePlayer(tone);
-                    player.Play();
-
-                    await Task.Delay(TimeSpan.FromSeconds(noteSeconds), token);
+                    player.Volume = Math.Clamp(volume, 0f, 1f);
+                    await PlayToCompletionAsync(player, noteSeconds, token);
 
                     if (gapSeconds > 0)
-                    {
                         await Task.Delay(TimeSpan.FromSeconds(gapSeconds), token);
-                    }
                 }
             }
             finally
@@ -53,6 +50,32 @@ namespace musicmate.Services
                 catch { }
                 _internalCts = null;
             }
+        }
+
+        private static async Task PlayToCompletionAsync(IAudioPlayer player, double noteSeconds, CancellationToken ct)
+        {
+            var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            EventHandler? onEnded = null;
+            onEnded = (_, _) =>
+            {
+                player.PlaybackEnded -= onEnded;
+                done.TrySetResult();
+            };
+            player.PlaybackEnded += onEnded;
+
+            player.Play();
+
+            var playTask = done.Task;
+            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(noteSeconds + 0.25), ct);
+            var finished = await Task.WhenAny(playTask, timeoutTask).ConfigureAwait(false);
+            player.PlaybackEnded -= onEnded;
+
+            if (finished == playTask)
+                await playTask.ConfigureAwait(false);
+            else
+                ct.ThrowIfCancellationRequested();
+
+            try { player.Stop(); } catch { }
         }
 
         private static Stream BuildToneStream(double freq, double durationSeconds, float volume)

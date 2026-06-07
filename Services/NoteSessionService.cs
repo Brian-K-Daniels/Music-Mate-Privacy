@@ -118,6 +118,7 @@ namespace musicmate.Services
         private const string PrefV2TimeSignatureKey  = "musicmate.V2TimeSignature";
         private const string PrefV2SmallestNoteKey   = "musicmate.V2SmallestNote";
         private const string PrefV2RhythmModeKey     = "musicmate.V2RhythmMode";
+        private const string PrefV2SyncopationKey    = "musicmate.V2Syncopation";
         private const string PrefV2NoteNameDisplayKey = "musicmate.V2NoteNameDisplay";
 
         private StaffDisplayMode _staffDisplayMode = LoadStaffDisplayMode();
@@ -198,6 +199,7 @@ namespace musicmate.Services
         private string _v2TimeSignature = Preferences.Get(PrefV2TimeSignatureKey, "4/4");
         private string _v2SmallestNote  = Preferences.Get(PrefV2SmallestNoteKey,  "Quarter");
         private string _v2RhythmMode    = Preferences.Get(PrefV2RhythmModeKey,    "Simple");
+        private string _v2Syncopation   = Preferences.Get(PrefV2SyncopationKey,   "None");
         private string _v2NoteNameDisplay = Preferences.Get(PrefV2NoteNameDisplayKey, "Current only");
 
         /// <summary>
@@ -246,6 +248,23 @@ namespace musicmate.Services
                 _v2RhythmMode = value;
                 Preferences.Set(PrefV2RhythmModeKey, value);
                 OnPropertyChanged(nameof(V2RhythmMode));
+            }
+        }
+
+        /// <summary>
+        /// Syncopation level for v2 rhythm generation.
+        /// "None" = on-beat sequential fill; "Simple" = mild off-beat accents;
+        /// "Full" = stronger syncopated motifs.
+        /// </summary>
+        public string V2Syncopation
+        {
+            get => _v2Syncopation;
+            set
+            {
+                if (_v2Syncopation == value) return;
+                _v2Syncopation = value;
+                Preferences.Set(PrefV2SyncopationKey, value);
+                OnPropertyChanged(nameof(V2Syncopation));
             }
         }
 

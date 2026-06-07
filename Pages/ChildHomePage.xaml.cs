@@ -258,6 +258,7 @@ namespace musicmate.Pages
                 // Tell the session which child-home level started it so that
                 // SaveSessionStatAsync (in MainPage) can record a SessionResult.
                 _session.ChildLevel = _selectedLevel;
+                LevelUpService.MarkCountSinceNow();
 
                 // FUTURE: level-up / congratulations logic will be triggered from
                 //   MainPage after a session completes successfully, then navigate

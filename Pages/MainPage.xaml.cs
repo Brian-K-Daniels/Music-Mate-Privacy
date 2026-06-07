@@ -452,9 +452,6 @@ namespace musicmate.Pages
 
                         await UpdateNoteStatsDatabaseAsync();
 
-                        // Capture current level and instrument BEFORE potential level-up
-                        // so marquee displays progress for the level that was just completed.
-                        int levelForMarquee = _session.ChildLevel;
                         string shortInstrumentForMarquee = _session.Instrument?.Split(',')[0].Trim() ?? "";
 
                         // SaveSessionStatAsync also saves SessionResult and checks level-up
@@ -481,32 +478,29 @@ namespace musicmate.Pages
                                 $"✓ {apc:F0}% correct  ({(int)correct}/{(int)(correct + wrong)}){bpmText}{levelUpText}";
                             SessionResultBanner.IsVisible = true;
                         });
-                        // Show level-up progress: session count, rolling averages, and note count
+                        // Level-up progress: qualifying sessions at current level since start / last level-up
                         try
                         {
-                            // Get recent qualifying sessions for the level that was just completed
-                            var rows = await _sessionResultDb.GetByLevelAndInstrumentAsync(levelForMarquee, shortInstrumentForMarquee);
+                            int progressLevel = _session.ChildLevel;
+                            var rows = await _sessionResultDb.GetByLevelAndInstrumentAsync(
+                                progressLevel, shortInstrumentForMarquee);
+                            var countSince = Services.LevelUpService.CountSinceUtc;
                             var qualifying = rows
+                                .Where(r => r.DateTime >= countSince)
                                 .Where(r => r.TotalNotes >= Services.LevelUpService.MinNotesPerSession)
                                 .Where(r => !(r.TotalNotes > 0 && r.OverallAccuracyPercent == 0))
                                 .ToList();
                             int sessionCount = Services.LevelUpService.SessionCount;
+                            int ssns = qualifying.Count;
                             var recent = qualifying.Take(sessionCount).ToList();
                             double avgPitch = recent.Count > 0 ? recent.Average(r => r.PitchAccuracyPercent) : 0.0;
                             double avgOverall = recent.Count > 0 ? recent.Average(r => r.OverallAccuracyPercent) : 0.0;
-                            var timingSessions = recent.Where(r => r.TimingAccuracyPercent.HasValue).ToList();
-                            double avgTiming = timingSessions.Count > 0
-                                ? timingSessions.Average(r => r.TimingAccuracyPercent!.Value)
-                                : 100.0;
-                            int noteCount = (int)correct + (int)wrong;
 #if DEBUG
-                            // Debug info: show qualifying session details
-                            string debug = string.Join(" | ", qualifying.Select(r => $"L{r.Level} {r.Instrument} Pch={r.PitchAccuracyPercent:F1} Tmg={r.TimingAccuracyPercent?.ToString("F1") ?? "-"} Ovrl={r.OverallAccuracyPercent:F1} N={r.TotalNotes}"));
                             StatusService.Instance.StatusMessage =
-                                $"ssns={recent.Count}/{sessionCount}, Pch={avgPitch:F1}%, Tmg={avgTiming:F1}%, Overall={avgOverall:F1}%, Notes={noteCount}  [Q:{qualifying.Count}] {debug}";
+                                $"L{progressLevel} ssns={ssns}/{sessionCount}, Pch={avgPitch:F0}%, Ovrl={avgOverall:F0}%";
 #else
                             StatusService.Instance.StatusMessage =
-                                $"ssns={recent.Count}/{sessionCount}, Pch={avgPitch:F1}%, Tmg={avgTiming:F1}%, Overall={avgOverall:F1}%, Notes={noteCount}";
+                                $"ssns={ssns}/{sessionCount}, Pch={avgPitch:F0}%, Ovrl={avgOverall:F0}%";
 #endif
                         }
                         catch (Exception ex)
@@ -651,9 +645,8 @@ namespace musicmate.Pages
 
         private async Task RegenerateNotesAsync()
         {
-            // Prevent concurrent calls — if a regeneration is already in progress, skip this one.
-            if (!await _regenerateSemaphore.WaitAsync(0))
-                return;
+            // Wait for any in-flight regeneration — never skip after session Reset() cleared notes.
+            await _regenerateSemaphore.WaitAsync();
             try
             {
             // Hide any previous session result banner when new notes are generated.
@@ -664,7 +657,11 @@ namespace musicmate.Pages
             if (_freezeStaff)
                 return;
 
-            var width = StaffGraphicsView.Width <= 0 ? 360 : StaffGraphicsView.Width;
+            float width = 360f;
+            if (_session.StaffDisplayMode == StaffDisplayMode.V3 && V3StaffGraphicsView?.Width > 0)
+                width = (float)V3StaffGraphicsView.Width;
+            else if (StaffGraphicsView.Width > 0)
+                width = (float)StaffGraphicsView.Width;
             await _session.GenerateNotesAsync(width);
 
 #if DEBUG
@@ -793,7 +790,8 @@ namespace musicmate.Pages
                 // inserts chromatic tones at the same rate the user configured.
                 AccidentalPercent    = _session.IsRandomMode ? _session.AccidentalPercent : 0,
                 // Apply level-based maximum melodic interval in random mode.
-                MaxMelodicIntervalSemitones = _session.IsRandomMode ? _session.MaxMelodicIntervalSemitones : 0
+                MaxMelodicIntervalSemitones = _session.IsRandomMode ? _session.MaxMelodicIntervalSemitones : 0,
+                SyncopationLevel         = SyncopationLevelHelper.Parse(_session.V2Syncopation)
             };
             Debug.WriteLine($"[V2Gen] Tune={_session.Tune} Random={_session.IsRandomMode} AccPct={_session.AccidentalPercent} EffectiveAccPct={(_session.IsRandomMode ? _session.AccidentalPercent : 0)}");
             return gen;
@@ -1719,7 +1717,7 @@ namespace musicmate.Pages
             V3StaffBorder.HeightRequest       = h;
         }
 
-        private void SetButtonStates(bool isRunning)
+        private void SetButtonStates(bool isRunning, bool keepPlayEnabled = false)
         {
             _isRunning = isRunning;
             MainThread.BeginInvokeOnMainThread(() =>
@@ -1730,7 +1728,7 @@ namespace musicmate.Pages
                     StartStopButton.TextColor = Color.FromArgb("#E04040");
                     _v3StartStopButton.Text = "■";
                     _v3StartStopButton.TextColor = Color.FromArgb("#E04040");
-                    PlayEvaluateButton.IsEnabled = false;
+                    PlayEvaluateButton.IsEnabled = keepPlayEnabled || _isPlaying;
                 }
                 else
                 {
@@ -1750,7 +1748,11 @@ namespace musicmate.Pages
                 try
                 {
                     _playCts?.Cancel();
+                    _player.CancelPlayback();
                     _audio.StopCapture();
+                    _isPlaying = false;
+                    PlayEvaluateButton.Text = "▶";
+                    PlayEvaluateButton.TextColor = Color.FromArgb("#008000");
                     StatusService.Instance.StatusMessage = "Stopped. Tap circle to listen, arrowhead (scroll down) to play.";
                     _session.SessionCompleted = true;
                 }
@@ -1893,7 +1895,11 @@ namespace musicmate.Pages
         private async void OnPlayEvaluateClicked(object? sender, EventArgs e)
         {
             if (_isPlaying)
+            {
+                _playCts?.Cancel();
+                _player.CancelPlayback();
                 return;
+            }
 
             // If currently listening, stop before starting auto-play.
             if (_isRunning)
@@ -2336,9 +2342,11 @@ async Task UpdateNoteStatsDatabaseAsync()
                 // Assign a fresh session ID so all NoteAttempts from this run are grouped together.
                 _currentSessionId = Guid.NewGuid().ToString();
 
-                StatusService.Instance.StatusMessage = "Listening, tap red square to stop";
+                StatusService.Instance.StatusMessage = playBack
+                    ? "Playing… tap ■ to stop"
+                    : "Listening, tap red square to stop";
                 Debug.WriteLine($"[Start] Starting listening, playBack={playBack}");
-                SetButtonStates(true);
+                SetButtonStates(true, keepPlayEnabled: playBack);
 
                 _lastProcess = DateTime.MinValue;
                 _isBelowThreshold = true;
@@ -2414,6 +2422,16 @@ async Task UpdateNoteStatsDatabaseAsync()
 
                 if (playBack)
                 {
+                    if (_session.NotesToDraw.Count == 0)
+                    {
+                        _isPlaying = false;
+                        SetButtonStates(false);
+                        StatusService.Instance.StatusMessage =
+                            "No notes to play — try again.";
+                        Debug.WriteLine("[Start] Play aborted: NotesToDraw is empty after regenerate");
+                        return;
+                    }
+
                     _playCts?.Cancel();
                     _playCts = new CancellationTokenSource();
                     _ = PlayDisplayedAsync(_playCts.Token);
@@ -2598,23 +2616,31 @@ async Task UpdateNoteStatsDatabaseAsync()
                     _savedInstrumentIndexForPlayback = -1;
                 });
 
-                if (!cancelled)
+                if (!cancelled && _session.NotesToDraw.Count > 0)
                 {
                     try
                     {
                         await _audio.EnsurePermissionAsync();
                         _audio.StartCapture(OnAudioBlock);
-                        SetButtonStates(false);
+                        StatusService.Instance.StatusMessage = "Listening, tap red square to stop";
+                        SetButtonStates(true);
                     }
                     catch (Exception ex)
                     {
                         Debug.WriteLine($"[PlayDisplayedAsync] restart capture ERROR: {ex}");
                         SetButtonStates(false);
+                        StatusService.Instance.StatusMessage =
+                            "Stopped. Tap circle to listen, arrowhead (scroll down) to play.";
                     }
                 }
                 else
                 {
                     SetButtonStates(false);
+                    if (cancelled)
+                    {
+                        StatusService.Instance.StatusMessage =
+                            "Stopped. Tap circle to listen, arrowhead (scroll down) to play.";
+                    }
                 }
             }
         }

@@ -272,4 +272,15 @@ public class SessionResultDatabase
 
     public Task<int> ClearAllAsync()
         => _db.DeleteAllAsync<musicmate.Models.SessionResult>();
+
+    public async Task DeleteDatabaseAsync()
+    {
+#if DEBUG
+        await _db.CloseAsync();
+        if (File.Exists(_dbPath))
+            File.Delete(_dbPath);
+#else
+        throw new InvalidOperationException("DeleteDatabaseAsync is only available in DEBUG builds.");
+#endif
+    }
 }

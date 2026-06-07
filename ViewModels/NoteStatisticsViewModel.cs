@@ -16,7 +16,8 @@ namespace musicmate.ViewModels
         public Color ContrastingTextColor => _themeService.ContrastingTextColor;
         public bool IsNoteDatabase => SelectedDatabase == "Note";
         public bool IsSessionDatabase => SelectedDatabase == "Session";
-        public ObservableCollection<string> DatabaseOptions { get; } = new() { "Note", "Session" };
+        public bool IsChildResultsDatabase => SelectedDatabase == "Child Results";
+        public ObservableCollection<string> DatabaseOptions { get; } = new() { "Note", "Session", "Child Results" };
         // Remove color properties from here; use ThemeService for colors in the view.
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -111,7 +112,7 @@ namespace musicmate.ViewModels
                     // Clear session stats if switching from session to note
                     SessionStats.Clear();
                 }
-                else
+                else if (IsSessionDatabase)
                 {
                     var stats = await _sessionDatabase.GetAllAsync();
                     Utils.Log($"[NoteStatisticsViewModel] Loaded {stats.Count()} session stats.");
@@ -126,6 +127,11 @@ namespace musicmate.ViewModels
                     }
                     // Clear note stats if switching from note to session
                     NoteStats.Clear();
+                }
+                else
+                {
+                    NoteStats.Clear();
+                    SessionStats.Clear();
                 }
                 Utils.Log("[NoteStatisticsViewModel] LoadAsync completed.");
             }
@@ -153,6 +159,7 @@ namespace musicmate.ViewModels
                     OnPropertyChanged(nameof(SelectedDatabase));
                     OnPropertyChanged(nameof(IsNoteDatabase));
                     OnPropertyChanged(nameof(IsSessionDatabase));
+                    OnPropertyChanged(nameof(IsChildResultsDatabase));
                     _ = LoadAsyncOnMainThread();
                 }
             }

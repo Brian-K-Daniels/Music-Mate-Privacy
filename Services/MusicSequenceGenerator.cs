@@ -111,6 +111,13 @@ namespace musicmate.Services
         /// </summary>
         public int MaxMelodicIntervalSemitones { get; set; } = 0;
 
+        /// <summary>
+        /// Off-beat rhythmic emphasis.  <see cref="SyncopationLevel.None"/> keeps the
+        /// legacy on-beat sequential fill.  Requires eighth-note (or shorter) smallest
+        /// duration for audible syncopation motifs.
+        /// </summary>
+        public SyncopationLevel SyncopationLevel { get; set; } = SyncopationLevel.None;
+
         // ── Public API ────────────────────────────────────────────────────────────
 
         /// <summary>
@@ -175,45 +182,27 @@ namespace musicmate.Services
 
                 while (measure.BeatsRemaining > 1e-9)
                 {
+                    bool isPhraseEnding = (mi + 1) % 4 == 0 || (mi + 1) % 2 == 0;
+
+                    // Try a syncopated motif before the default on-beat pick.
+                    if (TryApplySyncopationMotif(
+                            rng, measure, ref localCursor, globalBeatCursor, absoluteMi,
+                            ref globalNoteIndex, ref prevPitch, pool, scaleQueue,
+                            isPhraseEnding))
+                        continue;
+
                     // Pick a duration that fits in the remaining space.
                     var dur = PickFittingDuration(rng, durationWeights, measure.BeatsRemaining, SmallestDuration);
 
                     // Occasionally insert a rest (roughly 1-in-8 chance when variety is on).
                     bool isRest = RhythmVarietyPercent > 0 && rng.Next(8) == 0;
+                    if (SyncopationLevel == SyncopationLevel.Full && !isRest && RhythmVarietyPercent > 0)
+                        isRest = rng.Next(12) == 0;
 
-                    // Detect phrase endings: last note of every 2nd or 4th measure.
-                    bool isPhraseEnding = (mi + 1) % 4 == 0 || (mi + 1) % 2 == 0;
                     bool isLastNoteOfMeasure = measure.BeatsRemaining - dur.ToBeatValue() < 1e-9;
-
-                    GeneratedNote note;
-                    // In scale-order mode, once the queue is exhausted the scale is complete.
-                    // Fill any remaining beats in the measure (and any trailing measures) with rests.
-                    bool scaleExhausted = UseScaleOrder && (scaleQueue == null || scaleQueue.Count == 0);
-                    if (isRest || scaleExhausted)
-                    {
-                        note = GeneratedNote.Rest(dur,
-                            measureIndex:  absoluteMi,
-                            beatPosition:  globalBeatCursor + localCursor);
-                    }
-                    else
-                    {
-                        int pitch;
-                        if (scaleQueue != null && scaleQueue.Count > 0)
-                        {
-                            pitch = scaleQueue.Dequeue();
-                        }
-                        else
-                        {
-                            pitch = PickPitch(rng, pool, prevPitch, isPhraseEnding && isLastNoteOfMeasure);
-                        }
-                        note = BuildNote(pitch, dur, absoluteMi,
-                            globalBeatCursor + localCursor, globalNoteIndex, prevPitch);
-                        prevPitch = pitch;
-                        globalNoteIndex++;
-                    }
-
-                    measure.AddNote(note);
-                    localCursor += dur.ToBeatValue();
+                    AddRhythmSlot(rng, measure, ref localCursor, globalBeatCursor, absoluteMi,
+                        ref globalNoteIndex, ref prevPitch, pool, scaleQueue,
+                        dur, isRest, isPhraseEnding && isLastNoteOfMeasure);
                 }
 
                 // Advance global beat cursor by the full measure length.
@@ -413,6 +402,161 @@ namespace musicmate.Services
                 if (pick < acc) return dur;
             }
             return fitting[^1].Key;
+        }
+
+        /// <summary>
+        /// Adds a single rest or pitched note at <paramref name="localCursor"/> and advances the cursor.
+        /// </summary>
+        private void AddRhythmSlot(
+            Random rng,
+            Measure measure,
+            ref double localCursor,
+            double globalBeatBase,
+            int absoluteMi,
+            ref int globalNoteIndex,
+            ref int prevPitch,
+            List<int> pool,
+            Queue<int>? scaleQueue,
+            NoteDuration dur,
+            bool isRest,
+            bool isPhraseEnding)
+        {
+            bool scaleExhausted = UseScaleOrder && (scaleQueue == null || scaleQueue.Count == 0);
+            GeneratedNote note;
+            if (isRest || scaleExhausted)
+            {
+                note = GeneratedNote.Rest(dur,
+                    measureIndex: absoluteMi,
+                    beatPosition: globalBeatBase + localCursor);
+            }
+            else
+            {
+                int pitch;
+                if (scaleQueue != null && scaleQueue.Count > 0)
+                    pitch = scaleQueue.Dequeue();
+                else
+                    pitch = PickPitch(rng, pool, prevPitch, isPhraseEnding);
+
+                note = BuildNote(pitch, dur, absoluteMi,
+                    globalBeatBase + localCursor, globalNoteIndex, prevPitch);
+                prevPitch = pitch;
+                globalNoteIndex++;
+            }
+
+            measure.AddNote(note);
+            localCursor += dur.ToBeatValue();
+        }
+
+        /// <summary>
+        /// Attempts to place a short syncopated rest/note motif at the current beat position.
+        /// Returns <c>true</c> when a motif was applied.
+        /// </summary>
+        private bool TryApplySyncopationMotif(
+            Random rng,
+            Measure measure,
+            ref double localCursor,
+            double globalBeatBase,
+            int absoluteMi,
+            ref int globalNoteIndex,
+            ref int prevPitch,
+            List<int> pool,
+            Queue<int>? scaleQueue,
+            bool isPhraseEnding)
+        {
+            if (SyncopationLevel == SyncopationLevel.None)
+                return false;
+
+            // Syncopation motifs need eighth-note (or shorter) subdivisions.
+            if (SmallestDuration.ToBeatValue() > NoteDuration.Eighth.ToBeatValue())
+                return false;
+
+            // Only start motifs on the eighth-note grid (integer or half-beat positions).
+            double grid = localCursor * 2.0;
+            if (Math.Abs(grid - Math.Round(grid)) > 1e-9)
+                return false;
+
+            int chance = SyncopationLevel == SyncopationLevel.Simple ? 28 : 48;
+            if (localCursor < 1e-9)
+                chance += SyncopationLevel == SyncopationLevel.Simple ? 12 : 22;
+
+            if (rng.Next(100) >= chance)
+                return false;
+
+            var motifs = BuildSyncopationMotifs();
+            if (motifs.Count == 0)
+                return false;
+
+            // Shuffle pick order so the same motif doesn't dominate.
+            int start = rng.Next(motifs.Count);
+            for (int attempt = 0; attempt < motifs.Count; attempt++)
+            {
+                var motif = motifs[(start + attempt) % motifs.Count];
+                double motifBeats = motif.Sum(s => s.Duration.ToBeatValue());
+                if (motifBeats > measure.BeatsRemaining + 1e-9)
+                    continue;
+
+                bool isLastSlotOfMeasure = Math.Abs(measure.BeatsRemaining - motifBeats) < 1e-9;
+                for (int i = 0; i < motif.Length; i++)
+                {
+                    var (isRest, dur) = motif[i];
+                    bool phraseEnd = isPhraseEnding && isLastSlotOfMeasure && i == motif.Length - 1 && !isRest;
+                    AddRhythmSlot(rng, measure, ref localCursor, globalBeatBase, absoluteMi,
+                        ref globalNoteIndex, ref prevPitch, pool, scaleQueue,
+                        dur, isRest, phraseEnd);
+                }
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Returns syncopated rest/note patterns for the active <see cref="SyncopationLevel"/>.
+        /// Each slot is (isRest, duration).  All durations respect <see cref="SmallestDuration"/>.
+        /// </summary>
+        private List<(bool IsRest, NoteDuration Duration)[]> BuildSyncopationMotifs()
+        {
+            bool allowEighth    = SmallestDuration.ToBeatValue() <= NoteDuration.Eighth.ToBeatValue();
+            bool allowSixteenth = SmallestDuration.ToBeatValue() <= NoteDuration.Sixteenth.ToBeatValue();
+            if (!allowEighth)
+                return new List<(bool, NoteDuration)[]>();
+
+            var motifs = new List<(bool IsRest, NoteDuration Duration)[]>();
+            var eighth    = NoteDuration.Eighth;
+            var quarter   = NoteDuration.Quarter;
+            var sixteenth = NoteDuration.Sixteenth;
+
+            if (SyncopationLevel == SyncopationLevel.Simple)
+            {
+                // Upbeat entry: rest on beat, note on "&".
+                motifs.Add(new[] { (true, eighth), (false, quarter) });
+                motifs.Add(new[] { (true, eighth), (false, eighth) });
+                // Weak-beat accent followed by on-beat resolution.
+                motifs.Add(new[] { (false, eighth), (true, eighth), (false, quarter) });
+                motifs.Add(new[] { (true, eighth), (false, eighth), (true, eighth), (false, eighth) });
+            }
+            else // Full
+            {
+                // Include all simple motifs plus stronger patterns.
+                motifs.Add(new[] { (true, eighth), (false, quarter) });
+                motifs.Add(new[] { (false, eighth), (true, eighth), (false, quarter) });
+                // Classic tied-feel: rest–note–rest–note across two beats.
+                motifs.Add(new[] { (true, eighth), (false, eighth), (true, eighth), (false, quarter) });
+                // Off-beat run.
+                motifs.Add(new[] { (false, eighth), (true, eighth), (false, eighth), (false, eighth) });
+                // Backbeat emphasis after a quarter rest.
+                motifs.Add(new[] { (true, quarter), (false, eighth), (false, eighth) });
+                // Anticipation into the next downbeat.
+                motifs.Add(new[] { (false, eighth), (false, eighth), (true, eighth), (false, quarter) });
+
+                if (allowSixteenth)
+                {
+                    motifs.Add(new[] { (true, sixteenth), (false, sixteenth), (true, eighth), (false, quarter) });
+                    motifs.Add(new[] { (false, sixteenth), (true, sixteenth), (false, eighth), (false, eighth) });
+                }
+            }
+
+            return motifs;
         }
 
         /// <summary>

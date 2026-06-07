@@ -896,38 +896,7 @@ namespace musicmate.Drawables
                 _ => ink
             };
 
-            canvas.FillColor   = restColor;
-            canvas.StrokeColor = restColor;
-            canvas.StrokeSize  = 1.5f;
-
-            switch (duration)
-            {
-                case NoteDuration.Whole:
-                    // Whole rest: filled rectangle hanging from second line
-                    canvas.FillRectangle(x - 8f, staffTop + StaffLineSpacing - 5f, 16f, 5f);
-                    break;
-                case NoteDuration.Half:
-                    // Half rest: filled rectangle sitting on middle line
-                    canvas.FillRectangle(x - 8f, staffMid, 16f, 5f);
-                    break;
-                case NoteDuration.Quarter:
-                    // Quarter rest: squiggle approximated with lines
-                    canvas.DrawLine(x,       staffMid - 10f, x + 4f,  staffMid - 6f);
-                    canvas.DrawLine(x + 4f,  staffMid - 6f,  x - 4f,  staffMid - 2f);
-                    canvas.DrawLine(x - 4f,  staffMid - 2f,  x + 4f,  staffMid + 2f);
-                    canvas.DrawLine(x + 4f,  staffMid + 2f,  x,       staffMid + 6f);
-                    break;
-                case NoteDuration.Eighth:
-                    // Eighth rest: small dot + hook
-                    canvas.FillEllipse(x - 2f, staffMid - 2f, 4f, 4f);
-                    canvas.DrawLine(x, staffMid - 2f, x + 6f, staffMid - 10f);
-                    break;
-                default:
-                    // Sixteenth rest: small squiggle
-                    canvas.DrawLine(x, staffMid + 4f, x + 4f, staffMid - 4f);
-                    canvas.DrawLine(x + 4f, staffMid - 4f, x - 2f, staffMid - 10f);
-                    break;
-            }
+            SmuFLRestDrawer.Draw(canvas, duration, x, staffTop, staffMid, StaffLineSpacing, restColor);
             }
             finally
             {

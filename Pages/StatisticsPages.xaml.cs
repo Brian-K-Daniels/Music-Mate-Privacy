@@ -12,6 +12,7 @@ namespace musicmate.Pages
         private readonly NoteStatisticsViewModel _viewModel;
         private readonly NoteDatabase _noteDatabase;
         private readonly SessionDatabase _sessionDatabase;
+        private readonly SessionResultDatabase _sessionResultDatabase;
         private readonly IOrientationService _orientationService;
         private readonly NoteSessionService _session;
         private readonly ThemeService _themeService;
@@ -24,6 +25,7 @@ namespace musicmate.Pages
 
             _noteDatabase = ServiceHelper.GetService<NoteDatabase>()!;
             _sessionDatabase = ServiceHelper.GetService<SessionDatabase>()!;
+            _sessionResultDatabase = ServiceHelper.GetService<SessionResultDatabase>()!;
             _session = ServiceHelper.GetService<NoteSessionService>()!;
             _themeService = ServiceHelper.GetService<ThemeService>()!;
 
@@ -64,6 +66,7 @@ namespace musicmate.Pages
             //    musicmate.Utilities.MarginUtils.SetLeftMarginMM(mainLayout, 9, 0, 0, 0);  //  2026.04.02 1726  block out
             await _noteDatabase.InitializeAsync();
             await _sessionDatabase.InitializeAsync();
+            await _sessionResultDatabase.InitializeAsync();
             await _viewModel.LoadAsync();
         }
 
@@ -116,6 +119,13 @@ namespace musicmate.Pages
                 else if (vm.IsSessionDatabase)
                 {
                     await _sessionDatabase.ClearAllAsync();
+                    await _sessionResultDatabase.ClearAllAsync();
+                    LevelUpService.MarkCountSinceNow();
+                }
+                else if (vm.IsChildResultsDatabase)
+                {
+                    await _sessionResultDatabase.ClearAllAsync();
+                    LevelUpService.MarkCountSinceNow();
                 }
                 await _viewModel.LoadAsync();
                 await DisplayAlertAsync("Success", "All data cleared.", "OK");
@@ -171,6 +181,14 @@ namespace musicmate.Pages
                 {
                     await _sessionDatabase.DeleteDatabaseAsync();
                     await _sessionDatabase.InitializeAsync(); // recreate tables
+                    await _sessionResultDatabase.ClearAllAsync();
+                    LevelUpService.MarkCountSinceNow();
+                }
+                else if (vm.IsChildResultsDatabase)
+                {
+                    await _sessionResultDatabase.DeleteDatabaseAsync();
+                    await _sessionResultDatabase.InitializeAsync();
+                    LevelUpService.MarkCountSinceNow();
                 }
                 await _viewModel.LoadAsync();
                 foreach (var stat in _viewModel.NoteStats)

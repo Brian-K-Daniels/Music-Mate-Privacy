@@ -101,6 +101,8 @@ namespace musicmate.ViewModels
                     OnPropertyChanged(nameof(V2SmallestNote)); break;
                 case nameof(NoteSessionService.V2RhythmMode):
                     OnPropertyChanged(nameof(V2RhythmMode)); break;
+                case nameof(NoteSessionService.V2Syncopation):
+                    OnPropertyChanged(nameof(V2Syncopation)); break;
                 case nameof(NoteSessionService.V2NoteNameDisplay):
                     OnPropertyChanged(nameof(V2NoteNameDisplay)); break;
                 case nameof(NoteSessionService.WhiteKeyNoteNames):
@@ -460,6 +462,7 @@ namespace musicmate.ViewModels
         public List<string> V2TimeSignatureOptions { get; } = new() { "4/4", "3/4", "2/4" };
         public List<string> V2SmallestNoteOptions  { get; } = new() { "Quarter", "Eighth", "Sixteenth" };
         public List<string> V2RhythmModeOptions    { get; } = new() { "Simple", "Mixed" };
+        public List<string> V2SyncopationOptions   { get; } = new() { "None", "Simple", "Full" };
         public List<string> V2NoteNameDisplayOptions { get; } = new() { "Current only", "All notes", "Off" };
 
         private string _v2TimeSignature = Preferences.Get("musicmate.V2TimeSignature", "4/4");
@@ -521,6 +524,27 @@ namespace musicmate.ViewModels
                     _v2RhythmMode = value;
                     Preferences.Set("musicmate.V2RhythmMode", value);
                     OnPropertyChanged(nameof(V2RhythmMode));
+                }
+            }
+        }
+
+        private string _v2Syncopation = Preferences.Get("musicmate.V2Syncopation", "None");
+        public string V2Syncopation
+        {
+            get => _session?.V2Syncopation ?? _v2Syncopation;
+            set
+            {
+                if ((_session?.V2Syncopation ?? _v2Syncopation) == value) return;
+                if (_session != null)
+                {
+                    _session.V2Syncopation = value;
+                    OnPropertyChanged(nameof(V2Syncopation));
+                }
+                else
+                {
+                    _v2Syncopation = value;
+                    Preferences.Set("musicmate.V2Syncopation", value);
+                    OnPropertyChanged(nameof(V2Syncopation));
                 }
             }
         }

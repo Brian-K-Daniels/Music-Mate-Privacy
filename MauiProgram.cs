@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using musicmate.Drawables;
 using musicmate.Services;
 using Plugin.Maui.Audio;
 using SkiaSharp.Views.Maui.Controls.Hosting;
@@ -20,7 +21,11 @@ namespace musicmate
                     fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
                     // Add this if you ship the MDL2 font file (place the TTF under Resources/Fonts)
                     fonts.AddFont("SegoeMDL2Assets.ttf", "SegoeMDL2");
+                    fonts.AddFont("Bravura.otf", "Bravura");
                 });
+
+            // Preload Bravura for GraphicsView rest glyphs (ICanvas ignores MauiFont names).
+            SmuFLFont.EnsureLoaded();
 
             builder.Services.AddSingleton<NoteSessionService>();
             builder.Services.AddSingleton<PitchDetectionService>();

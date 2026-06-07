@@ -67,14 +67,29 @@ public static class LevelUpService
 {
     // ── Default values for LevelUp criteria (used by AdvancePage and reset) ──
     public const int DefaultSessionCount = 3; // Rolling window size for advancement
-    public const double DefaultMinPitchAccuracyPercent = 85.0;
-    public const double DefaultMinTimingAccuracyPercent = 75.0;
-    public const double DefaultMinOverallAccuracyPercent = 80.0;
+    public const double DefaultMinPitchAccuracyPercent = 70.0;  //  2026.06.06 1759  85.0;
+    public const double DefaultMinTimingAccuracyPercent = 15.0;  //  2026.06.06 1800  75.0;
+    public const double DefaultMinOverallAccuracyPercent = 35.0;  //  2026.06.06 1801  .0;
     public const int DefaultMinNotesPerSession = 4;
-    public const double DefaultMinOverallAccuracyFloor = 60.0; // Minimum floor for any session in group
+    public const double DefaultMinOverallAccuracyFloor = 8.0;  //  2026.06.06 1801  60.0; // Minimum floor for any session in group
 
     // ── Preference keys ────────────────────────────────────────────────────
     private const string PrefLevelKey = "ChildHome.Level";
+    private const string PrefCountSinceUtcKey = "LevelUp.CountSinceUtc";
+
+    /// <summary>Only <see cref="SessionResult"/> rows at or after this UTC time count toward ssns.</summary>
+    public static DateTime CountSinceUtc
+    {
+        get
+        {
+            long ticks = Preferences.Default.Get(PrefCountSinceUtcKey, 0L);
+            return ticks > 0 ? new DateTime(ticks, DateTimeKind.Utc) : DateTime.MinValue;
+        }
+    }
+
+    /// <summary>Resets the ssns window (Child Home start, level-up, or child-results clear).</summary>
+    public static void MarkCountSinceNow()
+        => Preferences.Default.Set(PrefCountSinceUtcKey, DateTime.UtcNow.Ticks);
 
     // ── Threshold constants ────────────────────────────────────────────────
     // Adjust here to change level-up sensitivity; nowhere else.
@@ -160,7 +175,9 @@ public static class LevelUpService
                 Utilities.Utils.Log($"[LevelUpDebug] Found {rows.Count} session results for level={currentLevel}, instrument={instrument}");
 
                 // Rules 3 & 4: exclude sessions that are too short or look like data errors.
+                var countSince = CountSinceUtc;
                 var qualifying = rows
+                    .Where(r => r.DateTime >= countSince)
                     .Where(r => r.TotalNotes >= MinNotesPerSession)                 // Rule 3
                     .Where(r => !(r.TotalNotes > 0 && r.OverallAccuracyPercent == 0)) // Rule 4
                     .ToList();
@@ -210,6 +227,7 @@ public static class LevelUpService
                 // All criteria met — advance the level.
                 int newLevel = Math.Min(currentLevel + 1, 100);  // Rule 8: cap at 100
                 Preferences.Default.Set(PrefLevelKey, newLevel); // persist immediately
+                MarkCountSinceNow();
                 Utilities.Utils.Log($"[LevelUp] Level {currentLevel} → {newLevel} " +
                                     $"(instrument={instrument}, sessions checked={SessionCount})");
                 return newLevel;
