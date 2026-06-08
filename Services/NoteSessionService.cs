@@ -316,6 +316,15 @@ namespace musicmate.Services
                 }
             }
         }
+
+        /// <summary>Child-home V2 measure batch size; 0 = use MainPage default.</summary>
+        public int ChildMeasureBatchSize { get; set; }
+
+        /// <summary>Explicit rhythm variety (0–100); -1 = derive from <see cref="V2RhythmMode"/>.</summary>
+        public int V2RhythmVarietyPercent { get; set; } = -1;
+
+        /// <summary>Per-slot rest chance (0–100); -1 = legacy rest logic in generator.</summary>
+        public int V2RestChancePercent { get; set; } = -1;
         public string[] WhiteKeyNoteNames { get; } =
             Enumerable.Range(21, 88) // MIDI 21 (A0) to 108 (C8)
                 .Select(midi => MidiToNoteName(midi, false))

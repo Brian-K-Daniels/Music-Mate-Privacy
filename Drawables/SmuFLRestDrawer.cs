@@ -25,9 +25,10 @@ namespace musicmate.Drawables
             float staffTop,
             float staffMid,
             float sls,
-            Color glyphColor)
+            Color glyphColor,
+            float restScale = 0.72f)
         {
-            GetLayout(duration, centerX, staffTop, staffMid, sls,
+            GetLayout(duration, centerX, staffTop, staffMid, sls, restScale,
                 out float left, out float top, out float width, out float height, out float fontSize);
 
             canvas.SaveState();
@@ -97,6 +98,7 @@ namespace musicmate.Drawables
             float staffTop,
             float staffMid,
             float sls,
+            float restScale,
             out float left,
             out float top,
             out float width,
@@ -139,7 +141,6 @@ namespace musicmate.Drawables
                     break;
             }
 
-            const float restScale = 0.72f;
             float centerY = top + height * 0.5f;
             width *= restScale;
             height *= restScale;

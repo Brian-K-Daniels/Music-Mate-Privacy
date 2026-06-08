@@ -62,6 +62,9 @@ namespace musicmate.Pages
         // session completed with AutoRepeat off.  OnAppearing will skip auto-start
         // so the result stays visible until the user taps Start/Stop.
         private bool _holdResultForChildSession = false;
+        private bool _syncingChildLevelUi;
+        private bool _suppressSessionRegenerate;
+        private const string ChildLevelPrefKey = "ChildHome.Level";
 #pragma warning restore CS0414
 
         /// <summary>
@@ -215,6 +218,7 @@ namespace musicmate.Pages
 
         public bool IsNotV3Mode => _session?.StaffDisplayMode != StaffDisplayMode.V3;
         public bool IsV3Mode => _session?.StaffDisplayMode == StaffDisplayMode.V3;
+        public bool IsChildLevelSliderVisible => _session?.ChildLevel > 0;
         private string _selectedInstrumentShort = "";
         public string SelectedInstrumentShort
         {
@@ -446,7 +450,7 @@ namespace musicmate.Pages
 
                         if (_session.V2StaffMode)
                         {
-                            await AppendV2MeasuresAsync(V2BatchSize);
+                            await AppendV2MeasuresAsync(GetV2BatchSize());
                             return;
                         }
 
@@ -720,6 +724,11 @@ namespace musicmate.Pages
 
         /// <summary>How many measures to generate at once (initial fill and each top-up).</summary>
         private const int V2BatchSize = 8;
+
+        private int GetV2BatchSize()
+            => _session.ChildLevel > 0 && _session.ChildMeasureBatchSize > 0
+                ? _session.ChildMeasureBatchSize
+                : V2BatchSize;
         /// <summary>Trigger a top-up when this many measures remain ahead of the current one.</summary>
         private const int V2RefillThreshold = 2;
 
@@ -757,9 +766,9 @@ namespace musicmate.Pages
                 _     => TimeSignature.FourFour
             };
 
-            // "Simple" = quarter notes only; "Mixed" = variety up to the chosen smallest value.
-            // RhythmVarietyPercent drives how often non-quarter durations appear.
-            int rhythmVariety = _session.V2RhythmMode == "Mixed" ? 60 : 0;
+            int rhythmVariety = _session.V2RhythmVarietyPercent >= 0
+                ? _session.V2RhythmVarietyPercent
+                : _session.V2RhythmMode == "Mixed" ? 60 : 0;
 
             var gen = new MusicSequenceGenerator
             {
@@ -791,7 +800,8 @@ namespace musicmate.Pages
                 AccidentalPercent    = _session.IsRandomMode ? _session.AccidentalPercent : 0,
                 // Apply level-based maximum melodic interval in random mode.
                 MaxMelodicIntervalSemitones = _session.IsRandomMode ? _session.MaxMelodicIntervalSemitones : 0,
-                SyncopationLevel         = SyncopationLevelHelper.Parse(_session.V2Syncopation)
+                SyncopationLevel         = SyncopationLevelHelper.Parse(_session.V2Syncopation),
+                RestChancePercent        = _session.V2RestChancePercent
             };
             Debug.WriteLine($"[V2Gen] Tune={_session.Tune} Random={_session.IsRandomMode} AccPct={_session.AccidentalPercent} EffectiveAccPct={(_session.IsRandomMode ? _session.AccidentalPercent : 0)}");
             return gen;
@@ -929,7 +939,7 @@ namespace musicmate.Pages
                 {
                     await LoadV2ExcludedMidisAsync();
 
-                    var gen      = BuildV2Generator(V2BatchSize);
+                    var gen      = BuildV2Generator(GetV2BatchSize());
                     var measures = gen.GenerateSequence();
                     flat     = MusicSequenceGenerator.Flatten(measures);
                     barBeats = ComputeNewBarBeats(flat, existingBarBeats);
@@ -1657,7 +1667,7 @@ namespace musicmate.Pages
                     int measuresAhead  = lastMeasure - currentMeasure;
 
                     if (measuresAhead <= V2RefillThreshold)
-                        _ = AppendV2MeasuresAsync(V2BatchSize);
+                        _ = AppendV2MeasuresAsync(GetV2BatchSize());
                 }
             }
         }
@@ -1774,6 +1784,79 @@ namespace musicmate.Pages
             }
         }
 
+        private int GetChildLevelForSlider()
+        {
+            if (_session.ChildLevel <= 0) return 1;
+            return Math.Clamp(Preferences.Default.Get(ChildLevelPrefKey, _session.ChildLevel), 1, 100);
+        }
+
+        private void OnChildLevelSliderValueChanged(object? sender, ValueChangedEventArgs e)
+        {
+            if (_syncingChildLevelUi) return;
+            ChildLevelSliderValueLabel.Text =
+                Math.Clamp((int)Math.Round(e.NewValue), 1, 100).ToString();
+        }
+
+        private async void OnChildLevelSliderDragCompleted(object? sender, EventArgs e)
+        {
+            if (_syncingChildLevelUi || _session.ChildLevel <= 0) return;
+
+            int level = Math.Clamp((int)Math.Round(ChildLevelSlider.Value), 1, 100);
+            if (level == _session.ChildLevel) return;
+
+            await ApplyChildLevelAndRefreshAsync(level);
+        }
+
+        private async Task ApplyChildLevelAndRefreshAsync(int level)
+        {
+            level = Math.Clamp(level, 1, 100);
+
+            var shortInstrumentKey = _session.Instrument?.Split(',')[0].Trim() ?? "C";
+            var difficulty = DifficultyLevelMapper.GetSettingsForLevel(level, shortInstrumentKey);
+
+            _suppressSessionRegenerate = true;
+            try
+            {
+                DifficultyLevelMapper.ApplyToSession(difficulty, _session, forceClassicMode: false);
+                _session.ChildLevel = level;
+                Preferences.Default.Set(ChildLevelPrefKey, level);
+                LevelUpService.MarkCountSinceNow();
+
+                UpdateKeyPickerSelection();
+                UpdateScaleTunePicker();
+                UpdateConcertKeyLabel();
+            }
+            finally
+            {
+                _suppressSessionRegenerate = false;
+            }
+
+            _savedNotesToRepeat = null;
+            _syncingChildLevelUi = true;
+            ChildLevelSlider.Value = level;
+            ChildLevelSliderValueLabel.Text = level.ToString();
+            _syncingChildLevelUi = false;
+
+            StatusService.Instance.StatusMessage =
+                $"Level {level}: {difficulty.StageLabel} — {difficulty.MainFocus}";
+
+            await RegenerateNotesAsync();
+        }
+
+        private void UpdateChildLevelSliderDisplay()
+        {
+            OnPropertyChanged(nameof(IsChildLevelSliderVisible));
+            if (_session.ChildLevel <= 0) return;
+
+            int level = GetChildLevelForSlider();
+            _session.ChildLevel = level;
+
+            _syncingChildLevelUi = true;
+            ChildLevelSlider.Value = level;
+            ChildLevelSliderValueLabel.Text = level.ToString();
+            _syncingChildLevelUi = false;
+        }
+
         protected async override void OnAppearing()
         {
             base.OnAppearing();
@@ -1803,6 +1886,10 @@ namespace musicmate.Pages
                 _v3HomeKeyPicker.ItemsSource = KeyPicker.ItemsSource;
                 _v3HomeKeyPicker.SelectedIndex = KeyPicker.SelectedIndex;
             }
+
+            UpdateChildLevelSliderDisplay();
+            // Android may lay out the slider row after OnAppearing; refresh once more.
+            Dispatcher.Dispatch(UpdateChildLevelSliderDisplay);
 
 #if DEBUG
             if (_session.AutoStart && _session.Tune != "Tuner" && _session.ChildLevel == 0)
@@ -2724,6 +2811,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                     {
                         Utils.Log($"[LevelUpDebug] Level up! New level={newLevel.Value}");
                         _session.ChildLevel = newLevel.Value;
+                        UpdateChildLevelSliderDisplay();
                     }
                     else
                     {
@@ -2853,7 +2941,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                 // Only regenerate when the page is visible; if called while navigating in from
                 // ChildHomePage the session properties are being batch-set and OnAppearing will
                 // trigger the first regeneration once the page is actually on screen.
-                if (_isPageVisible)
+                if (_isPageVisible && !_suppressSessionRegenerate)
                 {
                     await RegenerateNotesAsync();
                     UpdateTunerVisibility();
@@ -2881,7 +2969,8 @@ async Task UpdateNoteStatsDatabaseAsync()
             {
                 UpdatePickersContainerVisibility();
                 UpdateRepeatButtonsVisibility();
-                await RegenerateNotesAsync();
+                if (!_suppressSessionRegenerate)
+                    await RegenerateNotesAsync();
             }
         }
 

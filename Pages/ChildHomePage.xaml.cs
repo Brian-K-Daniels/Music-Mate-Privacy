@@ -197,16 +197,8 @@ namespace musicmate.Pages
         {
             LevelLabel.Text = _selectedLevel.ToString();
 
-            // Simple tier labels - placeholder for DifficultyLevelMapper.GetDescription(level)
-            LevelDescLabel.Text = _selectedLevel switch
-            {
-                <= 10 => "Beginner",
-                <= 30 => "Getting started",
-                <= 50 => "Intermediate",
-                <= 70 => "Advanced",
-                <= 90 => "Expert",
-                _     => "Master"
-            };
+            LevelDescLabel.Text =
+                $"{DifficultyLevelMapper.GetStageLabel(_selectedLevel)} — {DifficultyLevelMapper.GetMainFocus(_selectedLevel)}";
 
             LevelDownButton.IsEnabled = _selectedLevel > 1;
             LevelUpButton.IsEnabled   = _selectedLevel < 100;
@@ -243,9 +235,11 @@ namespace musicmate.Pages
                     _selectedLevel, shortInstrumentKey);
 
                 Utils.Log($"[ChildHome] Level={_selectedLevel}, " +
+                          $"Stage={difficulty.StageLabel}, Scale={difficulty.SuggestedScale}, " +
                           $"Range={difficulty.LowestNote}–{difficulty.HighestNote}, " +
-                          $"Key={difficulty.ForceKey}, Accidentals={difficulty.AccidentalPercent}%, " +
-                          $"V2Smallest={difficulty.V2SmallestNote}, RandomMode={difficulty.UseRandomMode}");
+                          $"Key={difficulty.ForceKey}, Notes≈{difficulty.SuggestedNoteCount}, " +
+                          $"Rhythm={difficulty.V2SmallestNote} variety={difficulty.RhythmVarietyPercent}% " +
+                          $"rests={difficulty.RestChancePercent}%, Sync={difficulty.V2Syncopation}");
 
                 // Apply difficulty and allow non-Classic staff modes so V2/V3 and
                 // level-driven rhythm changes take effect on the Main page.

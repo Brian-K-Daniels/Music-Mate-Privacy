@@ -118,6 +118,12 @@ namespace musicmate.Services
         /// </summary>
         public SyncopationLevel SyncopationLevel { get; set; } = SyncopationLevel.None;
 
+        /// <summary>
+        /// Per-slot rest probability (0–100).  -1 uses legacy behaviour (rests only when
+        /// <see cref="RhythmVarietyPercent"/> &gt; 0, roughly 1-in-8).
+        /// </summary>
+        public int RestChancePercent { get; set; } = -1;
+
         // ── Public API ────────────────────────────────────────────────────────────
 
         /// <summary>
@@ -194,9 +200,10 @@ namespace musicmate.Services
                     // Pick a duration that fits in the remaining space.
                     var dur = PickFittingDuration(rng, durationWeights, measure.BeatsRemaining, SmallestDuration);
 
-                    // Occasionally insert a rest (roughly 1-in-8 chance when variety is on).
-                    bool isRest = RhythmVarietyPercent > 0 && rng.Next(8) == 0;
-                    if (SyncopationLevel == SyncopationLevel.Full && !isRest && RhythmVarietyPercent > 0)
+                    bool isRest = RestChancePercent >= 0
+                        ? RestChancePercent > 0 && rng.Next(100) < RestChancePercent
+                        : RhythmVarietyPercent > 0 && rng.Next(8) == 0;
+                    if (RestChancePercent < 0 && SyncopationLevel == SyncopationLevel.Full && !isRest && RhythmVarietyPercent > 0)
                         isRest = rng.Next(12) == 0;
 
                     bool isLastNoteOfMeasure = measure.BeatsRemaining - dur.ToBeatValue() < 1e-9;
