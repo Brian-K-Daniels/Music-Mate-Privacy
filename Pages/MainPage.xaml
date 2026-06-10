@@ -260,7 +260,6 @@
                               Margin="0" />
               </Border>
 
-
               <!-- Tuner mode: staff canvas on left (wider), note/freq info on right -->
               <Grid x:Name="TunerGrid" ColumnDefinitions="3*,2*" IsVisible="False">
                 <Border x:Name="TunerBorder"
@@ -286,48 +285,130 @@
             </Grid>
           </Grid>
 
-          <!-- Child level slider (below staff, above bottom pickers/buttons) -->
+          <!-- Child level step buttons (below staff, above bottom pickers/buttons) -->
           <Border x:Name="ChildLevelSliderRow"
                   Margin="12,4,12,0"
-                  Padding="10,6"
+                  Padding="8,6"
                   BackgroundColor="#EDE8E0"
                   Stroke="#8B4513"
                   StrokeThickness="1"
                   StrokeShape="RoundRectangle 8"
                   HorizontalOptions="Fill"
                   IsVisible="{Binding Source={x:Reference mainPage}, Path=IsChildLevelSliderVisible}">
-            <Grid ColumnDefinitions="52,*,36"
-                  ColumnSpacing="8"
+            <Grid ColumnDefinitions="*,*,*,Auto,*,*,*"
+                  ColumnSpacing="4"
                   HeightRequest="40"
                   VerticalOptions="Center"
                   HorizontalOptions="Fill">
-              <Label Grid.Column="0"
-                     Text="Level"
-                     FontSize="13"
-                     FontAttributes="Bold"
-                     TextColor="#1A1A1A"
-                     VerticalOptions="Center" />
-              <Slider x:Name="ChildLevelSlider"
-                      Grid.Column="1"
-                      Minimum="1"
-                      Maximum="100"
-                      Value="1"
-                      HeightRequest="40"
+              <Button Grid.Column="0"
+                      Text="−10"
+                      FontSize="12"
+                      FontAttributes="Bold"
+                      TextColor="White"
+                      BackgroundColor="#8B4513"
+                      BorderColor="#5D2F0C"
+                      BorderWidth="1"
+                      CornerRadius="6"
+                      Padding="0"
+                      HeightRequest="36"
                       VerticalOptions="Center"
                       HorizontalOptions="Fill"
-                      ThumbColor="#8B4513"
-                      MinimumTrackColor="#8B4513"
-                      MaximumTrackColor="#999999"
-                      ValueChanged="OnChildLevelSliderValueChanged"
-                      DragCompleted="OnChildLevelSliderDragCompleted" />
-              <Label x:Name="ChildLevelSliderValueLabel"
-                     Grid.Column="2"
-                     Text="1"
-                     FontSize="13"
-                     FontAttributes="Bold"
-                     TextColor="#1A1A1A"
-                     VerticalOptions="Center"
-                     HorizontalTextAlignment="End" />
+                      CommandParameter="-10"
+                      Clicked="OnChildLevelDeltaClicked" />
+              <Button Grid.Column="1"
+                      Text="−5"
+                      FontSize="12"
+                      FontAttributes="Bold"
+                      TextColor="White"
+                      BackgroundColor="#8B4513"
+                      BorderColor="#5D2F0C"
+                      BorderWidth="1"
+                      CornerRadius="6"
+                      Padding="0"
+                      HeightRequest="36"
+                      VerticalOptions="Center"
+                      HorizontalOptions="Fill"
+                      CommandParameter="-5"
+                      Clicked="OnChildLevelDeltaClicked" />
+              <Button Grid.Column="2"
+                      Text="−1"
+                      FontSize="12"
+                      FontAttributes="Bold"
+                      TextColor="White"
+                      BackgroundColor="#8B4513"
+                      BorderColor="#5D2F0C"
+                      BorderWidth="1"
+                      CornerRadius="6"
+                      Padding="0"
+                      HeightRequest="36"
+                      VerticalOptions="Center"
+                      HorizontalOptions="Fill"
+                      CommandParameter="-1"
+                      Clicked="OnChildLevelDeltaClicked" />
+              <HorizontalStackLayout Grid.Column="3"
+                                     Spacing="4"
+                                     Margin="6,0"
+                                     VerticalOptions="Center"
+                                     HorizontalOptions="Center">
+                <Label Text="Level"
+                       FontSize="13"
+                       FontAttributes="Bold"
+                       TextColor="#1A1A1A"
+                       VerticalOptions="Center" />
+                <Label x:Name="ChildLevelSliderValueLabel"
+                       Text="1"
+                       FontSize="13"
+                       FontAttributes="Bold"
+                       TextColor="#1A1A1A"
+                       VerticalOptions="Center"
+                       MinimumWidthRequest="24"
+                       HorizontalTextAlignment="Center" />
+              </HorizontalStackLayout>
+              <Button Grid.Column="4"
+                      Text="+1"
+                      FontSize="12"
+                      FontAttributes="Bold"
+                      TextColor="White"
+                      BackgroundColor="#2E8B57"
+                      BorderColor="#1F5C3A"
+                      BorderWidth="1"
+                      CornerRadius="6"
+                      Padding="0"
+                      HeightRequest="36"
+                      VerticalOptions="Center"
+                      HorizontalOptions="Fill"
+                      CommandParameter="1"
+                      Clicked="OnChildLevelDeltaClicked" />
+              <Button Grid.Column="5"
+                      Text="+5"
+                      FontSize="12"
+                      FontAttributes="Bold"
+                      TextColor="White"
+                      BackgroundColor="#2E8B57"
+                      BorderColor="#1F5C3A"
+                      BorderWidth="1"
+                      CornerRadius="6"
+                      Padding="0"
+                      HeightRequest="36"
+                      VerticalOptions="Center"
+                      HorizontalOptions="Fill"
+                      CommandParameter="5"
+                      Clicked="OnChildLevelDeltaClicked" />
+              <Button Grid.Column="6"
+                      Text="+10"
+                      FontSize="12"
+                      FontAttributes="Bold"
+                      TextColor="White"
+                      BackgroundColor="#2E8B57"
+                      BorderColor="#1F5C3A"
+                      BorderWidth="1"
+                      CornerRadius="6"
+                      Padding="0"
+                      HeightRequest="36"
+                      VerticalOptions="Center"
+                      HorizontalOptions="Fill"
+                      CommandParameter="10"
+                      Clicked="OnChildLevelDeltaClicked" />
             </Grid>
           </Border>
 
@@ -345,21 +426,23 @@
               <ColumnDefinition Width="Auto" /> <!-- Background Color — sizes to text -->
             </Grid.ColumnDefinitions>
 
-            <!-- Play -->
+            <!-- Play (non-V3 modes; V3 uses V3PlayButton on the staff) -->
             <Button x:Name="PlayEvaluateButton"
                     Grid.Column="0"
-                    Text="▶"
-                    FontSize="26"
-                    TextColor="#00CC00"
-                    BackgroundColor="#F7F7F7"
-                    BorderColor="#F7F7F7"
+                    Text="Play"
+                    FontSize="12"
+                    FontAttributes="Bold"
+                    TextColor="White"
+                    BackgroundColor="#2E8B57"
+                    BorderColor="#1F5C3A"
                     BorderWidth="1"
-                    CornerRadius="8"
-                    HeightRequest="44"
-                    MinimumHeightRequest="44"
-                    Padding="0"
+                    CornerRadius="6"
+                    HeightRequest="36"
+                    MinimumHeightRequest="36"
+                    Padding="8,2"
                     HorizontalOptions="Fill"
                     VerticalOptions="Fill"
+                    IsVisible="{Binding Source={x:Reference mainPage}, Path=IsNotV3Mode}"
                     Clicked="OnPlayEvaluateClicked" />
 
             <!-- Start/Stop (non-V3 modes only) -->
@@ -425,9 +508,9 @@
                     IsVisible="{Binding Source={x:Reference mainPage}, Path=IsNotV3Mode}"
                     Clicked="OnColorButtonClicked" />
 
-            <!-- V3 mode: compact pickers inline with Play/Stop buttons -->
+            <!-- V3 mode: compact pickers fill the bottom row (play is on the staff) -->
             <HorizontalStackLayout x:Name="V3BottomPickersLayout"
-                                   Grid.Column="2" Grid.ColumnSpan="3"
+                                   Grid.Column="0" Grid.ColumnSpan="5"
                                    Spacing="2" VerticalOptions="Center"
                                    IsVisible="{Binding Source={x:Reference mainPage}, Path=IsV3Mode}">
               <Label Text="Inst." FontSize="10" TextColor="#333333" VerticalOptions="Center" Margin="2,0,0,0"/>
@@ -461,6 +544,25 @@
 
       </VerticalStackLayout>
     </ScrollView>
+
+    <!-- V3 play: top of screen, horizontally aligned with the time signature -->
+    <Button x:Name="V3PlayButton"
+            Text="Play"
+            FontSize="11"
+            FontAttributes="Bold"
+            TextColor="White"
+            BackgroundColor="#2E8B57"
+            BorderColor="#1F5C3A"
+            BorderWidth="1"
+            CornerRadius="6"
+            WidthRequest="52"
+            HeightRequest="28"
+            Padding="6,0"
+            HorizontalOptions="Start"
+            VerticalOptions="Start"
+            ZIndex="10"
+            IsVisible="{Binding Source={x:Reference mainPage}, Path=IsV3Mode}"
+            Clicked="OnPlayEvaluateClicked" />
 
     <!-- Color picker dialog overlay (full-page, above everything) -->
     <controls:ColorPickerDialog x:Name="ColorPickerDialog"

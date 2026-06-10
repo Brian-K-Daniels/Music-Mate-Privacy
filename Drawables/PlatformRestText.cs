@@ -20,13 +20,26 @@ namespace musicmate.Drawables
             float top,
             float width,
             float height)
+            => DrawAligned(canvas, glyph, fontSize, color, left, top, width, height,
+                HorizontalAlignment.Center, VerticalAlignment.Center);
+
+        internal static bool DrawAligned(
+            ICanvas canvas,
+            string glyph,
+            float fontSize,
+            Color color,
+            float left,
+            float top,
+            float width,
+            float height,
+            HorizontalAlignment horizontalAlignment,
+            VerticalAlignment verticalAlignment)
         {
             var inner = FindInnerCanvas(canvas);
             if (inner == null || !TryConfigureFont(state: GetCurrentState(inner), fontSize, color))
                 return false;
 
-            canvas.DrawString(glyph, left, top, width, height,
-                HorizontalAlignment.Center, VerticalAlignment.Center);
+            canvas.DrawString(glyph, left, top, width, height, horizontalAlignment, verticalAlignment);
 
             // Bravura must not leak into accidentals, time sig, or labels on the same canvas.
             ResetPlatformFont(inner);

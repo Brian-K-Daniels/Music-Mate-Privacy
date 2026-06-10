@@ -3,6 +3,7 @@ using musicmate.Controls;
 using musicmate.Drawables;
 using musicmate.Models;
 using musicmate.Services;
+using musicmate.Diagnostics;
 using musicmate.V3LayoutDebug;
 using musicmate.Utilities;
 using System.ComponentModel;
@@ -47,6 +48,7 @@ namespace musicmate.Pages
         private Picker _v3HomeScaleTunePicker = null!;
         private Label _v3HomeConcertKeyLabel = null!;
         private Button _v3StartStopButton = null!;
+        private Button _v3PlayButton = null!;
 
         // fields for inactivity tracking
         private DateTime _lastHeardTime = DateTime.UtcNow;
@@ -62,7 +64,6 @@ namespace musicmate.Pages
         // session completed with AutoRepeat off.  OnAppearing will skip auto-start
         // so the result stays visible until the user taps Start/Stop.
         private bool _holdResultForChildSession = false;
-        private bool _syncingChildLevelUi;
         private bool _suppressSessionRegenerate;
         private const string ChildLevelPrefKey = "ChildHome.Level";
 #pragma warning restore CS0414
@@ -298,6 +299,7 @@ namespace musicmate.Pages
                 _v3HomeScaleTunePicker  = this.FindByName<Picker>("V3HomeScaleTunePicker")!;
                 _v3HomeConcertKeyLabel  = this.FindByName<Label>("V3HomeConcertKeyLabel")!;
                 _v3StartStopButton      = this.FindByName<Button>("V3StartStopButton")!;
+                _v3PlayButton           = this.FindByName<Button>("V3PlayButton")!;
 
                 // Ensure ThemeService is available so we can deploy saved/default panel background
                 _theme_service = ServiceHelper.GetService<ThemeService>()!;
@@ -388,6 +390,9 @@ namespace musicmate.Pages
                 _v3Drawable = new Drawables.V3StaffDrawable(_session, _theme_service, safeAreaService);
                 V3StaffGraphicsView.Drawable = _v3Drawable;
                 V3StaffGraphicsView.SetBinding(GraphicsView.BackgroundColorProperty, new Binding("PanelBackgroundColor"));
+                V3StaffGraphicsView.SizeChanged += (_, _) => UpdateV3PlayButtonPosition();
+                V3StaffBorder.SizeChanged += (_, _) => UpdateV3PlayButtonPosition();
+                SetPlayButtonPlaying(false);
 
                 // Tuner graphics setup
                 TunerBorder.BindingContext = _theme_service;
@@ -1701,8 +1706,8 @@ namespace musicmate.Pages
         }
 
         /// <summary>
-        /// Resizes the V3 staff canvas and repositions the Start/Stop button midway
-        /// between the upper and lower staffs.  Must be called on the main thread.
+        /// Resizes the V3 staff canvas and repositions the play button at the top of the
+        /// staff, aligned with the time signature.  Must be called on the main thread.
         /// </summary>
         private void ApplyV3Height()
         {
@@ -1725,6 +1730,84 @@ namespace musicmate.Pages
             var h   = _v3Drawable.ComputeRequiredHeight();
             V3StaffGraphicsView.HeightRequest = h;
             V3StaffBorder.HeightRequest       = h;
+            UpdateV3PlayButtonPosition();
+        }
+
+        private void UpdateV3PlayButtonPosition()
+        {
+            if (_v3PlayButton == null || _v3Drawable == null
+                || _session.StaffDisplayMode != StaffDisplayMode.V3
+                || V3StaffGraphicsView.Width <= 0)
+                return;
+
+            if (!_v3Drawable.TryGetPlayButtonCenterX((float)V3StaffGraphicsView.Width, out float cx))
+                return;
+
+            const double width = 52;
+            const double top = 4;
+            double left = GetHorizontalOffsetToAncestor(V3StaffBorder, _v3PlayButton.Parent as VisualElement)
+                + cx - width * 0.5;
+            _v3PlayButton.Margin = new Thickness(Math.Max(0, left), top, 0, 0);
+        }
+
+        private static double GetHorizontalOffsetToAncestor(VisualElement element, VisualElement? ancestor)
+        {
+            double x = 0;
+            for (var node = element; node != null && node != ancestor; node = node.Parent as VisualElement)
+                x += node.X;
+            return x;
+        }
+
+        private static readonly Color PlayButtonGreen = Color.FromArgb("#2E8B57");
+        private static readonly Color PlayButtonGreenBorder = Color.FromArgb("#1F5C3A");
+        private static readonly Color PlayButtonRed = Color.FromArgb("#C62828");
+        private static readonly Color PlayButtonRedBorder = Color.FromArgb("#8B0000");
+
+        private void SetPlayButtonPlaying(bool isPlaying, bool? isEnabled = null)
+        {
+            void Apply(Button button)
+            {
+                if (isPlaying)
+                {
+                    button.Text = "Stop";
+                    button.TextColor = Colors.White;
+                    button.BackgroundColor = PlayButtonRed;
+                    button.BorderColor = PlayButtonRedBorder;
+                }
+                else
+                {
+                    button.Text = "Play";
+                    button.TextColor = Colors.White;
+                    button.BackgroundColor = PlayButtonGreen;
+                    button.BorderColor = PlayButtonGreenBorder;
+                }
+
+                if (isEnabled.HasValue)
+                    button.IsEnabled = isEnabled.Value;
+            }
+
+            Apply(PlayEvaluateButton);
+            Apply(_v3PlayButton);
+        }
+
+        private async Task StopListeningForPlaybackAsync()
+        {
+            try
+            {
+                _playCts?.Cancel();
+                _player.CancelPlayback();
+                _audio.StopCapture();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Play] Stop listening error: {ex}");
+            }
+            finally
+            {
+                SetButtonStates(false);
+            }
+
+            await Task.Delay(80);
         }
 
         private void SetButtonStates(bool isRunning, bool keepPlayEnabled = false)
@@ -1738,7 +1821,7 @@ namespace musicmate.Pages
                     StartStopButton.TextColor = Color.FromArgb("#E04040");
                     _v3StartStopButton.Text = "■";
                     _v3StartStopButton.TextColor = Color.FromArgb("#E04040");
-                    PlayEvaluateButton.IsEnabled = keepPlayEnabled || _isPlaying;
+                    SetPlayButtonPlaying(_isPlaying, keepPlayEnabled || _isPlaying);
                 }
                 else
                 {
@@ -1746,7 +1829,7 @@ namespace musicmate.Pages
                     StartStopButton.TextColor = Color.FromArgb("#008000");
                     _v3StartStopButton.Text = "●";
                     _v3StartStopButton.TextColor = Colors.Green;
-                    PlayEvaluateButton.IsEnabled = true;
+                    SetPlayButtonPlaying(false, true);
                 }
             });
         }
@@ -1761,9 +1844,8 @@ namespace musicmate.Pages
                     _player.CancelPlayback();
                     _audio.StopCapture();
                     _isPlaying = false;
-                    PlayEvaluateButton.Text = "▶";
-                    PlayEvaluateButton.TextColor = Color.FromArgb("#008000");
-                    StatusService.Instance.StatusMessage = "Stopped. Tap circle to listen, arrowhead (scroll down) to play.";
+                    SetPlayButtonPlaying(false);
+                    StatusService.Instance.StatusMessage = "Stopped. Tap circle to listen, Play to hear the tune.";
                     _session.SessionCompleted = true;
                 }
                 catch (Exception ex)
@@ -1790,19 +1872,16 @@ namespace musicmate.Pages
             return Math.Clamp(Preferences.Default.Get(ChildLevelPrefKey, _session.ChildLevel), 1, 100);
         }
 
-        private void OnChildLevelSliderValueChanged(object? sender, ValueChangedEventArgs e)
+        private async void OnChildLevelDeltaClicked(object? sender, EventArgs e)
         {
-            if (_syncingChildLevelUi) return;
-            ChildLevelSliderValueLabel.Text =
-                Math.Clamp((int)Math.Round(e.NewValue), 1, 100).ToString();
-        }
+            if (_session.ChildLevel <= 0
+                || sender is not Button { CommandParameter: string param }
+                || !int.TryParse(param, out int delta))
+                return;
 
-        private async void OnChildLevelSliderDragCompleted(object? sender, EventArgs e)
-        {
-            if (_syncingChildLevelUi || _session.ChildLevel <= 0) return;
-
-            int level = Math.Clamp((int)Math.Round(ChildLevelSlider.Value), 1, 100);
-            if (level == _session.ChildLevel) return;
+            int level = Math.Clamp(_session.ChildLevel + delta, 1, 100);
+            if (level == _session.ChildLevel)
+                return;
 
             await ApplyChildLevelAndRefreshAsync(level);
         }
@@ -1832,10 +1911,7 @@ namespace musicmate.Pages
             }
 
             _savedNotesToRepeat = null;
-            _syncingChildLevelUi = true;
-            ChildLevelSlider.Value = level;
             ChildLevelSliderValueLabel.Text = level.ToString();
-            _syncingChildLevelUi = false;
 
             StatusService.Instance.StatusMessage =
                 $"Level {level}: {difficulty.StageLabel} — {difficulty.MainFocus}";
@@ -1851,10 +1927,7 @@ namespace musicmate.Pages
             int level = GetChildLevelForSlider();
             _session.ChildLevel = level;
 
-            _syncingChildLevelUi = true;
-            ChildLevelSlider.Value = level;
             ChildLevelSliderValueLabel.Text = level.ToString();
-            _syncingChildLevelUi = false;
         }
 
         protected async override void OnAppearing()
@@ -1985,27 +2058,14 @@ namespace musicmate.Pages
             {
                 _playCts?.Cancel();
                 _player.CancelPlayback();
+                _isPlaying = false;
+                SetPlayButtonPlaying(false);
+                SetButtonStates(false);
                 return;
             }
 
-            // If currently listening, stop before starting auto-play.
             if (_isRunning)
-            {
-                try
-                {
-                    _playCts?.Cancel();
-                    _audio.StopCapture();
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"[PlayEvaluate] Stop listening error: {ex}");
-                }
-                finally
-                {
-                    SetButtonStates(false);
-                }
-                await Task.Delay(80); // brief pause so audio pipeline drains
-            }
+                await StopListeningForPlaybackAsync();
 
             // Save user's instrument selection to restore after playback
             _savedInstrumentForPlayback = _session.Instrument;
@@ -2029,8 +2089,7 @@ namespace musicmate.Pages
             }
 
             _isPlaying = true;
-            PlayEvaluateButton.Text = "■";
-            PlayEvaluateButton.TextColor = Color.FromArgb("#E04040");
+            SetPlayButtonPlaying(true);
             await StartListeningAndEvaluatingAsync(playBack: true);
         }
 
@@ -2430,7 +2489,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                 _currentSessionId = Guid.NewGuid().ToString();
 
                 StatusService.Instance.StatusMessage = playBack
-                    ? "Playing… tap ■ to stop"
+                    ? "Playing… tap Stop to end playback"
                     : "Listening, tap red square to stop";
                 Debug.WriteLine($"[Start] Starting listening, playBack={playBack}");
                 SetButtonStates(true, keepPlayEnabled: playBack);
@@ -2512,6 +2571,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                     if (_session.NotesToDraw.Count == 0)
                     {
                         _isPlaying = false;
+                        SetPlayButtonPlaying(false);
                         SetButtonStates(false);
                         StatusService.Instance.StatusMessage =
                             "No notes to play — try again.";
@@ -2528,6 +2588,7 @@ async Task UpdateNoteStatsDatabaseAsync()
             {
                 Debug.WriteLine($"[Start] ERROR: {ex}");
                 _isPlaying = false;
+                SetPlayButtonPlaying(false);
                 SetButtonStates(false);
                 StatusService.Instance.StatusMessage = "Could not start microphone.";
                 await MainThread.InvokeOnMainThreadAsync(async () =>
@@ -2539,16 +2600,137 @@ async Task UpdateNoteStatsDatabaseAsync()
                 });
             }
         }
+        /// <summary>Full rhythmic sequence (notes and rests) for V2/V3 autoplay; null for classic staff.</summary>
+        private List<GeneratedNote>? TryGetAutoplayRhythmSequence()
+        {
+            if (_session.StaffDisplayMode == StaffDisplayMode.V3 && _v3Drawable != null)
+                return _v3Drawable.UpperNotes.Concat(_v3Drawable.LowerNotes).ToList();
+            if (_session.V2StaffMode && _v2Drawable != null)
+                return _v2Drawable.Notes;
+            return null;
+        }
+
+        private void ApplyAutoplayRhythmHighlight(int eventIndex, IReadOnlyList<GeneratedNote> sequence, int pitchIndex)
+        {
+            _session.PlaybackHighlightIndex = sequence[eventIndex].IsRest ? null : pitchIndex;
+
+            if (_session.StaffDisplayMode == StaffDisplayMode.V3 && _v3Drawable != null)
+            {
+                int upperCount = _v3Drawable.UpperNotes.Count;
+                bool onUpper = eventIndex < upperCount;
+                _v3Drawable.IsUpperActive = onUpper;
+                _v3Drawable.ActiveNoteIndex = onUpper ? eventIndex : eventIndex - upperCount;
+
+                _v3Drawable.UpperNoteStates = BuildRhythmStaffStates(_v3Drawable.UpperNotes, 0, eventIndex);
+                _v3Drawable.LowerNoteStates = BuildRhythmStaffStates(_v3Drawable.LowerNotes, upperCount, eventIndex);
+                V3StaffGraphicsView.Invalidate();
+            }
+            else if (_session.V2StaffMode && _v2Drawable != null)
+            {
+                _v2Drawable.CurrentNoteIndex = eventIndex;
+                _v2Drawable.NoteStates = BuildRhythmStaffStates(_v2Drawable.Notes, 0, eventIndex);
+                V2StaffGraphicsView.Invalidate();
+            }
+            else
+            {
+                StaffGraphicsView.Invalidate();
+            }
+        }
+
+        private static V2NoteState[] BuildRhythmStaffStates(
+            IReadOnlyList<GeneratedNote> staffNotes, int globalOffset, int eventIndex)
+        {
+            var states = new V2NoteState[staffNotes.Count];
+            for (int d = 0; d < staffNotes.Count; d++)
+            {
+                int globalIdx = globalOffset + d;
+                if (globalIdx < eventIndex)
+                    states[d] = staffNotes[d].IsRest ? V2NoteState.Pending : V2NoteState.Correct;
+                else if (globalIdx == eventIndex)
+                    states[d] = V2NoteState.Current;
+                else
+                    states[d] = V2NoteState.Pending;
+            }
+
+            return states;
+        }
+
         private async Task PlayDisplayedAsync(CancellationToken ct)
         {
             var cancelled = false;
             try
             {
+                var rhythmSeq = TryGetAutoplayRhythmSequence();
+                if (rhythmSeq != null && rhythmSeq.Count > 0)
+                {
+                    PlaybackRhythmDiagnostics.LogRhythmSpan("sequence", rhythmSeq);
+
+                    var bpm = Math.Clamp(_session.PlaybackBpm, 30, 200);
+                    var beatSeconds = 60.0 / bpm;
+                    int pitchCount = rhythmSeq.Count(n => !n.IsRest);
+                    int pitchIndex = 0;
+
+                    for (int i = 0; i < rhythmSeq.Count; i++)
+                    {
+                        ct.ThrowIfCancellationRequested();
+
+                        var ev = rhythmSeq[i];
+                        var totalSeconds = beatSeconds * ev.BeatDuration;
+                        var gapSeconds = Math.Min(0.02, totalSeconds * 0.05);
+                        var noteSeconds = Math.Max(0.05, totalSeconds - gapSeconds);
+
+                        StatusService.Instance.StatusMessage = ev.IsRest
+                            ? $"Rest {i + 1}/{rhythmSeq.Count}"
+                            : $"Playing note {pitchIndex + 1}/{pitchCount}: {ev.SpelledName}";
+
+                        await MainThread.InvokeOnMainThreadAsync(() =>
+                            ApplyAutoplayRhythmHighlight(i, rhythmSeq, pitchIndex));
+
+                        bool notePlayed = false;
+                        try
+                        {
+                            if (ev.IsRest)
+                                await Task.Delay(TimeSpan.FromSeconds(totalSeconds), ct);
+                            else
+                            {
+                                await _player.PlayAsync(new[] { ev.TargetFrequency }, noteSeconds, gapSeconds, 0.22f, ct);
+                                notePlayed = true;
+                                pitchIndex++;
+                            }
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        finally
+                        {
+                            await MainThread.InvokeOnMainThreadAsync(() =>
+                            {
+                                if (notePlayed && pitchIndex - 1 < _session.FeedbackViewModels.Count)
+                                {
+                                    int fb = pitchIndex - 1;
+                                    var cur = _session.FeedbackViewModels[fb];
+                                    _session.FeedbackViewModels[fb] = new FeedbackItem(fb, cur.WrongAttempts, 0, true);
+                                }
+
+                                _session.PlaybackHighlightIndex = null;
+                                StaffGraphicsView.Invalidate();
+                                if (_session.V2StaffMode)
+                                    V2StaffGraphicsView.Invalidate();
+                                if (_session.StaffDisplayMode == StaffDisplayMode.V3)
+                                    V3StaffGraphicsView.Invalidate();
+                            });
+                        }
+                    }
+
+                    return;
+                }
+
                 if (_session.NotesToDraw.Count == 0)
                     return;
 
-                var bpm = Math.Clamp(_session.PlaybackBpm, 30, 200);
-                var beatSeconds = 60.0 / bpm;
+                var bpmLegacy = Math.Clamp(_session.PlaybackBpm, 30, 200);
+                var beatSecondsLegacy = 60.0 / bpmLegacy;
 
                 for (int i = 0; i < _session.NotesToDraw.Count; i++)
                 {
@@ -2556,12 +2738,10 @@ async Task UpdateNoteStatsDatabaseAsync()
 
                     var note = _session.NotesToDraw[i];
 
-                    // Scale duration by note's rhythmic value when available (practice tune mode).
-                    // A quarter note = 1 beat; half = 2 beats; eighth = 0.5 beats, etc.
                     var durationBeats = note.Duration.HasValue
                         ? note.Duration.Value.ToBeatValue()
                         : 1.0;
-                    var totalSeconds = beatSeconds * durationBeats;
+                    var totalSeconds = beatSecondsLegacy * durationBeats;
                     var gapSeconds = Math.Min(0.02, totalSeconds * 0.05);
                     var noteSeconds = Math.Max(0.05, totalSeconds - gapSeconds);
 
@@ -2570,62 +2750,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                     await MainThread.InvokeOnMainThreadAsync(() =>
                     {
                         _session.PlaybackHighlightIndex = i;
-                        if (_session.StaffDisplayMode == StaffDisplayMode.V3 && _v3Drawable != null)
-                        {
-                            int upperPitchCount = _v3Drawable.UpperNotes.Count(n => !n.IsRest);
-                            bool onUpper = i < upperPitchCount;
-                            _v3Drawable.IsUpperActive = onUpper;
-                            _v3Drawable.ActiveNoteIndex = onUpper ? i : i - upperPitchCount;
-                            // Set states
-                            var us = new V2NoteState[_v3Drawable.UpperNotes.Count];
-                            int si2 = 0;
-                            for (int d = 0; d < _v3Drawable.UpperNotes.Count; d++)
-                            {
-                                if (_v3Drawable.UpperNotes[d].IsRest) continue;
-                                us[d] = si2 < i ? V2NoteState.Correct : si2 == i ? V2NoteState.Current : V2NoteState.Pending;
-                                si2++;
-                            }
-                            _v3Drawable.UpperNoteStates = us;
-                            var ls = new V2NoteState[_v3Drawable.LowerNotes.Count];
-                            int li2 = 0;
-                            for (int d = 0; d < _v3Drawable.LowerNotes.Count; d++)
-                            {
-                                if (_v3Drawable.LowerNotes[d].IsRest) continue;
-                                int gi = upperPitchCount + li2;
-                                ls[d] = gi < i ? V2NoteState.Correct : gi == i ? V2NoteState.Current : V2NoteState.Pending;
-                                li2++;
-                            }
-                            _v3Drawable.LowerNoteStates = ls;
-                            V3StaffGraphicsView.Invalidate();
-                        }
-                        else if (_session.V2StaffMode && _v2Drawable != null)
-                        {
-                            // Map session note index i to the drawable note index (skipping rests)
-                            int drawIdx = 0, noteCount = 0;
-                            for (int d = 0; d < _v2Drawable.Notes.Count; d++)
-                            {
-                                if (!_v2Drawable.Notes[d].IsRest)
-                                {
-                                    if (noteCount == i) { drawIdx = d; break; }
-                                    noteCount++;
-                                }
-                            }
-                            _v2Drawable.CurrentNoteIndex = drawIdx;
-                            var states = new V2NoteState[_v2Drawable.Notes.Count];
-                            int si = 0;
-                            for (int d = 0; d < _v2Drawable.Notes.Count; d++)
-                            {
-                                if (_v2Drawable.Notes[d].IsRest) { states[d] = V2NoteState.Pending; continue; }
-                                states[d] = si < i ? V2NoteState.Correct : si == i ? V2NoteState.Current : V2NoteState.Pending;
-                                si++;
-                            }
-                            _v2Drawable.NoteStates = states;
-                            V2StaffGraphicsView.Invalidate();
-                        }
-                        else
-                        {
-                            StaffGraphicsView.Invalidate();
-                        }
+                        StaffGraphicsView.Invalidate();
                     });
 
                     bool notePlayed = false;
@@ -2649,8 +2774,6 @@ async Task UpdateNoteStatsDatabaseAsync()
                             }
                             _session.PlaybackHighlightIndex = null;
                             StaffGraphicsView.Invalidate();
-                            if (_session.V2StaffMode)
-                                V2StaffGraphicsView.Invalidate();
                         });
                     }
                 }
@@ -2668,8 +2791,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                 await MainThread.InvokeOnMainThreadAsync(async () =>
                 {
                     _isPlaying = false;
-                    PlayEvaluateButton.Text = "▶";
-                    PlayEvaluateButton.TextColor = Color.FromArgb("#008000");
+                    SetPlayButtonPlaying(false);
 
                     if (!cancelled && _session.NotesToDraw.Count > 0)
                     {
