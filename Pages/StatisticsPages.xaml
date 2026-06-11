@@ -197,21 +197,21 @@
       <!-- Session Stats Table -->
       <!-- Column widths chosen to accommodate headings and data; header and data use identical definitions -->
       <ScrollView Orientation="Horizontal">
-        <VerticalStackLayout MinimumWidthRequest="820" Spacing="0" Margin="8,0,0,0">
+        <VerticalStackLayout MinimumWidthRequest="880" Spacing="0" Margin="8,0,0,0">
           <!-- Header row -->
           <Grid Padding="0" Margin="0" IsVisible="{Binding IsSessionDatabase}" HeightRequest="28">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="32" />   <!-- delete icon -->
               <ColumnDefinition Width="140" />  <!-- Date -->
-              <ColumnDefinition Width="44" />   <!-- Level -->
+              <ColumnDefinition Width="52" />   <!-- Level -->
               <ColumnDefinition Width="72" />   <!-- Correct % -->
               <ColumnDefinition Width="52" />   <!-- Pch -->
               <ColumnDefinition Width="52" />   <!-- Tmg -->
               <ColumnDefinition Width="52" />   <!-- Ovrl -->
-              <ColumnDefinition Width="32" />   <!-- Key -->
+              <ColumnDefinition Width="44" />   <!-- Key -->
               <ColumnDefinition Width="84" />   <!-- Scale -->
-              <ColumnDefinition Width="28" />   <!-- Rand -->
-              <ColumnDefinition Width="36" />   <!-- Acc. % -->
+              <ColumnDefinition Width="48" />   <!-- Rand -->
+              <ColumnDefinition Width="52" />   <!-- Acc. % -->
               <ColumnDefinition Width="40" />   <!-- Hi -->
               <ColumnDefinition Width="40" />   <!-- Lo -->
               <ColumnDefinition Width="96" />  <!-- Instrument -->
@@ -335,15 +335,15 @@
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="32" />
                       <ColumnDefinition Width="140" />
-                      <ColumnDefinition Width="44" />
+                      <ColumnDefinition Width="52" />
                       <ColumnDefinition Width="72" />
                       <ColumnDefinition Width="52" />
                       <ColumnDefinition Width="52" />
                       <ColumnDefinition Width="52" />
-                      <ColumnDefinition Width="32" />
+                      <ColumnDefinition Width="44" />
                       <ColumnDefinition Width="84" />
-                      <ColumnDefinition Width="28" />
-                      <ColumnDefinition Width="36" />
+                      <ColumnDefinition Width="48" />
+                      <ColumnDefinition Width="52" />
                       <ColumnDefinition Width="40" />
                       <ColumnDefinition Width="40" />
                       <ColumnDefinition Width="96" />

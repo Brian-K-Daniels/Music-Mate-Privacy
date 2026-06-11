@@ -392,6 +392,7 @@ namespace musicmate.Drawables
             // even when the visible window starts mid-sequence.
             var accidentalHistory = new Dictionary<(char, int), Accidental>();
             double beatCursor = 0;
+            double prevBeat = -1.0;
             for (int i = 0; i < Notes.Count; i++)
             {
                 var note      = Notes[i];
@@ -401,15 +402,19 @@ namespace musicmate.Drawables
                 float nx = LeftMargin + scrollOffsetPx + (float)(beatAnchor * pxPerBeat) + slotWidth * 0.5f;
                 var state = (NoteStates.Length > i) ? NoteStates[i] : V2NoteState.Pending;
 
-                // Always update accidental history, even for clipped notes, so the
-                // courtesy-natural context is accurate when notes scroll into view.
-                if (!note.IsRest)
-                    accidentalHistory[(note.Letter, note.Octave)] = note.Accidental;
+                // Accidental state applies within the current measure only.
+                ResetAccidentalStateIfCrossedBar(beatAnchor, prevBeat, MeasureBarBeats, accidentalHistory);
 
-                // Skip notes outside the visible strip to avoid clutter on left/right edges.
-                if (nx < clipLeft || nx > clipRight)
+                bool offScreen = nx < clipLeft || nx > clipRight;
+
+                // Off-screen notes still advance history so courtesy context is correct when scrolling.
+                if (!note.IsRest && offScreen)
+                    AdvanceAccidentalHistory(note, accidentalHistory);
+
+                if (offScreen)
                 {
                     beatCursor += note.BeatDuration;
+                    prevBeat = beatAnchor;
                     continue;
                 }
 
@@ -438,6 +443,7 @@ namespace musicmate.Drawables
                 }
 
                 beatCursor += note.BeatDuration;
+                prevBeat = beatAnchor;
             }
 
             // ── Post-pass: draw beam bars ─────────────────────────────────────────
@@ -980,36 +986,114 @@ namespace musicmate.Drawables
             }
         }
 
+        /// <summary>Accidentals apply within the current measure only.</summary>
+        private static void ResetAccidentalStateIfCrossedBar(
+            double beat,
+            double prevBeat,
+            IReadOnlyList<double> barBeats,
+            Dictionary<(char, int), Accidental> accHistory)
+        {
+            foreach (var barBeat in barBeats.OrderBy(b => b))
+            {
+                if (prevBeat < barBeat - 1e-6 && beat >= barBeat - 1e-6)
+                {
+                    accHistory.Clear();
+                    return;
+                }
+            }
+        }
+
+        /// <summary>Updates per-measure accidental carry state without drawing a glyph.</summary>
+        private void AdvanceAccidentalHistory(GeneratedNote note, Dictionary<(char, int), Accidental> history)
+        {
+            if (!ResolveEffectiveAccidental(note, history, out var eff, out bool draw))
+                return;
+            if (draw && eff != Accidental.None)
+                history[(note.Letter, note.Octave)] = eff;
+        }
+
+        private bool ResolveEffectiveAccidental(
+            GeneratedNote note,
+            Dictionary<(char, int), Accidental>? history,
+            out Accidental eff,
+            out bool draw)
+        {
+            eff = InferAccidentalFromSpelling(note);
+            draw = false;
+            var pitchKey = (note.Letter, note.Octave);
+
+            if (eff == Accidental.None && history != null
+                && history.TryGetValue(pitchKey, out var prev)
+                && IsChromaticAccidental(prev))
+            {
+                if (NoteMatchesAlteration(note, pitchKey, prev))
+                    return true;
+
+                eff = Accidental.Natural;
+                draw = true;
+            }
+
+            if (eff == Accidental.None)
+                return true;
+
+            if (IsAccidentalInKeySig(eff, note.Letter))
+                return true;
+
+            if (history != null && history.TryGetValue(pitchKey, out var priorInBar) && priorInBar == eff)
+                return true;
+
+            draw = true;
+            return true;
+        }
+
+        private static Accidental InferAccidentalFromSpelling(GeneratedNote note)
+        {
+            if (note.Accidental != Accidental.None)
+                return note.Accidental;
+
+            string name = note.SpelledName;
+            if (name.Contains("##")) return Accidental.DoubleSharp;
+            if (name.Contains("bb")) return Accidental.DoubleFlat;
+            if (name.Contains('#'))  return Accidental.Sharp;
+            if (name.Contains('b'))  return Accidental.Flat;
+            return Accidental.None;
+        }
+
+        private static bool IsChromaticAccidental(Accidental acc)
+            => acc is Accidental.Sharp or Accidental.Flat
+                or Accidental.DoubleSharp or Accidental.DoubleFlat;
+
+        private static int AlterationSemitones(Accidental acc) => acc switch
+        {
+            Accidental.Sharp       => 1,
+            Accidental.Flat        => -1,
+            Accidental.DoubleSharp => 2,
+            Accidental.DoubleFlat  => -2,
+            _                      => 0
+        };
+
+        private static bool NoteMatchesAlteration(
+            GeneratedNote note, (char Letter, int Octave) pitchKey, Accidental prior)
+        {
+            int naturalMidi = NoteSessionService.NoteNameToMidi($"{pitchKey.Letter}{pitchKey.Octave}");
+            int expected    = naturalMidi + AlterationSemitones(prior);
+            return note.MidiNumber == expected;
+        }
+
         private void DrawAccidental(ICanvas canvas, GeneratedNote note, float x, float y, Color ink,
             Dictionary<(char, int), Accidental>? history = null)
         {
             canvas.SaveState();
             try
             {
-                var effectiveAcc = note.Accidental;
+                if (!ResolveEffectiveAccidental(note, history, out var effectiveAcc, out bool draw))
+                    return;
 
-                // Courtesy natural: the generator assigned Accidental.None to this note but an
-                // earlier note on the same (letter, octave) was sharp or flat.  Show ♮ so the
-                // player is not confused by the implicit cancellation.
-                if (effectiveAcc == Accidental.None && history != null)
-                {
-                    if (history.TryGetValue((note.Letter, note.Octave), out var prev)
-                        && (prev == Accidental.Sharp || prev == Accidental.Flat
-                            || prev == Accidental.DoubleSharp || prev == Accidental.DoubleFlat))
-                    {
-                        effectiveAcc = Accidental.Natural;
-                    }
-                }
-
-                // Update history AFTER the courtesy check so the current note's own accidental
-                // is recorded for subsequent notes.
-                if (history != null)
+                if (history != null && draw && effectiveAcc != Accidental.None)
                     history[(note.Letter, note.Octave)] = effectiveAcc;
 
-                if (effectiveAcc == Accidental.None) return;
-
-                // Suppress if already implied by the key signature.
-                if (IsAccidentalInKeySig(note)) return;
+                if (!draw || effectiveAcc == Accidental.None)
+                    return;
 
                 string glyph = effectiveAcc switch
                 {
@@ -1050,10 +1134,13 @@ namespace musicmate.Drawables
         /// current key signature, so it should not be re-drawn in the note body.
         /// </summary>
         private bool IsAccidentalInKeySig(GeneratedNote note)
+            => IsAccidentalInKeySig(note.Accidental, note.Letter);
+
+        private bool IsAccidentalInKeySig(Accidental accidental, char letter)
         {
-            if (note.Accidental == Accidental.None) return false;
+            if (accidental == Accidental.None) return false;
             // Natural signs are never implied by the key signature — they contradict it.
-            if (note.Accidental == Accidental.Natural) return false;
+            if (accidental == Accidental.Natural) return false;
 
             string key   = _session.Key;
             string scale = _session.SelectedScale;
@@ -1068,14 +1155,14 @@ namespace musicmate.Drawables
             char[] sharpLetters = { 'F', 'C', 'G', 'D', 'A', 'E', 'B' };
 
             bool typeMatch = useFlats
-                ? note.Accidental == Accidental.Flat
-                : note.Accidental == Accidental.Sharp;
+                ? accidental == Accidental.Flat
+                : accidental == Accidental.Sharp;
 
             if (!typeMatch) return false;
 
             char[] keySigLetters = useFlats ? flatLetters : sharpLetters;
             for (int i = 0; i < Math.Min(accCount, keySigLetters.Length); i++)
-                if (keySigLetters[i] == note.Letter) return true;
+                if (keySigLetters[i] == letter) return true;
 
             return false;
         }

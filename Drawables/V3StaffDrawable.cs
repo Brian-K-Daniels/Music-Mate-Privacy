@@ -822,25 +822,25 @@ namespace musicmate.Drawables
             var sorted = SortIndicesByBeat(notes, segment.NoteIndices, beatOrigin);
             var beamGroups = ComputeLayoutBeamGroupIds(notes, sorted, beatOrigin, segment.EndBeat);
             float width = BarLeftPadding;
+            var accHistory = new Dictionary<(char, int), Accidental>();
+            var barCancelled = new HashSet<(char, int)>();
 
             for (int k = 0; k < sorted.Count; k++)
             {
                 int i = sorted[k];
                 var note = notes[i];
-                bool hasAcc = !note.IsRest && WillReserveAccidentalSpace(note);
-                bool isFlatAcc = hasAcc && IsFlatBodyAccidental(note.Accidental);
-                bool isNaturalAcc = hasAcc && IsNaturalBodyAccidental(note.Accidental);
+                var acc = ResolveLayoutAccidental(note, accHistory, barCancelled);
 
                 if (k == 0)
                 {
                     double relBeat = (note.BeatPosition ?? 0.0) - beatOrigin - segment.StartBeat;
                     float startPad = BarStemClearance + (relBeat < 1e-6 ? MeasureStartExtraPad : 0f);
-                    width += NoteCenterLeftReach(note.IsRest, hasAcc, isFlatAcc, isNaturalAcc) + startPad;
+                    width += NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural) + startPad;
                 }
                 else
                 {
                     width += InkGapBetween(beamGroups, sorted[k - 1], i, MinNoteGap(note.IsRest))
-                             + NoteCenterLeftReach(note.IsRest, hasAcc, isFlatAcc, isNaturalAcc);
+                             + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural);
                 }
             }
 
@@ -917,24 +917,24 @@ namespace musicmate.Drawables
             var beamGroups = ComputeLayoutBeamGroupIds(notes, sorted, beatOrigin, measureEndBeat);
             float prevRight = float.NegativeInfinity;
             float lastRight = 0f;
+            var accHistory = new Dictionary<(char, int), Accidental>();
+            var barCancelled = new HashSet<(char, int)>();
 
             for (int k = 0; k < sorted.Count; k++)
             {
                 int i = sorted[k];
                 var note = notes[i];
-                bool hasAcc = !note.IsRest && WillReserveAccidentalSpace(note);
-                bool isFlat = hasAcc && IsFlatBodyAccidental(note.Accidental);
-                bool isNatural = hasAcc && IsNaturalBodyAccidental(note.Accidental);
+                var acc = ResolveLayoutAccidental(note, accHistory, barCancelled);
 
                 float center;
                 if (k == 0)
                 {
-                    center = NoteCenterLeftReach(note.IsRest, hasAcc, isFlat, isNatural);
+                    center = NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural);
                 }
                 else
                 {
                     float gap = InkGapBetween(beamGroups, sorted[k - 1], i, _planInkGap);
-                    center = MinCenterAfterPrevRight(prevRight, note.IsRest, hasAcc, isFlat, isNatural, gap);
+                    center = MinCenterAfterPrevRight(prevRight, note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, gap);
                 }
 
                 lastRight = NoteTrailingRight(note, center);
@@ -1178,38 +1178,38 @@ namespace musicmate.Drawables
             double measureEndBeat)
         {
             float prevRight = float.NegativeInfinity;
+            var accHistory = new Dictionary<(char, int), Accidental>();
+            var barCancelled = new HashSet<(char, int)>();
             for (int k = 0; k < sorted.Count; k++)
             {
                 int i = sorted[k];
                 var note = notes[i];
-                bool hasAcc = !note.IsRest && WillReserveAccidentalSpace(note);
-                bool isFlatAcc = hasAcc && IsFlatBodyAccidental(note.Accidental);
-                bool isNaturalAcc = hasAcc && IsNaturalBodyAccidental(note.Accidental);
+                var acc = ResolveLayoutAccidental(note, accHistory, barCancelled);
 
                 float center;
                 if (prevRight <= float.NegativeInfinity)
                 {
-                    center = innerLeft + NoteCenterLeftReach(note.IsRest, hasAcc, isFlatAcc, isNaturalAcc);
+                    center = innerLeft + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural);
                     if (isFirstMeasureOnStaff && k == 0)
                     {
                         float headerEdge = _planUseFullHeader
                             ? _headerMetrics.TimeSigRightRel
                             : _planStaffLeftMargin;
-                        center = Math.Max(center, headerEdge + NoteCenterLeftReach(note.IsRest, hasAcc, isFlatAcc, isNaturalAcc));
+                        center = Math.Max(center, headerEdge + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural));
                     }
                 }
                 else
                 {
-                    center = MinCenterAfterPrevRight(prevRight, note.IsRest, hasAcc, isFlatAcc, isNaturalAcc);
+                    center = MinCenterAfterPrevRight(prevRight, note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural);
                 }
 
                 noteLayouts[i] = new NoteLayout
                 {
                     X = center,
                     AccidentalX = center,
-                    HasAccidental = hasAcc,
-                    AccidentalIsFlat = isFlatAcc,
-                    AccidentalIsNatural = isNaturalAcc,
+                    HasAccidental = acc.HasAccidental,
+                    AccidentalIsFlat = acc.IsFlat,
+                    AccidentalIsNatural = acc.IsNatural,
                     IsRest = note.IsRest
                 };
                 SyncAccidentalX(noteLayouts, i);
@@ -1253,6 +1253,8 @@ namespace musicmate.Drawables
             var isFlatList = new bool[sorted.Count];
             var isNaturalList = new bool[sorted.Count];
             var isRestList = new bool[sorted.Count];
+            var accHistory = new Dictionary<(char, int), Accidental>();
+            var barCancelled = new HashSet<(char, int)>();
 
             for (int k = 0; k < sorted.Count; k++)
             {
@@ -1263,10 +1265,10 @@ namespace musicmate.Drawables
                 double anchorBeat = relBeat + note.BeatDuration * 0.5;
                 float frac = (float)Math.Clamp(anchorBeat / measureBeats, 0.0, 1.0);
 
-                bool hasAcc = !note.IsRest && WillReserveAccidentalSpace(note);
-                hasAccList[k] = hasAcc;
-                isFlatList[k] = hasAcc && IsFlatBodyAccidental(note.Accidental);
-                isNaturalList[k] = hasAcc && IsNaturalBodyAccidental(note.Accidental);
+                var acc = ResolveLayoutAccidental(note, accHistory, barCancelled);
+                hasAccList[k] = acc.HasAccidental;
+                isFlatList[k] = acc.IsFlat;
+                isNaturalList[k] = acc.IsNatural;
                 isRestList[k] = note.IsRest;
 
                 centers[k] = laneLeft + frac * laneSpan;
@@ -1370,10 +1372,10 @@ namespace musicmate.Drawables
 
             var firstNote = notes[sorted[0]];
             var lastNote = notes[sorted[^1]];
-            bool firstHasAcc = !firstNote.IsRest && WillReserveAccidentalSpace(firstNote);
-            bool firstFlat = firstHasAcc && IsFlatBodyAccidental(firstNote.Accidental);
-            bool firstNatural = firstHasAcc && IsNaturalBodyAccidental(firstNote.Accidental);
-            float startCenter = innerLeft + NoteCenterLeftReach(firstNote.IsRest, firstHasAcc, firstFlat, firstNatural);
+            var accHistory = new Dictionary<(char, int), Accidental>();
+            var barCancelled = new HashSet<(char, int)>();
+            var firstAcc = ResolveLayoutAccidental(firstNote, accHistory, barCancelled);
+            float startCenter = innerLeft + NoteCenterLeftReach(firstNote.IsRest, firstAcc.HasAccidental, firstAcc.IsFlat, firstAcc.IsNatural);
             float endCenter = innerRight - NoteCenterTrailingReach(lastNote.IsRest);
             float spread = Math.Max(8f, endCenter - startCenter);
 
@@ -1386,16 +1388,16 @@ namespace musicmate.Drawables
                 // Tiny per-index offset prevents identical beat positions mapping to the same X.
                 float frac = (float)Math.Clamp((relBeat + k * 1e-4) / measureBeats, 0.0, 1.0);
 
-                bool hasAcc = !note.IsRest && WillReserveAccidentalSpace(note);
-                bool isFlatAcc = hasAcc && IsFlatBodyAccidental(note.Accidental);
-                bool isNaturalAcc = hasAcc && IsNaturalBodyAccidental(note.Accidental);
+                var acc = k == 0
+                    ? firstAcc
+                    : ResolveLayoutAccidental(note, accHistory, barCancelled);
 
                 float idealX = startCenter + frac * spread;
 
                 if (relBeat < 1e-6)
                 {
                     float onBarMin = measureLeft + BarLeftPadding + MeasureStartExtraPad + BarStemClearance
-                                     + NoteCenterLeftReach(note.IsRest, hasAcc, isFlatAcc, isNaturalAcc);
+                                     + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural);
                     idealX = Math.Max(idealX, onBarMin);
 
                     if (isFirstMeasureOnStaff && k == 0)
@@ -1403,14 +1405,14 @@ namespace musicmate.Drawables
                         float headerEdge = _planUseFullHeader
                             ? _headerMetrics.TimeSigRightRel
                             : _planStaffLeftMargin;
-                        float headerMin = headerEdge + NoteCenterLeftReach(note.IsRest, hasAcc, isFlatAcc, isNaturalAcc);
+                        float headerMin = headerEdge + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural);
                         idealX = Math.Max(idealX, headerMin);
                     }
                 }
 
                 if (prevRight > float.NegativeInfinity)
                 {
-                    float minCenter = MinCenterAfterPrevRight(prevRight, note.IsRest, hasAcc, isFlatAcc, isNaturalAcc);
+                    float minCenter = MinCenterAfterPrevRight(prevRight, note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural);
                     idealX = Math.Max(idealX, minCenter);
                 }
 
@@ -1418,9 +1420,9 @@ namespace musicmate.Drawables
                 {
                     X = idealX,
                     AccidentalX = idealX,
-                    HasAccidental = hasAcc,
-                    AccidentalIsFlat = isFlatAcc,
-                    AccidentalIsNatural = isNaturalAcc,
+                    HasAccidental = acc.HasAccidental,
+                    AccidentalIsFlat = acc.IsFlat,
+                    AccidentalIsNatural = acc.IsNatural,
                     IsRest = note.IsRest
                 };
                 SyncAccidentalX(noteLayouts, i);
@@ -2372,10 +2374,10 @@ namespace musicmate.Drawables
                 else
                 {
                     var firstNote = noteList[sorted[0]];
-                    bool firstHasAcc = !firstNote.IsRest && WillReserveAccidentalSpace(firstNote);
-                    bool firstFlat = firstHasAcc && IsFlatBodyAccidental(firstNote.Accidental);
-                    bool firstNatural = firstHasAcc && IsNaturalBodyAccidental(firstNote.Accidental);
-                    float firstReach = NoteCenterLeftReach(firstNote.IsRest, firstHasAcc, firstFlat, firstNatural);
+                    var firstAccHistory = new Dictionary<(char, int), Accidental>();
+                    var firstBarCancelled = new HashSet<(char, int)>();
+                    var firstAcc = ResolveLayoutAccidental(firstNote, firstAccHistory, firstBarCancelled);
+                    float firstReach = NoteCenterLeftReach(firstNote.IsRest, firstAcc.HasAccidental, firstAcc.IsFlat, firstAcc.IsNatural);
                     float packInnerLeft = minGroupLeft - firstReach;
 
                     LayoutNotesSequentialInMeasure(noteList, noteLayouts, sorted, packInnerLeft, measureRight, false,
@@ -2698,10 +2700,14 @@ namespace musicmate.Drawables
 
                 // Key-sig pitch-class cancelled only when this note explicitly contradicts the sig
                 // (e.g. B♮ in F major). None does not cancel — implied key-sig pitch needs no glyph.
-                if (!note.IsRest && note.Accidental != Accidental.None
-                    && !IsAccidentalInKeySig(note.Accidental, note.Letter) && IsNoteInKeySig(note))
+                if (!note.IsRest)
                 {
-                    barCancelledAccidentals.Add((note.Letter, note.Octave));
+                    var inferred = InferAccidentalFromSpelling(note);
+                    if (inferred != Accidental.None
+                        && !IsAccidentalInKeySig(inferred, note.Letter) && IsNoteInKeySig(note))
+                    {
+                        barCancelledAccidentals.Add((note.Letter, note.Octave));
+                    }
                 }
 
                 if (note.IsRest)
@@ -3605,30 +3611,48 @@ namespace musicmate.Drawables
             out Accidental eff,
             out bool draw)
         {
-            eff = note.Accidental;
+            eff = InferAccidentalFromSpelling(note);
             draw = false;
             var pitchKey = (note.Letter, note.Octave);
             string? sigAcc = GetSignatureAccidentalForLetter(note.Letter);
 
-            // Courtesy after a chromatic on this letter+octave earlier in the measure.
+            // Repeated same altered pitch after an accidental earlier in this measure.
             if (eff == Accidental.None && history != null
                 && history.TryGetValue(pitchKey, out var prev)
-                && (prev == Accidental.Sharp || prev == Accidental.Flat
-                    || prev == Accidental.DoubleSharp || prev == Accidental.DoubleFlat))
+                && IsChromaticAccidental(prev))
             {
-                // Restore key-sig pitch with ♯/♭; otherwise cancel with ♮ (e.g. Ab → A).
-                if (sigAcc == "#")      eff = Accidental.Sharp;
-                else if (sigAcc == "b") eff = Accidental.Flat;
-                else                    eff = Accidental.Natural;
+                if (NoteMatchesAlteration(note, pitchKey, prev))
+                    return true; // carry — omit glyph, keep prior alteration
+
+                // Letter+octave changed pitch — courtesy or cancellation.
+                if (sigAcc == "#")
+                {
+                    eff = Accidental.Sharp;
+                    draw = barCancelled != null && barCancelled.Contains(pitchKey);
+                }
+                else if (sigAcc == "b")
+                {
+                    eff = Accidental.Flat;
+                    draw = barCancelled != null && barCancelled.Contains(pitchKey);
+                }
+                else
+                {
+                    eff = Accidental.Natural;
+                    draw = true;
+                }
             }
 
             if (eff == Accidental.None)
                 return true;
 
-            // ♮ only when cancelling a key-signature alteration on this letter.
+            // ♮ when cancelling a key-signature alteration, or a prior chromatic in this bar.
             if (eff == Accidental.Natural)
             {
-                draw = sigAcc != null;
+                if (sigAcc != null)
+                    draw = true;
+                else if (history != null && history.TryGetValue(pitchKey, out var prior)
+                         && IsChromaticAccidental(prior))
+                    draw = true;
                 return true;
             }
 
@@ -3639,8 +3663,87 @@ namespace musicmate.Drawables
                 return true;
             }
 
+            // Same accidental already active this measure — carry through without redrawing.
+            if (history != null && history.TryGetValue(pitchKey, out var priorInBar) && priorInBar == eff)
+                return true;
+
             draw = true;
             return true;
+        }
+
+        private static Accidental InferAccidentalFromSpelling(GeneratedNote note)
+        {
+            if (note.Accidental != Accidental.None)
+                return note.Accidental;
+
+            string name = note.SpelledName;
+            if (name.Contains("##")) return Accidental.DoubleSharp;
+            if (name.Contains("bb")) return Accidental.DoubleFlat;
+            if (name.Contains('#'))  return Accidental.Sharp;
+            if (name.Contains('b'))  return Accidental.Flat;
+            return Accidental.None;
+        }
+
+        private static bool IsChromaticAccidental(Accidental acc)
+            => acc is Accidental.Sharp or Accidental.Flat
+                or Accidental.DoubleSharp or Accidental.DoubleFlat;
+
+        private static int AlterationSemitones(Accidental acc) => acc switch
+        {
+            Accidental.Sharp       => 1,
+            Accidental.Flat        => -1,
+            Accidental.DoubleSharp => 2,
+            Accidental.DoubleFlat  => -2,
+            _                      => 0
+        };
+
+        private static bool NoteMatchesAlteration(
+            GeneratedNote note, (char Letter, int Octave) pitchKey, Accidental prior)
+        {
+            int naturalMidi = NoteSessionService.NoteNameToMidi($"{pitchKey.Letter}{pitchKey.Octave}");
+            int expected    = naturalMidi + AlterationSemitones(prior);
+            return note.MidiNumber == expected;
+        }
+
+        private readonly struct LayoutAccidentalInfo
+        {
+            public bool HasAccidental { get; init; }
+            public bool IsFlat { get; init; }
+            public bool IsNatural { get; init; }
+        }
+
+        /// <summary>
+        /// Resolves whether a note needs accidental ink during layout, updating per-measure history
+        /// the same way <see cref="DrawAccidental"/> does when rendering.
+        /// </summary>
+        private LayoutAccidentalInfo ResolveLayoutAccidental(
+            GeneratedNote note,
+            Dictionary<(char, int), Accidental> history,
+            HashSet<(char, int)> barCancelled)
+        {
+            if (note.IsRest)
+                return default;
+
+            var inferred = InferAccidentalFromSpelling(note);
+            if (inferred != Accidental.None
+                && !IsAccidentalInKeySig(inferred, note.Letter) && IsNoteInKeySig(note))
+            {
+                barCancelled.Add((note.Letter, note.Octave));
+            }
+
+            if (!TryResolveBodyAccidental(note, history, barCancelled, out var eff, out bool draw))
+                return default;
+
+            bool hasAcc = draw && eff != Accidental.None;
+            if (hasAcc)
+                history[(note.Letter, note.Octave)] = eff;
+
+            return new LayoutAccidentalInfo
+            {
+                HasAccidental = hasAcc,
+                IsFlat        = hasAcc && IsFlatBodyAccidental(eff),
+                IsNatural     = hasAcc && IsNaturalBodyAccidental(eff),
+            };
         }
 
         private void DrawNoteName(ICanvas canvas, GeneratedNote note, float x, float ny,
@@ -3765,14 +3868,6 @@ namespace musicmate.Drawables
 
         private static bool IsKeyFlat(string key)
             => key is "F" or "Bb" or "Eb" or "Ab" or "Db" or "Gb" or "Cb";
-
-        private bool WillReserveAccidentalSpace(GeneratedNote note)
-        {
-            if (note.Accidental == Accidental.None) return false;
-            if (note.Accidental == Accidental.Natural)
-                return GetSignatureAccidentalForLetter(note.Letter) != null;
-            return !IsAccidentalInKeySig(note.Accidental, note.Letter);
-        }
 
         private string? GetSignatureAccidentalForLetter(char letter)
         {

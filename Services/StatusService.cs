@@ -42,7 +42,7 @@ namespace musicmate.Services
         private string _statusMessage = "";
         public string StatusMessage
         {
-            get => _statusMessage;
+            get => "  " + _statusMessage;  //  2026.06.11 1204  space to give a little separation from the stop/start button
             set
             {
                 if (_statusMessage != value)

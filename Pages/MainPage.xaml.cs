@@ -66,6 +66,8 @@ namespace musicmate.Pages
         // leaves the page (e.g. opens Settings) or taps Start/Stop.
         private bool _holdResultForChildSession = false;
         private string? _sessionEndMarqueeMessage;
+        private bool _deferNewLevelMarqueeUntilBannerDismissed;
+        private string? _pendingInstrumentForMarquee;
         private CancellationTokenSource? _autoStartCts;
         private bool _suppressSessionRegenerate;
         private const string ChildLevelPrefKey = "ChildHome.Level";
@@ -453,6 +455,8 @@ namespace musicmate.Pages
                         await UpdateNoteStatsDatabaseAsync();
 
                         string shortInstrumentForMarquee = _session.Instrument?.Split(',')[0].Trim() ?? "";
+                        int levelBeforeSave = _session.ChildLevel;
+                        var countSinceBeforeSave = Services.LevelUpService.CountSinceUtc;
 
                         // Capture display stats before SaveSessionStatAsync — a level-up refreshes
                         // the staff and clears NoteFeedbacks / CorrectNoteIndices.
@@ -482,26 +486,19 @@ namespace musicmate.Pages
                         // Level-up progress: qualifying sessions at current level since start / last level-up
                         try
                         {
-                            int progressLevel = _session.ChildLevel;
-                            var rows = await _sessionResultDb.GetByLevelAndInstrumentAsync(
-                                progressLevel, shortInstrumentForMarquee);
-                            var countSince = Services.LevelUpService.CountSinceUtc;
-                            var qualifying = rows
-                                .Where(r => r.DateTime >= countSince)
-                                .Where(r => r.TotalNotes >= Services.LevelUpService.MinNotesPerSession)
-                                .Where(r => !(r.TotalNotes > 0 && r.OverallAccuracyPercent == 0))
-                                .ToList();
-                            int sessionCount = Services.LevelUpService.SessionCount;
-                            int ssns = qualifying.Count;
-                            var recent = qualifying.Take(sessionCount).ToList();
-                            double avgPitch = recent.Count > 0 ? recent.Average(r => r.PitchAccuracyPercent) : 0.0;
-                            double avgOverall = recent.Count > 0 ? recent.Average(r => r.OverallAccuracyPercent) : 0.0;
-                            var timingSessions = recent.Where(r => r.TimingAccuracyPercent.HasValue).ToList();
-                            double avgTiming = timingSessions.Count > 0
-                                ? timingSessions.Average(r => r.TimingAccuracyPercent!.Value)
-                                : 0.0;
-                            SetSessionEndMarqueeMessage(
-                                progressLevel, ssns, sessionCount, avgPitch, avgOverall, avgTiming);
+                            if (newChildLevel.HasValue)
+                            {
+                                // Keep the completed-level marquee while the congratulatory banner is visible.
+                                _deferNewLevelMarqueeUntilBannerDismissed = true;
+                                _pendingInstrumentForMarquee = shortInstrumentForMarquee;
+                                await BuildAndPublishSessionEndMarqueeAsync(
+                                    levelBeforeSave, shortInstrumentForMarquee, countSinceBeforeSave);
+                            }
+                            else
+                            {
+                                await BuildAndPublishSessionEndMarqueeAsync(
+                                    _session.ChildLevel, shortInstrumentForMarquee, Services.LevelUpService.CountSinceUtc);
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -708,7 +705,7 @@ namespace musicmate.Pages
             try
             {
             // Hide any previous session result banner when new notes are generated.
-            await MainThread.InvokeOnMainThreadAsync(() => SessionResultBanner.IsVisible = false);
+            await HideSessionResultBannerAsync(refreshMarqueeForNewLevel: true);
             _holdResultForChildSession = false;
 
             // While showing post-autoplay results, do not overwrite the staff.
@@ -1057,6 +1054,13 @@ namespace musicmate.Pages
         private int    _v3LowerGlobalNoteIndex = 0;
 
         /// <summary>
+        /// Pitched-note count on the upper staff when <see cref="NoteSessionService.NotesToDraw"/>
+        /// was built.  The upper drawable may be replaced mid-session (lookahead refresh) with
+        /// a different note count; session indices must stay tied to this value.
+        /// </summary>
+        private int _v3SessionUpperPitchCount = 0;
+
+        /// <summary>
         /// Populates the V3 drawable with an upper and lower staff worth of notes.
         /// Upper staff is played first; lower staff follows.
         /// </summary>
@@ -1070,6 +1074,7 @@ namespace musicmate.Pages
                 _v2NextBeatOffset      = 0.0;
                 _v2NextGlobalNoteIndex = 0;
                 _v2AppendInProgress    = false;
+                _v3SessionUpperPitchCount = 0;
 
                 List<GeneratedNote> upperFlat;
                 List<double>        upperBarBeats;
@@ -1366,7 +1371,7 @@ namespace musicmate.Pages
                     _session.FeedbackViewModels.Add(new FeedbackItem(sessionIdx++, 0, 0, false));
                 }
 
-                int upperPitchCount = upperFlat.Count(n => !n.IsRest);
+                _v3SessionUpperPitchCount = upperFlat.Count(n => !n.IsRest);
 
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
@@ -1390,7 +1395,7 @@ namespace musicmate.Pages
         {
             if (_v3Drawable == null) return;
 
-            int upperPitchCount = _v3Drawable.UpperNotes.Count(n => !n.IsRest);
+            int upperPitchCount = _v3SessionUpperPitchCount;
             int currentSession  = _session.CurrentNoteIndex;
 
             bool isUpperActive = currentSession < upperPitchCount;
@@ -2040,7 +2045,7 @@ namespace musicmate.Pages
             _savedNotesToRepeat = null;
             _session.SessionCompleted = false;
 
-            await MainThread.InvokeOnMainThreadAsync(() => SessionResultBanner.IsVisible = false);
+            await HideSessionResultBannerAsync(refreshMarqueeForNewLevel: false);
 
             await RegenerateNotesAsync();
 
@@ -2078,6 +2083,68 @@ namespace musicmate.Pages
             UpdateConcertKeyLabel();
         }
 
+        private async Task BuildAndPublishSessionEndMarqueeAsync(
+            int progressLevel,
+            string shortInstrument,
+            DateTime countSince)
+        {
+            if (_sessionResultDb == null)
+                return;
+
+            await _sessionResultDb.InitializeAsync();
+            var rows = await _sessionResultDb.GetByLevelAndInstrumentAsync(progressLevel, shortInstrument);
+            var qualifying = rows
+                .Where(r => r.DateTime >= countSince)
+                .Where(r => r.TotalNotes >= Services.LevelUpService.MinNotesPerSession)
+                .Where(r => !(r.TotalNotes > 0 && r.OverallAccuracyPercent == 0))
+                .ToList();
+            int sessionCount = Services.LevelUpService.SessionCount;
+            int ssns = qualifying.Count;
+            var recent = qualifying.Take(sessionCount).ToList();
+            double avgPitch = recent.Count > 0 ? recent.Average(r => r.PitchAccuracyPercent) : 0.0;
+            double avgOverall = recent.Count > 0 ? recent.Average(r => r.OverallAccuracyPercent) : 0.0;
+            var timingSessions = recent.Where(r => r.TimingAccuracyPercent.HasValue).ToList();
+            double avgTiming = timingSessions.Count > 0
+                ? timingSessions.Average(r => r.TimingAccuracyPercent!.Value)
+                : 0.0;
+            SetSessionEndMarqueeMessage(
+                progressLevel, ssns, sessionCount, avgPitch, avgOverall, avgTiming);
+        }
+
+        private async Task HideSessionResultBannerAsync(bool refreshMarqueeForNewLevel)
+        {
+            await MainThread.InvokeOnMainThreadAsync(() => SessionResultBanner.IsVisible = false);
+            if (refreshMarqueeForNewLevel)
+                await RefreshMarqueeAfterCongratulatoryBannerAsync();
+        }
+
+        /// <summary>
+        /// After the congratulatory session-result banner is dismissed, publish marquee stats
+        /// for the new level. While the banner was visible, the saved marquee was kept at the
+        /// completed level.
+        /// </summary>
+        private async Task RefreshMarqueeAfterCongratulatoryBannerAsync()
+        {
+            if (!_deferNewLevelMarqueeUntilBannerDismissed)
+                return;
+
+            _deferNewLevelMarqueeUntilBannerDismissed = false;
+            string instrument = _pendingInstrumentForMarquee
+                ?? _session.Instrument?.Split(',')[0].Trim()
+                ?? string.Empty;
+            _pendingInstrumentForMarquee = null;
+
+            if (_session.ChildLevel > 0 && !string.IsNullOrEmpty(instrument))
+            {
+                await BuildAndPublishSessionEndMarqueeAsync(
+                    _session.ChildLevel, instrument, Services.LevelUpService.CountSinceUtc);
+            }
+            else if (!string.IsNullOrEmpty(_sessionEndMarqueeMessage))
+            {
+                StatusService.Instance.StatusMessage = _sessionEndMarqueeMessage;
+            }
+        }
+
         private void SetSessionEndMarqueeMessage(
             int progressLevel,
             int ssns,
@@ -2110,7 +2177,12 @@ namespace musicmate.Pages
             MainThread.BeginInvokeOnMainThread(() => SessionResultBanner.IsVisible = true);
         }
 
-        private void ClearSessionEndMarquee() => _sessionEndMarqueeMessage = null;
+        private void ClearSessionEndMarquee()
+        {
+            _sessionEndMarqueeMessage = null;
+            _deferNewLevelMarqueeUntilBannerDismissed = false;
+            _pendingInstrumentForMarquee = null;
+        }
 
         private void UpdateChildLevelSliderDisplay()
         {
@@ -2417,7 +2489,7 @@ namespace musicmate.Pages
                                     _session.RecordRandomSessionNoteResult(prevName, true);
 
                                 // When upper staff is exhausted, trigger lower-staff refresh.
-                                int upperPitchCount = _v3Drawable?.UpperNotes.Count(n => !n.IsRest) ?? 0;
+                                int upperPitchCount = _v3SessionUpperPitchCount;
                                 if (_session.CurrentNoteIndex == upperPitchCount && _v3Drawable != null
                                     && _v3Drawable.LowerAlpha >= 1f && !_v3Drawable.UpperHasEndBar)
                                 {
