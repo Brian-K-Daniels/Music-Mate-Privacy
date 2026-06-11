@@ -373,6 +373,201 @@ namespace musicmate.Drawables
         }
         private V3Layout _layout;
 
+        /// <summary>
+        /// Cached horizontal/vertical layout so feedback redraws during listening
+        /// only repaint note states without re-planning or validating the staff.
+        /// </summary>
+        private sealed class V3DrawLayoutCache
+        {
+            public LayoutCacheKey Key;
+            public V3Layout VerticalLayout;
+            public StaffHeaderMetrics HeaderMetrics;
+            public float LeftMargin;
+            public float UpperStaffMargin, LowerStaffMargin;
+            public float UpperTop, UpperMid, UpperBot, LowerTop, LowerMid, LowerBot;
+            public NoteLayout[] UpperNoteLayouts = Array.Empty<NoteLayout>();
+            public BarLayout[] UpperBarLayouts = Array.Empty<BarLayout>();
+            public NoteLayout[] LowerNoteLayouts = Array.Empty<NoteLayout>();
+            public BarLayout[] LowerBarLayouts = Array.Empty<BarLayout>();
+            public double UpperBeatOrigin, LowerBeatOrigin;
+            public float SafeLeft, SafeRight, LayoutRightLimit;
+        }
+
+        private readonly struct LayoutCacheKey : IEquatable<LayoutCacheKey>
+        {
+            public float Width { get; init; }
+            public float Height { get; init; }
+            public float SafeLeftInset { get; init; }
+            public float SafeRightInset { get; init; }
+            public int UpperNotesHash { get; init; }
+            public int LowerNotesHash { get; init; }
+            public int UpperBarHash { get; init; }
+            public int LowerBarHash { get; init; }
+            public bool UpperHasEndBar { get; init; }
+            public bool BeginnerLayout { get; init; }
+            public int ChildLevel { get; init; }
+            public string SessionKey { get; init; }
+            public string SessionScale { get; init; }
+            public string TimeSig { get; init; }
+
+            public bool Equals(LayoutCacheKey other) =>
+                Width == other.Width && Height == other.Height
+                && SafeLeftInset == other.SafeLeftInset && SafeRightInset == other.SafeRightInset
+                && UpperNotesHash == other.UpperNotesHash && LowerNotesHash == other.LowerNotesHash
+                && UpperBarHash == other.UpperBarHash && LowerBarHash == other.LowerBarHash
+                && UpperHasEndBar == other.UpperHasEndBar && BeginnerLayout == other.BeginnerLayout
+                && ChildLevel == other.ChildLevel
+                && SessionKey == other.SessionKey && SessionScale == other.SessionScale
+                && TimeSig == other.TimeSig;
+
+            public override bool Equals(object? obj) => obj is LayoutCacheKey other && Equals(other);
+            public override int GetHashCode()
+            {
+                var hc = new HashCode();
+                hc.Add(Width); hc.Add(Height);
+                hc.Add(SafeLeftInset); hc.Add(SafeRightInset);
+                hc.Add(UpperNotesHash); hc.Add(LowerNotesHash);
+                hc.Add(UpperBarHash); hc.Add(LowerBarHash);
+                hc.Add(UpperHasEndBar); hc.Add(BeginnerLayout); hc.Add(ChildLevel);
+                hc.Add(SessionKey); hc.Add(SessionScale); hc.Add(TimeSig);
+                return hc.ToHashCode();
+            }
+        }
+
+        private V3DrawLayoutCache? _layoutCache;
+
+        /// <summary>Drop cached note positions (e.g. after replacing the tune).</summary>
+        public void InvalidateLayoutCache() => _layoutCache = null;
+
+        private static int HashNotes(IReadOnlyList<GeneratedNote> notes)
+        {
+            unchecked
+            {
+                int h = 17;
+                for (int i = 0; i < notes.Count; i++)
+                {
+                    var n = notes[i];
+                    h = h * 31 + n.MidiNumber;
+                    h = h * 31 + (n.BeatPosition?.GetHashCode() ?? 0);
+                    h = h * 31 + n.BeatDuration.GetHashCode();
+                    h = h * 31 + (n.IsRest ? 1 : 0);
+                    h = h * 31 + (int)n.Duration;
+                }
+                return h;
+            }
+        }
+
+        private static int HashDoubles(IReadOnlyList<double> values)
+        {
+            unchecked
+            {
+                int h = 17;
+                for (int i = 0; i < values.Count; i++)
+                    h = h * 31 + values[i].GetHashCode();
+                return h;
+            }
+        }
+
+        private LayoutCacheKey BuildLayoutCacheKey(float width, float height, float safeLeftInset, float safeRightInset)
+            => new LayoutCacheKey
+            {
+                Width = width,
+                Height = height,
+                SafeLeftInset = safeLeftInset,
+                SafeRightInset = safeRightInset,
+                UpperNotesHash = HashNotes(UpperNotes),
+                LowerNotesHash = HashNotes(LowerNotes),
+                UpperBarHash = HashDoubles(UpperBarBeats),
+                LowerBarHash = HashDoubles(LowerBarBeats),
+                UpperHasEndBar = UpperHasEndBar,
+                BeginnerLayout = UseBeginnerHorizontalLayout,
+                ChildLevel = _session.ChildLevel,
+                SessionKey = _session.Key ?? string.Empty,
+                SessionScale = _session.SelectedScale ?? string.Empty,
+                TimeSig = _session.V2TimeSignature ?? "4/4",
+            };
+
+        private bool TryDrawFromLayoutCache(
+            ICanvas canvas, RectF dirtyRect, Color ink, LayoutCacheKey key)
+        {
+            if (_layoutCache == null || !_layoutCache.Key.Equals(key))
+                return false;
+
+            var c = _layoutCache;
+            _layout = c.VerticalLayout;
+            _headerMetrics = c.HeaderMetrics;
+            _leftMargin = c.LeftMargin;
+
+            DrawBothStaffs(canvas, dirtyRect, ink,
+                c.UpperTop, c.UpperMid, c.UpperBot, c.LowerTop, c.LowerMid, c.LowerBot,
+                c.UpperNoteLayouts, c.UpperBarLayouts, c.LowerNoteLayouts, c.LowerBarLayouts,
+                c.UpperBeatOrigin, c.LowerBeatOrigin,
+                c.SafeLeft, c.SafeRight, c.LayoutRightLimit,
+                c.UpperStaffMargin, c.LowerStaffMargin);
+            return true;
+        }
+
+        private void StoreLayoutCache(
+            LayoutCacheKey key,
+            float upperTop, float upperMid, float upperBot,
+            float lowerTop, float lowerMid, float lowerBot,
+            NoteLayout[] upperNoteLayouts, BarLayout[] upperBarLayouts,
+            NoteLayout[] lowerNoteLayouts, BarLayout[] lowerBarLayouts,
+            double upperBeatOrigin, double lowerBeatOrigin,
+            float safeLeft, float safeRight, float layoutRightLimit,
+            float upperStaffMargin, float lowerStaffMargin)
+        {
+            _layoutCache = new V3DrawLayoutCache
+            {
+                Key = key,
+                VerticalLayout = _layout,
+                HeaderMetrics = _headerMetrics,
+                LeftMargin = _leftMargin,
+                UpperStaffMargin = upperStaffMargin,
+                LowerStaffMargin = lowerStaffMargin,
+                UpperTop = upperTop,
+                UpperMid = upperMid,
+                UpperBot = upperBot,
+                LowerTop = lowerTop,
+                LowerMid = lowerMid,
+                LowerBot = lowerBot,
+                UpperNoteLayouts = (NoteLayout[])upperNoteLayouts.Clone(),
+                UpperBarLayouts = (BarLayout[])upperBarLayouts.Clone(),
+                LowerNoteLayouts = (NoteLayout[])lowerNoteLayouts.Clone(),
+                LowerBarLayouts = (BarLayout[])lowerBarLayouts.Clone(),
+                UpperBeatOrigin = upperBeatOrigin,
+                LowerBeatOrigin = lowerBeatOrigin,
+                SafeLeft = safeLeft,
+                SafeRight = safeRight,
+                LayoutRightLimit = layoutRightLimit,
+            };
+        }
+
+        private void DrawBothStaffs(
+            ICanvas canvas, RectF dirtyRect, Color ink,
+            float upperTop, float upperMid, float upperBot,
+            float lowerTop, float lowerMid, float lowerBot,
+            NoteLayout[] upperNoteLayouts, BarLayout[] upperBarLayouts,
+            NoteLayout[] lowerNoteLayouts, BarLayout[] lowerBarLayouts,
+            double upperBeatOrigin, double lowerBeatOrigin,
+            float safeLeft, float safeRight, float layoutRightLimit,
+            float upperStaffMargin, float lowerStaffMargin)
+        {
+            DrawStaff(canvas, dirtyRect, ink, upperTop, upperMid, upperBot,
+                      UpperNotes, UpperNoteStates, upperNoteLayouts, upperBarLayouts,
+                      UpperBarBeats, upperBeatOrigin,
+                      UpperAlpha, IsUpperActive, IsUpperActive ? ActiveNoteIndex : -1,
+                      safeLeft, safeRight, layoutRightLimit, upperStaffMargin,
+                      drawKeyAndTimeSig: true);
+
+            DrawStaff(canvas, dirtyRect, ink, lowerTop, lowerMid, lowerBot,
+                      LowerNotes, LowerNoteStates, lowerNoteLayouts, lowerBarLayouts,
+                      LowerBarBeats, lowerBeatOrigin,
+                      LowerAlpha, !IsUpperActive, !IsUpperActive ? ActiveNoteIndex : -1,
+                      safeLeft, safeRight, layoutRightLimit, lowerStaffMargin,
+                      drawKeyAndTimeSig: UpperNotes.Count == 0);
+        }
+
         // ── Constructor ───────────────────────────────────────────────────────────
         public V3StaffDrawable(NoteSessionService session, ThemeService theme, ISafeAreaService? safeArea = null)
         {
@@ -1482,6 +1677,10 @@ namespace musicmate.Drawables
             float layoutRightLimit = safeRight - V3LayoutRightPad;
             float safeWidth = layoutRightLimit - safeLeft;
 
+            var layoutCacheKey = BuildLayoutCacheKey(dirtyRect.Width, dirtyRect.Height, insets.Left, insets.Right);
+            if (TryDrawFromLayoutCache(canvas, dirtyRect, ink, layoutCacheKey))
+                return;
+
             V3Log($"[V3] Canvas={dirtyRect.Width:F0}x{dirtyRect.Height:F0}, " +
                   $"Insets=L{insets.Left:F0},R{insets.Right:F0}, relaxR={V3RelaxCutoutInsetRightDp:F0}, " +
                   $"ViewRight={viewRight:F0}, SafeRight={safeRight:F0}, LayoutLimit={layoutRightLimit:F0}, " +
@@ -1545,19 +1744,18 @@ namespace musicmate.Drawables
                 LogBeginnerLayoutBounds(upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
                     layoutRightLimit, safeRight);
 
-                DrawStaff(canvas, dirtyRect, ink, upperTop, upperMid, upperBot,
-                          UpperNotes, UpperNoteStates, upperNoteLayouts, upperBarLayouts,
-                          UpperBarBeats, GetStaffBeatOrigin(UpperNotes, UpperBarBeats),
-                          UpperAlpha, IsUpperActive, IsUpperActive ? ActiveNoteIndex : -1,
-                          safeLeft, safeRight, layoutRightLimit, upperStaffMargin,
-                          drawKeyAndTimeSig: true);
-
-                DrawStaff(canvas, dirtyRect, ink, lowerTop, lowerMid, lowerBot,
-                          LowerNotes, LowerNoteStates, lowerNoteLayouts, lowerBarLayouts,
-                          LowerBarBeats, GetStaffBeatOrigin(LowerNotes, LowerBarBeats),
-                          LowerAlpha, !IsUpperActive, !IsUpperActive ? ActiveNoteIndex : -1,
-                          safeLeft, safeRight, layoutRightLimit, lowerStaffMargin,
-                          drawKeyAndTimeSig: UpperNotes.Count == 0);
+                double upperBeatOriginBeginner = GetStaffBeatOrigin(UpperNotes, UpperBarBeats);
+                double lowerBeatOriginBeginner = GetStaffBeatOrigin(LowerNotes, LowerBarBeats);
+                StoreLayoutCache(layoutCacheKey,
+                    upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
+                    upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
+                    upperBeatOriginBeginner, lowerBeatOriginBeginner,
+                    safeLeft, safeRight, layoutRightLimit, upperStaffMargin, lowerStaffMargin);
+                DrawBothStaffs(canvas, dirtyRect, ink,
+                    upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
+                    upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
+                    upperBeatOriginBeginner, lowerBeatOriginBeginner,
+                    safeLeft, safeRight, layoutRightLimit, upperStaffMargin, lowerStaffMargin);
                 return;
             }
 
@@ -1663,20 +1861,16 @@ namespace musicmate.Drawables
                   $"LayoutLimit={layoutRightLimit:F0}, gutter={(layoutRightLimit - contentRight):F1}, " +
                   $"pastSafeRight={(contentRight > safeRight ? contentRight - safeRight : 0f):F1}");
 
-            // Step 4: Draw both staffs using pre-computed layouts
-            DrawStaff(canvas, dirtyRect, ink, upperTop, upperMid, upperBot,
-                      UpperNotes, UpperNoteStates, upperNoteLayouts, upperBarLayouts,
-                      UpperBarBeats, upperBeatOrigin,
-                      UpperAlpha, IsUpperActive, IsUpperActive ? ActiveNoteIndex : -1,
-                      safeLeft, safeRight, layoutRightLimit, upperStaffMargin,
-                      drawKeyAndTimeSig: true);
-
-            DrawStaff(canvas, dirtyRect, ink, lowerTop, lowerMid, lowerBot,
-                      LowerNotes, LowerNoteStates, lowerNoteLayouts, lowerBarLayouts,
-                      LowerBarBeats, lowerBeatOrigin,
-                      LowerAlpha, !IsUpperActive, !IsUpperActive ? ActiveNoteIndex : -1,
-                      safeLeft, safeRight, layoutRightLimit, lowerStaffMargin,
-                      drawKeyAndTimeSig: UpperNotes.Count == 0);
+            StoreLayoutCache(layoutCacheKey,
+                upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
+                upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
+                upperBeatOrigin, lowerBeatOrigin,
+                safeLeft, safeRight, layoutRightLimit, upperStaffMargin, lowerStaffMargin);
+            DrawBothStaffs(canvas, dirtyRect, ink,
+                upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
+                upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
+                upperBeatOrigin, lowerBeatOrigin,
+                safeLeft, safeRight, layoutRightLimit, upperStaffMargin, lowerStaffMargin);
         }
 
         private static void SanitizeLayoutPositions(NoteLayout[] noteLayouts, BarLayout[] barLayouts)
@@ -3025,6 +3219,13 @@ namespace musicmate.Drawables
             const float timeSigW = 24f;
             centerX = metrics.TimeSigX + timeSigW * 0.5f;
             return true;
+        }
+
+        /// <summary>Y offset from the top of the canvas to the upper staff top line.</summary>
+        public float GetUpperStaffTop()
+        {
+            ComputeLayout(AvailableHeight);
+            return _layout.UpperTop;
         }
 
         // ── Header metrics ────────────────────────────────────────────────────────

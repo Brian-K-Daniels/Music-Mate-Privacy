@@ -647,7 +647,8 @@ namespace musicmate.Services
         {
             double sumCorrects = CorrectNoteIndices.Count;
             double sumWrongs = NoteFeedbacks.Values.Sum(v => v.Wrong);
-            double rpc = 100 * sumCorrects / (sumCorrects + sumWrongs); // Raw Percent Correct
+            double total = sumCorrects + sumWrongs;
+            double rpc = total > 0 ? 100 * sumCorrects / total : 0; // Raw Percent Correct
             double apc;                                                 // Adjusted Percent Correct
             //double pcc = 40;                                          // Percent Correct Correction // ADJUST AS NECESSARY
             //if (rpc >= pcc)

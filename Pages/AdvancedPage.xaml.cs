@@ -30,6 +30,7 @@ namespace musicmate.Pages
         {
             _orientationService?.ForceLandscape();
             base.OnAppearing();
+            _viewModel.RefreshCurrentSessionMetrics();
             var mainLayout = this.FindByName<VerticalStackLayout>("AdvancedMainLayout");
         }
 

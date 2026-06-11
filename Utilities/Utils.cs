@@ -77,11 +77,8 @@ namespace musicmate.Utilities
         //    layout.Padding = new Thickness(dips, top, right, bottom);
         //}  //  2026.04.02 1719  block out
 
-        //public static double MmToDips(double mm)
-        //{
-        //    // Convert millimetres to device-independent pixels (DIPs)
-        //    return mm * (160.0 / 25.4);
-        //} //  2026.04.02 1719  block out
+        public static double MmToDips(double mm)
+            => mm * (160.0 / 25.4);
     }
 }
 

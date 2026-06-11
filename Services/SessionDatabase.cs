@@ -30,6 +30,10 @@ public class SessionStat
     public double Pch { get; set; }       // Pitch accuracy %
     public double Tmg { get; set; }       // Timing accuracy %
     public double Ovrl { get; set; }      // Overall accuracy %
+    /// <summary>True when random-mode note selection was active at session save.</summary>
+    public bool Rand { get; set; }
+    /// <summary>Accidental percentage in effect when the session was saved.</summary>
+    public int AccPct { get; set; }
     // Coefficient of variation as percentage (100 * Ts / Tp). Computed on demand, not stored in DB.
     [Ignore]
     public double Cf
@@ -50,7 +54,9 @@ public class SessionStat
     [Ignore]
     public bool IsSelected { get; set; }
     [Ignore]
-    public string DisplayKey => Sc == "Random" ? "C" : Key;
+    public string DisplayKey => Key;
+    [Ignore]
+    public string RandDisplay => Rand ? "Y" : "N";
     public string KeyAndScale => $"{Key} {Sc}";
     [Ignore]
     public Microsoft.Maui.Graphics.Color ContrastingTextColor { get; set; }= Microsoft.Maui.Graphics.Colors.Red;
@@ -76,6 +82,7 @@ public class SessionDatabase
         await EnsureTuneColumnAsync();
         await EnsureInstrumentColumnAsync();  // NEW: Ensure Instrument column exists
         await EnsureNewAccuracyColumnsAsync();  // Ensure new timing/accuracy columns exist
+        await EnsureGenerationSettingsColumnsAsync();
     }
 
     private async Task EnsureTuneColumnAsync()
@@ -114,6 +121,19 @@ public class SessionDatabase
         if (columns.All(c => !string.Equals(c.Name, nameof(SessionStat.Ovrl), StringComparison.OrdinalIgnoreCase)))
         {
             await _db.ExecuteAsync($"ALTER TABLE {nameof(SessionStat)} ADD COLUMN {nameof(SessionStat.Ovrl)} REAL NOT NULL DEFAULT 0.0");
+        }
+    }
+
+    private async Task EnsureGenerationSettingsColumnsAsync()
+    {
+        var columns = await _db.GetTableInfoAsync(nameof(SessionStat));
+        if (columns.All(c => !string.Equals(c.Name, nameof(SessionStat.Rand), StringComparison.OrdinalIgnoreCase)))
+        {
+            await _db.ExecuteAsync($"ALTER TABLE {nameof(SessionStat)} ADD COLUMN {nameof(SessionStat.Rand)} INTEGER NOT NULL DEFAULT 0");
+        }
+        if (columns.All(c => !string.Equals(c.Name, nameof(SessionStat.AccPct), StringComparison.OrdinalIgnoreCase)))
+        {
+            await _db.ExecuteAsync($"ALTER TABLE {nameof(SessionStat)} ADD COLUMN {nameof(SessionStat.AccPct)} INTEGER NOT NULL DEFAULT 0");
         }
     }
 

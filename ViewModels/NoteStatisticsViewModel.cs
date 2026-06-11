@@ -202,6 +202,8 @@ namespace musicmate.ViewModels
         public string OvrlSortIndicator => _sessionCurrentSortColumn == "Ovrl" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string KeySortIndicator => _sessionCurrentSortColumn == "Key" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string ScaleSortIndicator => _sessionCurrentSortColumn == "Scale" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string RandSortIndicator => _sessionCurrentSortColumn == "Rand" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string AccPctSortIndicator => _sessionCurrentSortColumn == "AccPct" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string HiSortIndicator => _sessionCurrentSortColumn == "Hi" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string LoSortIndicator => _sessionCurrentSortColumn == "Lo" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string InstrumentSortIndicator => _sessionCurrentSortColumn == "Instrument" ? (_sessionIsAscending ? "▲" : "▼") : "";
@@ -218,6 +220,8 @@ namespace musicmate.ViewModels
         public string OvrlHeader => "Ovrl " + OvrlSortIndicator;
         public string KeyHeader => "Key " + KeySortIndicator;
         public string ScaleHeader => "Scale " + ScaleSortIndicator;
+        public string RandHeader => "Rand " + RandSortIndicator;
+        public string AccPctHeader => "Acc.% " + AccPctSortIndicator;
         public string HiHeader => "Hi " + HiSortIndicator;
         public string LoHeader => "Lo " + LoSortIndicator;
         public string InstrumentHeader => "Instrument " + InstrumentSortIndicator;
@@ -330,6 +334,12 @@ namespace musicmate.ViewModels
                 "Scale" => _sessionIsAscending
                     ? SessionStats.OrderBy(s => s.Sc)
                     : SessionStats.OrderByDescending(s => s.Sc),
+                "Rand" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.Rand)
+                    : SessionStats.OrderByDescending(s => s.Rand),
+                "AccPct" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.AccPct)
+                    : SessionStats.OrderByDescending(s => s.AccPct),
                 "Hi" => _sessionIsAscending
                     ? SessionStats.OrderBy(s => s.Hi)
                     : SessionStats.OrderByDescending(s => s.Hi),
@@ -364,6 +374,8 @@ namespace musicmate.ViewModels
             OnPropertyChanged(nameof(OvrlSortIndicator));
             OnPropertyChanged(nameof(KeySortIndicator));
             OnPropertyChanged(nameof(ScaleSortIndicator));
+            OnPropertyChanged(nameof(RandSortIndicator));
+            OnPropertyChanged(nameof(AccPctSortIndicator));
             OnPropertyChanged(nameof(HiSortIndicator));
             OnPropertyChanged(nameof(LoSortIndicator));
             OnPropertyChanged(nameof(InstrumentSortIndicator));
@@ -378,6 +390,8 @@ namespace musicmate.ViewModels
             OnPropertyChanged(nameof(OvrlHeader));
             OnPropertyChanged(nameof(KeyHeader));
             OnPropertyChanged(nameof(ScaleHeader));
+            OnPropertyChanged(nameof(RandHeader));
+            OnPropertyChanged(nameof(AccPctHeader));
             OnPropertyChanged(nameof(HiHeader));
             OnPropertyChanged(nameof(LoHeader));
             OnPropertyChanged(nameof(InstrumentHeader));

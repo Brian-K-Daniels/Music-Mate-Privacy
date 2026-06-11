@@ -12,13 +12,13 @@
              BackgroundColor="#F7F7F7">
 
   <Shell.TitleView>
-    <Grid ColumnDefinitions="Auto,Auto,*,Auto" HeightRequest="30" VerticalOptions="Center"
+    <Grid ColumnDefinitions="Auto,Auto,*,Auto" HeightRequest="32" VerticalOptions="Fill"
           BackgroundColor="#8B0000">
       <Label Text="Home  "
              TextColor="White"
              FontAttributes="Bold"
              FontSize="18"
-             VerticalOptions="End"
+             VerticalOptions="Center"
              HorizontalOptions="Start"
              Grid.Column="0" />
       <Label x:Name="StatusLabelShell"
@@ -26,25 +26,30 @@
              TextColor="Yellow"
              FontAttributes="Bold"
              FontSize="10"
-             Margin="0,8,0,0"
+             VerticalOptions="Center"
              HorizontalOptions="Start"
-             VerticalOptions="End"
              Grid.Column="2"/>
-      <Button x:Name="V3StartStopButton"
-              Text="●"
-              FontSize="22"
-              TextColor="Green"
-              BackgroundColor="Transparent"
-              BorderColor="Transparent"
-              BorderWidth="0"
-              HeightRequest="30"
-              WidthRequest="38"
-              Padding="0"
-              HorizontalOptions="Start"
-              VerticalOptions="Center"
-              IsVisible="{Binding Source={x:Reference mainPage}, Path=IsV3Mode}"
-              Clicked="OnStartStopToggleClicked"
-              Grid.Column="1" />
+      <!-- 38dp slot preserves horizontal center for the play overlay below. -->
+      <Grid Grid.Column="1"
+            WidthRequest="38"
+            HeightRequest="32"
+            VerticalOptions="Center"
+            IsVisible="{Binding Source={x:Reference mainPage}, Path=IsV3Mode}">
+        <Border x:Name="V3StartStopButton"
+                StrokeThickness="0"
+                BackgroundColor="#008000"
+                HeightRequest="32"
+                WidthRequest="32"
+                HorizontalOptions="Center"
+                VerticalOptions="Center">
+          <Border.StrokeShape>
+            <RoundRectangle CornerRadius="16" />
+          </Border.StrokeShape>
+          <Border.GestureRecognizers>
+            <TapGestureRecognizer Tapped="OnStartStopToggleClicked" />
+          </Border.GestureRecognizers>
+        </Border>
+      </Grid>
       <Image Source="logo.png"
              HeightRequest="32"
              WidthRequest="32"
@@ -84,7 +89,7 @@
     <converters:InverseBoolConverter x:Key="InverseBoolConverter" />
   </ContentPage.Resources>
 
-  <Grid>
+  <Grid x:Name="MainPageRootGrid">
     <ScrollView x:Name="MainScrollView" HorizontalScrollBarVisibility="Never" Padding="0,0
                 ,0,0
                 
@@ -426,7 +431,7 @@
               <ColumnDefinition Width="Auto" /> <!-- Background Color — sizes to text -->
             </Grid.ColumnDefinitions>
 
-            <!-- Play (non-V3 modes; V3 uses V3PlayButton on the staff) -->
+            <!-- Play (non-V3 modes; V3 uses V3PlayButton overlay under marquee start/stop) -->
             <Button x:Name="PlayEvaluateButton"
                     Grid.Column="0"
                     Text="Play"
@@ -442,7 +447,7 @@
                     Padding="8,2"
                     HorizontalOptions="Fill"
                     VerticalOptions="Fill"
-                    IsVisible="{Binding Source={x:Reference mainPage}, Path=IsNotV3Mode}"
+                    IsVisible="{Binding Source={x:Reference mainPage}, Path=IsPlayEvaluateButtonVisible}"
                     Clicked="OnPlayEvaluateClicked" />
 
             <!-- Start/Stop (non-V3 modes only) -->
@@ -545,23 +550,22 @@
       </VerticalStackLayout>
     </ScrollView>
 
-    <!-- V3 play: top of screen, horizontally aligned with the time signature -->
+    <!-- V3 play: compact overlay at top of staff panel, centered under marquee start/stop -->
     <Button x:Name="V3PlayButton"
             Text="Play"
-            FontSize="11"
+            FontSize="6"
             FontAttributes="Bold"
             TextColor="White"
             BackgroundColor="#2E8B57"
             BorderColor="#1F5C3A"
             BorderWidth="1"
-            CornerRadius="6"
-            WidthRequest="52"
-            HeightRequest="28"
-            Padding="6,0"
+            CornerRadius="2"
+            WidthRequest="32"
+            Padding="0"
             HorizontalOptions="Start"
             VerticalOptions="Start"
             ZIndex="10"
-            IsVisible="{Binding Source={x:Reference mainPage}, Path=IsV3Mode}"
+            IsVisible="{Binding Source={x:Reference mainPage}, Path=IsV3PlayButtonVisible}"
             Clicked="OnPlayEvaluateClicked" />
 
     <!-- Color picker dialog overlay (full-page, above everything) -->

@@ -1,4 +1,5 @@
 using CommunityToolkit.Maui.Alerts;
+using Microsoft.Maui.Controls.Shapes;
 using musicmate.Controls;
 using musicmate.Drawables;
 using musicmate.Models;
@@ -47,7 +48,7 @@ namespace musicmate.Pages
         private Picker _v3HomeKeyPicker = null!;
         private Picker _v3HomeScaleTunePicker = null!;
         private Label _v3HomeConcertKeyLabel = null!;
-        private Button _v3StartStopButton = null!;
+        private Border _v3StartStopButton = null!;
         private Button _v3PlayButton = null!;
 
         // fields for inactivity tracking
@@ -61,9 +62,11 @@ namespace musicmate.Pages
         private bool _freezeStaff = false;
 
         // When true, the session result banner is being shown after a child-home
-        // session completed with AutoRepeat off.  OnAppearing will skip auto-start
-        // so the result stays visible until the user taps Start/Stop.
+        // session completed with AutoRepeat off.  Blocks auto-start until the user
+        // leaves the page (e.g. opens Settings) or taps Start/Stop.
         private bool _holdResultForChildSession = false;
+        private string? _sessionEndMarqueeMessage;
+        private CancellationTokenSource? _autoStartCts;
         private bool _suppressSessionRegenerate;
         private const string ChildLevelPrefKey = "ChildHome.Level";
 #pragma warning restore CS0414
@@ -215,10 +218,14 @@ namespace musicmate.Pages
             IsScaleRepeatButtonVisible = _isAutoRepeatVisible && !isRandom && !isV3;
             OnPropertyChanged(nameof(IsNotV3Mode));
             OnPropertyChanged(nameof(IsV3Mode));
+            UpdatePlayButtonVisibility();
+            Dispatcher.Dispatch(UpdateV3PlayButtonPosition);
         }
 
         public bool IsNotV3Mode => _session?.StaffDisplayMode != StaffDisplayMode.V3;
         public bool IsV3Mode => _session?.StaffDisplayMode == StaffDisplayMode.V3;
+        public bool IsV3PlayButtonVisible => IsV3Mode && (!_isRunning || _isPlaying);
+        public bool IsPlayEvaluateButtonVisible => IsNotV3Mode && (!_isRunning || _isPlaying);
         public bool IsChildLevelSliderVisible => _session?.ChildLevel > 0;
         private string _selectedInstrumentShort = "";
         public string SelectedInstrumentShort
@@ -298,8 +305,9 @@ namespace musicmate.Pages
                 _v3HomeKeyPicker        = this.FindByName<Picker>("V3HomeKeyPicker")!;
                 _v3HomeScaleTunePicker  = this.FindByName<Picker>("V3HomeScaleTunePicker")!;
                 _v3HomeConcertKeyLabel  = this.FindByName<Label>("V3HomeConcertKeyLabel")!;
-                _v3StartStopButton      = this.FindByName<Button>("V3StartStopButton")!;
+                _v3StartStopButton      = this.FindByName<Border>("V3StartStopButton")!;
                 _v3PlayButton           = this.FindByName<Button>("V3PlayButton")!;
+                UpdateV3StartStopButtonVisual(false);
 
                 // Ensure ThemeService is available so we can deploy saved/default panel background
                 _theme_service = ServiceHelper.GetService<ThemeService>()!;
@@ -390,8 +398,9 @@ namespace musicmate.Pages
                 _v3Drawable = new Drawables.V3StaffDrawable(_session, _theme_service, safeAreaService);
                 V3StaffGraphicsView.Drawable = _v3Drawable;
                 V3StaffGraphicsView.SetBinding(GraphicsView.BackgroundColorProperty, new Binding("PanelBackgroundColor"));
-                V3StaffGraphicsView.SizeChanged += (_, _) => UpdateV3PlayButtonPosition();
+                _v3StartStopButton.SizeChanged += (_, _) => UpdateV3PlayButtonPosition();
                 V3StaffBorder.SizeChanged += (_, _) => UpdateV3PlayButtonPosition();
+                SizeChanged += (_, _) => UpdateV3PlayButtonPosition();
                 SetPlayButtonPlaying(false);
 
                 // Tuner graphics setup
@@ -431,27 +440,9 @@ namespace musicmate.Pages
                         // In V2 staff mode the note buffer is infinite; reaching the end of the
                         // current session window just means more notes need to be generated.
                         // Skip the normal session-end flow and let AppendV2MeasuresAsync handle it.
-                        if (_session.StaffDisplayMode == StaffDisplayMode.V3)
-                        {
-                            // V3: the cycle is managed by SyncV3NoteStates / RefreshV3UpperStaffAsync.
-                            // A full session-end here means both staffs are complete.
-                            // In two-octave scale mode (UpperHasEndBar) OR Practice Tune mode this is
-                            // a true end-of-sequence: run the normal summary + AutoRepeat path.
-                            if ((_v3Drawable != null && _v3Drawable.UpperHasEndBar)
-                                || _session.Tune == "Practice Tune")
-                            {
-                                // Fall through to the standard summary / AutoRepeat flow below.
-                            }
-                            else
-                            {
-                                if (AutoRepeat)
-                                {
-                                    await UpdateV3DisplayAsync();
-                                    return;
-                                }
-                                // AutoRepeat is off — fall through to the summary / stop flow.
-                            }
-                        }
+                        // V3 mid-session staff refreshes are handled by SyncV3NoteStates; a
+                        // SessionCompletedAsync callback means every note was played, so always
+                        // run the summary / AutoRepeat restart flow below.
 
                         if (_session.V2StaffMode)
                         {
@@ -463,17 +454,18 @@ namespace musicmate.Pages
 
                         string shortInstrumentForMarquee = _session.Instrument?.Split(',')[0].Trim() ?? "";
 
-                        // SaveSessionStatAsync also saves SessionResult and checks level-up
-                        // for child sessions; returns the new level if advanced, else null.
-                        int? newChildLevel = await SaveSessionStatAsync();
+                        // Capture display stats before SaveSessionStatAsync — a level-up refreshes
+                        // the staff and clears NoteFeedbacks / CorrectNoteIndices.
+                        var (correct, wrong, apc) = _session.GetSessionCorrectWrongTotals();
+                        var (meanBpm, stdBpm) = _session.GetFinalBpmStats();
+
                         // Rolling per-note attempt history runs unconditionally,
                         // independent of the CollectNoteStats preference.
                         await SaveNoteAttemptsForSessionAsync();
 
-                        var (correct, wrong, apc) = _session.GetSessionCorrectWrongTotals();
-                        var total = correct + wrong;
-                        var percent = total > 0 ? (double)correct * 100 / total : 0.0;
-                        var (meanBpm, stdBpm) = _session.GetFinalBpmStats();
+                        // SaveSessionStatAsync also saves SessionResult and checks level-up
+                        // for child sessions; returns the new level if advanced, else null.
+                        int? newChildLevel = await SaveSessionStatAsync();
 
                         // Show result banner at the top of the page.
                         // Append a level-up notice when the child has just advanced.
@@ -504,13 +496,12 @@ namespace musicmate.Pages
                             var recent = qualifying.Take(sessionCount).ToList();
                             double avgPitch = recent.Count > 0 ? recent.Average(r => r.PitchAccuracyPercent) : 0.0;
                             double avgOverall = recent.Count > 0 ? recent.Average(r => r.OverallAccuracyPercent) : 0.0;
-#if DEBUG
-                            StatusService.Instance.StatusMessage =
-                                $"L{progressLevel} ssns={ssns}/{sessionCount}, Pch={avgPitch:F0}%, Ovrl={avgOverall:F0}%";
-#else
-                            StatusService.Instance.StatusMessage =
-                                $"ssns={ssns}/{sessionCount}, Pch={avgPitch:F0}%, Ovrl={avgOverall:F0}%";
-#endif
+                            var timingSessions = recent.Where(r => r.TimingAccuracyPercent.HasValue).ToList();
+                            double avgTiming = timingSessions.Count > 0
+                                ? timingSessions.Average(r => r.TimingAccuracyPercent!.Value)
+                                : 0.0;
+                            SetSessionEndMarqueeMessage(
+                                progressLevel, ssns, sessionCount, avgPitch, avgOverall, avgTiming);
                         }
                         catch (Exception ex)
                         {
@@ -522,6 +513,7 @@ namespace musicmate.Pages
                         {
                             double repeatDelay = Preferences.Default.Get("RepeatDelaySeconds", 2.0);
                             await Task.Delay((int)(repeatDelay * 1000));
+                            _holdResultForChildSession = false;
                             _session.SessionCompleted = false;
 
                             // StartListeningAndEvaluatingAsync will handle note restoration or generation
@@ -650,6 +642,63 @@ namespace musicmate.Pages
                 await Task.Delay(150);
                 await StartListeningAndEvaluatingAsync(playBack);
             });
+        }
+
+        private void ScheduleAutoStartOnAppear()
+        {
+            if (!_session.AutoStart || _session.Tune == "Tuner")
+                return;
+
+            _autoStartCts?.Cancel();
+            _autoStartCts = new CancellationTokenSource();
+            var cts = _autoStartCts;
+            _ = RunAutoStartOnAppearAsync(cts.Token);
+        }
+
+        private async Task RunAutoStartOnAppearAsync(CancellationToken ct)
+        {
+            try
+            {
+                if (_holdResultForChildSession || _isRunning)
+                    return;
+
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                if (_session.StaffDisplayMode == StaffDisplayMode.V3)
+                {
+                    while (V3StaffGraphicsView != null && V3StaffGraphicsView.Width <= 0
+                           && sw.ElapsedMilliseconds < 1500)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        await Task.Delay(40, ct);
+                    }
+                }
+                else
+                {
+                    while (StaffGraphicsView != null && StaffGraphicsView.Width <= 0
+                           && sw.ElapsedMilliseconds < 1000)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        await Task.Delay(40, ct);
+                    }
+                }
+
+                await Task.Delay(150, ct);
+                ct.ThrowIfCancellationRequested();
+
+                if (!_session.AutoStart || _session.Tune == "Tuner"
+                    || _holdResultForChildSession || _isRunning)
+                    return;
+
+                await StartListeningAndEvaluatingAsync();
+            }
+            catch (OperationCanceledException)
+            {
+                // Superseded by a newer navigation or page hide.
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[AutoStart] ERROR: {ex}");
+            }
         }
 
         private async Task RegenerateNotesAsync()
@@ -1280,6 +1329,7 @@ namespace musicmate.Pages
                 _v3Drawable.LowerNotes      = lowerFlat;
                 _v3Drawable.UpperBarBeats   = upperBarBeats;
                 _v3Drawable.LowerBarBeats   = lowerBarBeats;
+                _v3Drawable.InvalidateLayoutCache();
                 _v3Drawable.UpperNoteStates = new V2NoteState[upperFlat.Count];
                 _v3Drawable.LowerNoteStates = new V2NoteState[lowerFlat.Count];
                 _v3Drawable.IsUpperActive   = true;
@@ -1706,8 +1756,7 @@ namespace musicmate.Pages
         }
 
         /// <summary>
-        /// Resizes the V3 staff canvas and repositions the play button at the top of the
-        /// staff, aligned with the time signature.  Must be called on the main thread.
+        /// Resizes the V3 staff canvas.  Must be called on the main thread.
         /// </summary>
         private void ApplyV3Height()
         {
@@ -1735,27 +1784,52 @@ namespace musicmate.Pages
 
         private void UpdateV3PlayButtonPosition()
         {
-            if (_v3PlayButton == null || _v3Drawable == null
+            if (_v3PlayButton == null || _v3StartStopButton == null
                 || _session.StaffDisplayMode != StaffDisplayMode.V3
-                || V3StaffGraphicsView.Width <= 0)
+                || !_v3PlayButton.IsVisible)
                 return;
 
-            if (!_v3Drawable.TryGetPlayButtonCenterX((float)V3StaffGraphicsView.Width, out float cx))
+            var overlayParent = MainPageRootGrid;
+            if (overlayParent.Width <= 0 || _v3StartStopButton.Width <= 0 || V3StaffBorder.Width <= 0)
                 return;
 
-            const double width = 52;
-            const double top = 4;
-            double left = GetHorizontalOffsetToAncestor(V3StaffBorder, _v3PlayButton.Parent as VisualElement)
-                + cx - width * 0.5;
+            var startStopAbs = GetAbsolutePosition(_v3StartStopButton);
+            var staffAbs = GetAbsolutePosition(V3StaffBorder);
+            var parentAbs = GetAbsolutePosition(overlayParent);
+
+            double playWidth = _v3PlayButton.Width > 0 ? _v3PlayButton.Width : _v3PlayButton.WidthRequest;
+            double startStopWidth = _v3StartStopButton.Width > 0 ? _v3StartStopButton.Width : _v3StartStopButton.WidthRequest;
+
+            double left = startStopAbs.X - parentAbs.X + (startStopWidth - playWidth) * 0.5
+                          + MarginUtils.MmToDips(14);
+            double top = staffAbs.Y - parentAbs.Y;
+
+            float upperStaffTop = _v3Drawable?.GetUpperStaffTop() ?? 12f;
+            double maxHeight = Math.Max(MarginUtils.MmToDips(2), upperStaffTop - 2);
+            _v3PlayButton.HeightRequest = Math.Min(MarginUtils.MmToDips(4), maxHeight);
+
             _v3PlayButton.Margin = new Thickness(Math.Max(0, left), top, 0, 0);
         }
 
-        private static double GetHorizontalOffsetToAncestor(VisualElement element, VisualElement? ancestor)
+        private static Point GetAbsolutePosition(VisualElement element)
         {
             double x = 0;
-            for (var node = element; node != null && node != ancestor; node = node.Parent as VisualElement)
-                x += node.X;
-            return x;
+            double y = 0;
+            for (var node = element; node != null; node = node.Parent as VisualElement)
+            {
+                if (node is View view)
+                {
+                    x += view.X + view.Margin.Left;
+                    y += view.Y + view.Margin.Top;
+                }
+                else
+                {
+                    x += node.X;
+                    y += node.Y;
+                }
+            }
+
+            return new Point(x, y);
         }
 
         private static readonly Color PlayButtonGreen = Color.FromArgb("#2E8B57");
@@ -1810,6 +1884,40 @@ namespace musicmate.Pages
             await Task.Delay(80);
         }
 
+        private const int V3StartStopButtonSize = 32;
+
+        private void UpdateV3StartStopButtonVisual(bool isRunning)
+        {
+            if (_v3StartStopButton == null)
+                return;
+
+            if (isRunning)
+            {
+                _v3StartStopButton.BackgroundColor = Color.FromArgb("#E04040");
+                _v3StartStopButton.StrokeShape = new RoundRectangle { CornerRadius = 6 };
+                _v3StartStopButton.Content = new Label
+                {
+                    Text = "■",
+                    FontSize = 18,
+                    TextColor = Colors.White,
+                    HorizontalOptions = LayoutOptions.Center,
+                    VerticalOptions = LayoutOptions.Center,
+                    HorizontalTextAlignment = TextAlignment.Center,
+                    VerticalTextAlignment = TextAlignment.Center,
+                    Padding = 0
+                };
+            }
+            else
+            {
+                _v3StartStopButton.BackgroundColor = Color.FromArgb("#008000");
+                _v3StartStopButton.StrokeShape = new RoundRectangle { CornerRadius = V3StartStopButtonSize / 2 };
+                _v3StartStopButton.Content = null;
+            }
+
+            _v3StartStopButton.HeightRequest = V3StartStopButtonSize;
+            _v3StartStopButton.WidthRequest = V3StartStopButtonSize;
+        }
+
         private void SetButtonStates(bool isRunning, bool keepPlayEnabled = false)
         {
             _isRunning = isRunning;
@@ -1819,19 +1927,26 @@ namespace musicmate.Pages
                 {
                     StartStopButton.Text = "■";
                     StartStopButton.TextColor = Color.FromArgb("#E04040");
-                    _v3StartStopButton.Text = "■";
-                    _v3StartStopButton.TextColor = Color.FromArgb("#E04040");
+                    UpdateV3StartStopButtonVisual(true);
                     SetPlayButtonPlaying(_isPlaying, keepPlayEnabled || _isPlaying);
                 }
                 else
                 {
                     StartStopButton.Text = "●";
                     StartStopButton.TextColor = Color.FromArgb("#008000");
-                    _v3StartStopButton.Text = "●";
-                    _v3StartStopButton.TextColor = Colors.Green;
+                    UpdateV3StartStopButtonVisual(false);
                     SetPlayButtonPlaying(false, true);
                 }
+
+                UpdatePlayButtonVisibility();
             });
+        }
+
+        private void UpdatePlayButtonVisibility()
+        {
+            OnPropertyChanged(nameof(IsV3PlayButtonVisible));
+            OnPropertyChanged(nameof(IsPlayEvaluateButtonVisible));
+            UpdateV3PlayButtonPosition();
         }
 
         private async void OnStartStopToggleClicked(object? sender, EventArgs e)
@@ -1915,7 +2030,34 @@ namespace musicmate.Pages
             StatusService.Instance.StatusMessage =
                 $"Level {level}: {difficulty.StageLabel} — {difficulty.SuggestedKey} {difficulty.SuggestedScale}";
 
+            await RefreshDisplayForLevelChangeAsync();
+        }
+
+        private async Task RefreshDisplayForLevelChangeAsync()
+        {
+            _freezeStaff = false;
+            _holdResultForChildSession = false;
+            _savedNotesToRepeat = null;
+            _session.SessionCompleted = false;
+
+            await MainThread.InvokeOnMainThreadAsync(() => SessionResultBanner.IsVisible = false);
+
             await RegenerateNotesAsync();
+
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                if (_session.StaffDisplayMode == StaffDisplayMode.V3)
+                {
+                    ApplyV3Height();
+                    V3StaffGraphicsView.Invalidate();
+                }
+                else if (_session.V2StaffMode)
+                    V2StaffGraphicsView.Invalidate();
+                else
+                    StaffGraphicsView.Invalidate();
+
+                UpdateV3PlayButtonPosition();
+            });
         }
 
         /// <summary>
@@ -1936,6 +2078,40 @@ namespace musicmate.Pages
             UpdateConcertKeyLabel();
         }
 
+        private void SetSessionEndMarqueeMessage(
+            int progressLevel,
+            int ssns,
+            int sessionCount,
+            double avgPitch,
+            double avgOverall,
+            double avgTiming)
+        {
+#if DEBUG
+            _sessionEndMarqueeMessage =
+                $"L{progressLevel} ssns={ssns}/{sessionCount}, Pch={avgPitch:F0}%, Ovrl={avgOverall:F0}%, Tmg={avgTiming:F0}%";
+#else
+            _sessionEndMarqueeMessage =
+                $"ssns={ssns}/{sessionCount}, Pch={avgPitch:F0}%, Ovrl={avgOverall:F0}%, Tmg={avgTiming:F0}%";
+#endif
+            StatusService.Instance.StatusMessage = _sessionEndMarqueeMessage;
+        }
+
+        private bool ShouldPreserveSessionEndMarquee() =>
+            !string.IsNullOrEmpty(_sessionEndMarqueeMessage)
+            && _session.SessionCompleted
+            && _session.ChildLevel > 0;
+
+        private void RestoreSessionEndMarqueeIfNeeded()
+        {
+            if (!ShouldPreserveSessionEndMarquee())
+                return;
+
+            StatusService.Instance.StatusMessage = _sessionEndMarqueeMessage!;
+            MainThread.BeginInvokeOnMainThread(() => SessionResultBanner.IsVisible = true);
+        }
+
+        private void ClearSessionEndMarquee() => _sessionEndMarqueeMessage = null;
+
         private void UpdateChildLevelSliderDisplay()
         {
             OnPropertyChanged(nameof(IsChildLevelSliderVisible));
@@ -1950,7 +2126,15 @@ namespace musicmate.Pages
         protected async override void OnAppearing()
         {
             base.OnAppearing();
+            bool returningToPage = !_isPageVisible;
             _isPageVisible = true;
+            if (returningToPage)
+            {
+                _freezeStaff = false;
+                // Keep result hold when returning from Settings so the session-end
+                // marquee and banner stay visible until the user starts again.
+                _holdResultForChildSession = ShouldPreserveSessionEndMarquee();
+            }
             _orientation.ForceLandscape();
 
             Debug.WriteLine($"[DEBUG] OnAppearing: IsAutoRepeatVisible={IsAutoRepeatVisible}, Tune={_session.Tune}");
@@ -1980,6 +2164,7 @@ namespace musicmate.Pages
             UpdateChildLevelSliderDisplay();
             // Android may lay out the slider row after OnAppearing; refresh once more.
             Dispatcher.Dispatch(UpdateChildLevelSliderDisplay);
+            Dispatcher.Dispatch(UpdateV3PlayButtonPosition);
 
 #if DEBUG
             if (_session.AutoStart && _session.Tune != "Tuner" && _session.ChildLevel == 0)
@@ -1990,18 +2175,19 @@ namespace musicmate.Pages
 
             if (_session.AutoStart)
             {
-                // If we're holding the result banner for a just-completed child session,
-                // skip auto-start this one time so the player can see their score.
                 if (_holdResultForChildSession)
+                {
+                    RestoreSessionEndMarqueeIfNeeded();
                     return;
-                await StartAfterDelayAsync();
+                }
+                ScheduleAutoStartOnAppear();
                 return;
             }
 
             // Always regenerate notes on every appearance so that changes made on
             // Settings/Advanced pages (key, scale, range, etc.) are reflected immediately.
             // Wait for the layout to provide a valid staff width first.
-            if (!_isRunning)
+            if (!_isRunning && !ShouldPreserveSessionEndMarquee())
             {
                 try
                 {
@@ -2024,11 +2210,16 @@ namespace musicmate.Pages
                     Debug.WriteLine($"[OnAppearing] ERROR regenerating notes: {ex}");
                 }
             }
+
+            RestoreSessionEndMarqueeIfNeeded();
         }
 
         protected override void OnNavigatedTo(NavigatedToEventArgs args)
         {
             base.OnNavigatedTo(args);
+            if (_session.AutoStart && !_holdResultForChildSession)
+                ScheduleAutoStartOnAppear();
+
             // Shell calls OnNavigatedTo after it has finished restoring scroll position,
             // so this is the correct place to snap the scroll so no note heads are hidden.
             MainThread.BeginInvokeOnMainThread(async () =>
@@ -2061,13 +2252,15 @@ namespace musicmate.Pages
         {
             base.OnDisappearing();
             _isPageVisible = false;
+            _autoStartCts?.Cancel();
             // Stop listening and evaluating
             _playCts?.Cancel();
             _audio?.StopCapture();
             SetButtonStates(false);
             DeviceDisplay.Current.KeepScreenOn = false;
-            StatusService.Instance.StatusMessage = "Stopped listening.";
-        }         
+            if (!ShouldPreserveSessionEndMarquee())
+                StatusService.Instance.StatusMessage = "Stopped listening.";
+        }
 
         private async void OnPlayEvaluateClicked(object? sender, EventArgs e)
         {
@@ -2078,6 +2271,7 @@ namespace musicmate.Pages
                 _isPlaying = false;
                 SetPlayButtonPlaying(false);
                 SetButtonStates(false);
+                UpdatePlayButtonVisibility();
                 return;
             }
 
@@ -2107,6 +2301,7 @@ namespace musicmate.Pages
 
             _isPlaying = true;
             SetPlayButtonPlaying(true);
+            UpdatePlayButtonVisibility();
             await StartListeningAndEvaluatingAsync(playBack: true);
         }
 
@@ -2501,6 +2696,7 @@ async Task UpdateNoteStatsDatabaseAsync()
             {
                 // Any new session clears the post-autoplay results freeze.
                 _freezeStaff = false;
+                ClearSessionEndMarquee();
 
                 // Assign a fresh session ID so all NoteAttempts from this run are grouped together.
                 _currentSessionId = Guid.NewGuid().ToString();
@@ -2812,6 +3008,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                 {
                     _isPlaying = false;
                     SetPlayButtonPlaying(false);
+                    UpdatePlayButtonVisibility();
 
                     if (!cancelled && _session.NotesToDraw.Count > 0)
                     {
@@ -2912,10 +3109,13 @@ async Task UpdateNoteStatsDatabaseAsync()
             {
                 Dt = DateTime.Now,
                 Key = _session.Key,
+                Tune = _session.Tune ?? string.Empty,
                 Instrument = _session.Instrument?.Split(',')[0].Trim() ?? string.Empty,
-                Sc = _session.IsRandomMode ? "Random"
-                    : _session.Tune == "Practice Tune" ? (_session.CurrentTune?.Title ?? "Practice Tune")
+                Sc = _session.Tune == "Practice Tune"
+                    ? (_session.CurrentTune?.Title ?? "Practice Tune")
                     : _session.SelectedScale,
+                Rand = _session.IsRandomMode,
+                AccPct = _session.AccidentalPercent,
                 Hi = hi?.Name ?? "",
                 Lo = lo?.Name ?? "",
                 Pc = apc,
@@ -2952,8 +3152,14 @@ async Task UpdateNoteStatsDatabaseAsync()
                     if (newLevel.HasValue)
                     {
                         Utils.Log($"[LevelUpDebug] Level up! New level={newLevel.Value}");
+                        DifficultyLevelMapper.PickAndApplyToSession(
+                            newLevel.Value, _session, forceClassicMode: false);
                         _session.ChildLevel = newLevel.Value;
                         UpdateChildLevelSliderDisplay();
+                        UpdateKeyPickerSelection();
+                        UpdateScaleTunePicker();
+                        UpdateConcertKeyLabel();
+                        await RefreshDisplayForLevelChangeAsync();
                     }
                     else
                     {

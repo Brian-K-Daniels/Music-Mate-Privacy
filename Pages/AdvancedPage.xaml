@@ -115,7 +115,9 @@
             <Label Grid.Row="2" Grid.Column="0" Text="Minimum Timing Consistency (%)" VerticalOptions="Center"/>
             <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding MinTimingAccuracyPercent, Mode=TwoWay}"/>
             <Label Grid.Row="2" Grid.Column="2" Text="{Binding MinTimingAccuracyPercent, StringFormat='{0:F0}%'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
-            <Label Grid.Row="2" Grid.Column="3" Text="{Binding CurrentSessionTimingAccuracyPercent, StringFormat='{0:F0}%'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+            <Label Grid.Row="2" Grid.Column="3"
+                   Text="{Binding CurrentSessionTimingAccuracyPercent, StringFormat='{0:F0}%', TargetNullValue='N/A'}"
+                   HorizontalTextAlignment="End" VerticalOptions="Center"/>
 
             <Label Grid.Row="3" Grid.Column="0" Text="Minimum Overall Accuracy (%)" VerticalOptions="Center"/>
             <Slider Grid.Row="3" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding MinOverallAccuracyPercent, Mode=TwoWay}"/>

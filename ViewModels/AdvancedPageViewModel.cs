@@ -13,20 +13,15 @@ namespace musicmate.ViewModels
         {
             get
             {
-                var (correct, wrong, percent) = _session.GetSessionCorrectWrongTotals();
+                var (_, _, percent) = _session.GetSessionCorrectWrongTotals();
                 return double.IsNaN(percent) ? 0.0 : percent;
             }
         }
-        public double CurrentSessionTimingAccuracyPercent
-        {
-            get
-            {
-                // If you have a timing accuracy metric, expose it here. Placeholder:
-                // For now, return 0.0; replace with actual timing accuracy if available.
-                return 0.0;
-            }
-        }
-        public double CurrentSessionOverallAccuracyPercent => CurrentSessionPitchAccuracyPercent; // Placeholder: use pitch accuracy
+
+        /// <summary>Null when fewer than 3 timed onsets were recorded.</summary>
+        public double? CurrentSessionTimingAccuracyPercent => _session.GetTimingAccuracyPercent();
+
+        public double CurrentSessionOverallAccuracyPercent => CurrentSessionPitchAccuracyPercent;
         public int CurrentSessionCount => 1; // Placeholder: set to 1, or expose actual session count if tracked
         private readonly ThemeService _themeService;
         private readonly NoteSessionService _session;
@@ -84,10 +79,22 @@ namespace musicmate.ViewModels
                     case nameof(NoteSessionService.WrongDebounceMs):
                         OnPropertyChanged(nameof(WrongDebounceMs));
                         break;
+                    case nameof(NoteSessionService.BpmStatsDisplay):
+                    case nameof(NoteSessionService.SessionCompleted):
+                        RefreshCurrentSessionMetrics();
+                        break;
                     default:
                         break;
                 }
             };
+        }
+
+        public void RefreshCurrentSessionMetrics()
+        {
+            OnPropertyChanged(nameof(CurrentSessionNotesCount));
+            OnPropertyChanged(nameof(CurrentSessionPitchAccuracyPercent));
+            OnPropertyChanged(nameof(CurrentSessionTimingAccuracyPercent));
+            OnPropertyChanged(nameof(CurrentSessionOverallAccuracyPercent));
         }
 
         public Color PanelBackgroundColor => _themeService.PanelBackgroundColor;
