@@ -1890,14 +1890,13 @@ namespace musicmate.Pages
         {
             level = Math.Clamp(level, 1, 100);
 
-            var shortInstrumentKey = _session.Instrument?.Split(',')[0].Trim() ?? "C";
-            var difficulty = DifficultyLevelMapper.GetSettingsForLevel(level, shortInstrumentKey);
-
+            PracticeDifficultySettings difficulty;
             _suppressSessionRegenerate = true;
             try
             {
-                DifficultyLevelMapper.ApplyToSession(difficulty, _session, forceClassicMode: false);
                 _session.ChildLevel = level;
+                difficulty = DifficultyLevelMapper.PickAndApplyToSession(
+                    level, _session, forceClassicMode: false);
                 Preferences.Default.Set(ChildLevelPrefKey, level);
                 LevelUpService.MarkCountSinceNow();
 
@@ -1914,9 +1913,27 @@ namespace musicmate.Pages
             ChildLevelSliderValueLabel.Text = level.ToString();
 
             StatusService.Instance.StatusMessage =
-                $"Level {level}: {difficulty.StageLabel} — {difficulty.MainFocus}";
+                $"Level {level}: {difficulty.StageLabel} — {difficulty.SuggestedKey} {difficulty.SuggestedScale}";
 
             await RegenerateNotesAsync();
+        }
+
+        /// <summary>
+        /// Randomly pick scale/key from the child-level weighted pools for a new session.
+        /// Skipped when Repeat Same will restore the previous tune (keeps key/scale stable).
+        /// </summary>
+        private void PickChildSessionSettingsIfNeeded(bool preserveRepeatSameTune)
+        {
+            if (_session.ChildLevel <= 0)
+                return;
+            if (preserveRepeatSameTune && _repeatSameTune && _savedNotesToRepeat?.Count > 0)
+                return;
+
+            DifficultyLevelMapper.PickAndApplyToSession(
+                _session.ChildLevel, _session, forceClassicMode: false);
+            UpdateKeyPickerSelection();
+            UpdateScaleTunePicker();
+            UpdateConcertKeyLabel();
         }
 
         private void UpdateChildLevelSliderDisplay()
@@ -2499,6 +2516,8 @@ async Task UpdateNoteStatsDatabaseAsync()
                 _pitchBufferPos = 0;
                 _session.Reset();
 
+                PickChildSessionSettingsIfNeeded(preserveRepeatSameTune: true);
+
                 // Handle note generation based on repeat mode
                 if (_repeatSameTune && _savedNotesToRepeat != null && _savedNotesToRepeat.Count > 0)
                 {
@@ -2522,6 +2541,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                     // If too few notes remain after mastery filtering, regenerate instead
                     if (notesToRestore.Count < 2)
                     {
+                        PickChildSessionSettingsIfNeeded(preserveRepeatSameTune: false);
                         await RegenerateNotesAsync();
                         if (_session?.NotesToDraw != null && _session.NotesToDraw.Count > 0)
                             _savedNotesToRepeat = new List<NoteInfo>(_session.NotesToDraw);

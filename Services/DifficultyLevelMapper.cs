@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace musicmate.Services
 {
     // ──────────────────────────────────────────────────────────────────────────────
@@ -37,47 +39,54 @@ namespace musicmate.Services
     // DifficultyLevelMapper
     //
     // Converts level 1–100 into session parameters using staged bands defined in
-    // <see cref="ChildLevelProgression"/> (one main new idea per 10-level group).
+    // <see cref="ChildLevelProgression"/>. Scale and key are chosen per session
+    // from weighted pools.
     // ──────────────────────────────────────────────────────────────────────────────
     public static class DifficultyLevelMapper
     {
-        public static PracticeDifficultySettings GetSettingsForLevel(int level, string instrumentKey = "C")
+        /// <summary>Inspectable profile (pools + range) for a level without random picks.</summary>
+        public static ChildLevelDifficultyProfile GetProfile(int level)
+            => ChildLevelProgression.GetProfile(level);
+
+        /// <summary>
+        /// Resolve a full session settings bundle, randomly picking scale and key from
+        /// the level's weighted pools.
+        /// </summary>
+        public static PracticeDifficultySettings ResolveSessionSettings(int level, Random? rng = null)
         {
             level = Math.Clamp(level, 1, 100);
-
-            var range     = ChildLevelProgression.NoteRangeForLevel(level);
-            var key       = ChildLevelProgression.KeyForLevel(level);
-            var scale     = ChildLevelProgression.ScaleForLevel(level);
-            var noteCount = ChildLevelProgression.NoteCountForLevel(level);
-            int variety   = ChildLevelProgression.RhythmVarietyPercentForLevel(level);
-
-            return new PracticeDifficultySettings
-            {
-                AccidentalPercent           = ChildLevelProgression.AccidentalPercentForLevel(level),
-                LowestNote                  = range.Lo,
-                HighestNote                 = range.Hi,
-                V2SmallestNote              = ChildLevelProgression.SmallestNoteForLevel(level),
-                V2RhythmMode                = variety > 0 ? "Mixed" : "Simple",
-                V2Syncopation               = ChildLevelProgression.SyncopationForLevel(level),
-                UseRandomMode               = true,
-                ForceKey                    = key,
-                SuggestedKey                = key,
-                SuggestedScale              = scale,
-                SuggestedNoteCount          = noteCount,
-                MaxMelodicIntervalSemitones = ChildLevelProgression.MaxIntervalForLevel(level),
-                RhythmVarietyPercent        = variety,
-                RestChancePercent           = ChildLevelProgression.RestChancePercentForLevel(level),
-                MeasureBatchSize            = ChildLevelProgression.MeasureBatchSizeForLevel(level, noteCount),
-                StageLabel                  = ChildLevelProgression.GetStageLabel(level),
-                MainFocus                   = ChildLevelProgression.GetMainFocus(level),
-            };
+            var profile = ChildLevelProgression.GetProfile(level);
+            var (scale, key) = ChildLevelProgression.PickScaleAndKey(profile, rng);
+            return BuildSettings(level, profile, scale, key);
         }
+
+        /// <summary>Backward-compatible alias for <see cref="ResolveSessionSettings"/>.</summary>
+        public static PracticeDifficultySettings GetSettingsForLevel(int level, string instrumentKey = "C", Random? rng = null)
+            => ResolveSessionSettings(level, rng);
 
         public static string GetStageLabel(int level)
             => ChildLevelProgression.GetStageLabel(level);
 
         public static string GetMainFocus(int level)
             => ChildLevelProgression.GetMainFocus(level);
+
+        /// <summary>
+        /// Pick scale/key for this session and apply all child-level settings to the session.
+        /// </summary>
+        public static PracticeDifficultySettings PickAndApplyToSession(
+            int level, NoteSessionService session, bool forceClassicMode = false, Random? rng = null)
+        {
+            var settings = ResolveSessionSettings(level, rng);
+            ApplyToSession(settings, session, forceClassicMode);
+#if DEBUG
+            Debug.WriteLine($"[ChildLevel] Picked session settings: L{level} {settings.SuggestedKey} {settings.SuggestedScale}");
+#endif
+            return settings;
+        }
+
+        /// <summary>Diagnostic report of weighted pools for sample levels.</summary>
+        public static string BuildDiagnosticReport(IEnumerable<int>? levels = null)
+            => ChildLevelProgression.BuildDiagnosticReport(levels);
 
         public static void ApplyToSession(PracticeDifficultySettings settings, NoteSessionService session, bool forceClassicMode = true)
         {
@@ -109,6 +118,34 @@ namespace musicmate.Services
             session.ChildMeasureBatchSize   = settings.MeasureBatchSize;
             session.V2RhythmVarietyPercent  = settings.RhythmVarietyPercent;
             session.V2RestChancePercent     = settings.RestChancePercent;
+        }
+
+        private static PracticeDifficultySettings BuildSettings(
+            int level, ChildLevelDifficultyProfile profile, string scale, string key)
+        {
+            var noteCount = ChildLevelProgression.NoteCountForLevel(level);
+            int variety   = ChildLevelProgression.RhythmVarietyPercentForLevel(level);
+
+            return new PracticeDifficultySettings
+            {
+                AccidentalPercent           = profile.AccidentalPercent,
+                LowestNote                  = profile.LowestNote,
+                HighestNote                 = profile.HighestNote,
+                V2SmallestNote              = ChildLevelProgression.SmallestNoteForLevel(level),
+                V2RhythmMode                = variety > 0 ? "Mixed" : "Simple",
+                V2Syncopation               = ChildLevelProgression.SyncopationForLevel(level),
+                UseRandomMode               = true,
+                ForceKey                    = key,
+                SuggestedKey                = key,
+                SuggestedScale              = scale,
+                SuggestedNoteCount          = noteCount,
+                MaxMelodicIntervalSemitones = ChildLevelProgression.MaxIntervalForLevel(level),
+                RhythmVarietyPercent        = variety,
+                RestChancePercent           = ChildLevelProgression.RestChancePercentForLevel(level),
+                MeasureBatchSize            = ChildLevelProgression.MeasureBatchSizeForLevel(level, noteCount),
+                StageLabel                  = profile.StageLabel,
+                MainFocus                   = profile.MainFocus,
+            };
         }
     }
 }

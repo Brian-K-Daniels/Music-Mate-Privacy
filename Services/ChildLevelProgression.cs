@@ -1,22 +1,20 @@
+using System.Text;
+
 namespace musicmate.Services
 {
     /// <summary>
     /// Staged child-level curriculum (1–100).  Each 10-level band mainly introduces
-    /// one new idea so players are not hit with new keys, scales, rhythms, and
-    /// syncopation all at once.
+    /// one new idea.  Scale and key are chosen per session from weighted pools.
     /// </summary>
     internal static class ChildLevelProgression
     {
-        // Keys ordered easy → hard (accidentals in signature).
-        private static readonly string[] KeysByDifficulty =
-            ["C", "G", "F", "D", "Bb", "A", "Eb", "E", "Ab", "B", "Db", "F#"];
+        private static readonly HashSet<string> SupportedKeys = new(StringComparer.Ordinal)
+        {
+            "C", "G", "F", "D", "Bb", "A", "Eb", "E", "Ab", "B", "Db", "F#"
+        };
 
-        private static readonly string[] AllScales =
-        [
-            "Major", "Natural Minor", "Harmonic Minor", "Melodic Minor",
-            "Dorian", "Phrygian", "Lydian", "Mixolydian", "Locrian",
-            "Major Pentatonic", "Minor Pentatonic", "Blues", "Chromatic"
-        ];
+        private static readonly HashSet<string> SupportedScales =
+            new(NoteSessionService.AvailableScales, StringComparer.Ordinal);
 
         /// <summary>Human-readable band label for Child Home.</summary>
         public static string GetStageLabel(int level)
@@ -52,42 +50,238 @@ namespace musicmate.Services
             };
         }
 
-        public static string KeyForLevel(int level)
+        public static ChildLevelDifficultyProfile GetProfile(int level)
         {
             level = Math.Clamp(level, 1, 100);
-            int maxIndex = MaxKeyIndex(level);
-            int index = KeyIndexWithinBand(level, maxIndex);
-            return KeysByDifficulty[index];
+            var range = NoteRangeForLevel(level);
+            return new ChildLevelDifficultyProfile
+            {
+                Level             = level,
+                ScalePool         = ScalePoolForLevel(level),
+                KeyPool           = KeyPoolForLevel(level),
+                LowestNote        = range.Lo,
+                HighestNote       = range.Hi,
+                AccidentalPercent = AccidentalPercentForLevel(level),
+                StageLabel        = GetStageLabel(level),
+                MainFocus         = GetMainFocus(level),
+            };
         }
 
-        public static string ScaleForLevel(int level)
+        /// <summary>Pick one scale and one key from the level's weighted pools.</summary>
+        public static (string Scale, string Key) PickScaleAndKey(
+            ChildLevelDifficultyProfile profile, Random? rng = null)
         {
-            level = Math.Clamp(level, 1, 100);
-            return level switch
+            var scale = WeightedChoice.Pick(profile.ScalePool, o => o.Weight, rng).Scale;
+            var key   = WeightedChoice.Pick(profile.KeyPool, o => o.Weight, rng).Key;
+            return (scale, key);
+        }
+
+        public static (string Scale, string Key) PickScaleAndKey(int level, Random? rng = null)
+            => PickScaleAndKey(GetProfile(level), rng);
+
+        /// <summary>
+        /// Human-readable report of weighted pools and fixed settings for inspection.
+        /// </summary>
+        public static string BuildDiagnosticReport(IEnumerable<int>? levels = null)
+        {
+            levels ??= new[] { 1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
+            var sb = new StringBuilder();
+            foreach (int lv in levels)
             {
-                <= 20 => "Major",
-                <= 25 => "Natural Minor",
-                <= 30 => "Natural Minor",
-                <= 35 => "Harmonic Minor",
-                <= 40 => "Melodic Minor",
-                <= 42 => "Major",
-                <= 44 => "Natural Minor",
-                <= 46 => "Harmonic Minor",
-                <= 48 => "Melodic Minor",
-                <= 50 => "Major Pentatonic",
-                <= 52 => "Dorian",
-                <= 54 => "Mixolydian",
-                <= 56 => "Blues",
-                <= 58 => "Minor Pentatonic",
-                <= 60 => "Blues",
-                <= 62 => "Phrygian",
-                <= 64 => "Lydian",
-                <= 66 => "Locrian",
-                <= 70 => "Locrian",
-                <= 85 => AllScales[(level - 71) % 8],          // rotate common types
-                <= 95 => AllScales[(level * 3) % AllScales.Length],
-                _     => AllScales[(level * 7 + 11) % AllScales.Length]
+                var p = GetProfile(lv);
+                sb.AppendLine($"=== Level {lv} ({p.StageLabel}) ===");
+                sb.AppendLine($"Range: {p.LowestNote}–{p.HighestNote}, Accidental%: {p.AccidentalPercent}");
+                sb.AppendLine("Scale pool:");
+                foreach (var s in p.ScalePool)
+                    sb.AppendLine($"  {s.Scale} (weight {s.Weight})");
+                sb.AppendLine("Key pool:");
+                foreach (var k in p.KeyPool)
+                    sb.AppendLine($"  {k.Key} (weight {k.Weight})");
+                sb.AppendLine();
+            }
+            return sb.ToString();
+        }
+
+        private static IReadOnlyList<WeightedScaleOption> ScalePoolForLevel(int level)
+        {
+            WeightedScaleOption[] raw = level switch
+            {
+                <= 20 =>
+                [
+                    new("Major", 100)
+                ],
+                <= 35 =>
+                [
+                    new("Major", 70),
+                    new("Natural Minor", 30)
+                ],
+                <= 50 =>
+                [
+                    new("Major", 50),
+                    new("Natural Minor", 25),
+                    new("Major Pentatonic", 15),
+                    new("Minor Pentatonic", 10)
+                ],
+                <= 65 =>
+                [
+                    new("Major", 40),
+                    new("Natural Minor", 25),
+                    new("Major Pentatonic", 12),
+                    new("Minor Pentatonic", 10),
+                    new("Blues", 7),
+                    new("Dorian", 3),
+                    new("Mixolydian", 3)
+                ],
+                <= 80 =>
+                [
+                    new("Major", 32),
+                    new("Natural Minor", 22),
+                    new("Major Pentatonic", 10),
+                    new("Minor Pentatonic", 8),
+                    new("Blues", 8),
+                    new("Dorian", 5),
+                    new("Mixolydian", 5),
+                    new("Harmonic Minor", 4),
+                    new("Melodic Minor", 3),
+                    new("Lydian", 2),
+                    new("Phrygian", 1)
+                ],
+                <= 95 =>
+                [
+                    new("Major", 25),
+                    new("Natural Minor", 18),
+                    new("Major Pentatonic", 8),
+                    new("Minor Pentatonic", 8),
+                    new("Blues", 8),
+                    new("Dorian", 7),
+                    new("Mixolydian", 7),
+                    new("Harmonic Minor", 6),
+                    new("Melodic Minor", 5),
+                    new("Lydian", 4),
+                    new("Phrygian", 3),
+                    new("Locrian", 1)
+                ],
+                _ =>
+                [
+                    new("Major", 20),
+                    new("Natural Minor", 15),
+                    new("Major Pentatonic", 7),
+                    new("Minor Pentatonic", 7),
+                    new("Blues", 8),
+                    new("Dorian", 8),
+                    new("Mixolydian", 8),
+                    new("Harmonic Minor", 7),
+                    new("Melodic Minor", 6),
+                    new("Lydian", 5),
+                    new("Phrygian", 5),
+                    new("Locrian", 4)
+                ]
             };
+            return FilterScales(raw);
+        }
+
+        private static IReadOnlyList<WeightedKeyOption> KeyPoolForLevel(int level)
+        {
+            WeightedKeyOption[] raw = level switch
+            {
+                <= 20 =>
+                [
+                    new("C", 60),
+                    new("G", 20),
+                    new("F", 20)
+                ],
+                <= 35 =>
+                [
+                    new("C", 40),
+                    new("G", 20),
+                    new("F", 20),
+                    new("D", 10),
+                    new("Bb", 10)
+                ],
+                <= 50 =>
+                [
+                    new("C", 30),
+                    new("G", 18),
+                    new("F", 18),
+                    new("D", 12),
+                    new("Bb", 12),
+                    new("A", 5),
+                    new("Eb", 5)
+                ],
+                <= 65 =>
+                [
+                    new("C", 24),
+                    new("G", 16),
+                    new("F", 16),
+                    new("D", 12),
+                    new("Bb", 12),
+                    new("A", 8),
+                    new("Eb", 8),
+                    new("E", 2),
+                    new("Ab", 2)
+                ],
+                <= 80 =>
+                [
+                    new("C", 20),
+                    new("G", 14),
+                    new("F", 14),
+                    new("D", 10),
+                    new("Bb", 10),
+                    new("A", 8),
+                    new("Eb", 8),
+                    new("E", 5),
+                    new("Ab", 5),
+                    new("B", 3),
+                    new("Db", 3)
+                ],
+                <= 95 =>
+                [
+                    new("C", 16),
+                    new("G", 12),
+                    new("F", 12),
+                    new("D", 9),
+                    new("Bb", 9),
+                    new("A", 7),
+                    new("Eb", 7),
+                    new("E", 6),
+                    new("Ab", 6),
+                    new("B", 4),
+                    new("Db", 4),
+                    new("F#", 2)
+                ],
+                _ =>
+                [
+                    new("C", 12),
+                    new("G", 10),
+                    new("F", 10),
+                    new("D", 8),
+                    new("Bb", 8),
+                    new("A", 7),
+                    new("Eb", 7),
+                    new("E", 6),
+                    new("Ab", 6),
+                    new("B", 5),
+                    new("Db", 5),
+                    new("F#", 3)
+                ]
+            };
+            return FilterKeys(raw);
+        }
+
+        private static IReadOnlyList<WeightedScaleOption> FilterScales(IEnumerable<WeightedScaleOption> options)
+        {
+            var list = options
+                .Where(o => o.Weight > 0 && SupportedScales.Contains(o.Scale))
+                .ToArray();
+            return list.Length > 0 ? list : new[] { new WeightedScaleOption("Major", 1) };
+        }
+
+        private static IReadOnlyList<WeightedKeyOption> FilterKeys(IEnumerable<WeightedKeyOption> options)
+        {
+            var list = options
+                .Where(o => o.Weight > 0 && SupportedKeys.Contains(o.Key))
+                .ToArray();
+            return list.Length > 0 ? list : new[] { new WeightedKeyOption("C", 1) };
         }
 
         public static int NoteCountForLevel(int level)
@@ -98,7 +292,7 @@ namespace musicmate.Services
             double t = pos / 9.0;
             return band switch
             {
-                0 => (int)Math.Round(Lerp(4, 8, t)),    // 3–5 → 5–8 (avg pitched slots)
+                0 => (int)Math.Round(Lerp(4, 8, t)),
                 1 => (int)Math.Round(Lerp(6, 12, t)),
                 2 => (int)Math.Round(Lerp(8, 14, t)),
                 3 => (int)Math.Round(Lerp(10, 16, t)),
@@ -112,7 +306,6 @@ namespace musicmate.Services
         public static (string Lo, string Hi) NoteRangeForLevel(int level)
         {
             level = Math.Clamp(level, 1, 100);
-            // Keep range narrow while players learn notes, keys, and rests.
             if (level <= 20) return ("C4", "C5");
             if (level <= 30) return ("B3", "D5");
             if (level <= 40) return ("A3", "E5");
@@ -129,7 +322,6 @@ namespace musicmate.Services
             return "Sixteenth";
         }
 
-        /// <summary>0 = quarters only; higher values add longer/shorter note values.</summary>
         public static int RhythmVarietyPercentForLevel(int level)
         {
             level = Math.Clamp(level, 1, 100);
@@ -145,7 +337,6 @@ namespace musicmate.Services
             return 95;
         }
 
-        /// <summary>Rest probability per slot (0 until rests are introduced at 21).</summary>
         public static int RestChancePercentForLevel(int level)
         {
             level = Math.Clamp(level, 1, 100);
@@ -191,34 +382,8 @@ namespace musicmate.Services
 
         public static int MeasureBatchSizeForLevel(int level, int targetNoteCount)
         {
-            // Roughly 3–4 pitched slots per 4/4 measure depending on rhythm.
             int measures = (int)Math.Ceiling(targetNoteCount / 3.5);
             return Math.Clamp(measures, 1, level <= 10 ? 2 : level <= 30 ? 4 : 8);
-        }
-
-        private static int MaxKeyIndex(int level)
-        {
-            if (level <= 10) return 0;
-            if (level <= 20) return 4;   // C, G, F, D, Bb
-            if (level <= 30) return 5;   // + A
-            if (level <= 40) return 7;   // + Eb, E
-            if (level <= 50) return 8;   // + Ab
-            if (level <= 60) return 9;   // + B
-            if (level <= 70) return 11;  // + Db, F#
-            return KeysByDifficulty.Length - 1;
-        }
-
-        /// <summary>Within the current band, pick the newest key unlocked so far.</summary>
-        private static int KeyIndexWithinBand(int level, int maxIndex)
-        {
-            int bandStart = ((level - 1) / 10) * 10 + 1;
-            int prevMax   = MaxKeyIndex(bandStart - 1);
-            int newKeys   = maxIndex - prevMax;
-            if (newKeys <= 0) return maxIndex;
-
-            int posInBand = level - bandStart;
-            int added     = newKeys == 0 ? 0 : (int)Math.Round(newKeys * posInBand / 9.0);
-            return Math.Clamp(prevMax + added, 0, maxIndex);
         }
 
         private static double Lerp(double a, double b, double t)

@@ -231,8 +231,8 @@ namespace musicmate.Pages
                 // Apply difficulty settings derived from the selected level.
                 // DifficultyLevelMapper translates level 1–100 into concrete session
                 // parameters (BPM, note range, rhythm complexity, accidental %).
-                var difficulty = DifficultyLevelMapper.GetSettingsForLevel(
-                    _selectedLevel, shortInstrumentKey);
+                var difficulty = DifficultyLevelMapper.PickAndApplyToSession(
+                    _selectedLevel, _session, forceClassicMode: false);
 
                 Utils.Log($"[ChildHome] Level={_selectedLevel}, " +
                           $"Stage={difficulty.StageLabel}, Scale={difficulty.SuggestedScale}, " +
@@ -240,10 +240,6 @@ namespace musicmate.Pages
                           $"Key={difficulty.ForceKey}, Notes≈{difficulty.SuggestedNoteCount}, " +
                           $"Rhythm={difficulty.V2SmallestNote} variety={difficulty.RhythmVarietyPercent}% " +
                           $"rests={difficulty.RestChancePercent}%, Sync={difficulty.V2Syncopation}");
-
-                // Apply difficulty and allow non-Classic staff modes so V2/V3 and
-                // level-driven rhythm changes take effect on the Main page.
-                DifficultyLevelMapper.ApplyToSession(difficulty, _session, forceClassicMode: false);
 
                 Utils.Log($"[ChildHome] Session after apply → Level={_session.ChildLevel}, " +
                           $"LowestNote={_session.LowestNote}, HighestNote={_session.HighestNote}, " +
