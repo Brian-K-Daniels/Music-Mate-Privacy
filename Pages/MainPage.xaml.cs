@@ -50,6 +50,7 @@ namespace musicmate.Pages
         private Label _v3HomeConcertKeyLabel = null!;
         private Border _v3StartStopButton = null!;
         private Button _v3PlayButton = null!;
+        private Label _v3ListeningTempoLabel = null!;
 
         // fields for inactivity tracking
         private DateTime _lastHeardTime = DateTime.UtcNow;
@@ -228,6 +229,8 @@ namespace musicmate.Pages
         public bool IsV3Mode => _session?.StaffDisplayMode == StaffDisplayMode.V3;
         public bool IsV3PlayButtonVisible => IsV3Mode && (!_isRunning || _isPlaying);
         public bool IsPlayEvaluateButtonVisible => IsNotV3Mode && (!_isRunning || _isPlaying);
+        public bool IsV3ListeningTempoVisible =>
+            IsV3Mode && _session.IsTimingSensitiveListening && _session.ListeningTempoBpm > 0;
         public bool IsChildLevelSliderVisible => _session?.ChildLevel > 0;
         private string _selectedInstrumentShort = "";
         public string SelectedInstrumentShort
@@ -309,6 +312,7 @@ namespace musicmate.Pages
                 _v3HomeConcertKeyLabel  = this.FindByName<Label>("V3HomeConcertKeyLabel")!;
                 _v3StartStopButton      = this.FindByName<Border>("V3StartStopButton")!;
                 _v3PlayButton           = this.FindByName<Button>("V3PlayButton")!;
+                _v3ListeningTempoLabel  = this.FindByName<Label>("V3ListeningTempoLabel")!;
                 UpdateV3StartStopButtonVisual(false);
 
                 // Ensure ThemeService is available so we can deploy saved/default panel background
@@ -755,15 +759,17 @@ namespace musicmate.Pages
                 V3StaffBorder.IsVisible = false;
                 V2ModeBanner.IsVisible = true;
             }
-            else
-            {
-                StaffBorder.IsVisible = true;
-                V2StaffBorder.IsVisible = false;
-                V3StaffBorder.IsVisible = false;
-                V2ModeBanner.IsVisible = false;
-                StaffGraphicsView.Invalidate();
-                UpdateStaffHeight();
-            }
+                else
+                {
+                    StaffBorder.IsVisible = true;
+                    V2StaffBorder.IsVisible = false;
+                    V3StaffBorder.IsVisible = false;
+                    V2ModeBanner.IsVisible = false;
+                    StaffGraphicsView.Invalidate();
+                    UpdateStaffHeight();
+                }
+
+                Dispatcher.Dispatch(UpdateV3ListeningTempoLabel);
             }
             finally
             {
@@ -1020,6 +1026,7 @@ namespace musicmate.Pages
 
                 // Populate session NotesToDraw.
                 RebuildSessionNotesFromV2(flat, 0);
+                ConfigureSessionListeningTiming(flat);
 
                 // Resize the GraphicsView to fit the tallest note (ledger lines + labels).
                 await MainThread.InvokeOnMainThreadAsync(() =>
@@ -1373,6 +1380,8 @@ namespace musicmate.Pages
 
                 _v3SessionUpperPitchCount = upperFlat.Count(n => !n.IsRest);
 
+                ConfigureSessionListeningTiming(upperFlat.Concat(lowerFlat).ToList());
+
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
                     ApplyV3Height();
@@ -1626,6 +1635,8 @@ namespace musicmate.Pages
                             new FeedbackItem(sessionOffset++, 0, 0, false));
                     }
 
+                    _session.AppendListeningTimingSlots(newNotes);
+
                     V2StaffGraphicsView.Invalidate();
                     Debug.WriteLine($"[V2] Appended {measureCount} measures. Total notes: {combinedNotes.Count}");
                 });
@@ -1664,6 +1675,29 @@ namespace musicmate.Pages
                 });
                 _session.FeedbackViewModels.Add(new FeedbackItem(idx++, 0, 0, false));
             }
+        }
+
+        /// <summary>
+        /// Picks the random listening tempo (level 50+) and builds rhythm timing slots
+        /// from the displayed note sequence including rests.
+        /// </summary>
+        private void ConfigureSessionListeningTiming(IReadOnlyList<GeneratedNote>? rhythmNotes)
+        {
+            int level = _session.ChildLevel > 0
+                ? _session.ChildLevel
+                : Preferences.Default.Get(ChildLevelPrefKey, 0);
+            _session.BeginListeningTiming(level, rhythmNotes);
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                OnPropertyChanged(nameof(IsV3ListeningTempoVisible));
+                UpdateV3ListeningTempoLabel();
+            });
+        }
+
+        private void UpdateV3ListeningTempoLabel()
+        {
+            OnPropertyChanged(nameof(IsV3ListeningTempoVisible));
+            UpdateV3PlayButtonPosition();
         }
 
         /// <summary>
@@ -1790,8 +1824,7 @@ namespace musicmate.Pages
         private void UpdateV3PlayButtonPosition()
         {
             if (_v3PlayButton == null || _v3StartStopButton == null
-                || _session.StaffDisplayMode != StaffDisplayMode.V3
-                || !_v3PlayButton.IsVisible)
+                || _session.StaffDisplayMode != StaffDisplayMode.V3)
                 return;
 
             var overlayParent = MainPageRootGrid;
@@ -1811,9 +1844,22 @@ namespace musicmate.Pages
 
             float upperStaffTop = _v3Drawable?.GetUpperStaffTop() ?? 12f;
             double maxHeight = Math.Max(MarginUtils.MmToDips(2), upperStaffTop - 2);
-            _v3PlayButton.HeightRequest = Math.Min(MarginUtils.MmToDips(4), maxHeight);
 
-            _v3PlayButton.Margin = new Thickness(Math.Max(0, left), top, 0, 0);
+            if (_v3PlayButton.IsVisible)
+            {
+                _v3PlayButton.HeightRequest = Math.Min(MarginUtils.MmToDips(4), maxHeight);
+                _v3PlayButton.Margin = new Thickness(Math.Max(0, left), top, 0, 0);
+            }
+
+            if (_v3ListeningTempoLabel != null && IsV3ListeningTempoVisible)
+            {
+                const double gap = 4;
+                double labelWidth = _v3ListeningTempoLabel.Width > 0
+                    ? _v3ListeningTempoLabel.Width
+                    : MarginUtils.MmToDips(14);
+                double labelLeft = Math.Max(0, left - labelWidth - gap);
+                _v3ListeningTempoLabel.Margin = new Thickness(labelLeft, top, 0, 0);
+            }
         }
 
         private static Point GetAbsolutePosition(VisualElement element)
@@ -1951,6 +1997,7 @@ namespace musicmate.Pages
         {
             OnPropertyChanged(nameof(IsV3PlayButtonVisible));
             OnPropertyChanged(nameof(IsPlayEvaluateButtonVisible));
+            OnPropertyChanged(nameof(IsV3ListeningTempoVisible));
             UpdateV3PlayButtonPosition();
         }
 
@@ -2061,7 +2108,7 @@ namespace musicmate.Pages
                 else
                     StaffGraphicsView.Invalidate();
 
-                UpdateV3PlayButtonPosition();
+                UpdateV3ListeningTempoLabel();
             });
         }
 
@@ -2847,6 +2894,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                     try { _audio.StopCapture(); } catch { }
                     Debug.WriteLine("[Start] Starting audio capture...");
                     _audio.StartCapture(OnAudioBlock);
+                    _session.StartListeningClock();
                     Debug.WriteLine("[Start] Audio capture started");
                 }
                 else
@@ -3120,6 +3168,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                     {
                         await _audio.EnsurePermissionAsync();
                         _audio.StartCapture(OnAudioBlock);
+                        _session.StartListeningClock();
                         StatusService.Instance.StatusMessage = "Listening, tap red square to stop";
                         SetButtonStates(true);
                     }
@@ -3194,6 +3243,8 @@ async Task UpdateNoteStatsDatabaseAsync()
                 PcRaw = pc,
                 Tp = meanBpm ?? 0,
                 Ts = stdBpm ?? 0,
+                ListenBpm = _session.IsTimingSensitiveListening ? _session.ListeningTempoBpm : 0,
+                TimingTolPct = _session.IsTimingSensitiveListening ? _session.SessionTimingTolerancePercent : 0,
                 // New timing/accuracy fields
                 Level = _session.ChildLevel,
                 Pch = apc,
@@ -3324,6 +3375,8 @@ async Task UpdateNoteStatsDatabaseAsync()
                     PitchAccuracyPercent   = pitchAccuracyPercent,
                     AveragePitchErrorCents = avgCents,
                     TimingAccuracyPercent  = timingAccuracyPercent,
+                    ListeningTempoBpm      = _session.IsTimingSensitiveListening ? _session.ListeningTempoBpm : 0,
+                    TimingTolerancePercent = _session.IsTimingSensitiveListening ? _session.SessionTimingTolerancePercent : 0,
                     OverallAccuracyPercent = overallAccuracy,
                 };
 
@@ -3391,6 +3444,12 @@ async Task UpdateNoteStatsDatabaseAsync()
                 UpdateRepeatButtonsVisibility();
                 if (!_suppressSessionRegenerate)
                     await RegenerateNotesAsync();
+            }
+
+            if (e.PropertyName is nameof(NoteSessionService.IsTimingSensitiveListening)
+                or nameof(NoteSessionService.ListeningTempoDisplay))
+            {
+                MainThread.BeginInvokeOnMainThread(UpdateV3ListeningTempoLabel);
             }
         }
 

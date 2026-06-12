@@ -34,6 +34,10 @@ public class SessionStat
     public bool Rand { get; set; }
     /// <summary>Accidental percentage in effect when the session was saved.</summary>
     public int AccPct { get; set; }
+    /// <summary>Random listening tempo (BPM) when timing-sensitive listening was active; 0 otherwise.</summary>
+    public int ListenBpm { get; set; }
+    /// <summary>Timing tolerance % snapshot when the session was saved; 0 when not applicable.</summary>
+    public int TimingTolPct { get; set; }
     // Coefficient of variation as percentage (100 * Ts / Tp). Computed on demand, not stored in DB.
     [Ignore]
     public double Cf
@@ -83,6 +87,7 @@ public class SessionDatabase
         await EnsureInstrumentColumnAsync();  // NEW: Ensure Instrument column exists
         await EnsureNewAccuracyColumnsAsync();  // Ensure new timing/accuracy columns exist
         await EnsureGenerationSettingsColumnsAsync();
+        await EnsureListeningTimingColumnsAsync();
     }
 
     private async Task EnsureTuneColumnAsync()
@@ -134,6 +139,19 @@ public class SessionDatabase
         if (columns.All(c => !string.Equals(c.Name, nameof(SessionStat.AccPct), StringComparison.OrdinalIgnoreCase)))
         {
             await _db.ExecuteAsync($"ALTER TABLE {nameof(SessionStat)} ADD COLUMN {nameof(SessionStat.AccPct)} INTEGER NOT NULL DEFAULT 0");
+        }
+    }
+
+    private async Task EnsureListeningTimingColumnsAsync()
+    {
+        var columns = await _db.GetTableInfoAsync(nameof(SessionStat));
+        if (columns.All(c => !string.Equals(c.Name, nameof(SessionStat.ListenBpm), StringComparison.OrdinalIgnoreCase)))
+        {
+            await _db.ExecuteAsync($"ALTER TABLE {nameof(SessionStat)} ADD COLUMN {nameof(SessionStat.ListenBpm)} INTEGER NOT NULL DEFAULT 0");
+        }
+        if (columns.All(c => !string.Equals(c.Name, nameof(SessionStat.TimingTolPct), StringComparison.OrdinalIgnoreCase)))
+        {
+            await _db.ExecuteAsync($"ALTER TABLE {nameof(SessionStat)} ADD COLUMN {nameof(SessionStat.TimingTolPct)} INTEGER NOT NULL DEFAULT 0");
         }
     }
 
@@ -239,6 +257,22 @@ public class SessionResultDatabase
     public async Task InitializeAsync()
     {
         await _db.CreateTableAsync<musicmate.Models.SessionResult>();
+        await EnsureListeningTimingColumnsAsync();
+    }
+
+    private async Task EnsureListeningTimingColumnsAsync()
+    {
+        var columns = await _db.GetTableInfoAsync(nameof(musicmate.Models.SessionResult));
+        if (columns.All(c => !string.Equals(c.Name, nameof(musicmate.Models.SessionResult.ListeningTempoBpm), StringComparison.OrdinalIgnoreCase)))
+        {
+            await _db.ExecuteAsync(
+                $"ALTER TABLE {nameof(musicmate.Models.SessionResult)} ADD COLUMN {nameof(musicmate.Models.SessionResult.ListeningTempoBpm)} INTEGER NOT NULL DEFAULT 0");
+        }
+        if (columns.All(c => !string.Equals(c.Name, nameof(musicmate.Models.SessionResult.TimingTolerancePercent), StringComparison.OrdinalIgnoreCase)))
+        {
+            await _db.ExecuteAsync(
+                $"ALTER TABLE {nameof(musicmate.Models.SessionResult)} ADD COLUMN {nameof(musicmate.Models.SessionResult.TimingTolerancePercent)} INTEGER NOT NULL DEFAULT 0");
+        }
     }
 
     /// <summary>Insert a new result row.  Returns the auto-assigned Id.</summary>

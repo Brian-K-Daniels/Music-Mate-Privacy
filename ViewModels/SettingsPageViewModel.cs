@@ -31,6 +31,7 @@ namespace musicmate.ViewModels
         public const string DefaultLowestNote       = "C4";
         public const string DefaultHighestNote      = "F5";
         public const int    DefaultPlaybackBpm      = 100;
+        public const int    DefaultTimingTolerancePercent = 50;
         public const int    DefaultAccidentalPct    = 30;
         public const int    DefaultCorrectThreshold = 95;
         public const int    DefaultMinCorrectCount  = 6;
@@ -69,6 +70,12 @@ namespace musicmate.ViewModels
                     OnPropertyChanged(nameof(AccidentalPercent)); break;
                 case nameof(NoteSessionService.PlaybackBpm):
                     OnPropertyChanged(nameof(PlaybackBpm)); break;
+                case nameof(NoteSessionService.TimingTolerancePercent):
+                    OnPropertyChanged(nameof(TimingTolerancePercent)); break;
+                case nameof(NoteSessionService.ListeningTempoBpm):
+                case nameof(NoteSessionService.IsTimingSensitiveListening):
+                case nameof(NoteSessionService.ListeningTempoDisplay):
+                    OnPropertyChanged(nameof(ListeningBpmDisplay)); break;
                 case nameof(NoteSessionService.CorrectThreshold):
                     OnPropertyChanged(nameof(CorrectThreshold));
                     OnPropertyChanged(nameof(OmitSliderValue));
@@ -277,6 +284,39 @@ namespace musicmate.ViewModels
                 }
             }
         }
+
+        private int _timingTolerancePercent = Preferences.Get("musicmate.TimingTolerancePercent", DefaultTimingTolerancePercent);
+        public int TimingTolerancePercent
+        {
+            get => _session?.TimingTolerancePercent ?? _timingTolerancePercent;
+            set
+            {
+                var clamped = Math.Clamp(value, 5, 100);
+                if ((_session?.TimingTolerancePercent ?? _timingTolerancePercent) == clamped) return;
+                if (_session != null)
+                {
+                    _session.TimingTolerancePercent = clamped;
+                    OnPropertyChanged(nameof(TimingTolerancePercent));
+                }
+                else
+                {
+                    _timingTolerancePercent = clamped;
+                    Preferences.Set("musicmate.TimingTolerancePercent", _timingTolerancePercent);
+                    OnPropertyChanged(nameof(TimingTolerancePercent));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Current session listening tempo (random at level 50+). Read-only on Settings.
+        /// Shows the BPM chosen for the active Home session, or "—" when none is active.
+        /// </summary>
+        public string ListeningBpmDisplay =>
+            _session != null && _session.IsTimingSensitiveListening && _session.ListeningTempoBpm > 0
+                ? _session.ListeningTempoBpm.ToString()
+                : "—";
+
+        public void RefreshListeningBpmDisplay() => OnPropertyChanged(nameof(ListeningBpmDisplay));
 
         private int _correctThreshold = Preferences.Get("musicmate.CorrectThreshold", 0);
         public int CorrectThreshold
@@ -695,6 +735,7 @@ namespace musicmate.ViewModels
             LowestNote          = DefaultLowestNote;
             HighestNote         = DefaultHighestNote;
             PlaybackBpm         = DefaultPlaybackBpm;
+            TimingTolerancePercent = DefaultTimingTolerancePercent;
             AccidentalPercent   = DefaultAccidentalPct;
             CorrectThreshold    = DefaultCorrectThreshold;
             MinCorrectCount     = DefaultMinCorrectCount;

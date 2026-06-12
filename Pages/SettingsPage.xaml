@@ -80,30 +80,46 @@
       </Grid>
 
       <!-- ── Slider rows: label | slider(fills) | value ───────────────── -->
+      <!-- Label column is 185 dips so "Timing Tolerance %" stays on one line. -->
 
-      <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center">
-        <Label Grid.Column="0" Text="Playback BPM" />
+      <Grid ColumnDefinitions="185,*,52" ColumnSpacing="4" VerticalOptions="Center">
+        <Label Grid.Column="0" Text="Playback BPM" LineBreakMode="NoWrap" MaxLines="1" />
         <Slider Grid.Column="1" Minimum="30" Maximum="200"
                 Value="{Binding PlaybackBpm, Mode=TwoWay}"
                 Style="{StaticResource SliderStyle}" />
         <Label Grid.Column="2" Text="{Binding PlaybackBpm}"
-               HorizontalTextAlignment="End" />
+               HorizontalTextAlignment="End" LineBreakMode="NoWrap" />
+      </Grid>
+
+      <Grid ColumnDefinitions="185,*,52" ColumnSpacing="4" VerticalOptions="Center">
+        <Label Grid.Column="0" Text="Listening BPM" LineBreakMode="NoWrap" MaxLines="1" />
+        <Label Grid.Column="2" Text="{Binding ListeningBpmDisplay}"
+               HorizontalTextAlignment="End" LineBreakMode="NoWrap" />
+      </Grid>
+
+      <Grid ColumnDefinitions="185,*,52" ColumnSpacing="4" VerticalOptions="Center">
+        <Label Grid.Column="0" Text="Timing Tolerance %" LineBreakMode="NoWrap" MaxLines="1" />
+        <Slider Grid.Column="1" Minimum="5" Maximum="100"
+                Value="{Binding TimingTolerancePercent, Mode=TwoWay}"
+                Style="{StaticResource SliderStyle}" />
+        <Label Grid.Column="2" Text="{Binding TimingTolerancePercent}"
+               HorizontalTextAlignment="End" LineBreakMode="NoWrap" />
       </Grid>
 
       <!-- Accidental % -->
-      <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center">
-        <Label Grid.Column="0" Text="Accidental %" />
+      <Grid ColumnDefinitions="185,*,52" ColumnSpacing="4" VerticalOptions="Center">
+        <Label Grid.Column="0" Text="Accidental %" LineBreakMode="NoWrap" MaxLines="1" />
         <Slider Grid.Column="1" Minimum="0" Maximum="100"
                 Value="{Binding AccidentalPercent, Mode=TwoWay}"
                 Style="{StaticResource SliderStyle}"
                 DragCompleted="OnAccidentalPercentDragCompleted" />
         <Label Grid.Column="2" Text="{Binding AccidentalPercent}"
-               HorizontalTextAlignment="End" />
+               HorizontalTextAlignment="End" LineBreakMode="NoWrap" />
       </Grid>
 
       <!-- Omit threshold (label and range change based on MasteredMethod) -->
-      <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center">
-        <Label Grid.Column="0" Text="{Binding OmitSliderLabel}" />
+      <Grid ColumnDefinitions="185,*,52" ColumnSpacing="4" VerticalOptions="Center">
+        <Label Grid.Column="0" Text="{Binding OmitSliderLabel}" LineBreakMode="NoWrap" MaxLines="2" />
         <Slider x:Name="OmitThresholdSlider"
                 Grid.Column="1"
                 Minimum="{Binding OmitSliderMin}"
@@ -111,13 +127,13 @@
                 Value="{Binding OmitSliderValue, Mode=TwoWay}"
                 Style="{StaticResource SliderStyle}" />
         <Label Grid.Column="2" Text="{Binding OmitSliderValue, StringFormat='{0:F0}'}"
-               HorizontalTextAlignment="End" />
+               HorizontalTextAlignment="End" LineBreakMode="NoWrap" />
       </Grid>
 
       <!-- Min correct count (hidden when MasteredMethod=Streak) -->
-      <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center"
+      <Grid ColumnDefinitions="185,*,52" ColumnSpacing="4" VerticalOptions="Center"
             IsVisible="{Binding IsPercentCorrectMethod}">
-        <Label Grid.Column="0" Text="Min correct count" />
+        <Label Grid.Column="0" Text="Min correct count" LineBreakMode="NoWrap" MaxLines="1" />
         <Slider Grid.Column="1" Minimum="1" Maximum="20"
                 Value="{Binding MinCorrectCount, Mode=TwoWay}"
                 Style="{StaticResource SliderStyle}" />
@@ -126,9 +142,9 @@
       </Grid>
 
       <!-- Omit below MsAvg (hidden when MasteredMethod=Streak) -->
-      <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center"
+      <Grid ColumnDefinitions="185,*,52" ColumnSpacing="4" VerticalOptions="Center"
             IsVisible="{Binding IsPercentCorrectMethod}">
-        <Label Grid.Column="0" Text="Omit below MsAvg" />
+        <Label Grid.Column="0" Text="Omit below MsAvg" LineBreakMode="NoWrap" MaxLines="1" />
         <Slider Grid.Column="1" Minimum="0" Maximum="5000"
                 Value="{Binding OmitMsAvgThreshold, Mode=TwoWay}"
                 Style="{StaticResource SliderStyle}" />

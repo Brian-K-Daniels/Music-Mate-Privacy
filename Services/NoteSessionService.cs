@@ -347,6 +347,7 @@ namespace musicmate.Services
         private const string PrefSelectedScaleKey = "musicmate.SelectedScale";
         private const string PrefTuneKey = "musicmate.Tune";
         private const string PrefPlaybackBpmKey = "musicmate.PlaybackBpm";
+        private const string PrefTimingTolerancePercentKey = "musicmate.TimingTolerancePercent";
         private const string PrefPitchMethodKey = "musicmate.PitchMethod";
         private const string PrefToleranceKey = "musicmate.Tolerance";
         private const string PrefAutoStartKey = "musicmate.AutoStart";
@@ -464,6 +465,7 @@ namespace musicmate.Services
         private string _selectedScale = Preferences.Get(PrefSelectedScaleKey, "Major");
         private string? _tune = Preferences.Get(PrefTuneKey, "Selected Scale");
         private int _playbackBpm = Preferences.Get(PrefPlaybackBpmKey, 100);
+        private int _timingTolerancePercent = Preferences.Get(PrefTimingTolerancePercentKey, 50);
         private int _tolerance = Preferences.Get(PrefToleranceKey, 50);
         private int _accidentalPercent = Preferences.Get(PrefAccidentalPercentKey, 0);
         private int _correctThreshold = Preferences.Get(PrefCorrectThresholdKey, 50);
@@ -1008,6 +1010,40 @@ namespace musicmate.Services
                 OnPropertyChanged(nameof(PlaybackBpm));
             }
         }
+
+        /// <summary>
+        /// Allowed start/end deviation as a percentage of each note's rhythmic duration
+        /// (child levels 50+). Persisted separately from pitch <see cref="Tolerance"/>.
+        /// </summary>
+        public int TimingTolerancePercent
+        {
+            get => _timingTolerancePercent;
+            set
+            {
+                var clamped = Math.Clamp(value, 5, 100);
+                if (_timingTolerancePercent == clamped)
+                    return;
+                _timingTolerancePercent = clamped;
+                Preferences.Set(PrefTimingTolerancePercentKey, _timingTolerancePercent);
+                OnPropertyChanged(nameof(TimingTolerancePercent));
+            }
+        }
+
+        /// <summary>Random listening tempo (BPM) for the current session when level ≥ 50.</summary>
+        public int ListeningTempoBpm { get; private set; }
+
+        /// <summary>Tolerance % snapshot captured when listening timing was configured.</summary>
+        public int SessionTimingTolerancePercent { get; private set; }
+
+        public bool IsTimingSensitiveListening { get; private set; }
+
+        public IReadOnlyList<RhythmTimingSlot> RhythmTimingSlots => _rhythmTimingSlots;
+
+        public string ListeningTempoDisplay =>
+            IsTimingSensitiveListening && ListeningTempoBpm > 0
+                ? $"\u2669 = {ListeningTempoBpm}"
+                : "";
+
         public int Tolerance
         {
             get => _tolerance;
@@ -1130,6 +1166,14 @@ namespace musicmate.Services
         private readonly List<(double OnsetMs, double ExpectedBeat)> _onsetData = new();
         private double? _timingAccuracyPercent;
 
+        // Child level 50+ listening tempo / rhythm slots (rests included)
+        private readonly List<RhythmTimingSlot> _rhythmTimingSlots = new();
+        private double _rhythmEndBeat;
+        private bool _timingAwaitingRelease;
+        private int _timingHoldNoteIndex = -1;
+        private int _timingHoldPitchClass;
+        private readonly Dictionary<int, bool> _timingPassResults = new();
+
         // Deprecated BPM fields (kept for compatibility until all references are removed)
         [Obsolete("Use least-squares onset timing instead")]
         private double? _meanBpm;
@@ -1182,6 +1226,8 @@ namespace musicmate.Services
             // Clear timing data and stats
             _onsetData.Clear();
             _timingAccuracyPercent = null;
+            ClearTimingHoldState();
+            _timingPassResults.Clear();
             #pragma warning disable CS0618 // Type or member is obsolete
             _meanBpm = null;
             _stddevBpm = null;
@@ -1196,7 +1242,161 @@ namespace musicmate.Services
             // ensure persisted value is reloaded
             _wrongDebounceMs = Preferences.Get(PrefWrongDebounceMsKey, DefaultDebounceMs);
             _sessionStopwatch.Reset();
-            _sessionStopwatch.Start();
+        }
+
+        /// <summary>
+        /// Starts the session clock for rhythm timing and onset recording.
+        /// Call when the microphone is live and the player can begin (after tune
+        /// generation and permissions), not at session Reset().
+        /// </summary>
+        public void StartListeningClock()
+        {
+            _sessionStopwatch.Restart();
+        }
+
+        /// <summary>
+        /// Picks a random listening tempo and builds rhythm timing slots from the
+        /// displayed sequence (including rests). Called once per new tune display.
+        /// </summary>
+        public void BeginListeningTiming(int childLevel, IReadOnlyList<GeneratedNote>? rhythmNotes)
+        {
+            ClearTimingHoldState();
+            _rhythmTimingSlots.Clear();
+            _rhythmEndBeat = 0;
+            _timingPassResults.Clear();
+            SessionTimingTolerancePercent = TimingTolerancePercent;
+
+            if (!TimingSensitivity.IsActive(childLevel) || rhythmNotes == null || rhythmNotes.Count == 0)
+            {
+                IsTimingSensitiveListening = false;
+                ListeningTempoBpm = 0;
+                OnPropertyChanged(nameof(IsTimingSensitiveListening));
+                OnPropertyChanged(nameof(ListeningTempoBpm));
+                OnPropertyChanged(nameof(ListeningTempoDisplay));
+                return;
+            }
+
+            ListeningTempoBpm = TimingSensitivity.PickListeningTempo(Random.Shared, childLevel);
+            var (slots, endBeat) = TimingSensitivity.BuildSlots(rhythmNotes);
+            _rhythmTimingSlots.AddRange(slots);
+            _rhythmEndBeat = endBeat;
+            IsTimingSensitiveListening = ListeningTempoBpm > 0 && _rhythmTimingSlots.Count > 0;
+            OnPropertyChanged(nameof(IsTimingSensitiveListening));
+            OnPropertyChanged(nameof(ListeningTempoBpm));
+            OnPropertyChanged(nameof(ListeningTempoDisplay));
+        }
+
+        /// <summary>
+        /// Extends rhythm slots when more measures are appended (V2 endless mode).
+        /// Preserves the listening tempo chosen at session start.
+        /// </summary>
+        public void AppendListeningTimingSlots(IReadOnlyList<GeneratedNote> appendedNotes)
+        {
+            if (!IsTimingSensitiveListening || appendedNotes == null || appendedNotes.Count == 0)
+                return;
+
+            int startPitch = _rhythmTimingSlots.Count > 0
+                ? _rhythmTimingSlots[^1].PitchIndex + 1
+                : 0;
+            var (newSlots, endBeat) = TimingSensitivity.BuildSlots(
+                appendedNotes, _rhythmEndBeat, startPitch);
+            _rhythmTimingSlots.AddRange(newSlots);
+            _rhythmEndBeat = endBeat;
+        }
+
+        private void ClearTimingHoldState()
+        {
+            _timingAwaitingRelease = false;
+            _timingHoldNoteIndex = -1;
+        }
+
+        private bool TryGetTimingSlot(int pitchIndex, out RhythmTimingSlot slot)
+        {
+            foreach (var s in _rhythmTimingSlots)
+            {
+                if (s.PitchIndex == pitchIndex)
+                {
+                    slot = s;
+                    return true;
+                }
+            }
+            slot = default;
+            return false;
+        }
+
+        private double BeatToMs(double beats)
+            => beats * 60000.0 / ListeningTempoBpm;
+
+        private bool IsWithinTimingTolerance(double actualMs, double expectedMs, double durationBeats)
+        {
+            double tolMs = BeatToMs(durationBeats) * SessionTimingTolerancePercent / 100.0;
+            return Math.Abs(actualMs - expectedMs) <= tolMs;
+        }
+
+        private bool MarkTimingWrong(int idx, (int Wrong, int Cents) curFeedback, int cents)
+        {
+            var nowTrailing = DateTime.UtcNow;
+            if (_lastWrongTimePerIndex.TryGetValue(idx, out var lastTrailing)
+                && (nowTrailing - lastTrailing).TotalMilliseconds < _wrongDebounceMs)
+                return false;
+
+            _lastWrongTimePerIndex[idx] = nowTrailing;
+            var updated = (Wrong: curFeedback.Wrong + 1, Cents: cents);
+            NoteFeedbacks[idx] = updated;
+            FeedbackViewModels[idx] = new FeedbackItem(idx, updated.Wrong, updated.Cents, false);
+            _timingPassResults[idx] = false;
+            ClearTimingHoldState();
+            return true;
+        }
+
+        private void AdvanceAfterCorrectNote(int idx, int cents, int detectedPcWritten)
+        {
+            var curFeedback = NoteFeedbacks.TryGetValue(idx, out var v) ? v : (Wrong: 0, Cents: 0);
+            CorrectNoteIndices.Add(idx);
+            FeedbackViewModels[idx] = new FeedbackItem(idx, curFeedback.Wrong, cents, true);
+
+            _lockedPitchClassAfterAdvance = detectedPcWritten;
+            _pitchMedianHistory.Clear();
+            IgnoreAudioUntilUtc = DateTime.UtcNow.AddMilliseconds(CooldownMs);
+            _lastWrongTimePerIndex.Remove(idx);
+
+            CurrentNoteIndex = idx + 1;
+            if (CurrentNoteIndex >= NotesToDraw.Count)
+            {
+                CurrentNoteIndex = NotesToDraw.Count;
+                _requireSilenceBeforeNote = false;
+                FinalizeSessionStats();
+                _ = SessionCompletedAsync?.Invoke();
+            }
+            else if (Tune == "Practice Tune"
+                     && Mod12(NotesToDraw[CurrentNoteIndex].Midi) == detectedPcWritten)
+            {
+                _requireSilenceBeforeNote = true;
+            }
+        }
+
+        private void TryCompleteTimingSensitiveNote()
+        {
+            int idx = _timingHoldNoteIndex;
+            if (idx < 0 || !TryGetTimingSlot(idx, out var slot))
+            {
+                ClearTimingHoldState();
+                return;
+            }
+
+            double nowMs = _sessionStopwatch.Elapsed.TotalMilliseconds;
+            double expectedEndMs = BeatToMs(slot.StartBeat + slot.DurationBeats);
+            var curFeedback = NoteFeedbacks.TryGetValue(idx, out var fb) ? fb : (Wrong: 0, Cents: 0);
+
+            if (!IsWithinTimingTolerance(nowMs, expectedEndMs, slot.DurationBeats))
+            {
+                MarkTimingWrong(idx, curFeedback, curFeedback.Cents);
+                return;
+            }
+
+            _timingPassResults[idx] = true;
+            ClearTimingHoldState();
+            AdvanceAfterCorrectNote(idx, curFeedback.Cents, _timingHoldPitchClass);
         }
 
         /// <summary>
@@ -1224,13 +1424,13 @@ namespace musicmate.Services
         /// Records the onset time and expected beat position for the note that was just
         /// played correctly. Called from UpdateFeedbackForCurrent when a note advances.
         /// </summary>
-        private void RecordOnsetIfNeeded(int noteIndex)
+        private void RecordOnsetIfNeeded(int noteIndex, double? expectedBeatOverride = null)
         {
             if (!_sessionStopwatch.IsRunning || noteIndex >= NotesToDraw.Count)
                 return;
 
             double onsetMs = _sessionStopwatch.Elapsed.TotalMilliseconds;
-            double expectedBeat = CalculateExpectedBeatPosition(noteIndex);
+            double expectedBeat = expectedBeatOverride ?? CalculateExpectedBeatPosition(noteIndex);
             _onsetData.Add((onsetMs, expectedBeat));
         }
 
@@ -1259,6 +1459,13 @@ namespace musicmate.Services
         /// </summary>
         public void FinalizeSessionStats()
         {
+            if (IsTimingSensitiveListening && _timingPassResults.Count > 0)
+            {
+                _timingAccuracyPercent = _timingPassResults.Values.Count(v => v) * 100.0 / _timingPassResults.Count;
+                NotifyBpmStatsChanged();
+                return;
+            }
+
             // Need at least 3 notes for meaningful linear regression
             if (_onsetData.Count < 3)
             {
@@ -1388,7 +1595,11 @@ namespace musicmate.Services
 
             // If a silence gap is required (consecutive same-pitch notes), block until
             // silence clears the flag via NotifySilence().
-            if (_requireSilenceBeforeNote)
+            if (_requireSilenceBeforeNote && !(_timingAwaitingRelease && idx == _timingHoldNoteIndex))
+                return false;
+
+            // While holding a timing-sensitive note, ignore further correct detections until release.
+            if (_timingAwaitingRelease && idx == _timingHoldNoteIndex && result.correct)
                 return false;
 
             StatusService.Instance.StatusMessage = $"Expected: {expectedNote}, Heard: {heardNote}, {result.cents}¢, Notes: {NotesToDraw.Count}";
@@ -1398,6 +1609,9 @@ namespace musicmate.Services
             // Only match if the detected pitch class matches the current note's pitch class
             if (Mod12(targetNote.Midi) != detectedPcWritten)
             {
+                if (_timingAwaitingRelease && idx == _timingHoldNoteIndex)
+                    ClearTimingHoldState();
+
                 // Debounce trailing wrong increments (pitch class matched but out of tolerance)
                 var nowTrailing = DateTime.UtcNow;
                 if (_lastWrongTimePerIndex.TryGetValue(idx, out var lastTrailing)
@@ -1418,46 +1632,35 @@ namespace musicmate.Services
             } 
             if (result.correct)
             {
-                // Timing: record onset time and expected beat position
+                if (IsTimingSensitiveListening && TryGetTimingSlot(idx, out var slot))
+                {
+                    double nowMs = _sessionStopwatch.Elapsed.TotalMilliseconds;
+                    double expectedStartMs = BeatToMs(slot.StartBeat);
+
+                    if (!IsWithinTimingTolerance(nowMs, expectedStartMs, slot.DurationBeats))
+                    {
+                        if (MarkTimingWrong(idx, curFeedback, result.cents))
+                            return true;
+                        return false;
+                    }
+
+                    RecordOnsetIfNeeded(idx, slot.StartBeat);
+                    _timingAwaitingRelease = true;
+                    _timingHoldNoteIndex = idx;
+                    _timingHoldPitchClass = detectedPcWritten;
+                    FeedbackViewModels[idx] = new FeedbackItem(idx, curFeedback.Wrong, result.cents, false);
+                    return false;
+                }
+
                 RecordOnsetIfNeeded(idx);
-
-                // Update feedback: update cents only on correct
-                CorrectNoteIndices.Add(idx);
-                FeedbackViewModels[idx] = new FeedbackItem(idx, curFeedback.Wrong, result.cents, true);
-
-                // Lock advancement and move to next note
-                _lockedPitchClassAfterAdvance = detectedPcWritten;
-
-                // Clear smoothing history so the next note starts with fresh data
-                _pitchMedianHistory.Clear();
-
-                // Ignore further audio for a short period to debounce
-                IgnoreAudioUntilUtc = DateTime.UtcNow.AddMilliseconds(CooldownMs);
-
-                // Clear wrong-debounce for this index on correct
-                _lastWrongTimePerIndex.Remove(idx);
-
-                // Move CurrentNoteIndex to the next note (in order)
-                CurrentNoteIndex = idx + 1;
-                if (CurrentNoteIndex >= NotesToDraw.Count)
-                {
-                    CurrentNoteIndex = NotesToDraw.Count; // Stay at the end
-                    _requireSilenceBeforeNote = false;
-                    FinalizeSessionStats();
-                    _ = SessionCompletedAsync?.Invoke();
-                }
-                else if (Tune == "Practice Tune"
-                         && Mod12(NotesToDraw[CurrentNoteIndex].Midi) == detectedPcWritten)
-                {
-                    // Next note has the same pitch class — require a silence gap so the
-                    // sustained audio from this note cannot auto-trigger the next one.
-                    _requireSilenceBeforeNote = true;
-                }
+                AdvanceAfterCorrectNote(idx, result.cents, detectedPcWritten);
                 return true;
             }
 
             // Update feedback for incorrect attempt: only increment wrong, do not update cents
             //Utils.Log($"[Feedback] Incrementing trailing wrong for index={idx}, note={targetNote.Name} (before={curFeedback.Wrong})");
+            if (_timingAwaitingRelease && idx == _timingHoldNoteIndex)
+                ClearTimingHoldState();
             curFeedback = (Wrong: curFeedback.Wrong + 1, Cents: curFeedback.Cents);
             NoteFeedbacks[idx] = curFeedback;
             FeedbackViewModels[idx] = new FeedbackItem(idx, curFeedback.Wrong, curFeedback.Cents, false);
@@ -1733,6 +1936,12 @@ namespace musicmate.Services
         /// </summary>
         public void NotifySilence()
         {
+            if (_timingAwaitingRelease)
+            {
+                TryCompleteTimingSensitiveNote();
+                if (!_timingAwaitingRelease)
+                    return;
+            }
             _requireSilenceBeforeNote = false;
         }
         public (string WrittenName, int CentsDeviation) MapPitch(double freq)

@@ -551,6 +551,15 @@
     </ScrollView>
 
     <!-- V3 play: compact overlay at top of staff panel, centered under marquee start/stop -->
+    <Label x:Name="V3ListeningTempoLabel"
+           Text="{Binding ListeningTempoDisplay}"
+           FontSize="8"
+           FontAttributes="Bold"
+           TextColor="#333333"
+           HorizontalOptions="Start"
+           VerticalOptions="Start"
+           ZIndex="10"
+           IsVisible="{Binding Source={x:Reference mainPage}, Path=IsV3ListeningTempoVisible}" />
     <Button x:Name="V3PlayButton"
             Text="Play"
             FontSize="6"

@@ -339,6 +339,8 @@ namespace musicmate.Drawables
             public bool HasAccidental;   // whether this note needs accidental space
             public bool AccidentalIsFlat; // flat vs sharp/natural box metrics
             public bool AccidentalIsNatural;
+            /// <summary>Accidental resolved in beat order during layout; used when drawing.</summary>
+            public Accidental DrawnAccidental;
             public bool IsRest;
         }
 
@@ -1210,6 +1212,7 @@ namespace musicmate.Drawables
                     HasAccidental = acc.HasAccidental,
                     AccidentalIsFlat = acc.IsFlat,
                     AccidentalIsNatural = acc.IsNatural,
+                    DrawnAccidental = acc.DrawnAccidental,
                     IsRest = note.IsRest
                 };
                 SyncAccidentalX(noteLayouts, i);
@@ -1252,6 +1255,7 @@ namespace musicmate.Drawables
             var hasAccList = new bool[sorted.Count];
             var isFlatList = new bool[sorted.Count];
             var isNaturalList = new bool[sorted.Count];
+            var drawnAccList = new Accidental[sorted.Count];
             var isRestList = new bool[sorted.Count];
             var accHistory = new Dictionary<(char, int), Accidental>();
             var barCancelled = new HashSet<(char, int)>();
@@ -1269,6 +1273,7 @@ namespace musicmate.Drawables
                 hasAccList[k] = acc.HasAccidental;
                 isFlatList[k] = acc.IsFlat;
                 isNaturalList[k] = acc.IsNatural;
+                drawnAccList[k] = acc.DrawnAccidental;
                 isRestList[k] = note.IsRest;
 
                 centers[k] = laneLeft + frac * laneSpan;
@@ -1335,6 +1340,7 @@ namespace musicmate.Drawables
                     HasAccidental = hasAccList[k],
                     AccidentalIsFlat = isFlatList[k],
                     AccidentalIsNatural = isNaturalList[k],
+                    DrawnAccidental = drawnAccList[k],
                     IsRest = isRestList[k]
                 };
                 SyncAccidentalX(noteLayouts, i);
@@ -1423,6 +1429,7 @@ namespace musicmate.Drawables
                     HasAccidental = acc.HasAccidental,
                     AccidentalIsFlat = acc.IsFlat,
                     AccidentalIsNatural = acc.IsNatural,
+                    DrawnAccidental = acc.DrawnAccidental,
                     IsRest = note.IsRest
                 };
                 SyncAccidentalX(noteLayouts, i);
@@ -2676,7 +2683,6 @@ namespace musicmate.Drawables
 
             // Draw notes and collect stem tips for beaming
             var beamStemTips = new Dictionary<int, (float x, float y, Color color, NoteDuration dur)>();
-            var accHistory = new Dictionary<(char, int), Accidental>();
             var barCancelledAccidentals = new HashSet<(char, int)>();
 
             byte fadeAlpha = (byte)Math.Clamp((int)(alpha * 255), 0, 255);
@@ -2696,7 +2702,7 @@ namespace musicmate.Drawables
                 double beat = (note.BeatPosition ?? 0.0) - beatOrigin;
 
                 ResetAccidentalStateIfCrossedBar(beat, prevBeat, barBeats, beatOrigin,
-                    accHistory, barCancelledAccidentals);
+                    barCancelledAccidentals);
 
                 // Key-sig pitch-class cancelled only when this note explicitly contradicts the sig
                 // (e.g. B♮ in F major). None does not cancel — implied key-sig pitch needs no glyph.
@@ -2732,7 +2738,7 @@ namespace musicmate.Drawables
                         beamStemTips[i] = (stemTipX, stemTipY, GetNoteColor(state, ink, fadeAlpha), note.Duration);
 
                     DrawLedgerLines(canvas, note, layout.X, staffTop, staffBot, ink, fadeAlpha);
-                    DrawAccidental(canvas, note, layout, ny, ink, accHistory, barCancelledAccidentals, fadeAlpha, headerRightAbs);
+                    DrawAccidental(canvas, note, layout, ny, ink, fadeAlpha, headerRightAbs);
 
                     var nameDisplay = _session.V2NoteNameDisplay;
                     bool showName = nameDisplay == "All notes"
@@ -2748,13 +2754,12 @@ namespace musicmate.Drawables
             DrawBeams(canvas, beamGroups, beamStemTips, barLayouts);
         }
 
-        /// <summary>Accidentals and key-sig cancellations apply within the current measure only.</summary>
+        /// <summary>Key-sig cancellation flags apply within the current measure only.</summary>
         private static void ResetAccidentalStateIfCrossedBar(
             double beat,
             double prevBeat,
             IReadOnlyList<double> barBeats,
             double beatOrigin,
-            Dictionary<(char, int), Accidental> accHistory,
             HashSet<(char, int)> barCancelledAccidentals)
         {
             foreach (var barBeat in barBeats.OrderBy(b => b))
@@ -2762,7 +2767,6 @@ namespace musicmate.Drawables
                 double relBar = barBeat - beatOrigin;
                 if (prevBeat < relBar - 1e-6 && beat >= relBar - 1e-6)
                 {
-                    accHistory.Clear();
                     barCancelledAccidentals.Clear();
                     return;
                 }
@@ -3522,18 +3526,12 @@ namespace musicmate.Drawables
         }
 
         private void DrawAccidental(ICanvas canvas, GeneratedNote note, NoteLayout layout, float y,
-                                    Color ink, Dictionary<(char, int), Accidental>? history,
-                                    HashSet<(char, int)>? barCancelled,
-                                    byte fadeAlpha, float headerRightAbs)
+                                    Color ink, byte fadeAlpha, float headerRightAbs)
         {
-            if (!TryResolveBodyAccidental(note, history, barCancelled, out var eff, out bool draw))
+            if (!layout.HasAccidental || layout.DrawnAccidental == Accidental.None)
                 return;
 
-            if (history != null && draw && eff != Accidental.None)
-                history[(note.Letter, note.Octave)] = eff;
-
-            if (!draw || eff == Accidental.None)
-                return;
+            var eff = layout.DrawnAccidental;
 
             canvas.SaveState();
             try
@@ -3592,10 +3590,6 @@ namespace musicmate.Drawables
                     canvas.DrawString(glyph, boxLeft, yTop, boxW, symH,
                         HorizontalAlignment.Right, VerticalAlignment.Center);
                 }
-
-                // Key-sig reminder drawn — clear cancellation for this letter+octave in the bar.
-                if (IsAccidentalInKeySig(eff, note.Letter))
-                    barCancelled?.Remove((note.Letter, note.Octave));
             }
             finally { canvas.RestoreState(); }
         }
@@ -3673,14 +3667,20 @@ namespace musicmate.Drawables
 
         private static Accidental InferAccidentalFromSpelling(GeneratedNote note)
         {
+            string name = note.SpelledName ?? "";
+            Accidental fromName = Accidental.None;
+            if (name.Contains("##")) fromName = Accidental.DoubleSharp;
+            else if (name.Contains("bb")) fromName = Accidental.DoubleFlat;
+            else if (name.Contains('#'))  fromName = Accidental.Sharp;
+            else if (name.Contains('b'))  fromName = Accidental.Flat;
+
+            // Spelled name wins over enum when they disagree (e.g. F#4 must not draw ♮).
+            if (fromName != Accidental.None)
+                return fromName;
+
             if (note.Accidental != Accidental.None)
                 return note.Accidental;
 
-            string name = note.SpelledName;
-            if (name.Contains("##")) return Accidental.DoubleSharp;
-            if (name.Contains("bb")) return Accidental.DoubleFlat;
-            if (name.Contains('#'))  return Accidental.Sharp;
-            if (name.Contains('b'))  return Accidental.Flat;
             return Accidental.None;
         }
 
@@ -3710,6 +3710,7 @@ namespace musicmate.Drawables
             public bool HasAccidental { get; init; }
             public bool IsFlat { get; init; }
             public bool IsNatural { get; init; }
+            public Accidental DrawnAccidental { get; init; }
         }
 
         /// <summary>
@@ -3743,6 +3744,7 @@ namespace musicmate.Drawables
                 HasAccidental = hasAcc,
                 IsFlat        = hasAcc && IsFlatBodyAccidental(eff),
                 IsNatural     = hasAcc && IsNaturalBodyAccidental(eff),
+                DrawnAccidental = hasAcc ? eff : Accidental.None,
             };
         }
 

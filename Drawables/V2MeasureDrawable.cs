@@ -1048,14 +1048,19 @@ namespace musicmate.Drawables
 
         private static Accidental InferAccidentalFromSpelling(GeneratedNote note)
         {
+            string name = note.SpelledName ?? "";
+            Accidental fromName = Accidental.None;
+            if (name.Contains("##")) fromName = Accidental.DoubleSharp;
+            else if (name.Contains("bb")) fromName = Accidental.DoubleFlat;
+            else if (name.Contains('#'))  fromName = Accidental.Sharp;
+            else if (name.Contains('b'))  fromName = Accidental.Flat;
+
+            if (fromName != Accidental.None)
+                return fromName;
+
             if (note.Accidental != Accidental.None)
                 return note.Accidental;
 
-            string name = note.SpelledName;
-            if (name.Contains("##")) return Accidental.DoubleSharp;
-            if (name.Contains("bb")) return Accidental.DoubleFlat;
-            if (name.Contains('#'))  return Accidental.Sharp;
-            if (name.Contains('b'))  return Accidental.Flat;
             return Accidental.None;
         }
 

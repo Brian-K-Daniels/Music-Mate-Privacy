@@ -58,6 +58,12 @@ namespace musicmate.Models
         /// </summary>
         public double? TimingAccuracyPercent { get; set; }
 
+        /// <summary>Random listening tempo (BPM) when timing-sensitive listening was active; 0 otherwise.</summary>
+        public int ListeningTempoBpm { get; set; }
+
+        /// <summary>Timing tolerance % in effect when the session was saved; 0 when not applicable.</summary>
+        public int TimingTolerancePercent { get; set; }
+
         // ── Deprecated timing fields (kept for database compatibility) ────────
 
         /// <summary>
