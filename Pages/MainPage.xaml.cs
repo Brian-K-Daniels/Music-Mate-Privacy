@@ -9,7 +9,7 @@ using musicmate.V3LayoutDebug;
 using musicmate.Utilities;
 using System.ComponentModel;
 using System.Diagnostics;
-
+  //  2026.06.12 1516  Just so I can do a commit before using the long prompt for sustained notes and rests.
 namespace musicmate.Pages
 {
     public partial class MainPage : ContentPage
