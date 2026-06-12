@@ -99,11 +99,17 @@
 
       <Grid ColumnDefinitions="185,*,52" ColumnSpacing="4" VerticalOptions="Center">
         <Label Grid.Column="0" Text="Timing Tolerance %" LineBreakMode="NoWrap" MaxLines="1" />
-        <Slider Grid.Column="1" Minimum="5" Maximum="100"
+        <Slider Grid.Column="1" Minimum="5" Maximum="200"
                 Value="{Binding TimingTolerancePercent, Mode=TwoWay}"
                 Style="{StaticResource SliderStyle}" />
         <Label Grid.Column="2" Text="{Binding TimingTolerancePercent}"
                HorizontalTextAlignment="End" LineBreakMode="NoWrap" />
+      </Grid>
+
+      <Grid ColumnDefinitions="185,*,52" ColumnSpacing="4" VerticalOptions="Center">
+        <Label Grid.Column="0" Text="Lenient timing" LineBreakMode="NoWrap" MaxLines="1" />
+        <Switch Grid.Column="1" HorizontalOptions="Start"
+                IsToggled="{Binding LenientTiming, Mode=TwoWay}" />
       </Grid>
 
       <!-- Accidental % -->

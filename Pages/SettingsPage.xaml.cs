@@ -36,6 +36,7 @@ namespace musicmate.Pages
             _viewModel.HighestNote = _session.HighestNote;
             _viewModel.PlaybackBpm = _session.PlaybackBpm;
             _viewModel.TimingTolerancePercent = _session.TimingTolerancePercent;
+            _viewModel.LenientTiming = _session.LenientTiming;
             _viewModel.AccidentalPercent = _session.AccidentalPercent;
             _viewModel.CorrectThreshold = _session.CorrectThreshold;
             _viewModel.MinCorrectCount = _session.MinCorrectCount;
@@ -61,6 +62,7 @@ namespace musicmate.Pages
             base.OnAppearing();
             _viewModel.PlaybackBpm = _session.PlaybackBpm;
             _viewModel.TimingTolerancePercent = _session.TimingTolerancePercent;
+            _viewModel.LenientTiming = _session.LenientTiming;
             _viewModel.RefreshListeningBpmDisplay();
             _viewModel?.RefreshStorageInfo();
             _ = CheckPremiumStatusAsync();

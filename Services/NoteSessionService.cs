@@ -348,6 +348,7 @@ namespace musicmate.Services
         private const string PrefTuneKey = "musicmate.Tune";
         private const string PrefPlaybackBpmKey = "musicmate.PlaybackBpm";
         private const string PrefTimingTolerancePercentKey = "musicmate.TimingTolerancePercent";
+        private const string PrefLenientTimingKey = "musicmate.LenientTiming";
         private const string PrefPitchMethodKey = "musicmate.PitchMethod";
         private const string PrefToleranceKey = "musicmate.Tolerance";
         private const string PrefAutoStartKey = "musicmate.AutoStart";
@@ -466,6 +467,7 @@ namespace musicmate.Services
         private string? _tune = Preferences.Get(PrefTuneKey, "Selected Scale");
         private int _playbackBpm = Preferences.Get(PrefPlaybackBpmKey, 100);
         private int _timingTolerancePercent = Preferences.Get(PrefTimingTolerancePercentKey, 50);
+        private bool _lenientTiming = Preferences.Get(PrefLenientTimingKey, false);
         private int _tolerance = Preferences.Get(PrefToleranceKey, 50);
         private int _accidentalPercent = Preferences.Get(PrefAccidentalPercentKey, 0);
         private int _correctThreshold = Preferences.Get(PrefCorrectThresholdKey, 50);
@@ -1013,14 +1015,14 @@ namespace musicmate.Services
 
         /// <summary>
         /// Allowed start/end deviation as a percentage of each note's rhythmic duration
-        /// (child levels 50+). Persisted separately from pitch <see cref="Tolerance"/>.
+        /// (child levels 61+). Persisted separately from pitch <see cref="Tolerance"/>.
         /// </summary>
         public int TimingTolerancePercent
         {
             get => _timingTolerancePercent;
             set
             {
-                var clamped = Math.Clamp(value, 5, 100);
+                var clamped = Math.Clamp(value, 5, 200);
                 if (_timingTolerancePercent == clamped)
                     return;
                 _timingTolerancePercent = clamped;
@@ -1029,11 +1031,38 @@ namespace musicmate.Services
             }
         }
 
-        /// <summary>Random listening tempo (BPM) for the current session when level ≥ 50.</summary>
+        /// <summary>
+        /// Practice preset: higher tolerance floors, 3× end window, effective pct ≥ 200%.
+        /// </summary>
+        public bool LenientTiming
+        {
+            get => _lenientTiming;
+            set
+            {
+                if (_lenientTiming == value)
+                    return;
+                _lenientTiming = value;
+                Preferences.Set(PrefLenientTimingKey, value);
+                OnPropertyChanged(nameof(LenientTiming));
+            }
+        }
+
+        /// <summary>Random listening tempo (BPM) for the current session when level ≥ 61.</summary>
         public int ListeningTempoBpm { get; private set; }
 
         /// <summary>Tolerance % snapshot captured when listening timing was configured.</summary>
         public int SessionTimingTolerancePercent { get; private set; }
+
+        /// <summary>Lenient-timing snapshot captured when listening timing was configured.</summary>
+        public bool SessionLenientTiming { get; private set; }
+
+        private const int StartTimingToleranceFloorMs = 400;
+        private const int EndTimingToleranceFloorMs = 400;
+        private const int LenientStartTimingToleranceFloorMs = 600;
+        private const int LenientEndTimingToleranceFloorMs = 600;
+        private const double EndTimingToleranceMultiplier = 2.0;
+        private const double LenientEndTimingToleranceMultiplier = 3.0;
+        private const int LenientEffectiveTimingPercentFloor = 200;
 
         public bool IsTimingSensitiveListening { get; private set; }
 
@@ -1163,10 +1192,15 @@ namespace musicmate.Services
 
         // Timing: onset-based linear regression (least-squares fit)
         private readonly Stopwatch _sessionStopwatch = new();
+        private bool _clockPausedForWrong;
+        /// <summary>
+        /// Added to raw stopwatch elapsed so timing can be re-anchored after a wrong note.
+        /// </summary>
+        private double _timingElapsedOffsetMs;
         private readonly List<(double OnsetMs, double ExpectedBeat)> _onsetData = new();
         private double? _timingAccuracyPercent;
 
-        // Child level 50+ listening tempo / rhythm slots (rests included)
+        // Child level 61+ listening tempo / rhythm slots (50–60 pitch-only)
         private readonly List<RhythmTimingSlot> _rhythmTimingSlots = new();
         private double _rhythmEndBeat;
         private bool _timingAwaitingRelease;
@@ -1241,6 +1275,8 @@ namespace musicmate.Services
             _tunerPrevWrittenMidi = null;// reset direction tracking for next session
             // ensure persisted value is reloaded
             _wrongDebounceMs = Preferences.Get(PrefWrongDebounceMsKey, DefaultDebounceMs);
+            _clockPausedForWrong = false;
+            _timingElapsedOffsetMs = 0;
             _sessionStopwatch.Reset();
         }
 
@@ -1251,7 +1287,45 @@ namespace musicmate.Services
         /// </summary>
         public void StartListeningClock()
         {
+            _clockPausedForWrong = false;
+            _timingElapsedOffsetMs = 0;
             _sessionStopwatch.Restart();
+        }
+
+        private double GetListeningElapsedMs()
+            => _sessionStopwatch.Elapsed.TotalMilliseconds + _timingElapsedOffsetMs;
+
+        /// <summary>
+        /// Freezes session elapsed time while the player is on a wrong note.
+        /// Paused wall time is excluded automatically because <see cref="Stopwatch"/>
+        /// does not advance while stopped.
+        /// </summary>
+        private void PauseListeningClockForWrong()
+        {
+            if (_sessionStopwatch.IsRunning)
+                _sessionStopwatch.Stop();
+            _clockPausedForWrong = true;
+        }
+
+        /// <summary>
+        /// Resumes the session clock after the correct target note is detected.
+        /// Re-anchors elapsed time to the note's expected start beat so a prior
+        /// wrong attempt does not leave the clock permanently outside tolerance.
+        /// </summary>
+        private void ResumeListeningClockIfPaused(int pitchIndex)
+        {
+            if (!_clockPausedForWrong)
+                return;
+
+            if (IsTimingSensitiveListening && TryGetTimingSlot(pitchIndex, out var slot))
+            {
+                double expectedStartMs = BeatToMs(slot.StartBeat);
+                _timingElapsedOffsetMs = expectedStartMs - _sessionStopwatch.Elapsed.TotalMilliseconds;
+            }
+
+            if (!_sessionStopwatch.IsRunning)
+                _sessionStopwatch.Start();
+            _clockPausedForWrong = false;
         }
 
         /// <summary>
@@ -1265,9 +1339,21 @@ namespace musicmate.Services
             _rhythmEndBeat = 0;
             _timingPassResults.Clear();
             SessionTimingTolerancePercent = TimingTolerancePercent;
+            SessionLenientTiming = LenientTiming;
 
-            if (!TimingSensitivity.IsActive(childLevel) || rhythmNotes == null || rhythmNotes.Count == 0)
+            if (!TimingSensitivity.UsesListeningTempo(childLevel) || rhythmNotes == null || rhythmNotes.Count == 0)
             {
+                IsTimingSensitiveListening = false;
+                ListeningTempoBpm = 0;
+                OnPropertyChanged(nameof(IsTimingSensitiveListening));
+                OnPropertyChanged(nameof(ListeningTempoBpm));
+                OnPropertyChanged(nameof(ListeningTempoDisplay));
+                return;
+            }
+
+            if (!TimingSensitivity.RequiresTimingJudgment(childLevel))
+            {
+                // Levels 50–60: pitch only, no start/end timing gate.
                 IsTimingSensitiveListening = false;
                 ListeningTempoBpm = 0;
                 OnPropertyChanged(nameof(IsTimingSensitiveListening));
@@ -1327,11 +1413,33 @@ namespace musicmate.Services
         private double BeatToMs(double beats)
             => beats * 60000.0 / ListeningTempoBpm;
 
-        private bool IsWithinTimingTolerance(double actualMs, double expectedMs, double durationBeats)
+        private int EffectiveSessionTimingPercent =>
+            SessionLenientTiming
+                ? Math.Max(SessionTimingTolerancePercent, LenientEffectiveTimingPercentFloor)
+                : SessionTimingTolerancePercent;
+
+        private double ComputeTimingToleranceMs(double durationBeats, bool forEnd)
         {
-            double tolMs = BeatToMs(durationBeats) * SessionTimingTolerancePercent / 100.0;
-            return Math.Abs(actualMs - expectedMs) <= tolMs;
+            double tolMs = BeatToMs(durationBeats) * EffectiveSessionTimingPercent / 100.0;
+            if (forEnd)
+            {
+                double endMult = SessionLenientTiming
+                    ? LenientEndTimingToleranceMultiplier
+                    : EndTimingToleranceMultiplier;
+                tolMs *= endMult;
+            }
+
+            int floor = forEnd
+                ? (SessionLenientTiming ? LenientEndTimingToleranceFloorMs : EndTimingToleranceFloorMs)
+                : (SessionLenientTiming ? LenientStartTimingToleranceFloorMs : StartTimingToleranceFloorMs);
+            return Math.Max(tolMs, floor);
         }
+
+        private bool IsWithinStartTimingTolerance(double actualMs, double expectedMs, double durationBeats)
+            => Math.Abs(actualMs - expectedMs) <= ComputeTimingToleranceMs(durationBeats, forEnd: false);
+
+        private bool IsWithinEndTimingTolerance(double actualMs, double expectedMs, double durationBeats)
+            => Math.Abs(actualMs - expectedMs) <= ComputeTimingToleranceMs(durationBeats, forEnd: true);
 
         private bool MarkTimingWrong(int idx, (int Wrong, int Cents) curFeedback, int cents)
         {
@@ -1346,6 +1454,7 @@ namespace musicmate.Services
             FeedbackViewModels[idx] = new FeedbackItem(idx, updated.Wrong, updated.Cents, false);
             _timingPassResults[idx] = false;
             ClearTimingHoldState();
+            PauseListeningClockForWrong();
             return true;
         }
 
@@ -1384,11 +1493,11 @@ namespace musicmate.Services
                 return;
             }
 
-            double nowMs = _sessionStopwatch.Elapsed.TotalMilliseconds;
+            double nowMs = GetListeningElapsedMs();
             double expectedEndMs = BeatToMs(slot.StartBeat + slot.DurationBeats);
             var curFeedback = NoteFeedbacks.TryGetValue(idx, out var fb) ? fb : (Wrong: 0, Cents: 0);
 
-            if (!IsWithinTimingTolerance(nowMs, expectedEndMs, slot.DurationBeats))
+            if (!IsWithinEndTimingTolerance(nowMs, expectedEndMs, slot.DurationBeats))
             {
                 MarkTimingWrong(idx, curFeedback, curFeedback.Cents);
                 return;
@@ -1429,7 +1538,7 @@ namespace musicmate.Services
             if (!_sessionStopwatch.IsRunning || noteIndex >= NotesToDraw.Count)
                 return;
 
-            double onsetMs = _sessionStopwatch.Elapsed.TotalMilliseconds;
+            double onsetMs = GetListeningElapsedMs();
             double expectedBeat = expectedBeatOverride ?? CalculateExpectedBeatPosition(noteIndex);
             _onsetData.Add((onsetMs, expectedBeat));
         }
@@ -1627,17 +1736,20 @@ namespace musicmate.Services
                 curFeedback = (Wrong: curFeedback.Wrong + 1, Cents: result.cents);
                 NoteFeedbacks[idx] = curFeedback;
                 FeedbackViewModels[idx] = new FeedbackItem(idx, curFeedback.Wrong, curFeedback.Cents, false);
+                PauseListeningClockForWrong();
                 //Utils.Log($"[Feedback] Updated trailing wrong for index={idx}, note={targetNote.Name} (after={curFeedback.Wrong})");
                 return true;
             } 
             if (result.correct)
             {
+                ResumeListeningClockIfPaused(idx);
+
                 if (IsTimingSensitiveListening && TryGetTimingSlot(idx, out var slot))
                 {
-                    double nowMs = _sessionStopwatch.Elapsed.TotalMilliseconds;
+                    double nowMs = GetListeningElapsedMs();
                     double expectedStartMs = BeatToMs(slot.StartBeat);
 
-                    if (!IsWithinTimingTolerance(nowMs, expectedStartMs, slot.DurationBeats))
+                    if (!IsWithinStartTimingTolerance(nowMs, expectedStartMs, slot.DurationBeats))
                     {
                         if (MarkTimingWrong(idx, curFeedback, result.cents))
                             return true;
@@ -1664,6 +1776,7 @@ namespace musicmate.Services
             curFeedback = (Wrong: curFeedback.Wrong + 1, Cents: curFeedback.Cents);
             NoteFeedbacks[idx] = curFeedback;
             FeedbackViewModels[idx] = new FeedbackItem(idx, curFeedback.Wrong, curFeedback.Cents, false);
+            PauseListeningClockForWrong();
             //Utils.Log($"[Feedback] Updated trailing wrong for index={idx}, note={targetNote.Name} (after={curFeedback.Wrong})");
             return true;
         }

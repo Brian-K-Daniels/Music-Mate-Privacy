@@ -1678,7 +1678,7 @@ namespace musicmate.Pages
         }
 
         /// <summary>
-        /// Picks the random listening tempo (level 50+) and builds rhythm timing slots
+        /// Picks the random listening tempo (level 61+) and builds rhythm timing slots
         /// from the displayed note sequence including rests.
         /// </summary>
         private void ConfigureSessionListeningTiming(IReadOnlyList<GeneratedNote>? rhythmNotes)
@@ -2809,6 +2809,30 @@ async Task UpdateNoteStatsDatabaseAsync()
             }
         }
 
+        /// <summary>
+        /// Plays a brief metronome count-in (when timing is active), then starts the session clock.
+        /// </summary>
+        private async Task StartListeningClockWithCountInAsync(CancellationToken ct = default)
+        {
+            if (_session.IsTimingSensitiveListening && _session.ListeningTempoBpm > 0)
+                await PlayListeningCountInAsync(_session.ListeningTempoBpm, ct);
+            _session.StartListeningClock();
+        }
+
+        private async Task PlayListeningCountInAsync(int bpm, CancellationToken ct = default)
+        {
+            int beats = TimingSensitivity.CountInBeats;
+            double beatSec = 60.0 / bpm;
+            double clickSec = Math.Min(0.06, beatSec * 0.15);
+            double gapSec = Math.Max(0, beatSec - clickSec);
+
+            StatusService.Instance.StatusMessage =
+                $"Get ready… {beats} beats at \u2669 = {bpm}";
+
+            var clicks = Enumerable.Repeat(880.0, beats);
+            await _player.PlayAsync(clicks, clickSec, gapSec, 0.45f, ct);
+        }
+
         private async Task StartListeningAndEvaluatingAsync(bool playBack = false)
         {
             try
@@ -2894,7 +2918,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                     try { _audio.StopCapture(); } catch { }
                     Debug.WriteLine("[Start] Starting audio capture...");
                     _audio.StartCapture(OnAudioBlock);
-                    _session.StartListeningClock();
+                    await StartListeningClockWithCountInAsync();
                     Debug.WriteLine("[Start] Audio capture started");
                 }
                 else
@@ -3168,7 +3192,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                     {
                         await _audio.EnsurePermissionAsync();
                         _audio.StartCapture(OnAudioBlock);
-                        _session.StartListeningClock();
+                        await StartListeningClockWithCountInAsync();
                         StatusService.Instance.StatusMessage = "Listening, tap red square to stop";
                         SetButtonStates(true);
                     }

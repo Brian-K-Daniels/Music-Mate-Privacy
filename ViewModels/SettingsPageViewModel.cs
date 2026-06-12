@@ -32,6 +32,7 @@ namespace musicmate.ViewModels
         public const string DefaultHighestNote      = "F5";
         public const int    DefaultPlaybackBpm      = 100;
         public const int    DefaultTimingTolerancePercent = 50;
+        public const int    MaxTimingTolerancePercent     = 200;
         public const int    DefaultAccidentalPct    = 30;
         public const int    DefaultCorrectThreshold = 95;
         public const int    DefaultMinCorrectCount  = 6;
@@ -72,6 +73,8 @@ namespace musicmate.ViewModels
                     OnPropertyChanged(nameof(PlaybackBpm)); break;
                 case nameof(NoteSessionService.TimingTolerancePercent):
                     OnPropertyChanged(nameof(TimingTolerancePercent)); break;
+                case nameof(NoteSessionService.LenientTiming):
+                    OnPropertyChanged(nameof(LenientTiming)); break;
                 case nameof(NoteSessionService.ListeningTempoBpm):
                 case nameof(NoteSessionService.IsTimingSensitiveListening):
                 case nameof(NoteSessionService.ListeningTempoDisplay):
@@ -291,7 +294,7 @@ namespace musicmate.ViewModels
             get => _session?.TimingTolerancePercent ?? _timingTolerancePercent;
             set
             {
-                var clamped = Math.Clamp(value, 5, 100);
+                var clamped = Math.Clamp(value, 5, MaxTimingTolerancePercent);
                 if ((_session?.TimingTolerancePercent ?? _timingTolerancePercent) == clamped) return;
                 if (_session != null)
                 {
@@ -307,8 +310,29 @@ namespace musicmate.ViewModels
             }
         }
 
+        private bool _lenientTiming = Preferences.Get("musicmate.LenientTiming", false);
+        public bool LenientTiming
+        {
+            get => _session?.LenientTiming ?? _lenientTiming;
+            set
+            {
+                if ((_session?.LenientTiming ?? _lenientTiming) == value) return;
+                if (_session != null)
+                {
+                    _session.LenientTiming = value;
+                    OnPropertyChanged(nameof(LenientTiming));
+                }
+                else
+                {
+                    _lenientTiming = value;
+                    Preferences.Set("musicmate.LenientTiming", _lenientTiming);
+                    OnPropertyChanged(nameof(LenientTiming));
+                }
+            }
+        }
+
         /// <summary>
-        /// Current session listening tempo (random at level 50+). Read-only on Settings.
+        /// Current session listening tempo (random at level 61+). Read-only on Settings.
         /// Shows the BPM chosen for the active Home session, or "—" when none is active.
         /// </summary>
         public string ListeningBpmDisplay =>
@@ -736,6 +760,7 @@ namespace musicmate.ViewModels
             HighestNote         = DefaultHighestNote;
             PlaybackBpm         = DefaultPlaybackBpm;
             TimingTolerancePercent = DefaultTimingTolerancePercent;
+            LenientTiming          = false;
             AccidentalPercent   = DefaultAccidentalPct;
             CorrectThreshold    = DefaultCorrectThreshold;
             MinCorrectCount     = DefaultMinCorrectCount;
