@@ -41,6 +41,18 @@ namespace musicmate.Services
         /// <summary>Rhythmic duration for practice-tune notes. Null in random/scale/tuner modes.</summary>
         public NoteDuration? Duration { get; set; }
 
+        /// <summary>Absolute beat where this pitched note begins (V3 rhythm gate).</summary>
+        public double StartBeat { get; set; }
+
+        /// <summary>Written duration in beats (V3 rhythm gate).</summary>
+        public double DurationBeats { get; set; }
+
+        /// <summary>
+        /// Beats from previous pitched note's start to this note's start
+        /// (= prior note duration + intervening rests). Zero for the first pitched note.
+        /// </summary>
+        public double GateBeatsAfterPrevious { get; set; }
+
         // Returns all enharmonic names for this note (including itself)
         public IEnumerable<string> EnharmonicNames
         {
@@ -1108,6 +1120,12 @@ namespace musicmate.Services
         /// immediately trigger the second.
         /// </summary>
         private bool _requireSilenceBeforeNote;
+
+        // V3 sustain/rest earliest-start gate (uses PlaybackBpm as listening tempo)
+        private bool _rhythmStartGateEnabled;
+        private int _listeningGateBpm;
+        private double _rhythmGateUntilMs;
+
         private enum AccidentalPreference    { Auto, Sharps, Flats }
         public static readonly string[] AvailableScales = new[]
         {
@@ -1177,6 +1195,9 @@ namespace musicmate.Services
             IgnoreAudioUntilUtc = DateTime.MinValue;
             _lockedPitchClassAfterAdvance = null;
             _requireSilenceBeforeNote = false;
+            _rhythmStartGateEnabled = false;
+            _listeningGateBpm = 0;
+            _rhythmGateUntilMs = 0;
             _pitchMedianHistory.Clear();
 
             // Clear timing data and stats
@@ -1196,7 +1217,83 @@ namespace musicmate.Services
             // ensure persisted value is reloaded
             _wrongDebounceMs = Preferences.Get(PrefWrongDebounceMsKey, DefaultDebounceMs);
             _sessionStopwatch.Reset();
-            _sessionStopwatch.Start();
+        }
+
+        /// <summary>
+        /// Starts the session clock. Call when the microphone is live (after tune setup).
+        /// </summary>
+        public void StartListeningClock()
+        {
+            _sessionStopwatch.Restart();
+        }
+
+        /// <summary>
+        /// Enables sustain/rest earliest-start gating for V3 sessions using <see cref="PlaybackBpm"/>.
+        /// </summary>
+        public void ConfigureRhythmStartGates(bool enabled)
+        {
+            _rhythmGateUntilMs = 0;
+            if (!enabled || StaffDisplayMode != StaffDisplayMode.V3 || NotesToDraw.Count == 0)
+            {
+                _rhythmStartGateEnabled = false;
+                _listeningGateBpm = 0;
+                return;
+            }
+
+            _listeningGateBpm = Math.Clamp(PlaybackBpm, 40, 240);
+            _rhythmStartGateEnabled = NotesToDraw.Any(n => n.GateBeatsAfterPrevious > 0);
+        }
+
+        private double GetSessionElapsedMs()
+            => _sessionStopwatch.Elapsed.TotalMilliseconds;
+
+        private double BeatToGateMs(double beats)
+            => beats * 60000.0 / _listeningGateBpm;
+
+        private void ArmRhythmGateAfterAdvance(int acceptedIdx)
+        {
+            if (!_rhythmStartGateEnabled)
+                return;
+
+            int nextIdx = acceptedIdx + 1;
+            if (nextIdx >= NotesToDraw.Count)
+            {
+                _rhythmGateUntilMs = 0;
+                return;
+            }
+
+            double gateBeats = NotesToDraw[nextIdx].GateBeatsAfterPrevious;
+            if (gateBeats <= 0)
+            {
+                _rhythmGateUntilMs = 0;
+                return;
+            }
+
+            _rhythmGateUntilMs = GetSessionElapsedMs() + BeatToGateMs(gateBeats);
+        }
+
+        private bool IsRhythmGateBlocking()
+            => _rhythmStartGateEnabled && _rhythmGateUntilMs > 0
+               && GetSessionElapsedMs() < _rhythmGateUntilMs;
+
+        private void ClearRhythmGateIfExpired()
+        {
+            if (_rhythmGateUntilMs > 0 && GetSessionElapsedMs() >= _rhythmGateUntilMs)
+                _rhythmGateUntilMs = 0;
+        }
+
+        private bool TryMarkDebouncedWrong(int idx, (int Wrong, int Cents) curFeedback, int cents)
+        {
+            var nowTrailing = DateTime.UtcNow;
+            if (_lastWrongTimePerIndex.TryGetValue(idx, out var lastTrailing)
+                && (nowTrailing - lastTrailing).TotalMilliseconds < _wrongDebounceMs)
+                return false;
+
+            _lastWrongTimePerIndex[idx] = nowTrailing;
+            var updated = (Wrong: curFeedback.Wrong + 1, Cents: cents);
+            NoteFeedbacks[idx] = updated;
+            FeedbackViewModels[idx] = new FeedbackItem(idx, updated.Wrong, updated.Cents, false);
+            return true;
         }
 
         /// <summary>
@@ -1386,6 +1483,26 @@ namespace musicmate.Services
                 _lockedPitchClassAfterAdvance = null;
             }
 
+            ClearRhythmGateIfExpired();
+
+            var curFeedback = NoteFeedbacks.TryGetValue(idx, out var v2) ? v2 : (Wrong: 0, Cents: 0);
+
+            // Sustain/rest gate: block N+1 until prior note duration + rests have elapsed.
+            if (IsRhythmGateBlocking())
+            {
+                StatusService.Instance.StatusMessage =
+                    $"Expected: {expectedNote}, Heard: {heardNote}, {result.cents}¢ (too early), Notes: {NotesToDraw.Count}";
+
+                if (Mod12(targetNote.Midi) == detectedPcWritten)
+                {
+                    if (TryMarkDebouncedWrong(idx, curFeedback, result.cents))
+                        return true;
+                    return false;
+                }
+
+                return false;
+            }
+
             // If a silence gap is required (consecutive same-pitch notes), block until
             // silence clears the flag via NotifySilence().
             if (_requireSilenceBeforeNote)
@@ -1393,28 +1510,12 @@ namespace musicmate.Services
 
             StatusService.Instance.StatusMessage = $"Expected: {expectedNote}, Heard: {heardNote}, {result.cents}¢, Notes: {NotesToDraw.Count}";
 
-            var curFeedback = NoteFeedbacks.TryGetValue(idx, out var v2) ? v2 : (Wrong: 0, Cents: 0);
-
             // Only match if the detected pitch class matches the current note's pitch class
             if (Mod12(targetNote.Midi) != detectedPcWritten)
             {
-                // Debounce trailing wrong increments (pitch class matched but out of tolerance)
-                var nowTrailing = DateTime.UtcNow;
-                if (_lastWrongTimePerIndex.TryGetValue(idx, out var lastTrailing)
-                    && (nowTrailing - lastTrailing).TotalMilliseconds < _wrongDebounceMs)
-                {
-                    //Utils.Log($"[Feedback] Debounced trailing wrong for index={idx}, note={targetNote.Name}");
-                    return false;
-                }
-                _lastWrongTimePerIndex[idx] = nowTrailing;
-
-                // Update feedback for incorrect attempt: only increment wrong, do not update cents
-                //Utils.Log($"[Feedback] Incrementing trailing wrong for index={idx}, note={targetNote.Name} (before={curFeedback.Wrong})");
-                curFeedback = (Wrong: curFeedback.Wrong + 1, Cents: result.cents);
-                NoteFeedbacks[idx] = curFeedback;
-                FeedbackViewModels[idx] = new FeedbackItem(idx, curFeedback.Wrong, curFeedback.Cents, false);
-                //Utils.Log($"[Feedback] Updated trailing wrong for index={idx}, note={targetNote.Name} (after={curFeedback.Wrong})");
-                return true;
+                if (TryMarkDebouncedWrong(idx, curFeedback, result.cents))
+                    return true;
+                return false;
             } 
             if (result.correct)
             {
@@ -1443,15 +1544,20 @@ namespace musicmate.Services
                 {
                     CurrentNoteIndex = NotesToDraw.Count; // Stay at the end
                     _requireSilenceBeforeNote = false;
+                    _rhythmGateUntilMs = 0;
                     FinalizeSessionStats();
                     _ = SessionCompletedAsync?.Invoke();
                 }
-                else if (Tune == "Practice Tune"
-                         && Mod12(NotesToDraw[CurrentNoteIndex].Midi) == detectedPcWritten)
+                else
                 {
-                    // Next note has the same pitch class — require a silence gap so the
-                    // sustained audio from this note cannot auto-trigger the next one.
-                    _requireSilenceBeforeNote = true;
+                    ArmRhythmGateAfterAdvance(idx);
+                    if (Tune == "Practice Tune"
+                             && Mod12(NotesToDraw[CurrentNoteIndex].Midi) == detectedPcWritten)
+                    {
+                        // Next note has the same pitch class — require a silence gap so the
+                        // sustained audio from this note cannot auto-trigger the next one.
+                        _requireSilenceBeforeNote = true;
+                    }
                 }
                 return true;
             }

@@ -77,10 +77,10 @@ namespace musicmate.Services
             Array.Copy(buf, block, read);
             _callback?.Invoke(block);
             blockCount++;
-            if (blockCount % 100 == 0)
-            {
-              Utils.Log($"[AudioCapture] Blocks processed: {blockCount}");
-            }
+            //if (blockCount % 100 == 0)  //  2026.06.12 1556  block out
+            //{
+            //  Utils.Log($"[AudioCapture] Blocks processed: {blockCount}");
+            //}
             if (blockCount >= MaxBlocks)
             {
               Utils.Log($"[AudioCapture] MaxBlocks ({MaxBlocks}) reached, exiting capture loop.");

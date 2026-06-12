@@ -1354,22 +1354,31 @@ namespace musicmate.Pages
                 }
 
                 // Populate session NotesToDraw from upper then lower.
+                var rhythmOrder = upperFlat.Concat(lowerFlat).ToList();
+                var rhythmSlots = RhythmStartGate.BuildSlots(rhythmOrder);
                 int sessionIdx = 0;
+                int pitchIdx = 0;
                 _session.NotesToDraw.Clear();
                 _session.FeedbackViewModels.Clear();
-                foreach (var gn in upperFlat.Concat(lowerFlat))
+                foreach (var gn in rhythmOrder)
                 {
                     if (gn.IsRest) continue;
+                    var slot = rhythmSlots[pitchIdx++];
                     _session.NotesToDraw.Add(new NoteInfo
                     {
-                        Midi       = gn.MidiNumber,
-                        Name       = gn.SpelledName,
-                        TargetFreq = gn.TargetFrequency,
-                        X          = 0f,
-                        Duration   = gn.Duration
+                        Midi                   = gn.MidiNumber,
+                        Name                   = gn.SpelledName,
+                        TargetFreq             = gn.TargetFrequency,
+                        X                      = 0f,
+                        Duration               = gn.Duration,
+                        StartBeat              = slot.StartBeat,
+                        DurationBeats          = slot.DurationBeats,
+                        GateBeatsAfterPrevious = slot.GateBeatsAfterPrevious,
                     });
                     _session.FeedbackViewModels.Add(new FeedbackItem(sessionIdx++, 0, 0, false));
                 }
+
+                _session.ConfigureRhythmStartGates(_session.StaffDisplayMode == StaffDisplayMode.V3);
 
                 _v3SessionUpperPitchCount = upperFlat.Count(n => !n.IsRest);
 
@@ -2847,6 +2856,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                     try { _audio.StopCapture(); } catch { }
                     Debug.WriteLine("[Start] Starting audio capture...");
                     _audio.StartCapture(OnAudioBlock);
+                    _session.StartListeningClock();
                     Debug.WriteLine("[Start] Audio capture started");
                 }
                 else
@@ -3120,6 +3130,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                     {
                         await _audio.EnsurePermissionAsync();
                         _audio.StartCapture(OnAudioBlock);
+                        _session.StartListeningClock();
                         StatusService.Instance.StatusMessage = "Listening, tap red square to stop";
                         SetButtonStates(true);
                     }
