@@ -81,7 +81,7 @@ public static class TimingDiagnostics
                         $"actual={p.ActualName} actualMs={p.ActualMs:F0} " +
                         $"errorMs={p.ErrorMs:F0} toleranceMs={p.ToleranceMs:F0} " +
                         $"pitchCorrect={p.PitchCorrect} timingCorrect={p.TimingCorrect} " +
-                        $"reason={p.Reason}");
+                        $"overallCorrect={p.OverallCorrect} reason={p.Reason}");
                     break;
                 }
                 case PendingKind.RestTimingWrong:
@@ -120,6 +120,7 @@ public readonly struct TimingWrongPayload
     public double ToleranceMs { get; init; }
     public bool PitchCorrect { get; init; }
     public bool TimingCorrect { get; init; }
+    public bool OverallCorrect { get; init; }
     public string Reason { get; init; }
 }
 

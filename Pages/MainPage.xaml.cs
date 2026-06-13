@@ -465,11 +465,9 @@ namespace musicmate.Pages
 
                         // Rolling per-note attempt history runs unconditionally,
                         // independent of the CollectNoteStats preference.
-                        await SaveNoteAttemptsForSessionAsync();
-
-                        // SaveSessionStatAsync also saves SessionResult and checks level-up
-                        // for child sessions; returns the new level if advanced, else null.
+                        // Save session summary before attempt rows are cleared.
                         int? newChildLevel = await SaveSessionStatAsync();
+                        await SaveNoteAttemptsForSessionAsync();
 
                         // Show result banner at the top of the page.
                         // Append a level-up notice when the child has just advanced.
@@ -2493,10 +2491,6 @@ namespace musicmate.Pages
                         {
                             if (result.correct)
                             {
-                                var prevName = _session.NotesToDraw.ElementAtOrDefault(_session.CurrentNoteIndex - 1)?.Name ?? "";
-                                if (!string.IsNullOrEmpty(prevName))
-                                    _session.RecordRandomSessionNoteResult(prevName, true);
-
                                 // When upper staff is exhausted, trigger lower-staff refresh.
                                 int upperPitchCount = _v3SessionUpperPitchCount;
                                 if (_session.CurrentNoteIndex == upperPitchCount && _v3Drawable != null
@@ -2521,11 +2515,6 @@ namespace musicmate.Pages
                         var result = _session.Evaluate(freq);
                         if (_session.UpdateFeedbackForCurrent(freq, result))
                         {
-                            if (result.correct && !string.IsNullOrEmpty(_session.NotesToDraw.ElementAtOrDefault(_session.CurrentNoteIndex > 0 ? _session.CurrentNoteIndex - 1 : 0)?.Name))
-                            {
-                                var prevName = _session.NotesToDraw.ElementAtOrDefault(_session.CurrentNoteIndex - 1)?.Name ?? "";
-                                _session.RecordRandomSessionNoteResult(prevName, true);
-                            }
                             SyncV2NoteStates();
                         }
                         else
@@ -2577,8 +2566,6 @@ namespace musicmate.Pages
                         var advanced = _session.UpdateFeedbackForCurrent(freq, result);
                         if (advanced)
                         {
-                            _session.RecordRandomSessionNoteResult(expectedName, result.correct);
-                            Debug.WriteLine($"[Random] Recorded {(result.correct ? "correct" : "wrong")} for {expectedName} (heard {detectedNote})");
                             StaffGraphicsView.Invalidate();
                         }
                     }
@@ -2635,10 +2622,10 @@ async Task UpdateNoteStatsDatabaseAsync()
             try
             {
                 var db = ServiceHelper.GetService<NoteDatabase>();
-                var sessionStats = _session.GetAndClearRandomSessionNoteStats();
+                var sessionStats = _session.GetAndClearSessionNoteStats();
                 var sessionStreaks = _session.GetSessionStreaks();
 
-                foreach (var (writtenName, (correct, wrong, totalMs, msCount)) in sessionStats)
+                foreach (var (writtenName, agg) in sessionStats)
                 {
                     var noteLetter = writtenName[0].ToString();
                     var accidental = writtenName.Length > 2 && (writtenName[1] == '#' || writtenName[1] == 'b') ? writtenName[1].ToString() : "";
@@ -2654,28 +2641,39 @@ async Task UpdateNoteStatsDatabaseAsync()
                             Accidental = accidental,
                             Octave = octave,
                             WrittenName = writtenName,
-                            Correct = correct,
-                            Wrong = wrong,
-                            MsCount = msCount,
-                            MsAverage = msCount > 0 ? totalMs / msCount : 0.0,
+                            PitchCorrectCount = agg.PitchCorrect,
+                            PitchWrongCount = agg.PitchWrong,
+                            TimingCorrectCount = agg.TimingCorrect,
+                            TimingWrongCount = agg.TimingWrong,
+                            OverallCorrectCount = agg.OverallCorrect,
+                            OverallWrongCount = agg.OverallWrong,
+                            Correct = agg.OverallCorrect,
+                            Wrong = agg.OverallWrong,
+                            MsCount = agg.MsCount,
+                            MsAverage = agg.MsCount > 0 ? agg.TotalMs / agg.MsCount : 0.0,
                             Streak = sessionStreaks.GetValueOrDefault(writtenName, 0)
                         };
                         await db.InsertOrReplaceAsync(stat);
                     }
                     else
                     {
-                        stat.Correct += correct;
-                        stat.Wrong += wrong;
-                        if (msCount > 0)
+                        stat.PitchCorrectCount += agg.PitchCorrect;
+                        stat.PitchWrongCount += agg.PitchWrong;
+                        stat.TimingCorrectCount += agg.TimingCorrect;
+                        stat.TimingWrongCount += agg.TimingWrong;
+                        stat.OverallCorrectCount += agg.OverallCorrect;
+                        stat.OverallWrongCount += agg.OverallWrong;
+                        stat.Correct = stat.OverallCorrectCount;
+                        stat.Wrong = stat.OverallWrongCount;
+                        if (agg.MsCount > 0)
                         {
-                            var newMsCount = stat.MsCount + msCount;
-                            stat.MsAverage = (stat.MsAverage * stat.MsCount + totalMs) / newMsCount;
+                            var newMsCount = stat.MsCount + agg.MsCount;
+                            stat.MsAverage = (stat.MsAverage * stat.MsCount + agg.TotalMs) / newMsCount;
                             stat.MsCount = newMsCount;
                         }
-                        // Update streak: accumulate if no wrongs this session, otherwise reset to session-end streak
                         if (sessionStreaks.TryGetValue(writtenName, out var sessionStreak))
                         {
-                            if (sessionStreak > 0 && wrong == 0)
+                            if (sessionStreak > 0 && agg.OverallWrong == 0)
                                 stat.Streak += sessionStreak;
                             else
                                 stat.Streak = sessionStreak;
@@ -2717,55 +2715,55 @@ async Task UpdateNoteStatsDatabaseAsync()
                 var instrument = _session.Instrument ?? string.Empty;
                 var level = _session.ChildLevel;
                 var sessionId = _currentSessionId;
-                // Concert key is available via GetConcertKey() (public).
                 var concertKey = _session.GetConcertKey();
 
-                for (int i = 0; i < _session.NotesToDraw.Count; i++)
+                foreach (var outcome in _session.GetSessionAttemptOutcomes())
                 {
-                    var note = _session.NotesToDraw[i];
-
-                    // Only record notes the user actually attempted; skip unreached slots.
-                    bool wasAttempted = _session.CorrectNoteIndices.Contains(i)
-                                     || _session.NoteFeedbacks.ContainsKey(i);
-                    if (!wasAttempted) continue;
-
-                    bool pitchCorrect = _session.CorrectNoteIndices.Contains(i);
-                    int cents = 0;
-                    if (_session.NoteFeedbacks.TryGetValue(i, out var fb))
-                        cents = fb.Cents;
-
-                    // Concert pitch name: the session's written key is already the transposed
-                    // (written) key; record the concert key for reference.
-                    // Full per-note concert-pitch resolution would require a public transpose
-                    // offset — deferred until that API is exposed.
                     string concertName = concertKey != _session.Key ? concertKey : string.Empty;
+                    double? durationBeats = null;
+                    if (!string.IsNullOrEmpty(outcome.ExpectedDuration))
+                    {
+                        durationBeats = outcome.ExpectedDuration switch
+                        {
+                            "Whole" => 4.0,
+                            "Half" => 2.0,
+                            "Quarter" => 1.0,
+                            "Eighth" => 0.5,
+                            "Sixteenth" => 0.25,
+                            _ => null
+                        };
+                    }
 
                     var attempt = new musicmate.Models.NoteAttempt
                     {
-                        // DateTime.UtcNow is the session-end write time, not the per-note play time.
-                        // AttemptId (auto-increment) gives reliable ordering within a session.
-                        DateTime            = DateTime.UtcNow,
-                        SessionId           = sessionId,
-                        Instrument          = instrument,
-                        Level               = level,
-                        // Identity key for rolling limit: WrittenNoteName + Instrument
-                        WrittenNoteName     = note.Name,
+                        DateTime = DateTime.UtcNow,
+                        SessionId = sessionId,
+                        Instrument = instrument,
+                        Level = level,
+                        WrittenNoteName = outcome.ExpectedWrittenNoteName,
+                        ExpectedWrittenNoteName = outcome.ExpectedWrittenNoteName,
+                        ActualDetectedNoteName = outcome.ActualDetectedNoteName,
+                        IsRest = outcome.IsRest,
+                        ExpectedDuration = outcome.ExpectedDuration,
+                        ExpectedBeat = outcome.ExpectedBeat,
+                        ExpectedStartMs = outcome.ExpectedStartMs,
+                        ActualDetectedMs = outcome.ActualDetectedMs,
                         ConcertPitchNoteName = concertName,
-                        MidiNumber          = note.Midi,
-                        ExpectedDurationBeats = note.Duration.HasValue
-                            ? (double?)note.Duration.Value.ToBeatValue() : null,
-                        PitchErrorCents     = cents,  // measured cents offset (0 if not available)
-                        TimingErrorMs       = null,       // not yet tracked per-note
-                        WasPitchCorrect     = pitchCorrect,
-                        WasTimingCorrect    = null,       // reserved for future timing scoring
-                        WasOverallCorrect   = pitchCorrect
+                        MidiNumber = outcome.MidiNumber,
+                        ExpectedDurationBeats = durationBeats,
+                        PitchErrorCents = outcome.PitchErrorCents,
+                        TimingErrorMs = outcome.TimingErrorMs,
+                        TimingToleranceMs = outcome.TimingToleranceMs,
+                        PitchCorrect = outcome.PitchCorrect,
+                        TimingCorrect = outcome.TimingCorrect,
+                        OverallCorrect = outcome.OverallCorrect,
+                        WrongReason = outcome.WrongReason,
                     };
 
-                    // SaveAttemptAsync inserts the row and immediately prunes old rows
-                    // for the same WrittenNoteName+Instrument pair if the count exceeds
-                    // MaxAttemptsPerNote (read from Preferences each time).
                     await _noteAttemptDb.SaveAttemptAsync(attempt);
                 }
+
+                _session.ClearSessionAttemptOutcomes();
             }
             catch (Exception ex)
             {
@@ -2811,9 +2809,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                         notesToRestore = notesToRestore.Where(n =>
                         {
                             if (!stats.TryGetValue(n.Name, out var stat)) return true;
-                            if (_session.MasteredMethod == "Streak")
-                                return stat.Streak < _session.StreakCrit;
-                            return !(stat.PercentCorrect >= _session.CorrectThreshold && stat.Correct >= _session.MinCorrectCount);
+                            return !MasteryEvaluator.IsFullyMastered(stat, _session);
                         }).ToList();
                     }
 
@@ -3326,6 +3322,9 @@ async Task UpdateNoteStatsDatabaseAsync()
                     ? (pitchAccuracyPercent + timingAccuracyPercent.Value) / 2.0
                     : pitchAccuracyPercent;
 
+                var (pitchRight, pitchWrong, timingRight, timingWrong,
+                     overallRight, overallWrong, restRight, restWrong) = _session.GetSessionSummaryCounts();
+
                 var result = new Models.SessionResult
                 {
                     DateTime               = DateTime.UtcNow,
@@ -3338,6 +3337,14 @@ async Task UpdateNoteStatsDatabaseAsync()
                     AveragePitchErrorCents = avgCents,
                     TimingAccuracyPercent  = timingAccuracyPercent,
                     OverallAccuracyPercent = overallAccuracy,
+                    PitchRightCount        = pitchRight,
+                    PitchWrongCount        = pitchWrong,
+                    TimingRightCount       = timingRight,
+                    TimingWrongCount       = timingWrong,
+                    OverallRightCount      = overallRight,
+                    OverallWrongCount      = overallWrong,
+                    RestRightCount         = restRight,
+                    RestWrongCount         = restWrong,
                 };
 
                 await _sessionResultDb.InsertAsync(result);

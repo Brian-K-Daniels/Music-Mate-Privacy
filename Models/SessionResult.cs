@@ -77,10 +77,18 @@ namespace musicmate.Models
         // ── Overall ────────────────────────────────────────────────────────────
 
         /// <summary>
-        /// Composite score: currently equal to PitchAccuracyPercent.
-        /// FUTURE: blend pitch + timing accuracy once timing scoring is tuned.
+        /// Composite score: blend of pitch and timing when timing data exists.
         /// </summary>
         public double OverallAccuracyPercent { get; set; }
+
+        public int PitchRightCount { get; set; }
+        public int PitchWrongCount { get; set; }
+        public int TimingRightCount { get; set; }
+        public int TimingWrongCount { get; set; }
+        public int OverallRightCount { get; set; }
+        public int OverallWrongCount { get; set; }
+        public int RestRightCount { get; set; }
+        public int RestWrongCount { get; set; }
 
         // ── Computed helpers (not stored) ──────────────────────────────────────
 

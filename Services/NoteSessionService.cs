@@ -69,6 +69,19 @@ namespace musicmate.Services
         }
     }
 
+    /// <summary>Per-note session aggregates flushed to <see cref="NoteStat"/> at session end.</summary>
+    public struct SessionNoteAggregate
+    {
+        public int PitchCorrect;
+        public int PitchWrong;
+        public int TimingCorrect;
+        public int TimingWrong;
+        public int OverallCorrect;
+        public int OverallWrong;
+        public double TotalMs;
+        public int MsCount;
+    }
+
     public partial class NoteSessionService : INotifyPropertyChanged
     {
         private static readonly HashSet<string> FreeScales = new() { "Major", "Harmonic Minor" };
@@ -512,7 +525,10 @@ namespace musicmate.Services
                 OnPropertyChanged(nameof(WrongDebounceMs));
             }
         }
-        private readonly Dictionary<string, (int Correct, int Wrong, double TotalMs, int MsCount)> _randomSessionNoteStats = new();
+        private readonly Dictionary<string, SessionNoteAggregate> _sessionNoteStats = new();
+        private readonly List<NoteAttemptOutcome> _sessionAttemptOutcomes = new();
+        private int _sessionRestCorrect;
+        private int _sessionRestWrong;
         private DateTime? _lastCorrectNoteUtc;
         private const string PrefWrongDebounceMsKey = "musicmate.WrongDebounceMs";
         public const int DefaultDebounceMs = 300;
@@ -559,55 +575,145 @@ namespace musicmate.Services
         // Per-session streak tracking: written name → current consecutive correct count
         private readonly Dictionary<string, int> _sessionStreaks = new();
 
+        /// <summary>True when timing accuracy affects overall correctness and mastery.</summary>
+        public bool IsTimingActiveForMastery()
+            => MasteryEvaluator.TimingAffectsMastery(ChildLevel);
+
+        /// <summary>
+        /// When timing is not active for the current level, overall follows pitch only.
+        /// When timing is active, both pitch and timing must pass.
+        /// </summary>
+        public bool ComputeOverallCorrect(bool pitchCorrect, bool? timingCorrect)
+        {
+            if (!pitchCorrect)
+                return false;
+            if (!IsTimingActiveForMastery())
+                return true;
+            return timingCorrect == true;
+        }
+
         public void RecordRandomSessionNoteResult(string writtenName, bool correct)
         {
-            if (!_randomSessionNoteStats.TryGetValue(writtenName, out var stat))
-                stat = (0, 0, 0.0, 0);
+            // Legacy callers pass overall result only; map to pitch+timing when indistinguishable.
+            RecordAttemptOutcome(new NoteAttemptOutcome
+            {
+                ExpectedWrittenNoteName = writtenName,
+                PitchCorrect = correct,
+                TimingCorrect = correct ? true : null,
+                OverallCorrect = correct,
+                WrongReason = correct ? string.Empty : "WrongPitch",
+            });
+        }
+
+        public void RecordAttemptOutcome(in NoteAttemptOutcome outcome)
+        {
+            _sessionAttemptOutcomes.Add(outcome);
+
+            if (outcome.IsRest)
+            {
+                if (outcome.OverallCorrect)
+                    _sessionRestCorrect++;
+                else
+                    _sessionRestWrong++;
+                return;
+            }
+
+            var writtenName = outcome.ExpectedWrittenNoteName;
+            if (string.IsNullOrEmpty(writtenName))
+                return;
+
+            if (!_sessionNoteStats.TryGetValue(writtenName, out var agg))
+                agg = default;
+
+            if (outcome.PitchCorrect)
+                agg.PitchCorrect++;
+            else
+                agg.PitchWrong++;
+
+            if (outcome.TimingCorrect == true)
+                agg.TimingCorrect++;
+            else if (outcome.TimingCorrect == false)
+                agg.TimingWrong++;
+
+            if (outcome.OverallCorrect)
+                agg.OverallCorrect++;
+            else
+                agg.OverallWrong++;
 
             var now = DateTime.UtcNow;
-
-            if (correct)
+            if (outcome.OverallCorrect)
             {
-                Utils.Log($"[Stats] RecordRandomSessionNoteResult CORRECT for {writtenName} (before: C={stat.Correct}, W={stat.Wrong})");
-                stat.Correct++;
                 if (_lastCorrectNoteUtc.HasValue)
                 {
-                    var intervalMs = (now - _lastCorrectNoteUtc.Value).TotalMilliseconds;
-                    stat.TotalMs += intervalMs;
-                    stat.MsCount++;
+                    agg.TotalMs += (now - _lastCorrectNoteUtc.Value).TotalMilliseconds;
+                    agg.MsCount++;
                 }
                 _lastCorrectNoteUtc = now;
-                // Clear any debounce for this written note so future wrongs are counted
                 _lastRandomWrongUtc.Remove(writtenName);
-                // Increment session streak
                 _sessionStreaks[writtenName] = _sessionStreaks.GetValueOrDefault(writtenName, 0) + 1;
-                Utils.Log($"[Stats] RecordRandomSessionNoteResult updated CORRECT for {writtenName} (after: C={stat.Correct}, W={stat.Wrong}, Streak={_sessionStreaks[writtenName]})");
             }
-            else
+            else if (!_lastRandomWrongUtc.TryGetValue(writtenName, out var lastWrong)
+                     || (now - lastWrong).TotalMilliseconds >= _wrongDebounceMs)
             {
-                // Debounce rapid wrong increments for the same writtenName
-                if (_lastRandomWrongUtc.TryGetValue(writtenName, out var lastWrong) && (now - lastWrong).TotalMilliseconds < _wrongDebounceMs)
-                {
-                    Utils.Log($"[Stats] RecordRandomSessionNoteResult DEBOUNCED wrong for {writtenName} (last at {lastWrong:O})");
-                    // skip increment
-                }
-                else
-                {
-                    Utils.Log($"[Stats] RecordRandomSessionNoteResult WRONG for {writtenName} (before: C={stat.Correct}, W={stat.Wrong})");
-                    stat.Wrong++;
-                    _lastRandomWrongUtc[writtenName] = now;
-                    Utils.Log($"[Stats] RecordRandomSessionNoteResult updated WRONG for {writtenName} (after: C={stat.Correct}, W={stat.Wrong})");
-                }
+                _lastRandomWrongUtc[writtenName] = now;
+                _sessionStreaks[writtenName] = 0;
             }
 
-            _randomSessionNoteStats[writtenName] = stat;
+            _sessionNoteStats[writtenName] = agg;
         }
-        public Dictionary<string, (int Correct, int Wrong, double TotalMs, int MsCount)> GetAndClearRandomSessionNoteStats()
+
+        public Dictionary<string, SessionNoteAggregate> GetAndClearSessionNoteStats()
         {
-            var copy = new Dictionary<string, (int Correct, int Wrong, double TotalMs, int MsCount)>(_randomSessionNoteStats);
-            _randomSessionNoteStats.Clear();
+            var copy = new Dictionary<string, SessionNoteAggregate>(_sessionNoteStats);
+            _sessionNoteStats.Clear();
             return copy;
         }
+
+        public IReadOnlyList<NoteAttemptOutcome> GetSessionAttemptOutcomes()
+            => _sessionAttemptOutcomes;
+
+        public (int RestCorrect, int RestWrong) GetSessionRestCounts()
+            => (_sessionRestCorrect, _sessionRestWrong);
+
+        public (int PitchRight, int PitchWrong, int TimingRight, int TimingWrong,
+            int OverallRight, int OverallWrong, int RestRight, int RestWrong) GetSessionSummaryCounts()
+        {
+            int pitchRight = 0, pitchWrong = 0, timingRight = 0, timingWrong = 0;
+            int overallRight = 0, overallWrong = 0;
+            foreach (var outcome in _sessionAttemptOutcomes)
+            {
+                if (outcome.IsRest)
+                    continue;
+                if (outcome.PitchCorrect) pitchRight++; else pitchWrong++;
+                if (outcome.TimingCorrect == true) timingRight++;
+                else if (outcome.TimingCorrect == false) timingWrong++;
+                if (outcome.OverallCorrect) overallRight++; else overallWrong++;
+            }
+
+            return (pitchRight, pitchWrong, timingRight, timingWrong,
+                overallRight, overallWrong, _sessionRestCorrect, _sessionRestWrong);
+        }
+
+        public void ClearSessionAttemptOutcomes()
+        {
+            _sessionAttemptOutcomes.Clear();
+            _sessionRestCorrect = 0;
+            _sessionRestWrong = 0;
+        }
+
+        [Obsolete("Use GetAndClearSessionNoteStats")]
+        public Dictionary<string, (int Correct, int Wrong, double TotalMs, int MsCount)> GetAndClearRandomSessionNoteStats()
+        {
+            var result = new Dictionary<string, (int, int, double, int)>();
+            foreach (var (name, agg) in GetAndClearSessionNoteStats())
+            {
+                result[name] = (agg.OverallCorrect, agg.OverallWrong, agg.TotalMs, agg.MsCount);
+            }
+            return result;
+        }
+
+        public Dictionary<string, SessionNoteAggregate> GetAndClearRandomSessionNoteStatsEx()
+            => GetAndClearSessionNoteStats();
 
         public Dictionary<string, int> GetSessionStreaks()
         {
@@ -631,20 +737,7 @@ namespace musicmate.Services
                 var statsList = await db.GetAllAsync();
                 foreach (var stat in statsList)
                 {
-                    bool mastered;
-                    if (MasteredMethod == "Streak")
-                    {
-                        mastered = stat.Streak >= StreakCrit;
-                    }
-                    else
-                    {
-                        mastered = stat.PercentCorrect >= CorrectThreshold
-                                   && stat.Correct >= MinCorrectCount;
-                        if (mastered && OmitMsAvgThreshold > 0 && stat.MsCount > 0)
-                            mastered = stat.MsAverage < OmitMsAvgThreshold;
-                    }
-
-                    if (!mastered) continue;
+                    if (!MasteryEvaluator.IsFullyMastered(stat, this)) continue;
 
                     int midi = NoteNameToMidi(stat.WrittenName);
                     if (midi > 0) result.Add(midi);
@@ -1221,7 +1314,8 @@ namespace musicmate.Services
             OmitMsAvgThreshold = Preferences.Get(PrefOmitMsAvgThresholdKey, 500);
             _lastWrongTimePerIndex.Clear();
             _lastRandomWrongUtc.Clear();
-            _randomSessionNoteStats.Clear();
+            _sessionNoteStats.Clear();
+            ClearSessionAttemptOutcomes();
             _sessionStreaks.Clear();
             _tunerPrevWrittenMidi = null;// reset direction tracking for next session
             // ensure persisted value is reloaded
@@ -1323,7 +1417,39 @@ namespace musicmate.Services
             return NoteDuration.Sixteenth.ToString();
         }
 
-        private void TryEnqueueRestTimingWrong(string heardNote, double actualMs)
+        private NoteAttemptOutcome BuildNoteOutcome(
+            NoteInfo targetNote,
+            string heardNote,
+            int cents,
+            bool pitchCorrect,
+            bool? timingCorrect,
+            string reason,
+            double? actualMs = null,
+            double? expectedStartMs = null,
+            double? timingErrorMs = null,
+            double timingToleranceMs = 0)
+        {
+            return new NoteAttemptOutcome
+            {
+                ExpectedWrittenNoteName = targetNote.Name,
+                ActualDetectedNoteName = heardNote is "-" or "" ? null : heardNote,
+                IsRest = targetNote.IsRest,
+                ExpectedDuration = FormatDurationName(targetNote.Duration),
+                ExpectedBeat = targetNote.StartBeat,
+                ExpectedStartMs = expectedStartMs,
+                ActualDetectedMs = actualMs,
+                TimingErrorMs = timingErrorMs,
+                TimingToleranceMs = timingToleranceMs,
+                PitchCorrect = pitchCorrect,
+                TimingCorrect = timingCorrect,
+                OverallCorrect = ComputeOverallCorrect(pitchCorrect, timingCorrect),
+                WrongReason = reason,
+                PitchErrorCents = cents,
+                MidiNumber = targetNote.Midi,
+            };
+        }
+
+        private void RecordRestViolation(string heardNote, double actualMs)
         {
             if (_rhythmGateAcceptedIdx < 0 || _rhythmGateAcceptedIdx >= NotesToDraw.Count)
                 return;
@@ -1338,12 +1464,28 @@ namespace musicmate.Services
             int nextIdx = Math.Min(_rhythmGateAcceptedIdx + 1, NotesToDraw.Count - 1);
             double gateBeats = NotesToDraw[nextIdx].GateBeatsAfterPrevious;
             double restBeats = Math.Max(0, gateBeats - prior.DurationBeats);
+            double restStartMs = _rhythmGateStartMs + _rhythmGatePriorDurationMs;
+
+            RecordAttemptOutcome(new NoteAttemptOutcome
+            {
+                IsRest = true,
+                ExpectedWrittenNoteName = "REST",
+                ExpectedDuration = BeatsToDurationLabel(restBeats),
+                ExpectedBeat = restStartBeat,
+                ExpectedStartMs = restStartMs,
+                ActualDetectedNoteName = heardNote is "-" or "" ? null : heardNote,
+                ActualDetectedMs = actualMs,
+                PitchCorrect = false,
+                TimingCorrect = false,
+                OverallCorrect = false,
+                WrongReason = "SoundDuringRest",
+            });
 
             TimingDiagnostics.EnqueueRestTimingWrong(new RestTimingWrongPayload
             {
                 RestDurationName = BeatsToDurationLabel(restBeats),
                 RestStartBeat = restStartBeat,
-                RestStartMs = _rhythmGateStartMs + _rhythmGatePriorDurationMs,
+                RestStartMs = restStartMs,
                 ActualName = heardNote,
                 ActualMs = actualMs,
                 Reason = "SoundDuringRest",
@@ -1354,9 +1496,14 @@ namespace musicmate.Services
             NoteInfo targetNote,
             string heardNote,
             double actualMs,
-            string reason)
+            string reason,
+            bool pitchCorrect,
+            bool timingCorrect)
         {
             double expectedMs = _rhythmGateUntilMs;
+            double errorMs = actualMs - expectedMs;
+            bool overallCorrect = ComputeOverallCorrect(pitchCorrect, timingCorrect);
+
             TimingDiagnostics.EnqueueTimingWrong(new TimingWrongPayload
             {
                 ExpectedName = targetNote.Name,
@@ -1365,10 +1512,11 @@ namespace musicmate.Services
                 ExpectedMs = expectedMs,
                 ActualName = heardNote,
                 ActualMs = actualMs,
-                ErrorMs = actualMs - expectedMs,
+                ErrorMs = errorMs,
                 ToleranceMs = 0,
-                PitchCorrect = true,
-                TimingCorrect = false,
+                PitchCorrect = pitchCorrect,
+                TimingCorrect = timingCorrect,
+                OverallCorrect = overallCorrect,
                 Reason = reason,
             });
         }
@@ -1581,7 +1729,7 @@ namespace musicmate.Services
                 bool inRestPhase = elapsedInGate >= _rhythmGatePriorDurationMs;
 
                 if (inRestPhase)
-                    TryEnqueueRestTimingWrong(heardNote, actualMs);
+                    RecordRestViolation(heardNote, actualMs);
 
                 StatusService.Instance.StatusMessage =
                     $"Expected: {expectedNote}, Heard: {heardNote}, {result.cents}¢ (too early), Notes: {NotesToDraw.Count}";
@@ -1591,7 +1739,14 @@ namespace musicmate.Services
                     string reason = inRestPhase ? "Early" : "EarlyDuringSustain";
                     if (TryMarkDebouncedWrong(idx, curFeedback, result.cents))
                     {
-                        TryEnqueueTimingWrong(targetNote, heardNote, actualMs, reason);
+                        var outcome = BuildNoteOutcome(
+                            targetNote, heardNote, result.cents,
+                            pitchCorrect: true, timingCorrect: false, reason: reason,
+                            actualMs: actualMs, expectedStartMs: _rhythmGateUntilMs,
+                            timingErrorMs: actualMs - _rhythmGateUntilMs);
+                        RecordAttemptOutcome(outcome);
+                        TryEnqueueTimingWrong(targetNote, heardNote, actualMs, reason,
+                            pitchCorrect: true, timingCorrect: false);
                         return true;
                     }
                     return false;
@@ -1611,13 +1766,25 @@ namespace musicmate.Services
             if (Mod12(targetNote.Midi) != detectedPcWritten)
             {
                 if (TryMarkDebouncedWrong(idx, curFeedback, result.cents))
+                {
+                    RecordAttemptOutcome(BuildNoteOutcome(
+                        targetNote, heardNote, result.cents,
+                        pitchCorrect: false, timingCorrect: true, reason: "WrongPitch",
+                        actualMs: GetSessionElapsedMs()));
                     return true;
+                }
                 return false;
             } 
             if (result.correct)
             {
                 // Timing: record onset time and expected beat position
                 RecordOnsetIfNeeded(idx);
+
+                RecordAttemptOutcome(BuildNoteOutcome(
+                    targetNote, heardNote, result.cents,
+                    pitchCorrect: true, timingCorrect: true, reason: string.Empty,
+                    actualMs: GetSessionElapsedMs(), expectedStartMs: targetNote.StartBeat > 0
+                        ? null : GetSessionElapsedMs()));
 
                 // Update feedback: update cents only on correct
                 CorrectNoteIndices.Add(idx);
@@ -1660,11 +1827,13 @@ namespace musicmate.Services
             }
 
             // Update feedback for incorrect attempt: only increment wrong, do not update cents
-            //Utils.Log($"[Feedback] Incrementing trailing wrong for index={idx}, note={targetNote.Name} (before={curFeedback.Wrong})");
             curFeedback = (Wrong: curFeedback.Wrong + 1, Cents: curFeedback.Cents);
             NoteFeedbacks[idx] = curFeedback;
             FeedbackViewModels[idx] = new FeedbackItem(idx, curFeedback.Wrong, curFeedback.Cents, false);
-            //Utils.Log($"[Feedback] Updated trailing wrong for index={idx}, note={targetNote.Name} (after={curFeedback.Wrong})");
+            RecordAttemptOutcome(BuildNoteOutcome(
+                targetNote, heardNote, result.cents,
+                pitchCorrect: false, timingCorrect: true, reason: "WrongPitch",
+                actualMs: GetSessionElapsedMs()));
             return true;
         }
         private async Task<string[]> BuildRandomSequenceAsync()
@@ -1702,22 +1871,8 @@ namespace musicmate.Services
             availableNotes = availableNotes
                 .Where(note =>
                 {
-                    if (stats.TryGetValue(note, out var stat))
-                    {
-                        if (MasteredMethod == "Streak")
-                        {
-                            if (stat.Streak >= StreakCrit)
-                                return false;
-                        }
-                        else // % Correct
-                        {
-                            if (stat.PercentCorrect >= CorrectThreshold && stat.Correct >= MinCorrectCount)
-                                return false;
-                            if (OmitMsAvgThreshold > 0 && stat.MsCount > 0 && stat.MsAverage < OmitMsAvgThreshold)
-                                return false;
-                        }
-                    }
-                    return true;
+                    if (!stats.TryGetValue(note, out var stat)) return true;
+                    return !MasteryEvaluator.IsFullyMastered(stat, this);
                 })
                 .ToList();
 
@@ -1746,7 +1901,7 @@ namespace musicmate.Services
                         .OrderBy(note =>
                         {
                             if (stats.TryGetValue(note, out var s))
-                                return MasteredMethod == "Streak" ? s.Streak : (int)s.PercentCorrect;
+                                return MasteredMethod == "Streak" ? s.Streak : (int)s.PercentOverallCorrect;
                             return 0;
                         })
                         .Take(Math.Max(2, fullPool.Count / 2))
