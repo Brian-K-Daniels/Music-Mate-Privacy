@@ -200,6 +200,14 @@ namespace musicmate.ViewModels
         public string PchSortIndicator => _sessionCurrentSortColumn == "Pch" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string TmgSortIndicator => _sessionCurrentSortColumn == "Tmg" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string OvrlSortIndicator => _sessionCurrentSortColumn == "Ovrl" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string PitchRightSortIndicator => _sessionCurrentSortColumn == "PitchRight" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string PitchWrongSortIndicator => _sessionCurrentSortColumn == "PitchWrong" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string TimingRightSortIndicator => _sessionCurrentSortColumn == "TimingRight" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string TimingWrongSortIndicator => _sessionCurrentSortColumn == "TimingWrong" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string OverallRightSortIndicator => _sessionCurrentSortColumn == "OverallRight" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string OverallWrongSortIndicator => _sessionCurrentSortColumn == "OverallWrong" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string RestRightSortIndicator => _sessionCurrentSortColumn == "RestRight" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string RestWrongSortIndicator => _sessionCurrentSortColumn == "RestWrong" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string KeySortIndicator => _sessionCurrentSortColumn == "Key" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string ScaleSortIndicator => _sessionCurrentSortColumn == "Scale" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string RandSortIndicator => _sessionCurrentSortColumn == "Rand" ? (_sessionIsAscending ? "▲" : "▼") : "";
@@ -214,17 +222,25 @@ namespace musicmate.ViewModels
         // Combined header label text for session columns (text + arrow in one binding)
         public string DateHeader => "Date " + DateSortIndicator;
         public string LevelHeader => "Level " + LevelSortIndicator;
-        public string CorrectPercentHeader => "Correct % " + CorrectPercentSortIndicator;
+        public string CorrectPercentHeader => "Pc% " + CorrectPercentSortIndicator;
         public string PchHeader => "Pch " + PchSortIndicator;
         public string TmgHeader => "Tmg " + TmgSortIndicator;
         public string OvrlHeader => "Ovrl " + OvrlSortIndicator;
+        public string PitchRightHeader => "P+ " + PitchRightSortIndicator;
+        public string PitchWrongHeader => "P− " + PitchWrongSortIndicator;
+        public string TimingRightHeader => "T+ " + TimingRightSortIndicator;
+        public string TimingWrongHeader => "T− " + TimingWrongSortIndicator;
+        public string OverallRightHeader => "O+ " + OverallRightSortIndicator;
+        public string OverallWrongHeader => "O− " + OverallWrongSortIndicator;
+        public string RestRightHeader => "R+ " + RestRightSortIndicator;
+        public string RestWrongHeader => "R− " + RestWrongSortIndicator;
         public string KeyHeader => "Key " + KeySortIndicator;
         public string ScaleHeader => "Scale " + ScaleSortIndicator;
         public string RandHeader => "Rand " + RandSortIndicator;
-        public string AccPctHeader => "Acc.% " + AccPctSortIndicator;
+        public string AccPctHeader => "Acc% " + AccPctSortIndicator;
         public string HiHeader => "Hi " + HiSortIndicator;
         public string LoHeader => "Lo " + LoSortIndicator;
-        public string InstrumentHeader => "Instrument " + InstrumentSortIndicator;
+        public string InstrumentHeader => "Inst " + InstrumentSortIndicator;
         public string TempoHeader => "Tempo " + TempoSortIndicator;
         public string TempoCVHeader => "Tempo CV " + TempoCVSortIndicator;
         public string TempoSDHeader => "Tempo SD " + TempoSDSortIndicator;
@@ -328,6 +344,30 @@ namespace musicmate.ViewModels
                 "Ovrl" => _sessionIsAscending
                     ? SessionStats.OrderBy(s => s.Ovrl)
                     : SessionStats.OrderByDescending(s => s.Ovrl),
+                "PitchRight" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.PitchRightCount)
+                    : SessionStats.OrderByDescending(s => s.PitchRightCount),
+                "PitchWrong" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.PitchWrongCount)
+                    : SessionStats.OrderByDescending(s => s.PitchWrongCount),
+                "TimingRight" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.TimingRightCount)
+                    : SessionStats.OrderByDescending(s => s.TimingRightCount),
+                "TimingWrong" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.TimingWrongCount)
+                    : SessionStats.OrderByDescending(s => s.TimingWrongCount),
+                "OverallRight" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.OverallRightCount)
+                    : SessionStats.OrderByDescending(s => s.OverallRightCount),
+                "OverallWrong" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.OverallWrongCount)
+                    : SessionStats.OrderByDescending(s => s.OverallWrongCount),
+                "RestRight" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.RestRightCount)
+                    : SessionStats.OrderByDescending(s => s.RestRightCount),
+                "RestWrong" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.RestWrongCount)
+                    : SessionStats.OrderByDescending(s => s.RestWrongCount),
                 "Key" => _sessionIsAscending
                     ? SessionStats.OrderBy(s => s.Key)
                     : SessionStats.OrderByDescending(s => s.Key),
@@ -372,6 +412,14 @@ namespace musicmate.ViewModels
             OnPropertyChanged(nameof(PchSortIndicator));
             OnPropertyChanged(nameof(TmgSortIndicator));
             OnPropertyChanged(nameof(OvrlSortIndicator));
+            OnPropertyChanged(nameof(PitchRightSortIndicator));
+            OnPropertyChanged(nameof(PitchWrongSortIndicator));
+            OnPropertyChanged(nameof(TimingRightSortIndicator));
+            OnPropertyChanged(nameof(TimingWrongSortIndicator));
+            OnPropertyChanged(nameof(OverallRightSortIndicator));
+            OnPropertyChanged(nameof(OverallWrongSortIndicator));
+            OnPropertyChanged(nameof(RestRightSortIndicator));
+            OnPropertyChanged(nameof(RestWrongSortIndicator));
             OnPropertyChanged(nameof(KeySortIndicator));
             OnPropertyChanged(nameof(ScaleSortIndicator));
             OnPropertyChanged(nameof(RandSortIndicator));
@@ -388,6 +436,14 @@ namespace musicmate.ViewModels
             OnPropertyChanged(nameof(PchHeader));
             OnPropertyChanged(nameof(TmgHeader));
             OnPropertyChanged(nameof(OvrlHeader));
+            OnPropertyChanged(nameof(PitchRightHeader));
+            OnPropertyChanged(nameof(PitchWrongHeader));
+            OnPropertyChanged(nameof(TimingRightHeader));
+            OnPropertyChanged(nameof(TimingWrongHeader));
+            OnPropertyChanged(nameof(OverallRightHeader));
+            OnPropertyChanged(nameof(OverallWrongHeader));
+            OnPropertyChanged(nameof(RestRightHeader));
+            OnPropertyChanged(nameof(RestWrongHeader));
             OnPropertyChanged(nameof(KeyHeader));
             OnPropertyChanged(nameof(ScaleHeader));
             OnPropertyChanged(nameof(RandHeader));

@@ -30,6 +30,22 @@ public class SessionStat
     public double Pch { get; set; }       // Pitch accuracy %
     public double Tmg { get; set; }       // Timing accuracy %
     public double Ovrl { get; set; }      // Overall accuracy %
+    [Column("PchRt")]
+    public int PitchRightCount { get; set; }
+    [Column("PchWr")]
+    public int PitchWrongCount { get; set; }
+    [Column("TmgRt")]
+    public int TimingRightCount { get; set; }
+    [Column("TmgWr")]
+    public int TimingWrongCount { get; set; }
+    [Column("OvrRt")]
+    public int OverallRightCount { get; set; }
+    [Column("OvrWr")]
+    public int OverallWrongCount { get; set; }
+    [Column("RstRt")]
+    public int RestRightCount { get; set; }
+    [Column("RstWr")]
+    public int RestWrongCount { get; set; }
     /// <summary>True when random-mode note selection was active at session save.</summary>
     public bool Rand { get; set; }
     /// <summary>Accidental percentage in effect when the session was saved.</summary>

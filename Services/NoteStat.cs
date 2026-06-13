@@ -16,13 +16,21 @@ namespace musicmate.Services
         /// <summary>Legacy overall wrong count (mirrors OverallWrongCount).</summary>
         public int Wrong { get; set; }
 
+        [Column("PchRt")]
         public int PitchCorrectCount { get; set; }
+        [Column("PchWr")]
         public int PitchWrongCount { get; set; }
+        [Column("TmgRt")]
         public int TimingCorrectCount { get; set; }
+        [Column("TmgWr")]
         public int TimingWrongCount { get; set; }
+        [Column("OvrRt")]
         public int OverallCorrectCount { get; set; }
+        [Column("OvrWr")]
         public int OverallWrongCount { get; set; }
+        [Column("RstRt")]
         public int RestCorrectCount { get; set; }
+        [Column("RstWr")]
         public int RestWrongCount { get; set; }
 
         public string? Accidental { get; set; }

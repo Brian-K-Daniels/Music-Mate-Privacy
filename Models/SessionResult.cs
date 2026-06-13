@@ -81,13 +81,21 @@ namespace musicmate.Models
         /// </summary>
         public double OverallAccuracyPercent { get; set; }
 
+        [Column("PchRt")]
         public int PitchRightCount { get; set; }
+        [Column("PchWr")]
         public int PitchWrongCount { get; set; }
+        [Column("TmgRt")]
         public int TimingRightCount { get; set; }
+        [Column("TmgWr")]
         public int TimingWrongCount { get; set; }
+        [Column("OvrRt")]
         public int OverallRightCount { get; set; }
+        [Column("OvrWr")]
         public int OverallWrongCount { get; set; }
+        [Column("RstRt")]
         public int RestRightCount { get; set; }
+        [Column("RstWr")]
         public int RestWrongCount { get; set; }
 
         // ── Computed helpers (not stored) ──────────────────────────────────────

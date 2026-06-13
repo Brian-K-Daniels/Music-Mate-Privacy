@@ -36,24 +36,31 @@ namespace musicmate.Models
         public string WrittenNoteName { get; set; } = string.Empty;
 
         /// <summary>Expected written note for this attempt (same as WrittenNoteName for pitched notes).</summary>
+        [Column("ExpNm")]
         public string ExpectedWrittenNoteName { get; set; } = string.Empty;
 
         /// <summary>Detected note name, or null/empty for silence.</summary>
+        [Column("ActNm")]
         public string? ActualDetectedNoteName { get; set; }
 
         /// <summary>True when the expected slot was a rest.</summary>
+        [Column("IsRst")]
         public bool IsRest { get; set; }
 
         /// <summary>Expected duration label, e.g. Quarter, Half.</summary>
+        [Column("ExpDur")]
         public string? ExpectedDuration { get; set; }
 
         /// <summary>Expected beat position in the written sequence.</summary>
+        [Column("ExpBt")]
         public double? ExpectedBeat { get; set; }
 
         /// <summary>Expected earliest start time in session milliseconds.</summary>
+        [Column("ExpMs")]
         public double? ExpectedStartMs { get; set; }
 
         /// <summary>Actual detection time in session milliseconds.</summary>
+        [Column("ActMs")]
         public double? ActualDetectedMs { get; set; }
 
         /// <summary>
@@ -75,20 +82,26 @@ namespace musicmate.Models
         public int PitchErrorCents { get; set; }
 
         /// <summary>Timing error in milliseconds relative to expected start (negative = early).</summary>
+        [Column("TmgErr")]
         public double? TimingErrorMs { get; set; }
 
         /// <summary>Timing tolerance in milliseconds when timing was evaluated.</summary>
+        [Column("TmgTol")]
         public double? TimingToleranceMs { get; set; }
 
+        [Column("PchOk")]
         public bool PitchCorrect { get; set; }
 
         /// <summary>Null when timing was not evaluated for this attempt.</summary>
+        [Column("TmgOk")]
         public bool? TimingCorrect { get; set; }
 
         /// <summary>PitchCorrect && TimingCorrect when timing counts; PitchCorrect only when it does not.</summary>
+        [Column("OvrOk")]
         public bool OverallCorrect { get; set; }
 
         /// <summary>WrongReason when OverallCorrect is false, e.g. Early, WrongPitch, SoundDuringRest.</summary>
+        [Column("WngRs")]
         public string WrongReason { get; set; } = string.Empty;
 
         // Legacy aliases for code that still references Was* names.

@@ -2647,6 +2647,8 @@ async Task UpdateNoteStatsDatabaseAsync()
                             TimingWrongCount = agg.TimingWrong,
                             OverallCorrectCount = agg.OverallCorrect,
                             OverallWrongCount = agg.OverallWrong,
+                            RestCorrectCount = 0,
+                            RestWrongCount = 0,
                             Correct = agg.OverallCorrect,
                             Wrong = agg.OverallWrong,
                             MsCount = agg.MsCount,
@@ -3186,6 +3188,9 @@ async Task UpdateNoteStatsDatabaseAsync()
                 ? (apc + timingAccuracyPercent.Value) / 2.0
                 : apc;
 
+            var (pitchRight, pitchWrong, timingRight, timingWrong,
+                 overallRight, overallWrong, restRight, restWrong) = _session.GetSessionSummaryCounts();
+
             var stat = new SessionStat
             {
                 Dt = DateTime.Now,
@@ -3207,7 +3212,15 @@ async Task UpdateNoteStatsDatabaseAsync()
                 Level = _session.ChildLevel,
                 Pch = apc,
                 Tmg = timingAccuracyPercent ?? 0.0,
-                Ovrl = overallAccuracy
+                Ovrl = overallAccuracy,
+                PitchRightCount = pitchRight,
+                PitchWrongCount = pitchWrong,
+                TimingRightCount = timingRight,
+                TimingWrongCount = timingWrong,
+                OverallRightCount = overallRight,
+                OverallWrongCount = overallWrong,
+                RestRightCount = restRight,
+                RestWrongCount = restWrong
             };
 
             await _sessionDb.InsertAsync(stat);
