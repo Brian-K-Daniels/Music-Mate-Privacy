@@ -3382,7 +3382,7 @@ namespace musicmate.Drawables
 
         private static Color GetNoteColor(V2NoteState state, Color ink, byte fadeAlpha) => state switch
         {
-            V2NoteState.Current => ApplyAlpha(Color.FromArgb("#007BFF"), fadeAlpha),
+            V2NoteState.Current => ApplyAlpha(Colors.Yellow,             fadeAlpha),  //  2026.06.13 1552  Color.FromArgb("#007BFF"), fadeAlpha),
             V2NoteState.Correct => ApplyAlpha(Color.FromArgb("#22AA44"), fadeAlpha),
             V2NoteState.Wrong   => ApplyAlpha(Color.FromArgb("#CC2222"), fadeAlpha),
             _ => ApplyAlpha(Colors.Black, (byte)(fadeAlpha * 0.85f))
@@ -3405,7 +3405,7 @@ namespace musicmate.Drawables
                 switch (state)
                 {
                     case V2NoteState.Current:
-                        noteColor = ApplyAlpha(Color.FromArgb("#007BFF"), fadeAlpha);
+                        noteColor = ApplyAlpha(Colors.Yellow, fadeAlpha);  //  2026.06.13 1601  Color.FromArgb("#007BFF"), fadeAlpha);
                         break;
                     case V2NoteState.Correct:
                         noteColor = ApplyAlpha(Color.FromArgb("#22AA44"), fadeAlpha);

@@ -786,7 +786,7 @@ namespace musicmate.Drawables
                         canvas.StrokeSize  = 2f;
                         canvas.FillRoundedRectangle(x - r * 2.8f, y - r * 3.5f, r * 5.6f, r * 8f, 5f);
                         canvas.DrawRoundedRectangle(x - r * 2.8f, y - r * 3.5f, r * 5.6f, r * 8f, 5f);
-                        noteColor = Color.FromArgb("#007BFF");
+                        noteColor =   Colors.Yellow;//  2026.06.13 1559  Color.FromArgb("#007BFF");
                         break;
                     case V2NoteState.Correct:
                         noteColor = Color.FromArgb("#22AA44");  // slightly softer green

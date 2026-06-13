@@ -2854,6 +2854,17 @@ async Task UpdateNoteStatsDatabaseAsync()
                     Debug.WriteLine("[Start] Requesting audio permission...");
                     await _audio.EnsurePermissionAsync();
                     try { _audio.StopCapture(); } catch { }
+                    var expectedNotes = _session.NotesToDraw
+                        .Take(5)
+                        .Select(n => n.Name)
+                        .ToArray();
+                    var sessionLog =
+                        $"[Start] Instrument={_session.Instrument}, " +
+                        $"transpose={_session.InstrumentTransposeOffset}, " +
+                        $"Key={_session.Key}, Scale={_session.SelectedScale}, " +
+                        $"Notes=[{string.Join(", ", expectedNotes)}]";
+                    Debug.WriteLine(sessionLog);
+                    Utils.Log(sessionLog);
                     Debug.WriteLine("[Start] Starting audio capture...");
                     _audio.StartCapture(OnAudioBlock);
                     _session.StartListeningClock();

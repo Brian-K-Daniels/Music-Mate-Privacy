@@ -91,6 +91,8 @@ namespace musicmate.Services
 
         public NoteSessionService()
         {
+            Instrument = _instrument;
+
             StatusService.Instance.PropertyChanged += (_, e) =>
             {
                 if (e.PropertyName == nameof(StatusService.IsPremiumUser) && !StatusService.Instance.IsPremiumUser)
@@ -914,11 +916,40 @@ namespace musicmate.Services
             -21  // Eb - 1 octave, Baritone Sax
         };
 
+        /// <summary>
+        /// Maps a stored instrument value (short key like "Bb" or a full InstrumentOptions entry)
+        /// to the canonical InstrumentOptions string.
+        /// </summary>
+        public static string NormalizeInstrumentOption(string? value)
+        {
+            var raw = value?.Trim() ?? string.Empty;
+            if (string.IsNullOrEmpty(raw))
+                return InstrumentOptions.Length > 0 ? InstrumentOptions[0] : raw;
+
+            var exactIdx = Array.IndexOf(InstrumentOptions, raw);
+            if (exactIdx >= 0)
+                return InstrumentOptions[exactIdx];
+
+            var shortKey = raw.Split(',')[0].Trim();
+            var shortIdx = Array.FindIndex(InstrumentOptions, o => o.Split(',')[0].Trim() == shortKey);
+            if (shortIdx >= 0)
+                return InstrumentOptions[shortIdx];
+
+            return raw;
+        }
+
         private int GetInstrumentTransposeOffset()
         {
             int idx = Array.IndexOf(InstrumentOptions, Instrument);
+            if (idx < 0)
+            {
+                var shortKey = Instrument?.Split(',')[0].Trim() ?? string.Empty;
+                idx = Array.FindIndex(InstrumentOptions, o => o.Split(',')[0].Trim() == shortKey);
+            }
             return (idx >= 0 && idx < InstrumentTransposeOffsets.Length) ? InstrumentTransposeOffsets[idx] : 0;
         }
+
+        public int InstrumentTransposeOffset => GetInstrumentTransposeOffset();
 
         private static HashSet<int> GetUnadornedNoteMidis(IEnumerable<string> scaleNotes)
         {
@@ -1062,8 +1093,9 @@ namespace musicmate.Services
             get => _instrument;
             set
             {
-                if (_instrument == value) return;
-                _instrument = value;
+                var normalized = NormalizeInstrumentOption(value);
+                if (_instrument == normalized) return;
+                _instrument = normalized;
                 Preferences.Set(PrefInstrumentKey, _instrument);
                 OnPropertyChanged(nameof(Instrument));
             }
