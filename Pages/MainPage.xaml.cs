@@ -2589,6 +2589,8 @@ namespace musicmate.Pages
                         if (_session.UpdateFeedbackForCurrent(freq, result))
                             StaffGraphicsView.Invalidate();
                     }
+
+                    TimingDiagnostics.Flush();
                 });
             }
         }       

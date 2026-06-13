@@ -5,6 +5,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
+using musicmate.Diagnostics;
 using musicmate.Models;
 using musicmate.Utilities;
 
@@ -1125,6 +1126,10 @@ namespace musicmate.Services
         private bool _rhythmStartGateEnabled;
         private int _listeningGateBpm;
         private double _rhythmGateUntilMs;
+        private double _rhythmGateStartMs;
+        private int _rhythmGateAcceptedIdx = -1;
+        private double _rhythmGatePriorDurationMs;
+        private double _lastRestViolationLogMs = double.NegativeInfinity;
 
         private enum AccidentalPreference    { Auto, Sharps, Flats }
         public static readonly string[] AvailableScales = new[]
@@ -1198,7 +1203,12 @@ namespace musicmate.Services
             _rhythmStartGateEnabled = false;
             _listeningGateBpm = 0;
             _rhythmGateUntilMs = 0;
+            _rhythmGateStartMs = 0;
+            _rhythmGateAcceptedIdx = -1;
+            _rhythmGatePriorDurationMs = 0;
+            _lastRestViolationLogMs = double.NegativeInfinity;
             _pitchMedianHistory.Clear();
+            TimingDiagnostics.ResetSession();
 
             // Clear timing data and stats
             _onsetData.Clear();
@@ -1269,7 +1279,12 @@ namespace musicmate.Services
                 return;
             }
 
-            _rhythmGateUntilMs = GetSessionElapsedMs() + BeatToGateMs(gateBeats);
+            double nowMs = GetSessionElapsedMs();
+            _rhythmGateStartMs = nowMs;
+            _rhythmGateAcceptedIdx = acceptedIdx;
+            _rhythmGatePriorDurationMs = BeatToGateMs(NotesToDraw[acceptedIdx].DurationBeats);
+            _rhythmGateUntilMs = nowMs + BeatToGateMs(gateBeats);
+            _lastRestViolationLogMs = double.NegativeInfinity;
         }
 
         private bool IsRhythmGateBlocking()
@@ -1296,6 +1311,68 @@ namespace musicmate.Services
             return true;
         }
 
+        private static string FormatDurationName(NoteDuration? duration)
+            => duration?.ToString() ?? "Quarter";
+
+        private static string BeatsToDurationLabel(double beats)
+        {
+            if (beats >= 3.5) return NoteDuration.Whole.ToString();
+            if (beats >= 1.5) return NoteDuration.Half.ToString();
+            if (beats >= 0.75) return NoteDuration.Quarter.ToString();
+            if (beats >= 0.35) return NoteDuration.Eighth.ToString();
+            return NoteDuration.Sixteenth.ToString();
+        }
+
+        private void TryEnqueueRestTimingWrong(string heardNote, double actualMs)
+        {
+            if (_rhythmGateAcceptedIdx < 0 || _rhythmGateAcceptedIdx >= NotesToDraw.Count)
+                return;
+
+            const double restLogDebounceMs = 250;
+            if (actualMs - _lastRestViolationLogMs < restLogDebounceMs)
+                return;
+            _lastRestViolationLogMs = actualMs;
+
+            var prior = NotesToDraw[_rhythmGateAcceptedIdx];
+            double restStartBeat = prior.StartBeat + prior.DurationBeats;
+            int nextIdx = Math.Min(_rhythmGateAcceptedIdx + 1, NotesToDraw.Count - 1);
+            double gateBeats = NotesToDraw[nextIdx].GateBeatsAfterPrevious;
+            double restBeats = Math.Max(0, gateBeats - prior.DurationBeats);
+
+            TimingDiagnostics.EnqueueRestTimingWrong(new RestTimingWrongPayload
+            {
+                RestDurationName = BeatsToDurationLabel(restBeats),
+                RestStartBeat = restStartBeat,
+                RestStartMs = _rhythmGateStartMs + _rhythmGatePriorDurationMs,
+                ActualName = heardNote,
+                ActualMs = actualMs,
+                Reason = "SoundDuringRest",
+            });
+        }
+
+        private void TryEnqueueTimingWrong(
+            NoteInfo targetNote,
+            string heardNote,
+            double actualMs,
+            string reason)
+        {
+            double expectedMs = _rhythmGateUntilMs;
+            TimingDiagnostics.EnqueueTimingWrong(new TimingWrongPayload
+            {
+                ExpectedName = targetNote.Name,
+                DurationName = FormatDurationName(targetNote.Duration),
+                ExpectedBeat = targetNote.StartBeat,
+                ExpectedMs = expectedMs,
+                ActualName = heardNote,
+                ActualMs = actualMs,
+                ErrorMs = actualMs - expectedMs,
+                ToleranceMs = 0,
+                PitchCorrect = true,
+                TimingCorrect = false,
+                Reason = reason,
+            });
+        }
+
         /// <summary>
         /// Stop the current session gracefully: mark completed, stop timing,
         /// and clear any short-term ignore state so the app can perform cleanup.
@@ -1311,6 +1388,9 @@ namespace musicmate.Services
                 {
                     _sessionStopwatch.Stop();
                 }
+
+                TimingDiagnostics.Flush();
+                TimingDiagnostics.WriteSessionSummary();
             }
             catch
             {
@@ -1361,6 +1441,8 @@ namespace musicmate.Services
             {
                 _timingAccuracyPercent = null;
                 NotifyBpmStatsChanged();
+                TimingDiagnostics.Flush();
+                TimingDiagnostics.WriteSessionSummary();
                 return;
             }
 
@@ -1370,6 +1452,8 @@ namespace musicmate.Services
             {
                 _timingAccuracyPercent = null;
                 NotifyBpmStatsChanged();
+                TimingDiagnostics.Flush();
+                TimingDiagnostics.WriteSessionSummary();
                 return;
             }
 
@@ -1409,6 +1493,8 @@ namespace musicmate.Services
 
             _timingAccuracyPercent = noteScores.Average();
             NotifyBpmStatsChanged();
+            TimingDiagnostics.Flush();
+            TimingDiagnostics.WriteSessionSummary();
         }
         /// <summary>
         /// Returns timing accuracy percentage from least-squares onset fitting.
@@ -1490,13 +1576,24 @@ namespace musicmate.Services
             // Sustain/rest gate: block N+1 until prior note duration + rests have elapsed.
             if (IsRhythmGateBlocking())
             {
+                double actualMs = GetSessionElapsedMs();
+                double elapsedInGate = actualMs - _rhythmGateStartMs;
+                bool inRestPhase = elapsedInGate >= _rhythmGatePriorDurationMs;
+
+                if (inRestPhase)
+                    TryEnqueueRestTimingWrong(heardNote, actualMs);
+
                 StatusService.Instance.StatusMessage =
                     $"Expected: {expectedNote}, Heard: {heardNote}, {result.cents}¢ (too early), Notes: {NotesToDraw.Count}";
 
                 if (Mod12(targetNote.Midi) == detectedPcWritten)
                 {
+                    string reason = inRestPhase ? "Early" : "EarlyDuringSustain";
                     if (TryMarkDebouncedWrong(idx, curFeedback, result.cents))
+                    {
+                        TryEnqueueTimingWrong(targetNote, heardNote, actualMs, reason);
                         return true;
+                    }
                     return false;
                 }
 
