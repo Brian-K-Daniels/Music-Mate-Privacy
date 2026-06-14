@@ -96,7 +96,7 @@ namespace musicmate.Models
         [Column("TmgOk")]
         public bool? TimingCorrect { get; set; }
 
-        /// <summary>PitchCorrect && TimingCorrect when timing counts; PitchCorrect only when it does not.</summary>
+        /// <summary>PitchCorrect and TimingCorrect when timing counts; PitchCorrect only when it does not.</summary>
         [Column("OvrOk")]
         public bool OverallCorrect { get; set; }
 

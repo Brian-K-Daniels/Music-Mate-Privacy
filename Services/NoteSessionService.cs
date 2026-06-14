@@ -1683,6 +1683,65 @@ namespace musicmate.Services
         public double? GetTimingAccuracyPercent() => _timingAccuracyPercent;
 
         /// <summary>
+        /// Average playing tempo (BPM) from consecutive onset intervals, with IQR outlier removal.
+        /// Each interval uses written beat spacing: BPM = 60000 × Δbeats / Δms.
+        /// Returns null when fewer than 2 onsets or no valid intervals remain after filtering.
+        /// </summary>
+        public int? GetAverageTempoBpm()
+        {
+            if (_onsetData.Count < 2)
+                return null;
+
+            var sorted = _onsetData.OrderBy(d => d.ExpectedBeat).ToList();
+            var bpms = new List<double>();
+
+            for (int i = 1; i < sorted.Count; i++)
+            {
+                double beatDelta = sorted[i].ExpectedBeat - sorted[i - 1].ExpectedBeat;
+                double msDelta = sorted[i].OnsetMs - sorted[i - 1].OnsetMs;
+                if (beatDelta <= 1e-6 || msDelta < 50)
+                    continue;
+
+                double bpm = 60000.0 * beatDelta / msDelta;
+                if (bpm >= 30 && bpm <= 250)
+                    bpms.Add(bpm);
+            }
+
+            if (bpms.Count == 0)
+                return null;
+
+            var filtered = FilterOutliersIqr(bpms);
+            if (filtered.Count == 0)
+                return null;
+
+            return (int)Math.Round(filtered.Average());
+        }
+
+        private static List<double> FilterOutliersIqr(List<double> values)
+        {
+            if (values.Count < 4)
+                return values;
+
+            var sorted = values.OrderBy(v => v).ToArray();
+            double q1 = Percentile(sorted, 0.25);
+            double q3 = Percentile(sorted, 0.75);
+            double iqr = q3 - q1;
+            double lo = q1 - 1.5 * iqr;
+            double hi = q3 + 1.5 * iqr;
+            return values.Where(v => v >= lo && v <= hi).ToList();
+        }
+
+        private static double Percentile(double[] sorted, double p)
+        {
+            double pos = p * (sorted.Length - 1);
+            int lo = (int)Math.Floor(pos);
+            int hi = (int)Math.Ceiling(pos);
+            if (lo == hi)
+                return sorted[lo];
+            return sorted[lo] + (pos - lo) * (sorted[hi] - sorted[lo]);
+        }
+
+        /// <summary>
         /// [DEPRECATED] Returns old BPM-based timing stats for backward compatibility.
         /// Use GetTimingAccuracyPercent() instead.
         /// </summary>
@@ -1714,7 +1773,9 @@ namespace musicmate.Services
                 var detMidiWrit = midi - GetInstrumentTransposeOffset();
                 heardNote = MidiToNoteName(detMidiWrit, KeyUsesFlats(Key));
             }
-            string expectedNote = (CurrentNoteIndex < NotesToDraw.Count) ? NotesToDraw[CurrentNoteIndex].Name : "-";
+            string expectedNote = (CurrentNoteIndex < NotesToDraw.Count)
+                ? ResolveWrittenNoteName(NotesToDraw[CurrentNoteIndex])
+                : "-";
 
             // Only allow the current note in the sequence to be marked correct
             int idx = CurrentNoteIndex;
@@ -2292,13 +2353,18 @@ namespace musicmate.Services
                         }
                         else
                         {
-                            var adjustedMidi = ApplyKeySignatureToMidi(mn.SpelledName, mn.MidiNumber, Key);
+                            var adjustedMidi = ApplyKeySignatureToMidi(mn.SpelledName, mn.MidiNumber, Key, SelectedScale);
+                            var rawName = mn.SpelledName.Trim();
+                            char letter = char.ToUpperInvariant(rawName[0]);
+                            int octave = ParseOctaveFromSpelledName(rawName);
+                            var displayName = ResolveWrittenNoteName(
+                                rawName, adjustedMidi, letter, octave, Key, SelectedScale);
                             var freq = MidiToFreq(adjustedMidi);
                             var noteIdx = NotesToDraw.Count;
                             NotesToDraw.Add(new NoteInfo
                             {
                                 Midi       = adjustedMidi,
-                                Name       = mn.SpelledName,
+                                Name       = displayName,
                                 TargetFreq = freq,
                                 X          = slotX,
                                 Duration   = mn.Duration
@@ -3052,21 +3118,144 @@ namespace musicmate.Services
         /// For example, "B4" in key F (one flat: B♭) returns midi - 1.
         /// Notes that already carry an explicit '#' or 'b' are returned unchanged.
         /// </summary>
-        public static int ApplyKeySignatureToMidi(string noteName, int midi, string key)
+        public static int ApplyKeySignatureToMidi(string noteName, int midi, string key, string scale)
         {
             if (string.IsNullOrWhiteSpace(noteName)) return midi;
             var raw = noteName.Trim();
-            // If the note already has an explicit accidental, the score spells it explicitly — leave it.
-            if (raw.Contains('#') || (raw.Length > 1 && raw[1] == 'b')) return midi;
+            if (HasExplicitAccidentalInName(raw)) return midi;
 
             char letter = char.ToUpperInvariant(raw[0]);
-            var sigAcc = GetSignatureAccidentalForLetter(letter, GetAccidentalCountForKey(key));
+            var sigAcc = GetSignatureAccidentalForLetter(letter, GetKeySignatureAccidentalCount(key, scale));
             return sigAcc switch
             {
                 "#" => midi + 1,
                 "b" => midi - 1,
                 _   => midi
             };
+        }
+
+        /// <inheritdoc cref="ApplyKeySignatureToMidi(string,int,string,string)"/>
+        public static int ApplyKeySignatureToMidi(string noteName, int midi, string key)
+            => ApplyKeySignatureToMidi(noteName, midi, key, "Major");
+
+        /// <summary>
+        /// Adds a key-signature sharp or flat to <paramref name="noteName"/> when the name
+        /// has no explicit accidental and the letter is altered by the key signature.
+        /// </summary>
+        public static string ApplyKeySignatureToSpelledName(string noteName, string key, string scale)
+        {
+            if (string.IsNullOrWhiteSpace(noteName)) return noteName;
+            var raw = noteName.Trim();
+            if (HasExplicitAccidentalInName(raw)) return raw;
+
+            char letter = char.ToUpperInvariant(raw[0]);
+            string octave = GetOctaveSuffix(raw);
+            var sigAcc = GetSignatureAccidentalForLetter(letter, GetKeySignatureAccidentalCount(key, scale));
+            return sigAcc switch
+            {
+                "#" => $"{letter}#{octave}",
+                "b" => $"{letter}b{octave}",
+                _   => raw
+            };
+        }
+
+        /// <summary>
+        /// Returns the display/evaluation name for a written note, applying key-signature
+        /// spelling when the score omits accidentals that the key signature implies.
+        /// </summary>
+        public static string ResolveWrittenNoteName(
+            string spelledName, int midi, char letter, int octave, string key, string scale)
+        {
+            if (string.IsNullOrWhiteSpace(spelledName)) return spelledName;
+            var raw = spelledName.Trim();
+            if (HasExplicitAccidentalInName(raw)) return raw;
+
+            int naturalMidi = NoteNameToMidi($"{letter}{octave}");
+            int keySigMidi = ApplyKeySignatureToMidi(raw, naturalMidi, key, scale);
+
+            if (midi == keySigMidi && keySigMidi != naturalMidi)
+                return ApplyKeySignatureToSpelledName(raw, key, scale);
+
+            if (midi == naturalMidi)
+                return raw;
+
+            return SpellNote(letter, midi);
+        }
+
+        /// <summary>
+        /// Resolves body accidental and corrected spelling for a generated or imported note.
+        /// </summary>
+        public static (Accidental Accidental, string SpelledName) ResolveAccidentalAndSpelling(
+            string spelledName, int midi, char letter, int octave, string key, string scale)
+        {
+            var raw = spelledName.Trim();
+            if (HasExplicitAccidentalInName(raw))
+            {
+                Accidental acc = raw.Contains("##") ? Accidental.DoubleSharp
+                    : raw.Contains("bb") ? Accidental.DoubleFlat
+                    : raw.Contains('#')  ? Accidental.Sharp
+                    : Accidental.Flat;
+                return (acc, raw);
+            }
+
+            int naturalMidi = NoteNameToMidi($"{letter}{octave}");
+            int keySigMidi = ApplyKeySignatureToMidi(raw, naturalMidi, key, scale);
+
+            if (midi == naturalMidi && keySigMidi != naturalMidi)
+                return (Accidental.Natural, raw);
+
+            if (midi == keySigMidi && keySigMidi != naturalMidi)
+                return (Accidental.None, ApplyKeySignatureToSpelledName(raw, key, scale));
+
+            return (Accidental.None, raw);
+        }
+
+        /// <summary>Circle-of-fifths count for the displayed key signature (scale-aware).</summary>
+        public static int GetKeySignatureAccidentalCount(string key, string scale)
+        {
+            string majorKey = scale switch
+            {
+                "Natural Minor" or "Aeolian" or "Harmonic Minor"
+                    or "Melodic Minor" or "Jazz Melodic Minor" => RelativeMajorForKeySignature(key),
+                _ => key
+            };
+            return GetAccidentalCountForKey(majorKey);
+        }
+
+        public static string RelativeMajorForKeySignature(string minorKey) => minorKey switch
+        {
+            "A" => "C", "E" => "G", "B" => "D", "F#" => "A", "C#" => "E", "G#" => "B", "D#" => "F#",
+            "D" => "F", "G" => "Bb", "C" => "Eb", "F" => "Ab", "Bb" => "Db", "Eb" => "Gb",
+            _ => minorKey
+        };
+
+        public string ResolveWrittenNoteName(NoteInfo note)
+        {
+            var raw = note.Name?.Trim() ?? string.Empty;
+            if (string.IsNullOrEmpty(raw)) return raw;
+            char letter = char.ToUpperInvariant(raw[0]);
+            int octave = ParseOctaveFromSpelledName(raw);
+            return ResolveWrittenNoteName(raw, note.Midi, letter, octave, Key, SelectedScale);
+        }
+
+        private static bool HasExplicitAccidentalInName(string raw)
+            => raw.Contains("##") || raw.Contains("bb") || raw.Contains('#')
+               || (raw.Length > 1 && raw[1] == 'b');
+
+        private static string GetOctaveSuffix(string raw)
+        {
+            int end = raw.Length - 1;
+            int start = end;
+            while (start >= 0 && char.IsDigit(raw[start])) start--;
+            return start < end ? raw.Substring(start + 1) : "4";
+        }
+
+        private static int ParseOctaveFromSpelledName(string raw)
+        {
+            int end = raw.Length - 1;
+            int start = end;
+            while (start >= 0 && char.IsDigit(raw[start])) start--;
+            return start < end && int.TryParse(raw.AsSpan(start + 1, end - start), out var o) ? o : 4;
         }
 
         /// <summary>Returns the number of sharps (positive) or flats (negative) for a major key.</summary>

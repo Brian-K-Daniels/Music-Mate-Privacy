@@ -553,8 +553,9 @@
     <!-- V3 play: compact overlay at top of staff panel, centered under marquee start/stop -->
     <Button x:Name="V3PlayButton"
             Text="Play"
-            FontSize="6"
+            FontSize="10"
             FontAttributes="Bold"
+            FontFamily="OpenSansRegular"
             TextColor="White"
             BackgroundColor="#2E8B57"
             BorderColor="#1F5C3A"

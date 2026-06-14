@@ -2,7 +2,7 @@ using SkiaSharp;
 
 namespace musicmate.Drawables
 {
-    /// <summary>Measures Bravura SMuFL glyph bounds at a given <paramref name="fontSize"/>.</summary>
+    /// <summary>Measures Bravura SMuFL glyph bounds at a given font size.</summary>
     internal static class SmuFLGlyphMetrics
     {
         internal readonly struct Layout
@@ -19,16 +19,13 @@ namespace musicmate.Drawables
             if (!SmuFLFont.IsLoaded || string.IsNullOrEmpty(glyph))
                 return false;
 
-            using var paint = new SKPaint
+            using var font = new SKFont(SmuFLFont.SkiaTypeface, fontSize)
             {
-                Typeface     = SmuFLFont.SkiaTypeface,
-                TextSize     = fontSize,
-                IsAntialias  = true,
-                SubpixelText = true
+                Edging    = SKFontEdging.Antialias,
+                Subpixel  = true
             };
 
-            var bounds = new SKRect();
-            paint.MeasureText(glyph, ref bounds);
+            font.MeasureText(glyph, out var bounds);
             if (bounds.Width < 0.5f || bounds.Height < 0.5f)
                 return false;
 

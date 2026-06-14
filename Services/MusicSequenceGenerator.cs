@@ -724,17 +724,9 @@ namespace musicmate.Services
             char letter = char.ToUpperInvariant(spelledName[0]);
             int  octave = int.TryParse(spelledName[^1].ToString(), out var o) ? o : 4;
 
-            Accidental accidental = Accidental.None;
-            if (spelledName.Contains('#'))      accidental = Accidental.Sharp;
-            else if (spelledName.Contains('b')) accidental = Accidental.Flat;
-            else
-            {
-                // No sharp/flat in the spelled name — but if this letter is altered by the
-                // key signature the note needs an explicit natural sign to cancel it.
-                accidental = NeedsNaturalSign(letter, Key, Scale)
-                    ? Accidental.Natural
-                    : Accidental.None;
-            }
+            var (accidental, finalSpelledName) = NoteSessionService.ResolveAccidentalAndSpelling(
+                spelledName, midi, letter, octave, Key, Scale);
+            spelledName = finalSpelledName;
 
             return new GeneratedNote
             {
@@ -798,28 +790,6 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// Returns true when <paramref name="letter"/> is altered by the key signature
-        /// (sharped or flatted) and therefore a natural note on that letter contradicts
-        /// the key and needs an explicit natural sign.
-        /// </summary>
-        private static bool NeedsNaturalSign(char letter, string key, string scale)
-        {
-            int accCount = GetKeySigAccidentalCount(key, scale);
-            if (accCount == 0) return false;
-
-            bool useFlats = KeyUsesFlats(key);
-            // Flats order:  Bb Eb Ab Db Gb Cb Fb
-            char[] flatLetters  = { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
-            // Sharps order: F# C# G# D# A# E# B#
-            char[] sharpLetters = { 'F', 'C', 'G', 'D', 'A', 'E', 'B' };
-            char[] keySigLetters = useFlats ? flatLetters : sharpLetters;
-
-            for (int i = 0; i < Math.Min(accCount, keySigLetters.Length); i++)
-                if (keySigLetters[i] == char.ToUpperInvariant(letter)) return true;
-            return false;
-        }
-
-        /// <summary>
         /// Returns the 7 semitone intervals from the tonic (excluding the octave repeat) for
         /// standard 7-note scales, or null for pentatonic/chromatic/non-standard scales.
         /// Used to assign the correct letter to each scale degree so notes like E# are
@@ -844,28 +814,10 @@ namespace musicmate.Services
 
         /// <summary>Circle-of-fifths accidental count — mirrors the drawable's logic.</summary>
         private static int GetKeySigAccidentalCount(string key, string scale)
-        {
-            string majorKey = scale switch
-            {
-                "Natural Minor" or "Aeolian" or "Harmonic Minor"
-                    or "Melodic Minor" or "Jazz Melodic Minor" => RelativeMajorForKeySig(key),
-                _ => key
-            };
-            return majorKey switch
-            {
-                "C"  => 0,
-                "G"  => 1, "D"  => 2, "A"  => 3, "E"  => 4, "B"  => 5, "F#" => 6, "C#" => 7,
-                "F"  => 1, "Bb" => 2, "Eb" => 3, "Ab" => 4, "Db" => 5, "Gb" => 6, "Cb" => 7,
-                _ => 0
-            };
-        }
+            => NoteSessionService.GetKeySignatureAccidentalCount(key, scale);
 
-        private static string RelativeMajorForKeySig(string minorKey) => minorKey switch
-        {
-            "A" => "C", "E" => "G", "B" => "D", "F#" => "A", "C#" => "E", "G#" => "B", "D#" => "F#",
-            "D" => "F", "G" => "Bb", "C" => "Eb", "F" => "Ab", "Bb" => "Db", "Eb" => "Gb",
-            _ => minorKey
-        };
+        private static string RelativeMajorForKeySig(string minorKey)
+            => NoteSessionService.RelativeMajorForKeySignature(minorKey);
 
         private static bool KeyUsesFlats(string key)
             => key is "F" or "Bb" or "Eb" or "Ab" or "Db" or "Gb" or "Cb";

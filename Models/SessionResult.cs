@@ -58,6 +58,12 @@ namespace musicmate.Models
         /// </summary>
         public double? TimingAccuracyPercent { get; set; }
 
+        /// <summary>
+        /// Average playing tempo in BPM from inter-onset intervals (IQR outlier trimmed).
+        /// Null when fewer than 2 onsets or no valid intervals remain.
+        /// </summary>
+        public int? AverageTempoBpm { get; set; }
+
         // ── Deprecated timing fields (kept for database compatibility) ────────
 
         /// <summary>

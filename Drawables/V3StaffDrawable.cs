@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Maui.Graphics;
+using Microsoft.Maui.Graphics.Skia;
 using musicmate.Models;
 using musicmate.Services;
 
@@ -391,6 +392,8 @@ namespace musicmate.Drawables
             public BarLayout[] LowerBarLayouts = Array.Empty<BarLayout>();
             public double UpperBeatOrigin, LowerBeatOrigin;
             public float SafeLeft, SafeRight, LayoutRightLimit;
+            public byte[]? StaticChromePng;
+            public float StaticChromeWidth, StaticChromeHeight;
         }
 
         private readonly struct LayoutCacheKey : IEquatable<LayoutCacheKey>
@@ -498,7 +501,12 @@ namespace musicmate.Drawables
             _headerMetrics = c.HeaderMetrics;
             _leftMargin = c.LeftMargin;
 
-            DrawBothStaffs(canvas, dirtyRect, ink,
+            BlitStaticChromeOrDrawFallback(canvas, dirtyRect, ink, c,
+                c.UpperTop, c.UpperMid, c.UpperBot, c.LowerTop, c.LowerMid, c.LowerBot,
+                c.UpperNoteLayouts, c.UpperBarLayouts, c.LowerNoteLayouts, c.LowerBarLayouts,
+                c.SafeLeft, c.SafeRight, c.LayoutRightLimit,
+                c.UpperStaffMargin, c.LowerStaffMargin);
+            DrawBothStaffsDynamic(canvas, dirtyRect, ink,
                 c.UpperTop, c.UpperMid, c.UpperBot, c.LowerTop, c.LowerMid, c.LowerBot,
                 c.UpperNoteLayouts, c.UpperBarLayouts, c.LowerNoteLayouts, c.LowerBarLayouts,
                 c.UpperBeatOrigin, c.LowerBeatOrigin,
@@ -507,8 +515,71 @@ namespace musicmate.Drawables
             return true;
         }
 
+        private static bool TryBlitStaticChrome(ICanvas canvas, RectF dirtyRect, V3DrawLayoutCache cache)
+        {
+            var png = cache.StaticChromePng;
+            if (png == null || png.Length == 0)
+                return false;
+
+            try
+            {
+                using var ms = new MemoryStream(png);
+                var image = Microsoft.Maui.Graphics.Platform.PlatformImage.FromStream(ms);
+                canvas.DrawImage(image, dirtyRect.X, dirtyRect.Y, cache.StaticChromeWidth, cache.StaticChromeHeight);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[V3] StaticChrome blit failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        private void RasterizeStaticChrome(
+            RectF dirtyRect, Color ink,
+            float upperTop, float upperMid, float upperBot,
+            float lowerTop, float lowerMid, float lowerBot,
+            NoteLayout[] upperNoteLayouts, BarLayout[] upperBarLayouts,
+            NoteLayout[] lowerNoteLayouts, BarLayout[] lowerBarLayouts,
+            float safeLeft, float safeRight, float layoutRightLimit,
+            float upperStaffMargin, float lowerStaffMargin)
+        {
+            if (_layoutCache == null)
+                return;
+
+            int w = Math.Max(1, (int)Math.Ceiling(dirtyRect.Width));
+            int h = Math.Max(1, (int)Math.Ceiling(dirtyRect.Height));
+
+            try
+            {
+                using var export = new SkiaBitmapExportContext(w, h, 1f);
+                var canvas = export.Canvas;
+                canvas.Translate(-dirtyRect.X, -dirtyRect.Y);
+                DrawBothStaffsLinesAndBars(canvas, dirtyRect, ink,
+                    upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
+                    upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
+                    safeLeft, safeRight, layoutRightLimit, upperStaffMargin, lowerStaffMargin);
+
+                using var ms = new MemoryStream();
+                export.WriteToStream(ms);
+                var png = ms.ToArray();
+                if (png.Length == 0)
+                    return;
+
+                _layoutCache.StaticChromePng = png;
+                _layoutCache.StaticChromeWidth = w;
+                _layoutCache.StaticChromeHeight = h;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[V3] StaticChrome raster failed: {ex.Message}");
+            }
+        }
+
         private void StoreLayoutCache(
             LayoutCacheKey key,
+            RectF dirtyRect,
+            Color ink,
             float upperTop, float upperMid, float upperBot,
             float lowerTop, float lowerMid, float lowerBot,
             NoteLayout[] upperNoteLayouts, BarLayout[] upperBarLayouts,
@@ -541,9 +612,85 @@ namespace musicmate.Drawables
                 SafeRight = safeRight,
                 LayoutRightLimit = layoutRightLimit,
             };
+
+            RasterizeStaticChrome(dirtyRect, ink,
+                upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
+                upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
+                safeLeft, safeRight, layoutRightLimit, upperStaffMargin, lowerStaffMargin);
         }
 
-        private void DrawBothStaffs(
+        /// <summary>
+        /// Blits cached staff lines/bar lines when available; always draws clef/key/time on the live canvas
+        /// because <see cref="SkiaBitmapExportContext"/> does not rasterize platform text reliably.
+        /// </summary>
+        private void BlitStaticChromeOrDrawFallback(
+            ICanvas canvas, RectF dirtyRect, Color ink, V3DrawLayoutCache cache,
+            float upperTop, float upperMid, float upperBot,
+            float lowerTop, float lowerMid, float lowerBot,
+            NoteLayout[] upperNoteLayouts, BarLayout[] upperBarLayouts,
+            NoteLayout[] lowerNoteLayouts, BarLayout[] lowerBarLayouts,
+            float safeLeft, float safeRight, float layoutRightLimit,
+            float upperStaffMargin, float lowerStaffMargin)
+        {
+            if (TryBlitStaticChrome(canvas, dirtyRect, cache))
+            {
+                DrawBothStaffsHeaderChrome(canvas, ink,
+                    upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot);
+                return;
+            }
+
+            DrawBothStaffsStaticChrome(canvas, dirtyRect, ink,
+                upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
+                upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
+                safeLeft, safeRight, layoutRightLimit, upperStaffMargin, lowerStaffMargin);
+        }
+
+        private void DrawBothStaffsStaticChrome(
+            ICanvas canvas, RectF dirtyRect, Color ink,
+            float upperTop, float upperMid, float upperBot,
+            float lowerTop, float lowerMid, float lowerBot,
+            NoteLayout[] upperNoteLayouts, BarLayout[] upperBarLayouts,
+            NoteLayout[] lowerNoteLayouts, BarLayout[] lowerBarLayouts,
+            float safeLeft, float safeRight, float layoutRightLimit,
+            float upperStaffMargin, float lowerStaffMargin)
+        {
+            DrawBothStaffsLinesAndBars(canvas, dirtyRect, ink,
+                upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
+                upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
+                safeLeft, safeRight, layoutRightLimit, upperStaffMargin, lowerStaffMargin);
+            DrawBothStaffsHeaderChrome(canvas, ink,
+                upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot);
+        }
+
+        private void DrawBothStaffsLinesAndBars(
+            ICanvas canvas, RectF dirtyRect, Color ink,
+            float upperTop, float upperMid, float upperBot,
+            float lowerTop, float lowerMid, float lowerBot,
+            NoteLayout[] upperNoteLayouts, BarLayout[] upperBarLayouts,
+            NoteLayout[] lowerNoteLayouts, BarLayout[] lowerBarLayouts,
+            float safeLeft, float safeRight, float layoutRightLimit,
+            float upperStaffMargin, float lowerStaffMargin)
+        {
+            DrawStaffLinesAndBars(canvas, ink, upperTop, upperMid, upperBot,
+                upperNoteLayouts, upperBarLayouts,
+                safeLeft, safeRight, layoutRightLimit, upperStaffMargin);
+
+            DrawStaffLinesAndBars(canvas, ink, lowerTop, lowerMid, lowerBot,
+                lowerNoteLayouts, lowerBarLayouts,
+                safeLeft, safeRight, layoutRightLimit, lowerStaffMargin);
+        }
+
+        private void DrawBothStaffsHeaderChrome(
+            ICanvas canvas, Color ink,
+            float upperTop, float upperMid, float upperBot,
+            float lowerTop, float lowerMid, float lowerBot)
+        {
+            DrawStaffHeaderChrome(canvas, ink, upperTop, upperMid, upperBot, drawKeyAndTimeSig: true);
+            DrawStaffHeaderChrome(canvas, ink, lowerTop, lowerMid, lowerBot,
+                drawKeyAndTimeSig: UpperNotes.Count == 0);
+        }
+
+        private void DrawBothStaffsDynamic(
             ICanvas canvas, RectF dirtyRect, Color ink,
             float upperTop, float upperMid, float upperBot,
             float lowerTop, float lowerMid, float lowerBot,
@@ -553,19 +700,17 @@ namespace musicmate.Drawables
             float safeLeft, float safeRight, float layoutRightLimit,
             float upperStaffMargin, float lowerStaffMargin)
         {
-            DrawStaff(canvas, dirtyRect, ink, upperTop, upperMid, upperBot,
-                      UpperNotes, UpperNoteStates, upperNoteLayouts, upperBarLayouts,
-                      UpperBarBeats, upperBeatOrigin,
-                      UpperAlpha, IsUpperActive, IsUpperActive ? ActiveNoteIndex : -1,
-                      safeLeft, safeRight, layoutRightLimit, upperStaffMargin,
-                      drawKeyAndTimeSig: true);
+            DrawStaffDynamic(canvas, dirtyRect, ink, upperTop, upperMid, upperBot,
+                UpperNotes, UpperNoteStates, upperNoteLayouts, upperBarLayouts,
+                UpperBarBeats, upperBeatOrigin,
+                UpperAlpha, IsUpperActive, IsUpperActive ? ActiveNoteIndex : -1,
+                safeLeft, safeRight, layoutRightLimit, upperStaffMargin);
 
-            DrawStaff(canvas, dirtyRect, ink, lowerTop, lowerMid, lowerBot,
-                      LowerNotes, LowerNoteStates, lowerNoteLayouts, lowerBarLayouts,
-                      LowerBarBeats, lowerBeatOrigin,
-                      LowerAlpha, !IsUpperActive, !IsUpperActive ? ActiveNoteIndex : -1,
-                      safeLeft, safeRight, layoutRightLimit, lowerStaffMargin,
-                      drawKeyAndTimeSig: UpperNotes.Count == 0);
+            DrawStaffDynamic(canvas, dirtyRect, ink, lowerTop, lowerMid, lowerBot,
+                LowerNotes, LowerNoteStates, lowerNoteLayouts, lowerBarLayouts,
+                LowerBarBeats, lowerBeatOrigin,
+                LowerAlpha, !IsUpperActive, !IsUpperActive ? ActiveNoteIndex : -1,
+                safeLeft, safeRight, layoutRightLimit, lowerStaffMargin);
         }
 
         // ── Constructor ───────────────────────────────────────────────────────────
@@ -577,14 +722,14 @@ namespace musicmate.Drawables
         }
 
         // ── Ordered layout pipeline ──────────────────────────────────────────────
+        // Approximate height of the iOS/Android system home-indicator bar at the bottom of the screen.
+        private const float BottomBarReserve = 34f;
+
         /// <summary>
         /// Steps 1–8: determine note ranges, derive staff-line spacing so the complete
         /// note range (both staffs + gap) fills <paramref name="availH"/> exactly, then
         /// compute all staff Y positions.  Must be called before any drawing.
         /// </summary>
-        // Approximate height of the iOS/Android system home-indicator bar at the bottom of the screen.
-        private const float BottomBarReserve = 34f;
-
         private void ComputeLayout(float availH)
         {
             if (availH <= 0f) availH = 300f;
@@ -1748,12 +1893,26 @@ namespace musicmate.Drawables
 
                 double upperBeatOriginBeginner = GetStaffBeatOrigin(UpperNotes, UpperBarBeats);
                 double lowerBeatOriginBeginner = GetStaffBeatOrigin(LowerNotes, LowerBarBeats);
-                StoreLayoutCache(layoutCacheKey,
+                StoreLayoutCache(layoutCacheKey, dirtyRect, ink,
                     upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
                     upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
                     upperBeatOriginBeginner, lowerBeatOriginBeginner,
                     safeLeft, safeRight, layoutRightLimit, upperStaffMargin, lowerStaffMargin);
-                DrawBothStaffs(canvas, dirtyRect, ink,
+                if (_layoutCache != null)
+                {
+                    BlitStaticChromeOrDrawFallback(canvas, dirtyRect, ink, _layoutCache,
+                        upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
+                        upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
+                        safeLeft, safeRight, layoutRightLimit, upperStaffMargin, lowerStaffMargin);
+                }
+                else
+                {
+                    DrawBothStaffsStaticChrome(canvas, dirtyRect, ink,
+                        upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
+                        upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
+                        safeLeft, safeRight, layoutRightLimit, upperStaffMargin, lowerStaffMargin);
+                }
+                DrawBothStaffsDynamic(canvas, dirtyRect, ink,
                     upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
                     upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
                     upperBeatOriginBeginner, lowerBeatOriginBeginner,
@@ -1863,12 +2022,26 @@ namespace musicmate.Drawables
                   $"LayoutLimit={layoutRightLimit:F0}, gutter={(layoutRightLimit - contentRight):F1}, " +
                   $"pastSafeRight={(contentRight > safeRight ? contentRight - safeRight : 0f):F1}");
 
-            StoreLayoutCache(layoutCacheKey,
+            StoreLayoutCache(layoutCacheKey, dirtyRect, ink,
                 upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
                 upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
                 upperBeatOrigin, lowerBeatOrigin,
                 safeLeft, safeRight, layoutRightLimit, upperStaffMargin, lowerStaffMargin);
-            DrawBothStaffs(canvas, dirtyRect, ink,
+            if (_layoutCache != null)
+            {
+                BlitStaticChromeOrDrawFallback(canvas, dirtyRect, ink, _layoutCache,
+                    upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
+                    upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
+                    safeLeft, safeRight, layoutRightLimit, upperStaffMargin, lowerStaffMargin);
+            }
+            else
+            {
+                DrawBothStaffsStaticChrome(canvas, dirtyRect, ink,
+                    upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
+                    upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
+                    safeLeft, safeRight, layoutRightLimit, upperStaffMargin, lowerStaffMargin);
+            }
+            DrawBothStaffsDynamic(canvas, dirtyRect, ink,
                 upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
                 upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
                 upperBeatOrigin, lowerBeatOrigin,
@@ -1918,7 +2091,6 @@ namespace musicmate.Drawables
                 HorizontalAlignment.Left, VerticalAlignment.Top);
         }
 
-        /// <summary>Maps planned layout coords to screen space from <paramref name="staffLeftMargin"/>.</summary>
         /// <summary>Maps planned layout to screen for child levels 1–30 (single uniform scale if needed).</summary>
         private void FinishBeginnerHorizontalLayout(
             List<GeneratedNote> upperNotes,
@@ -2590,17 +2762,37 @@ namespace musicmate.Drawables
             float staffLeftMargin,
             bool drawKeyAndTimeSig = true)
         {
-            if (notes.Count == 0 || noteLayouts.Length == 0)
-                return;
-            if (notes.Count != noteLayouts.Length)
-            {
-                V3Log($"[V3] Skipping staff draw: {notes.Count} notes vs {noteLayouts.Length} layouts");
-                return;
-            }
+            DrawStaffStaticChrome(canvas, ink, staffTop, staffMid, staffBot,
+                noteLayouts, barLayouts, safeLeft, safeRight, layoutRightLimit, staffLeftMargin,
+                drawKeyAndTimeSig);
+            DrawStaffDynamic(canvas, dirtyRect, ink, staffTop, staffMid, staffBot,
+                notes, states, noteLayouts, barLayouts, barBeats, beatOrigin,
+                alpha, isActive, currentIdx, safeLeft, safeRight, layoutRightLimit, staffLeftMargin);
+        }
 
-            barBeats ??= Array.Empty<double>();
-            float headerRightAbs = safeLeft + staffLeftMargin - _layout.NoteHeadR;
+        private void DrawStaffStaticChrome(
+            ICanvas canvas, Color ink,
+            float staffTop, float staffMid, float staffBot,
+            NoteLayout[] noteLayouts, BarLayout[] barLayouts,
+            float safeLeft, float safeRight, float layoutRightLimit,
+            float staffLeftMargin,
+            bool drawKeyAndTimeSig)
+        {
+            if (noteLayouts.Length == 0)
+                return;
 
+            DrawStaffLinesAndBars(canvas, ink, staffTop, staffMid, staffBot,
+                noteLayouts, barLayouts, safeLeft, safeRight, layoutRightLimit, staffLeftMargin);
+            DrawStaffHeaderChrome(canvas, ink, staffTop, staffMid, staffBot, drawKeyAndTimeSig);
+        }
+
+        private void DrawStaffLinesAndBars(
+            ICanvas canvas, Color ink,
+            float staffTop, float staffMid, float staffBot,
+            NoteLayout[] noteLayouts, BarLayout[] barLayouts,
+            float safeLeft, float safeRight, float layoutRightLimit,
+            float staffLeftMargin)
+        {
             const float safeEdgePad = 4f;
             float contentEndX = safeLeft + staffLeftMargin;
             for (int i = 0; i < noteLayouts.Length; i++)
@@ -2621,7 +2813,6 @@ namespace musicmate.Drawables
             staffLineEndX = Math.Min(staffLineEndX, safeRight - safeEdgePad);
             staffLineEndX = Math.Max(staffLineEndX, safeLeft + staffLeftMargin);
 
-            // Staff lines - extend from safe left to the end of all content
             canvas.StrokeColor = ink;
             canvas.StrokeSize  = 1.5f;
             for (int i = 0; i < 5; i++)
@@ -2630,23 +2821,6 @@ namespace musicmate.Drawables
                 canvas.DrawLine(safeLeft, y, staffLineEndX, y);
             }
 
-            // Clef
-            canvas.SaveState();
-            canvas.FontColor = ink;
-            canvas.FontSize  = _layout.Sls * 5f;
-            float clefH = staffBot - staffTop + _layout.Sls * 3.2f;
-            canvas.DrawString("𝄞", _headerMetrics.ClefX, staffTop, _headerMetrics.ClefWidth, clefH,
-                HorizontalAlignment.Left, VerticalAlignment.Top);
-            canvas.RestoreState();
-
-            // Key + time on upper staff only in two-staff layout (grand-staff convention).
-            if (drawKeyAndTimeSig)
-            {
-                float keySigEndX = DrawKeySignature(canvas, staffTop, staffMid, ink);
-                DrawTimeSignature(canvas, staffTop, staffMid, ink, keySigEndX + KeySigTimeSigGap);
-            }
-
-            // Bar lines (using pre-computed positions)
             canvas.StrokeColor = ink;
             foreach (var bar in barLayouts)
             {
@@ -2655,7 +2829,6 @@ namespace musicmate.Drawables
 
                 if (bar.IsDouble)
                 {
-                    // Double bar (final)
                     canvas.StrokeSize = 2f;
                     canvas.DrawLine(bar.X, staffTop - 2f, bar.X, staffBot + 2f);
                     canvas.StrokeSize = 4f;
@@ -2663,14 +2836,54 @@ namespace musicmate.Drawables
                 }
                 else
                 {
-                    // Single bar
                     canvas.StrokeSize = 2f;
                     canvas.DrawLine(bar.X, staffTop - 2f, bar.X, staffBot + 2f);
                 }
             }
             canvas.StrokeSize = 1f;
+        }
 
-            // Beam pre-pass: identify beam groups using pre-computed note X positions
+        private void DrawStaffHeaderChrome(
+            ICanvas canvas, Color ink,
+            float staffTop, float staffMid, float staffBot,
+            bool drawKeyAndTimeSig)
+        {
+            canvas.SaveState();
+            canvas.FontColor = ink;
+            canvas.FontSize  = _layout.Sls * 5f;
+            float clefH = staffBot - staffTop + _layout.Sls * 3.2f;
+            canvas.DrawString("𝄞", _headerMetrics.ClefX, staffTop, _headerMetrics.ClefWidth, clefH,
+                HorizontalAlignment.Left, VerticalAlignment.Top);
+            canvas.RestoreState();
+
+            if (drawKeyAndTimeSig)
+            {
+                float keySigEndX = DrawKeySignature(canvas, staffTop, staffMid, ink);
+                DrawTimeSignature(canvas, staffTop, staffMid, ink, keySigEndX + KeySigTimeSigGap);
+            }
+        }
+
+        private void DrawStaffDynamic(
+            ICanvas canvas, RectF dirtyRect, Color ink,
+            float staffTop, float staffMid, float staffBot,
+            List<GeneratedNote> notes, V2NoteState[] states,
+            NoteLayout[] noteLayouts, BarLayout[] barLayouts,
+            IReadOnlyList<double> barBeats, double beatOrigin,
+            float alpha,
+            bool isActive, int currentIdx,
+            float safeLeft, float safeRight, float layoutRightLimit,
+            float staffLeftMargin)
+        {
+            if (notes.Count == 0 || noteLayouts.Length == 0)
+                return;
+            if (notes.Count != noteLayouts.Length)
+            {
+                V3Log($"[V3] Skipping staff draw: {notes.Count} notes vs {noteLayouts.Length} layouts");
+                return;
+            }
+
+            barBeats ??= Array.Empty<double>();
+            float headerRightAbs = safeLeft + staffLeftMargin - _layout.NoteHeadR;
             var beamGroups = ComputeBeamGroups(notes, noteLayouts, staffTop, staffMid, barBeats, beatOrigin);
             var beamStemEnds = ComputeBeamStemEnds(notes, noteLayouts, beamGroups, staffTop, staffMid);
 

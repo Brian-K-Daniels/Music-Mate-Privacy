@@ -10,7 +10,7 @@ namespace musicmate.Drawables
     /// </summary>
     internal static class SmuFLRestRaster
     {
-        private static readonly ConcurrentDictionary<string, byte[]> PngCache = new();
+        private static readonly ConcurrentDictionary<string, byte[]?> PngCache = new();
 
         private static readonly Dictionary<NoteDuration, string> Glyphs = new()
         {
@@ -87,7 +87,7 @@ namespace musicmate.Drawables
             int colorKey = ColorCacheKey(color);
             string cacheKey = $"origin:{glyph}:{sizeKey}:{colorKey}";
 
-            if (!OriginPngCache.TryGetValue(cacheKey, out var entry))
+            if (!OriginPngCache.TryGetValue(cacheKey, out var entry) || entry == null)
             {
                 entry = RasterizeAtOrigin(glyph, fontSize, color);
                 if (entry == null)
@@ -97,7 +97,7 @@ namespace musicmate.Drawables
 
             try
             {
-                using var ms = new MemoryStream(entry.Png);
+                using var ms = new MemoryStream(entry!.Png);
                 var image = Microsoft.Maui.Graphics.Platform.PlatformImage.FromStream(ms);
                 canvas.DrawImage(image,
                     stemX - entry.OriginX,
@@ -121,17 +121,18 @@ namespace musicmate.Drawables
         {
             try
             {
+                using var font = new SKFont(SmuFLFont.SkiaTypeface, fontSize)
+                {
+                    Edging   = SKFontEdging.Antialias,
+                    Subpixel = true
+                };
                 using var paint = new SKPaint
                 {
-                    Typeface     = SmuFLFont.SkiaTypeface,
-                    TextSize     = fontSize,
-                    Color        = ToSkColor(color),
-                    IsAntialias  = true,
-                    SubpixelText = true
+                    Color       = ToSkColor(color),
+                    IsAntialias = true
                 };
 
-                var bounds = new SKRect();
-                paint.MeasureText(glyph, ref bounds);
+                font.MeasureText(glyph, out var bounds);
 
                 const float pad = 2f;
                 float originX = pad - bounds.Left;
@@ -142,7 +143,7 @@ namespace musicmate.Drawables
                 using var bitmap = new SKBitmap(w, h, SKColorType.Rgba8888, SKAlphaType.Premul);
                 using var skCanvas = new SKCanvas(bitmap);
                 skCanvas.Clear(SKColors.Transparent);
-                skCanvas.DrawText(glyph, originX, originY, paint);
+                skCanvas.DrawText(glyph, originX, originY, SKTextAlign.Left, font, paint);
 
                 using var image = SKImage.FromBitmap(bitmap);
                 using var data = image.Encode(SKEncodedImageFormat.Png, 100);

@@ -7,6 +7,7 @@ using musicmate.Services;
 using musicmate.Diagnostics;
 using musicmate.V3LayoutDebug;
 using musicmate.Utilities;
+using SkiaSharp;
 using System.ComponentModel;
 using System.Diagnostics;
   //  2026.06.12 1516  Just so I can do a commit before using the long prompt for sustained notes and rests.
@@ -53,8 +54,8 @@ namespace musicmate.Pages
 
         // fields for inactivity tracking
         private DateTime _lastHeardTime = DateTime.UtcNow;
-        private bool _inactivityStopped = false;
 #pragma warning disable CS0414
+        private bool _inactivityStopped = false;
         private readonly TimeSpan _inactivityTimeout = TimeSpan.FromMinutes(5);
 
         // When true, RegenerateNotesAsync is suppressed so the post-autoplay
@@ -397,7 +398,7 @@ namespace musicmate.Pages
 
                 // V3 staff drawable setup
                 var safeAreaService = ServiceHelper.GetService<ISafeAreaService>();
-                _v3Drawable = new Drawables.V3StaffDrawable(_session, _theme_service, safeAreaService);
+                _v3Drawable = new Drawables.V3StaffDrawable(_session, _theme_service!, safeAreaService);
                 V3StaffGraphicsView.Drawable = _v3Drawable;
                 V3StaffGraphicsView.SetBinding(GraphicsView.BackgroundColorProperty, new Binding("PanelBackgroundColor"));
                 _v3StartStopButton.SizeChanged += (_, _) => UpdateV3PlayButtonPosition();
@@ -461,7 +462,9 @@ namespace musicmate.Pages
                         // Capture display stats before SaveSessionStatAsync — a level-up refreshes
                         // the staff and clears NoteFeedbacks / CorrectNoteIndices.
                         var (correct, wrong, apc) = _session.GetSessionCorrectWrongTotals();
+#pragma warning disable CS0618
                         var (meanBpm, stdBpm) = _session.GetFinalBpmStats();
+#pragma warning restore CS0618
 
                         // Rolling per-note attempt history runs unconditionally,
                         // independent of the CollectNoteStats preference.
@@ -861,7 +864,7 @@ namespace musicmate.Pages
         /// with correct <see cref="GeneratedNote.BeatPosition"/>, <see cref="GeneratedNote.MeasureIndex"/>,
         /// and accidentals parsed from each note's spelled name.
         /// </summary>
-        private static List<GeneratedNote> BuildV2NotesFromTune(PracticeTune tune, string key = "C")
+        private static List<GeneratedNote> BuildV2NotesFromTune(PracticeTune tune, string key = "C", string scale = "Major")
         {
             var result = new List<GeneratedNote>();
             double beatCursor = 0.0;
@@ -900,7 +903,10 @@ namespace musicmate.Pages
 
                         // Apply the key signature: if the note has no explicit accidental,
                         // adjust the MIDI number for any flat/sharp implied by the key.
-                        var adjustedMidi = NoteSessionService.ApplyKeySignatureToMidi(mn.SpelledName, mn.MidiNumber, key);
+                        var adjustedMidi = NoteSessionService.ApplyKeySignatureToMidi(mn.SpelledName, mn.MidiNumber, key, scale);
+                        var (resolvedAcc, displayName) = NoteSessionService.ResolveAccidentalAndSpelling(
+                            mn.SpelledName, adjustedMidi, letter, octave, key, scale);
+                        acc = resolvedAcc;
 
                         gn = new GeneratedNote
                         {
@@ -908,7 +914,7 @@ namespace musicmate.Pages
                             Letter          = letter,
                             Octave          = octave,
                             Accidental      = acc,
-                            SpelledName     = mn.SpelledName,
+                            SpelledName     = displayName,
                             TargetFrequency = 440.0 * Math.Pow(2.0, (adjustedMidi - 69) / 12.0),
                             Duration        = mn.Duration,
                             IsRest          = false,
@@ -977,7 +983,7 @@ namespace musicmate.Pages
                 {
                     // Build the note list directly from the tune so the actual melody
                     // (e.g. Ode to Joy) is shown instead of a generated scale walk.
-                    flat     = BuildV2NotesFromTune(_session.CurrentTune, _session.Key);
+                    flat     = BuildV2NotesFromTune(_session.CurrentTune, _session.Key, _session.SelectedScale);
                     barBeats = ComputeNewBarBeats(flat, existingBarBeats);
                     // Advance offsets to the end of the tune so appending is disabled.
                     _v2NextMeasureIndex    = _session.CurrentTune.Measures.Count;
@@ -1086,7 +1092,7 @@ namespace musicmate.Pages
                     var testTune = V3LayoutTestTune.Create();
                     V3LayoutTestTune.LogContents(testTune);
 
-                    var allNotes = BuildV2NotesFromTune(testTune, _session.Key);
+                    var allNotes = BuildV2NotesFromTune(testTune, _session.Key, _session.SelectedScale);
                     int splitAt = testTune.Measures.Count / 2;
                     double splitBeat = 0.0;
                     for (int m = 0; m < splitAt && m < testTune.Measures.Count; m++)
@@ -1112,7 +1118,7 @@ namespace musicmate.Pages
                 else if (_session.Tune == "Practice Tune" && _session.CurrentTune != null)
                 {
                     // Split tune measures between upper and lower staff.
-                    var allNotes = BuildV2NotesFromTune(_session.CurrentTune, _session.Key);
+                    var allNotes = BuildV2NotesFromTune(_session.CurrentTune, _session.Key, _session.SelectedScale);
                     var allMeasures = _session.CurrentTune.Measures.Count;
                     int splitAt = allMeasures / 2;
 
@@ -1365,7 +1371,8 @@ namespace musicmate.Pages
                     _session.NotesToDraw.Add(new NoteInfo
                     {
                         Midi                   = gn.MidiNumber,
-                        Name                   = gn.SpelledName,
+                        Name                   = NoteSessionService.ResolveWrittenNoteName(
+                            gn.SpelledName, gn.MidiNumber, gn.Letter, gn.Octave, _session.Key, _session.SelectedScale),
                         TargetFreq             = gn.TargetFrequency,
                         X                      = 0f,
                         Duration               = gn.Duration,
@@ -1393,6 +1400,16 @@ namespace musicmate.Pages
             }
         }
 
+        private static bool V3NoteStatesEqual(V2NoteState[] a, V2NoteState[] b)
+        {
+            if (a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++)
+            {
+                if (a[i] != b[i]) return false;
+            }
+            return true;
+        }
+
         /// <summary>
         /// Syncs V3 note states from session progress; mirrors <see cref="SyncV2NoteStates"/>
         /// but covers two staffs.  When the player finishes the upper staff the lower becomes
@@ -1406,7 +1423,6 @@ namespace musicmate.Pages
             int currentSession  = _session.CurrentNoteIndex;
 
             bool isUpperActive = currentSession < upperPitchCount;
-            _v3Drawable.IsUpperActive = isUpperActive;
 
             // ── Upper staff states ────────────────────────────────────────────────
             var upperStates = new V2NoteState[_v3Drawable.UpperNotes.Count];
@@ -1425,7 +1441,6 @@ namespace musicmate.Pages
                     upperStates[i] = V2NoteState.Pending;
                 si++;
             }
-            _v3Drawable.UpperNoteStates = upperStates;
 
             // ── Lower staff states ────────────────────────────────────────────────
             var lowerStates = new V2NoteState[_v3Drawable.LowerNotes.Count];
@@ -1445,23 +1460,27 @@ namespace musicmate.Pages
                     lowerStates[i] = V2NoteState.Pending;
                 li++;
             }
-            _v3Drawable.LowerNoteStates = lowerStates;
 
-            _v3Drawable.ActiveNoteIndex = isUpperActive ? currentSession : currentSession - upperPitchCount;
+            int activeNoteIndex = isUpperActive ? currentSession : currentSession - upperPitchCount;
+            if (_v3Drawable.IsUpperActive == isUpperActive
+                && _v3Drawable.ActiveNoteIndex == activeNoteIndex
+                && V3NoteStatesEqual(_v3Drawable.UpperNoteStates, upperStates)
+                && V3NoteStatesEqual(_v3Drawable.LowerNoteStates, lowerStates))
+            {
+                return;
+            }
+
+            _v3Drawable.IsUpperActive = isUpperActive;
+            _v3Drawable.UpperNoteStates = upperStates;
+            _v3Drawable.LowerNoteStates = lowerStates;
+            _v3Drawable.ActiveNoteIndex = activeNoteIndex;
 
             V3StaffGraphicsView.Invalidate();
 
-            // ── Transition: player just moved onto lower staff → refresh upper ────
-            // Skip in two-octave scale mode: the sequence is a fixed complete walk.
-            if (!isUpperActive && _v3Drawable.UpperAlpha >= 1f && _session.Tune != "Practice Tune"
-                && !V3LayoutTestTune.IsEnabled
-                && !_v3Drawable.UpperHasEndBar)
-            {
-                // Check whether we're on the first note of the lower staff (just transitioned).
-                int lowerSessionStart = upperPitchCount;
-                if (currentSession == lowerSessionStart)
-                    _ = RefreshV3UpperStaffAsync();
-            }
+            // Upper staff keeps completed note colors (green/red) while the player works on
+            // the lower staff.  RefreshV3UpperStaffAsync replaces UpperNotes and resets
+            // UpperNoteStates to Pending, which turned correct upper notes black at the
+            // upper→lower transition; defer upper refresh until RegenerateNotesAsync.
         }
 
         /// <summary>
@@ -1624,7 +1643,8 @@ namespace musicmate.Pages
                         _session.NotesToDraw.Add(new NoteInfo
                         {
                             Midi       = gn.MidiNumber,
-                            Name       = gn.SpelledName,
+                            Name       = NoteSessionService.ResolveWrittenNoteName(
+                                gn.SpelledName, gn.MidiNumber, gn.Letter, gn.Octave, _session.Key, _session.SelectedScale),
                             TargetFreq = gn.TargetFrequency,
                             X          = 0f,
                             Duration   = gn.Duration
@@ -1664,7 +1684,8 @@ namespace musicmate.Pages
                 _session.NotesToDraw.Add(new NoteInfo
                 {
                     Midi       = gn.MidiNumber,
-                    Name       = gn.SpelledName,
+                    Name       = NoteSessionService.ResolveWrittenNoteName(
+                        gn.SpelledName, gn.MidiNumber, gn.Letter, gn.Octave, _session.Key, _session.SelectedScale),
                     TargetFreq = gn.TargetFrequency,
                     X          = 0f,
                     Duration   = gn.Duration
@@ -1819,6 +1840,7 @@ namespace musicmate.Pages
             float upperStaffTop = _v3Drawable?.GetUpperStaffTop() ?? 12f;
             double maxHeight = Math.Max(MarginUtils.MmToDips(2), upperStaffTop - 2);
             _v3PlayButton.HeightRequest = Math.Min(MarginUtils.MmToDips(4), maxHeight);
+            UpdateV3PlayButtonFontSize();
 
             _v3PlayButton.Margin = new Thickness(Math.Max(0, left), top, 0, 0);
         }
@@ -1874,6 +1896,7 @@ namespace musicmate.Pages
 
             Apply(PlayEvaluateButton);
             Apply(_v3PlayButton);
+            UpdateV3PlayButtonFontSize();
         }
 
         private async Task StopListeningForPlaybackAsync()
@@ -1897,6 +1920,95 @@ namespace musicmate.Pages
         }
 
         private const int V3StartStopButtonSize = 32;
+        private const string V3GoLabelText = "GO";
+
+        private static SKTypeface? _v3UiRegularTypeface;
+
+        /// <summary>OpenSansRegular base face; MAUI applies synthetic bold via FontAttributes.Bold.</summary>
+        private static SKTypeface V3UiRegularTypeface =>
+            _v3UiRegularTypeface ??= SKTypeface.FromFamilyName("Open Sans", SKFontStyle.Normal)
+                ?? SKTypeface.FromFamilyName("Arial", SKFontStyle.Normal)
+                ?? SKTypeface.Default;
+
+        private static void ConfigureV3UiBoldFont(SKFont font, float size)
+        {
+            font.Size = size;
+            font.Typeface = V3UiRegularTypeface;
+            // Match MAUI synthetic bold on OpenSansRegular (wider than native bold metrics).
+            font.Embolden = true;
+            font.Edging = SKFontEdging.Antialias;
+            font.Subpixel = true;
+        }
+
+        /// <summary>
+        /// Largest bold font size whose glyph bounds fit inside the box, with slack for
+        /// embolden stroke and MAUI Label rendering wider than Skia advance width.
+        /// </summary>
+        private static double GetV3FittedFontSize(string text, double maxWidth, double maxHeight)
+        {
+            if (maxWidth <= 0 || maxHeight <= 0 || string.IsNullOrEmpty(text))
+                return 10;
+
+            const double edgeSlack = 1.5;
+            const double mauiWidthSlack = 2;
+            const float emboldenPad = 2f;
+
+            using var font = new SKFont();
+
+            double lo = 1, hi = Math.Max(maxWidth, maxHeight) * 1.5, best = 1;
+            while (hi - lo > 0.25)
+            {
+                double mid = (lo + hi) / 2;
+                ConfigureV3UiBoldFont(font, (float)mid);
+
+                font.MeasureText(text, out var bounds);
+                float width = bounds.Width + emboldenPad + (float)(edgeSlack * 2 + mauiWidthSlack);
+                float height = bounds.Height + emboldenPad + (float)(edgeSlack * 2);
+
+                if (width <= maxWidth && height <= maxHeight)
+                {
+                    best = mid;
+                    lo = mid;
+                }
+                else
+                    hi = mid;
+            }
+
+            return best;
+        }
+
+        /// <summary>
+        /// Largest bold "GO" font size that fits fully inside the green start circle.
+        /// </summary>
+        private static double GetV3GoFontSize(double circleDiameter)
+        {
+            if (circleDiameter <= 0)
+                return 10;
+
+            const double inset = 3;
+            double inner = circleDiameter - inset * 2;
+            return GetV3FittedFontSize(V3GoLabelText, inner, inner);
+        }
+
+        private void UpdateV3PlayButtonFontSize()
+        {
+            if (_v3PlayButton == null)
+                return;
+
+            double width = _v3PlayButton.Width > 0 ? _v3PlayButton.Width : _v3PlayButton.WidthRequest;
+            double height = _v3PlayButton.HeightRequest > 0
+                ? _v3PlayButton.HeightRequest
+                : _v3PlayButton.Height;
+            if (width <= 0 || height <= 0)
+                return;
+
+            // BorderWidth=1 plus a little padding so glyphs stay inside the rounded rect.
+            const double inset = 3;
+            _v3PlayButton.FontSize = GetV3FittedFontSize(
+                _v3PlayButton.Text ?? "Play",
+                width - inset * 2,
+                height - inset * 2);
+        }
 
         private void UpdateV3StartStopButtonVisual(bool isRunning)
         {
@@ -1921,9 +2033,30 @@ namespace musicmate.Pages
             }
             else
             {
+                double diameter = _v3StartStopButton.Width > 0
+                    ? _v3StartStopButton.Width
+                    : V3StartStopButtonSize;
+
                 _v3StartStopButton.BackgroundColor = Color.FromArgb("#008000");
-                _v3StartStopButton.StrokeShape = new RoundRectangle { CornerRadius = V3StartStopButtonSize / 2 };
-                _v3StartStopButton.Content = null;
+                _v3StartStopButton.StrokeShape = new RoundRectangle { CornerRadius = diameter / 2 };
+                _v3StartStopButton.Content = new Label
+                {
+                    Text = V3GoLabelText,
+                    FontSize = GetV3GoFontSize(diameter),
+                    FontFamily = "OpenSansRegular",
+                    FontAttributes = FontAttributes.Bold,
+                    TextColor = Colors.Yellow,
+                    WidthRequest = diameter,
+                    HeightRequest = diameter,
+                    HorizontalOptions = LayoutOptions.Fill,
+                    VerticalOptions = LayoutOptions.Fill,
+                    HorizontalTextAlignment = TextAlignment.Center,
+                    VerticalTextAlignment = TextAlignment.Center,
+                    LineBreakMode = LineBreakMode.NoWrap,
+                    MaxLines = 1,
+                    FontAutoScalingEnabled = false,
+                    Padding = 0
+                };
             }
 
             _v3StartStopButton.HeightRequest = V3StartStopButtonSize;
@@ -1972,7 +2105,7 @@ namespace musicmate.Pages
                     _audio.StopCapture();
                     _isPlaying = false;
                     SetPlayButtonPlaying(false);
-                    StatusService.Instance.StatusMessage = "Stopped. Tap circle to listen, Play to hear the tune.";
+                    StatusService.Instance.StatusMessage =  "Tap GO and play the notes. Tap Play for 'phone to play."; //  2026.06.13 2037  "Stopped. Tap circle to listen, Play to hear the tune.";
                     _session.SessionCompleted = true;
                 }
                 catch (Exception ex)
@@ -2114,8 +2247,12 @@ namespace musicmate.Pages
             double avgTiming = timingSessions.Count > 0
                 ? timingSessions.Average(r => r.TimingAccuracyPercent!.Value)
                 : 0.0;
+            var tempoSessions = recent.Where(r => r.AverageTempoBpm.HasValue).ToList();
+            int avgTemo = tempoSessions.Count > 0
+                ? (int)Math.Round(tempoSessions.Average(r => r.AverageTempoBpm!.Value))
+                : 0;
             SetSessionEndMarqueeMessage(
-                progressLevel, ssns, sessionCount, avgPitch, avgOverall, avgTiming);
+                progressLevel, ssns, sessionCount, avgPitch, avgOverall, avgTiming, avgTemo);
         }
 
         private async Task HideSessionResultBannerAsync(bool refreshMarqueeForNewLevel)
@@ -2158,14 +2295,15 @@ namespace musicmate.Pages
             int sessionCount,
             double avgPitch,
             double avgOverall,
-            double avgTiming)
+            double avgTiming,
+            int avgTemo)
         {
 #if DEBUG
             _sessionEndMarqueeMessage =
-                $"L{progressLevel} ssns={ssns}/{sessionCount}, Pch={avgPitch:F0}%, Ovrl={avgOverall:F0}%, Tmg={avgTiming:F0}%";
+                $"L{progressLevel} ssns={ssns}/{sessionCount}, Pch={avgPitch:F0}%, Ovrl={avgOverall:F0}%, Tmg={avgTiming:F0}%, Temo={avgTemo}";
 #else
             _sessionEndMarqueeMessage =
-                $"ssns={ssns}/{sessionCount}, Pch={avgPitch:F0}%, Ovrl={avgOverall:F0}%, Tmg={avgTiming:F0}%";
+                $"ssns={ssns}/{sessionCount}, Pch={avgPitch:F0}%, Ovrl={avgOverall:F0}%, Tmg={avgTiming:F0}%, Temo={avgTemo}";
 #endif
             StatusService.Instance.StatusMessage = _sessionEndMarqueeMessage;
         }
@@ -2502,10 +2640,6 @@ namespace musicmate.Pages
                                     // generate a fresh set.
                                 }
                             }
-                            SyncV3NoteStates();
-                        }
-                        else
-                        {
                             SyncV3NoteStates();
                         }
                     }
@@ -3339,6 +3473,7 @@ async Task UpdateNoteStatsDatabaseAsync()
 
                 // Get timing accuracy from least-squares onset fitting
                 double? timingAccuracyPercent = _session.GetTimingAccuracyPercent();
+                int? averageTempoBpm = _session.GetAverageTempoBpm();
 
                 // Blend pitch and timing into overall accuracy.
                 // When timing data is unavailable (< 3 notes), fall back to pitch only.
@@ -3360,6 +3495,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                     PitchAccuracyPercent   = pitchAccuracyPercent,
                     AveragePitchErrorCents = avgCents,
                     TimingAccuracyPercent  = timingAccuracyPercent,
+                    AverageTempoBpm      = averageTempoBpm,
                     OverallAccuracyPercent = overallAccuracy,
                     PitchRightCount        = pitchRight,
                     PitchWrongCount        = pitchWrong,

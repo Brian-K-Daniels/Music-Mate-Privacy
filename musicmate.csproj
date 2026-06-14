@@ -79,6 +79,7 @@
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.51" />
     <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.5" />
     <PackageReference Include="Microsoft.Maui.Essentials" Version="10.0.51" />
+    <PackageReference Include="Microsoft.Maui.Graphics.Skia" Version="10.0.51" />
     <PackageReference Include="Microsoft.Maui.Resizetizer" Version="10.0.51" />
     <PackageReference Include="NAudio" Version="2.3.0" />
     <PackageReference Include="nor0x.Maui.ColorPicker" Version="2.0.4" />
