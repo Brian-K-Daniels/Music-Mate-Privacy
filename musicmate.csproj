@@ -60,11 +60,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="MainPage-safety.xaml.cs" />
-    <Compile Remove="Resources\About.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <MauiAsset Remove="Resources\Raw\about001.html" />
   </ItemGroup>
 
@@ -108,16 +103,10 @@
     <MauiXaml Update="Pages\AboutPage.xaml">
       <Generator>MSBuild:Compile</Generator>
     </MauiXaml>
-    <MauiXaml Update="Pages\AdvancePage.xaml">
-      <Generator>MSBuild:Compile</Generator>
-    </MauiXaml>
     <MauiXaml Update="Pages\ChildHomePage.xaml">
       <Generator>MSBuild:Compile</Generator>
     </MauiXaml>
     <MauiXaml Update="Pages\MainPage.xaml">
-      <Generator>MSBuild:Compile</Generator>
-    </MauiXaml>
-    <MauiXaml Update="Pages\StatisticsPagess.xaml">
       <Generator>MSBuild:Compile</Generator>
     </MauiXaml>
     <MauiXaml Update="Pages\SettingsPage.xaml">

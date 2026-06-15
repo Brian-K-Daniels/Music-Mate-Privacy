@@ -3,7 +3,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:services="clr-namespace:musicmate.Services"
              xmlns:controls="clr-namespace:musicmate.Controls"
-             xmlns:converters="clr-namespace:musicmate.Converters"
              x:Class="musicmate.Pages.MainPage"
              x:DataType="services:NoteSessionService"
              x:Name="mainPage"
@@ -12,7 +11,8 @@
              BackgroundColor="#F7F7F7">
 
   <Shell.TitleView>
-    <Grid ColumnDefinitions="Auto,Auto,*,Auto" HeightRequest="32" VerticalOptions="Fill"
+    <Grid x:Name="TitleMarqueeGrid"
+          ColumnDefinitions="Auto,Auto,*,Auto" HeightRequest="32" VerticalOptions="Fill"
           BackgroundColor="#8B0000">
       <Label Text="Home  "
              TextColor="White"
@@ -86,7 +86,6 @@
       <Setter Property="VerticalOptions" Value="Center" />
       <Setter Property="HorizontalOptions" Value="Center" />
     </Style>
-    <converters:InverseBoolConverter x:Key="InverseBoolConverter" />
   </ContentPage.Resources>
 
   <Grid x:Name="MainPageRootGrid">
@@ -215,7 +214,7 @@
                       StrokeShape="RoundRectangle 8"
                       BackgroundColor="{Binding PanelBackgroundColor}"
                       Padding="0"
-                      IsVisible="True"
+                      IsVisible="False"
                       VerticalOptions="Start">
                 <GraphicsView x:Name="StaffGraphicsView"
                               BackgroundColor="{Binding PanelBackgroundColor}"
@@ -255,7 +254,7 @@
                       StrokeShape="RoundRectangle 8"
                       BackgroundColor="{Binding PanelBackgroundColor}"
                       Padding="0"
-                      IsVisible="False"
+                      IsVisible="True"
                       HorizontalOptions="Fill"
                       VerticalOptions="Start">
                 <GraphicsView x:Name="V3StaffGraphicsView"
@@ -550,24 +549,23 @@
       </VerticalStackLayout>
     </ScrollView>
 
-    <!-- V3 play: compact overlay at top of staff panel, centered under marquee start/stop -->
-    <Button x:Name="V3PlayButton"
-            Text="Play"
-            FontSize="10"
-            FontAttributes="Bold"
-            FontFamily="OpenSansRegular"
-            TextColor="White"
+    <!-- V3 play: compact overlay under marquee start/stop; label content sized in code -->
+    <Border x:Name="V3PlayButton"
             BackgroundColor="#2E8B57"
-            BorderColor="#1F5C3A"
-            BorderWidth="1"
-            CornerRadius="2"
-            WidthRequest="32"
+            Stroke="#1F5C3A"
+            StrokeThickness="1"
             Padding="0"
             HorizontalOptions="Start"
             VerticalOptions="Start"
             ZIndex="10"
-            IsVisible="{Binding Source={x:Reference mainPage}, Path=IsV3PlayButtonVisible}"
-            Clicked="OnPlayEvaluateClicked" />
+            IsVisible="{Binding Source={x:Reference mainPage}, Path=IsV3PlayButtonVisible}">
+      <Border.StrokeShape>
+        <RoundRectangle CornerRadius="2" />
+      </Border.StrokeShape>
+      <Border.GestureRecognizers>
+        <TapGestureRecognizer Tapped="OnPlayEvaluateClicked" />
+      </Border.GestureRecognizers>
+    </Border>
 
     <!-- Color picker dialog overlay (full-page, above everything) -->
     <controls:ColorPickerDialog x:Name="ColorPickerDialog"

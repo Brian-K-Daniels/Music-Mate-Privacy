@@ -90,8 +90,8 @@ namespace musicmate.Services
 
         public static void ApplyToSession(PracticeDifficultySettings settings, NoteSessionService session, bool forceClassicMode = true)
         {
-            if (forceClassicMode)
-                session.StaffDisplayMode = StaffDisplayMode.Classic;
+            // V3-only: child levels and MainPage always use the two-staff display.
+            session.StaffDisplayMode = StaffDisplayMode.V3;
 
             if (settings.UseRandomMode)
                 session.IsRandomMode = true;

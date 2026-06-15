@@ -292,7 +292,7 @@ namespace musicmate.Services
             double t = pos / 9.0;
             return band switch
             {
-                0 => (int)Math.Round(Lerp(4, 8, t)),
+                0 => (int)Math.Round(Lerp(3, 6, t)),
                 1 => (int)Math.Round(Lerp(6, 12, t)),
                 2 => (int)Math.Round(Lerp(8, 14, t)),
                 3 => (int)Math.Round(Lerp(10, 16, t)),
@@ -383,7 +383,7 @@ namespace musicmate.Services
         public static int MeasureBatchSizeForLevel(int level, int targetNoteCount)
         {
             int measures = (int)Math.Ceiling(targetNoteCount / 3.5);
-            return Math.Clamp(measures, 1, level <= 10 ? 2 : level <= 30 ? 4 : 8);
+            return Math.Clamp(measures, 1, level <= 5 ? 1 : level <= 10 ? 2 : level <= 30 ? 4 : 8);
         }
 
         private static double Lerp(double a, double b, double t)

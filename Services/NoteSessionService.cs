@@ -153,16 +153,25 @@ namespace musicmate.Services
 
         private static StaffDisplayMode LoadStaffDisplayMode()
         {
-            // Migrate from the legacy bool key on first run with the new enum key.
+            // V3-only: migrate any legacy Classic/V2 preference on load.
+            StaffDisplayMode mode = StaffDisplayMode.V3;
             if (Preferences.ContainsKey(PrefStaffDisplayModeKey))
             {
-                var saved = Preferences.Get(PrefStaffDisplayModeKey, nameof(StaffDisplayMode.Classic));
-                return Enum.TryParse<StaffDisplayMode>(saved, out var parsed) ? parsed : StaffDisplayMode.Classic;
+                var saved = Preferences.Get(PrefStaffDisplayModeKey, nameof(StaffDisplayMode.V3));
+                if (Enum.TryParse<StaffDisplayMode>(saved, out var parsed))
+                    mode = parsed;
             }
-            // First run: promote the old V2StaffMode bool if it was ever set true.
-            if (Preferences.Get(PrefV2StaffModeKey, false))
-                return StaffDisplayMode.V2;
-            return StaffDisplayMode.Classic;
+            else if (Preferences.Get(PrefV2StaffModeKey, false))
+            {
+                mode = StaffDisplayMode.V2;
+            }
+
+            if (mode != StaffDisplayMode.V3)
+                mode = StaffDisplayMode.V3;
+
+            Preferences.Set(PrefStaffDisplayModeKey, mode.ToString());
+            Preferences.Set(PrefV2StaffModeKey, false);
+            return mode;
         }
 
         /// <summary>
@@ -175,6 +184,8 @@ namespace musicmate.Services
             get => _staffDisplayMode;
             set
             {
+                // Practice / MainPage uses V3 only.
+                value = StaffDisplayMode.V3;
                 if (_staffDisplayMode == value) return;
                 _staffDisplayMode = value;
                 Preferences.Set(PrefStaffDisplayModeKey, value.ToString());
@@ -199,30 +210,14 @@ namespace musicmate.Services
             set => StaffDisplayMode = value ? StaffDisplayMode.V2 : StaffDisplayMode.Classic;
         }
 
-        /// <summary>Human-readable label for the Settings picker.</summary>
+        /// <summary>Human-readable label (V3-only; kept for binding compatibility).</summary>
         public string StaffDisplayModeDisplay
         {
-            get => _staffDisplayMode switch
-            {
-                StaffDisplayMode.V2 => "V2 Rhythm",
-                StaffDisplayMode.V3 => "V3 Two-Staff",
-                _                   => "Classic"
-            };
-            set
-            {
-                var parsed = value switch
-                {
-                    "V2 Rhythm"    => StaffDisplayMode.V2,
-                    "V3 Two-Staff" => StaffDisplayMode.V3,
-                    _              => StaffDisplayMode.Classic
-                };
-                StaffDisplayMode = parsed;
-                OnPropertyChanged(nameof(StaffDisplayModeDisplay));
-            }
+            get => "V3 Two-Staff";
+            set => StaffDisplayMode = StaffDisplayMode.V3;
         }
 
-        public static string[] StaffDisplayModeOptions { get; } =
-            { "Classic", "V2 Rhythm", "V3 Two-Staff" };
+        public static string[] StaffDisplayModeOptions { get; } = { "V3 Two-Staff" };
 
         private string _v2TimeSignature = Preferences.Get(PrefV2TimeSignatureKey, "4/4");
         private string _v2SmallestNote  = Preferences.Get(PrefV2SmallestNoteKey,  "Quarter");

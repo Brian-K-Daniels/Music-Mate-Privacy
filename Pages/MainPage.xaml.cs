@@ -7,6 +7,7 @@ using musicmate.Services;
 using musicmate.Diagnostics;
 using musicmate.V3LayoutDebug;
 using musicmate.Utilities;
+using Microsoft.Maui.Graphics;
 using SkiaSharp;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -50,7 +51,8 @@ namespace musicmate.Pages
         private Picker _v3HomeScaleTunePicker = null!;
         private Label _v3HomeConcertKeyLabel = null!;
         private Border _v3StartStopButton = null!;
-        private Button _v3PlayButton = null!;
+        private Border _v3PlayButton = null!;
+        private Grid _titleMarqueeGrid = null!;
 
         // fields for inactivity tracking
         private DateTime _lastHeardTime = DateTime.UtcNow;
@@ -70,6 +72,7 @@ namespace musicmate.Pages
         private bool _deferNewLevelMarqueeUntilBannerDismissed;
         private string? _pendingInstrumentForMarquee;
         private CancellationTokenSource? _autoStartCts;
+        private CancellationTokenSource? _sessionStartCts;
         private bool _suppressSessionRegenerate;
         private const string ChildLevelPrefKey = "ChildHome.Level";
 #pragma warning restore CS0414
@@ -309,7 +312,8 @@ namespace musicmate.Pages
                 _v3HomeScaleTunePicker  = this.FindByName<Picker>("V3HomeScaleTunePicker")!;
                 _v3HomeConcertKeyLabel  = this.FindByName<Label>("V3HomeConcertKeyLabel")!;
                 _v3StartStopButton      = this.FindByName<Border>("V3StartStopButton")!;
-                _v3PlayButton           = this.FindByName<Button>("V3PlayButton")!;
+                _v3PlayButton           = this.FindByName<Border>("V3PlayButton")!;
+                _titleMarqueeGrid       = this.FindByName<Grid>("TitleMarqueeGrid")!;
                 UpdateV3StartStopButtonVisual(false);
 
                 // Ensure ThemeService is available so we can deploy saved/default panel background
@@ -402,6 +406,9 @@ namespace musicmate.Pages
                 V3StaffGraphicsView.Drawable = _v3Drawable;
                 V3StaffGraphicsView.SetBinding(GraphicsView.BackgroundColorProperty, new Binding("PanelBackgroundColor"));
                 _v3StartStopButton.SizeChanged += (_, _) => UpdateV3PlayButtonPosition();
+                _v3StartStopButton.HandlerChanged += (_, _) => UpdateV3PlayButtonPosition();
+                _titleMarqueeGrid.SizeChanged += (_, _) => UpdateV3PlayButtonPosition();
+                _titleMarqueeGrid.HandlerChanged += (_, _) => UpdateV3PlayButtonPosition();
                 V3StaffBorder.SizeChanged += (_, _) => UpdateV3PlayButtonPosition();
                 SizeChanged += (_, _) => UpdateV3PlayButtonPosition();
                 SetPlayButtonPlaying(false);
@@ -713,6 +720,8 @@ namespace musicmate.Pages
             if (_freezeStaff)
                 return;
 
+            _v3GenerationSeed = unchecked(_v3GenerationSeed + 1);
+
             float width = 360f;
             if (_session.StaffDisplayMode == StaffDisplayMode.V3 && V3StaffGraphicsView?.Width > 0)
                 width = (float)V3StaffGraphicsView.Width;
@@ -781,6 +790,40 @@ namespace musicmate.Pages
             => _session.ChildLevel > 0 && _session.ChildMeasureBatchSize > 0
                 ? _session.ChildMeasureBatchSize
                 : V2BatchSize;
+
+        /// <summary>
+        /// Level-aware measure counts for each V3 staff.  Child levels start with a
+        /// single upper-staff measure and grow toward <see cref="V3MeasuresPerStaff"/>.
+        /// </summary>
+        private (int upper, int lower) GetV3StaffMeasureCounts()
+        {
+            if (_session.ChildLevel <= 0)
+                return (V3MeasuresPerStaff, V3MeasuresPerStaff);
+
+            int level = _session.ChildLevel;
+
+            if (level <= 5)
+                return (1, 0);
+
+            if (level <= 15)
+            {
+                int batch = GetV2BatchSize();
+                int upper = Math.Max(1, (batch + 1) / 2);
+                return (upper, Math.Max(0, batch - upper));
+            }
+
+            if (level <= 20)
+                return (2, 2);
+
+            if (level <= 25)
+                return (3, 3);
+
+            if (level <= 30)
+                return (3, 3);
+
+            // Level 31+: eight bars total (four per staff).
+            return (V3MeasuresPerStaff, V3MeasuresPerStaff);
+        }
         /// <summary>Trigger a top-up when this many measures remain ahead of the current one.</summary>
         private const int V2RefillThreshold = 2;
 
@@ -853,7 +896,10 @@ namespace musicmate.Pages
                 // Apply level-based maximum melodic interval in random mode.
                 MaxMelodicIntervalSemitones = _session.IsRandomMode ? _session.MaxMelodicIntervalSemitones : 0,
                 SyncopationLevel         = SyncopationLevelHelper.Parse(_session.V2Syncopation),
-                RestChancePercent        = _session.V2RestChancePercent
+                RestChancePercent        = _session.V2RestChancePercent,
+                RandomSeed               = Environment.TickCount
+                                           ^ _v3GenerationSeed
+                                           ^ (_session.ChildLevel * 7919)
             };
             Debug.WriteLine($"[V2Gen] Tune={_session.Tune} Random={_session.IsRandomMode} AccPct={_session.AccidentalPercent} EffectiveAccPct={(_session.IsRandomMode ? _session.AccidentalPercent : 0)}");
             return gen;
@@ -1049,8 +1095,11 @@ namespace musicmate.Pages
 
         // ── V3 two-staff display ──────────────────────────────────────────────────
 
-        /// <summary>How many measures to put on each V3 staff.</summary>
+        /// <summary>How many measures to put on each V3 staff (non-child / high levels).</summary>
         private const int V3MeasuresPerStaff = 4;
+
+        /// <summary>Bumped on each regeneration so child random tunes differ every time.</summary>
+        private int _v3GenerationSeed;
 
         // Offsets for appending the lower staff content.
         private int    _v3LowerMeasureIndex    = 0;
@@ -1260,8 +1309,9 @@ namespace musicmate.Pages
                     }
                     else
                     {
-                        // Standard path: two independent measures-per-staff blocks.
-                        var genUpper = BuildV2Generator(V3MeasuresPerStaff);
+                        // Standard path: level-sized measure blocks per staff.
+                        var (upperMc, lowerMc) = GetV3StaffMeasureCounts();
+                        var genUpper = BuildV2Generator(upperMc);
                         var upperMeasures = genUpper.GenerateSequence();
                         upperFlat     = MusicSequenceGenerator.Flatten(upperMeasures);
                         upperBarBeats = ComputeNewBarBeats(upperFlat, existingUpper);
@@ -1270,38 +1320,58 @@ namespace musicmate.Pages
                         _v2NextBeatOffset      += upperMeasures.Count * (double)genUpper.TimeSignature.TotalBeats;
                         _v2NextGlobalNoteIndex += upperFlat.Count(n => !n.IsRest);
 
-                        var genLower = BuildV2Generator(V3MeasuresPerStaff);
-                        var lowerMeasures = genLower.GenerateSequence();
-                        lowerFlat     = MusicSequenceGenerator.Flatten(lowerMeasures);
-
-                        // Re-offset lower staff beat positions to start at 0 (independent staff)
-                        double lowerBeatShift = lowerFlat.Count > 0 ? (lowerFlat[0].BeatPosition ?? 0.0) : 0.0;
-                        if (lowerBeatShift > 0.0)
+                        double lowerBeatShift = 0.0;
+                        if (lowerMc > 0)
                         {
-                            for (int i = 0; i < lowerFlat.Count; i++)
+                            var genLower = BuildV2Generator(lowerMc);
+                            var lowerMeasures = genLower.GenerateSequence();
+                            lowerFlat     = MusicSequenceGenerator.Flatten(lowerMeasures);
+
+                            // Re-offset lower staff beat positions to start at 0 (independent staff)
+                            lowerBeatShift = lowerFlat.Count > 0 ? (lowerFlat[0].BeatPosition ?? 0.0) : 0.0;
+                            if (lowerBeatShift > 0.0)
                             {
-                                var n = lowerFlat[i];
-                                lowerFlat[i] = new GeneratedNote
+                                for (int i = 0; i < lowerFlat.Count; i++)
                                 {
-                                    MidiNumber       = n.MidiNumber,
-                                    Letter           = n.Letter,
-                                    Octave           = n.Octave,
-                                    Accidental       = n.Accidental,
-                                    SpelledName      = n.SpelledName,
-                                    TargetFrequency  = n.TargetFrequency,
-                                    Duration         = n.Duration,
-                                    IsRest           = n.IsRest,
-                                    MeasureIndex     = n.MeasureIndex,
-                                    BeatPosition     = (n.BeatPosition ?? 0.0) - lowerBeatShift,
-                                    IsPlayedCorrectly = n.IsPlayedCorrectly
-                                };
+                                    var n = lowerFlat[i];
+                                    lowerFlat[i] = new GeneratedNote
+                                    {
+                                        MidiNumber       = n.MidiNumber,
+                                        Letter           = n.Letter,
+                                        Octave           = n.Octave,
+                                        Accidental       = n.Accidental,
+                                        SpelledName      = n.SpelledName,
+                                        TargetFrequency  = n.TargetFrequency,
+                                        Duration         = n.Duration,
+                                        IsRest           = n.IsRest,
+                                        MeasureIndex     = n.MeasureIndex,
+                                        BeatPosition     = (n.BeatPosition ?? 0.0) - lowerBeatShift,
+                                        IsPlayedCorrectly = n.IsPlayedCorrectly
+                                    };
+                                }
                             }
+
+                            lowerBarBeats = ComputeNewBarBeats(lowerFlat, existingLower);
+
+                            _v3LowerMeasureIndex    = _v2NextMeasureIndex + lowerMeasures.Count;
+                            _v3LowerBeatOffset      = _v2NextBeatOffset + lowerMeasures.Count * (double)genLower.TimeSignature.TotalBeats;
+                            _v3LowerGlobalNoteIndex = _v2NextGlobalNoteIndex + lowerFlat.Count(n => !n.IsRest);
+
+                            _v2NextMeasureIndex    = _v3LowerMeasureIndex;
+                            _v2NextBeatOffset      = _v3LowerBeatOffset;
+                            _v2NextGlobalNoteIndex = _v3LowerGlobalNoteIndex;
+                        }
+                        else
+                        {
+                            lowerFlat     = new List<GeneratedNote>();
+                            lowerBarBeats = new List<double>();
+                            _v3LowerMeasureIndex    = _v2NextMeasureIndex;
+                            _v3LowerBeatOffset      = _v2NextBeatOffset;
+                            _v3LowerGlobalNoteIndex = _v2NextGlobalNoteIndex;
                         }
 
-                        lowerBarBeats = ComputeNewBarBeats(lowerFlat, existingLower);
-
 #if DEBUG
-                        Debug.WriteLine($"[V3 Standard] Upper: {upperFlat.Count} notes ({upperFlat.Count(n => !n.IsRest)} pitched), Lower: {lowerFlat.Count} notes ({lowerFlat.Count(n => !n.IsRest)} pitched), lowerBeatShift: {lowerBeatShift:F2}");
+                        Debug.WriteLine($"[V3 Standard] L{_session.ChildLevel} upperMc={upperMc} lowerMc={lowerMc} Upper: {upperFlat.Count} notes ({upperFlat.Count(n => !n.IsRest)} pitched), Lower: {lowerFlat.Count} notes ({lowerFlat.Count(n => !n.IsRest)} pitched), lowerBeatShift: {lowerBeatShift:F2}");
 
                         // Log ALL upper staff content
                         Debug.WriteLine($"[V3 Upper] Bar beats: {string.Join(", ", upperBarBeats)}");
@@ -1319,14 +1389,6 @@ namespace musicmate.Pages
                             Debug.WriteLine($"  [{i}] {(n.IsRest ? "REST" : n.SpelledName)} {n.Duration} @ beat {n.BeatPosition:F2}, measure {n.MeasureIndex}");
                         }
 #endif
-
-                        _v3LowerMeasureIndex    = _v2NextMeasureIndex + lowerMeasures.Count;
-                        _v3LowerBeatOffset      = _v2NextBeatOffset + lowerMeasures.Count * (double)genLower.TimeSignature.TotalBeats;
-                        _v3LowerGlobalNoteIndex = _v2NextGlobalNoteIndex + lowerFlat.Count(n => !n.IsRest);
-
-                        _v2NextMeasureIndex    = _v3LowerMeasureIndex;
-                        _v2NextBeatOffset      = _v3LowerBeatOffset;
-                        _v2NextGlobalNoteIndex = _v3LowerGlobalNoteIndex;
                     }
 
                     // Signal the drawable whether to draw a single end bar on the upper staff.
@@ -1492,7 +1554,7 @@ namespace musicmate.Pages
             if (_v3Drawable == null || _session.Tune == "Practice Tune" || V3LayoutTestTune.IsEnabled) return;
             try
             {
-                var gen      = BuildV2Generator(V3MeasuresPerStaff);
+                var gen      = BuildV2Generator(GetV3StaffMeasureCounts().upper);
                 var measures = gen.GenerateSequence();
                 var newNotes = MusicSequenceGenerator.Flatten(measures);
                 var barBeats = ComputeNewBarBeats(newNotes, new HashSet<double>());
@@ -1541,9 +1603,11 @@ namespace musicmate.Pages
         private async Task RefreshV3LowerStaffAsync()
         {
             if (_v3Drawable == null || _session.Tune == "Practice Tune" || V3LayoutTestTune.IsEnabled) return;
+            int lowerMc = GetV3StaffMeasureCounts().lower;
+            if (lowerMc <= 0) return;
             try
             {
-                var gen      = BuildV2Generator(V3MeasuresPerStaff);
+                var gen      = BuildV2Generator(lowerMc);
                 var measures = gen.GenerateSequence();
                 var newNotes = MusicSequenceGenerator.Flatten(measures);
                 var barBeats = ComputeNewBarBeats(newNotes, new HashSet<double>());
@@ -1815,55 +1879,97 @@ namespace musicmate.Pages
             UpdateV3PlayButtonPosition();
         }
 
+        private const double V3PlayButtonSizeMm = 6;
+
         private void UpdateV3PlayButtonPosition()
         {
-            if (_v3PlayButton == null || _v3StartStopButton == null
+            if (_v3PlayButton == null || _v3StartStopButton == null || _titleMarqueeGrid == null
                 || _session.StaffDisplayMode != StaffDisplayMode.V3
                 || !_v3PlayButton.IsVisible)
                 return;
 
             var overlayParent = MainPageRootGrid;
-            if (overlayParent.Width <= 0 || _v3StartStopButton.Width <= 0 || V3StaffBorder.Width <= 0)
+            if (overlayParent.Width <= 0 || _v3StartStopButton.Width <= 0)
                 return;
 
-            var startStopAbs = GetAbsolutePosition(_v3StartStopButton);
-            var staffAbs = GetAbsolutePosition(V3StaffBorder);
-            var parentAbs = GetAbsolutePosition(overlayParent);
+            var goBounds = TryGetScreenBounds(_v3StartStopButton);
+            var marqueeBounds = TryGetScreenBounds(_titleMarqueeGrid);
+            var parentBounds = TryGetScreenBounds(overlayParent);
+            if (!goBounds.HasValue || !marqueeBounds.HasValue || !parentBounds.HasValue)
+                return;
 
-            double playWidth = _v3PlayButton.Width > 0 ? _v3PlayButton.Width : _v3PlayButton.WidthRequest;
-            double startStopWidth = _v3StartStopButton.Width > 0 ? _v3StartStopButton.Width : _v3StartStopButton.WidthRequest;
+            var go = goBounds.Value;
+            var marquee = marqueeBounds.Value;
+            var parent = parentBounds.Value;
 
-            double left = startStopAbs.X - parentAbs.X + (startStopWidth - playWidth) * 0.5
-                          + MarginUtils.MmToDips(14);
-            double top = staffAbs.Y - parentAbs.Y;
-
-            float upperStaffTop = _v3Drawable?.GetUpperStaffTop() ?? 12f;
-            double maxHeight = Math.Max(MarginUtils.MmToDips(2), upperStaffTop - 2);
-            _v3PlayButton.HeightRequest = Math.Min(MarginUtils.MmToDips(4), maxHeight);
+            double playSize = MarginUtils.MmToDips(V3PlayButtonSizeMm);
+            _v3PlayButton.WidthRequest = playSize;
+            _v3PlayButton.HeightRequest = playSize;
             UpdateV3PlayButtonFontSize();
 
+            // Top edge flush with bottom of status marquee; center aligned under GO.
+            double top = Math.Max(0, marquee.Bottom - parent.Top);
+            double left = go.Center.X - parent.Left - playSize * 0.5;
             _v3PlayButton.Margin = new Thickness(Math.Max(0, left), top, 0, 0);
         }
 
-        private static Point GetAbsolutePosition(VisualElement element)
+        /// <summary>
+        /// Screen bounds in MAUI logical units. TitleView lives outside the page content tree,
+        /// so parent-chain X/Y cannot align Shell chrome with MainPageRootGrid.
+        /// </summary>
+        private static Rect? TryGetScreenBounds(VisualElement element)
         {
-            double x = 0;
-            double y = 0;
-            for (var node = element; node != null; node = node.Parent as VisualElement)
-            {
-                if (node is View view)
-                {
-                    x += view.X + view.Margin.Left;
-                    y += view.Y + view.Margin.Top;
-                }
-                else
-                {
-                    x += node.X;
-                    y += node.Y;
-                }
-            }
+            if (element?.Handler?.PlatformView == null)
+                return null;
 
-            return new Point(x, y);
+#if WINDOWS
+            if (element.Handler.PlatformView is not Microsoft.UI.Xaml.UIElement platformView)
+                return null;
+
+            var window = Application.Current?.Windows?.FirstOrDefault()?.Handler?.PlatformView as Microsoft.UI.Xaml.Window;
+            if (window?.Content is not Microsoft.UI.Xaml.UIElement windowContent)
+                return null;
+
+            try
+            {
+                var transform = platformView.TransformToVisual(windowContent);
+                var topLeft = transform.TransformPoint(new Windows.Foundation.Point(0, 0));
+                double width = element.Width > 0 ? element.Width : element.WidthRequest;
+                double height = element.Height > 0 ? element.Height : element.HeightRequest;
+                if (platformView is Microsoft.UI.Xaml.FrameworkElement fe)
+                {
+                    if (fe.ActualWidth > 0)
+                        width = fe.ActualWidth;
+                    if (fe.ActualHeight > 0)
+                        height = fe.ActualHeight;
+                }
+
+                return new Rect(topLeft.X, topLeft.Y, width, height);
+            }
+            catch
+            {
+                return null;
+            }
+#elif ANDROID
+            if (element.Handler.PlatformView is not Android.Views.View view)
+                return null;
+
+            int[] location = new int[2];
+            view.GetLocationOnScreen(location);
+            double density = DeviceDisplay.MainDisplayInfo.Density;
+            if (density <= 0)
+                density = 1;
+
+            double width = view.Width / density;
+            double height = view.Height / density;
+            if (width <= 0)
+                width = element.Width > 0 ? element.Width : element.WidthRequest;
+            if (height <= 0)
+                height = element.Height > 0 ? element.Height : element.HeightRequest;
+            return new Rect(location[0] / density, location[1] / density, width, height);
+#else
+            return null;
+#endif
         }
 
         private static readonly Color PlayButtonGreen = Color.FromArgb("#2E8B57");
@@ -1873,7 +1979,7 @@ namespace musicmate.Pages
 
         private void SetPlayButtonPlaying(bool isPlaying, bool? isEnabled = null)
         {
-            void Apply(Button button)
+            void ApplyStandard(Button button)
             {
                 if (isPlaying)
                 {
@@ -1894,8 +2000,24 @@ namespace musicmate.Pages
                     button.IsEnabled = isEnabled.Value;
             }
 
-            Apply(PlayEvaluateButton);
-            Apply(_v3PlayButton);
+            ApplyStandard(PlayEvaluateButton);
+
+            if (isPlaying)
+            {
+                _v3PlayButton.BackgroundColor = PlayButtonRed;
+                _v3PlayButton.Stroke = PlayButtonRedBorder;
+                _v3PlayLabelText = V3StopLabelText;
+            }
+            else
+            {
+                _v3PlayButton.BackgroundColor = PlayButtonGreen;
+                _v3PlayButton.Stroke = PlayButtonGreenBorder;
+                _v3PlayLabelText = V3PlayLabelText;
+            }
+
+            if (isEnabled.HasValue)
+                _v3PlayButton.IsEnabled = isEnabled.Value;
+
             UpdateV3PlayButtonFontSize();
         }
 
@@ -1920,7 +2042,12 @@ namespace musicmate.Pages
         }
 
         private const int V3StartStopButtonSize = 32;
+        /// <summary>Title-bar slot width — stop state expands to this so "Stop" fits.</summary>
+        private const int V3StartStopSlotWidth = 38;
         private const string V3GoLabelText = "GO";
+        private const string V3PlayLabelText = "Play";
+        private const string V3StopLabelText = "Stop";
+        private string _v3PlayLabelText = V3PlayLabelText;
 
         private static SKTypeface? _v3UiRegularTypeface;
 
@@ -1978,6 +2105,21 @@ namespace musicmate.Pages
         }
 
         /// <summary>
+        /// Skia glyph-bounds width for bold UI text, including embolden and MAUI slack.
+        /// </summary>
+        private static double MeasureV3BoldTextWidth(string text, double fontSize)
+        {
+            using var font = new SKFont();
+            ConfigureV3UiBoldFont(font, (float)fontSize);
+            font.MeasureText(text, out var bounds);
+
+            const double edgeSlack = 1.5;
+            const double mauiWidthSlack = 2;
+            const float emboldenPad = 2f;
+            return bounds.Width + emboldenPad + edgeSlack * 2 + mauiWidthSlack;
+        }
+
+        /// <summary>
         /// Largest bold "GO" font size that fits fully inside the green start circle.
         /// </summary>
         private static double GetV3GoFontSize(double circleDiameter)
@@ -1990,24 +2132,56 @@ namespace musicmate.Pages
             return GetV3FittedFontSize(V3GoLabelText, inner, inner);
         }
 
+        /// <summary>Largest bold "Stop" font size that fits inside the red stop button.</summary>
+        private static double GetV3StopFontSize(double width, double height)
+        {
+            if (width <= 0 || height <= 0)
+                return 10;
+
+            const double inset = 2;
+            return GetV3FittedFontSize(V3StopLabelText, width - inset * 2, height - inset * 2);
+        }
+
         private void UpdateV3PlayButtonFontSize()
         {
             if (_v3PlayButton == null)
                 return;
 
-            double width = _v3PlayButton.Width > 0 ? _v3PlayButton.Width : _v3PlayButton.WidthRequest;
-            double height = _v3PlayButton.HeightRequest > 0
+            string text = _v3PlayLabelText;
+            double size = _v3PlayButton.HeightRequest > 0
                 ? _v3PlayButton.HeightRequest
                 : _v3PlayButton.Height;
-            if (width <= 0 || height <= 0)
+            if (size <= 0)
+                size = MarginUtils.MmToDips(V3PlayButtonSizeMm);
+
+            // StrokeThickness=1 plus slack so glyphs stay inside the square.
+            const double inset = 3;
+            double inner = size - inset * 2;
+            if (inner <= 0)
                 return;
 
-            // BorderWidth=1 plus a little padding so glyphs stay inside the rounded rect.
-            const double inset = 3;
-            _v3PlayButton.FontSize = GetV3FittedFontSize(
-                _v3PlayButton.Text ?? "Play",
-                width - inset * 2,
-                height - inset * 2);
+            // Square button: largest font that fits the current label fully inside.
+            double fontSize = GetV3FittedFontSize(text, inner, inner);
+
+            _v3PlayButton.Content = new Label
+            {
+                Text = text,
+                FontSize = fontSize,
+                FontFamily = "OpenSansRegular",
+                FontAttributes = FontAttributes.Bold,
+                TextColor = Colors.Yellow,
+                InputTransparent = true,
+                WidthRequest = size,
+                HeightRequest = size,
+                HorizontalOptions = LayoutOptions.Fill,
+                VerticalOptions = LayoutOptions.Fill,
+                HorizontalTextAlignment = TextAlignment.Center,
+                VerticalTextAlignment = TextAlignment.Center,
+                LineBreakMode = LineBreakMode.NoWrap,
+                MaxLines = 1,
+                FontAutoScalingEnabled = false,
+                Padding = 0
+            };
         }
 
         private void UpdateV3StartStopButtonVisual(bool isRunning)
@@ -2017,26 +2191,39 @@ namespace musicmate.Pages
 
             if (isRunning)
             {
-                _v3StartStopButton.BackgroundColor = Color.FromArgb("#E04040");
+                double width = V3StartStopSlotWidth;
+                double height = V3StartStopButtonSize;
+
+                _v3StartStopButton.WidthRequest = width;
+                _v3StartStopButton.HeightRequest = height;
+                _v3StartStopButton.BackgroundColor = Colors.Red;
                 _v3StartStopButton.StrokeShape = new RoundRectangle { CornerRadius = 6 };
                 _v3StartStopButton.Content = new Label
                 {
-                    Text = "■",
-                    FontSize = 18,
-                    TextColor = Colors.White,
-                    HorizontalOptions = LayoutOptions.Center,
-                    VerticalOptions = LayoutOptions.Center,
+                    Text = V3StopLabelText,
+                    FontSize = GetV3StopFontSize(width, height),
+                    FontFamily = "OpenSansRegular",
+                    FontAttributes = FontAttributes.Bold,
+                    TextColor = Colors.Yellow,
+                    InputTransparent = true,
+                    WidthRequest = width,
+                    HeightRequest = height,
+                    HorizontalOptions = LayoutOptions.Fill,
+                    VerticalOptions = LayoutOptions.Fill,
                     HorizontalTextAlignment = TextAlignment.Center,
                     VerticalTextAlignment = TextAlignment.Center,
+                    LineBreakMode = LineBreakMode.NoWrap,
+                    MaxLines = 1,
+                    FontAutoScalingEnabled = false,
                     Padding = 0
                 };
             }
             else
             {
-                double diameter = _v3StartStopButton.Width > 0
-                    ? _v3StartStopButton.Width
-                    : V3StartStopButtonSize;
+                double diameter = V3StartStopButtonSize;
 
+                _v3StartStopButton.WidthRequest = diameter;
+                _v3StartStopButton.HeightRequest = diameter;
                 _v3StartStopButton.BackgroundColor = Color.FromArgb("#008000");
                 _v3StartStopButton.StrokeShape = new RoundRectangle { CornerRadius = diameter / 2 };
                 _v3StartStopButton.Content = new Label
@@ -2046,6 +2233,7 @@ namespace musicmate.Pages
                     FontFamily = "OpenSansRegular",
                     FontAttributes = FontAttributes.Bold,
                     TextColor = Colors.Yellow,
+                    InputTransparent = true,
                     WidthRequest = diameter,
                     HeightRequest = diameter,
                     HorizontalOptions = LayoutOptions.Fill,
@@ -2058,9 +2246,6 @@ namespace musicmate.Pages
                     Padding = 0
                 };
             }
-
-            _v3StartStopButton.HeightRequest = V3StartStopButtonSize;
-            _v3StartStopButton.WidthRequest = V3StartStopButtonSize;
         }
 
         private void SetButtonStates(bool isRunning, bool keepPlayEnabled = false)
@@ -2070,8 +2255,11 @@ namespace musicmate.Pages
             {
                 if (isRunning)
                 {
-                    StartStopButton.Text = "■";
-                    StartStopButton.TextColor = Color.FromArgb("#E04040");
+                    StartStopButton.Text = V3StopLabelText;
+                    StartStopButton.TextColor = Colors.Yellow;
+                    StartStopButton.BackgroundColor = Colors.Red;
+                    StartStopButton.FontSize = 14;
+                    StartStopButton.FontAttributes = FontAttributes.Bold;
                     UpdateV3StartStopButtonVisual(true);
                     SetPlayButtonPlaying(_isPlaying, keepPlayEnabled || _isPlaying);
                 }
@@ -2079,6 +2267,9 @@ namespace musicmate.Pages
                 {
                     StartStopButton.Text = "●";
                     StartStopButton.TextColor = Color.FromArgb("#008000");
+                    StartStopButton.BackgroundColor = Color.FromArgb("#F7F7F7");
+                    StartStopButton.FontSize = 26;
+                    StartStopButton.FontAttributes = FontAttributes.None;
                     UpdateV3StartStopButtonVisual(false);
                     SetPlayButtonPlaying(false, true);
                 }
@@ -2098,6 +2289,7 @@ namespace musicmate.Pages
         {
             if (_isRunning)
             {
+                _sessionStartCts?.Cancel();
                 try
                 {
                     _playCts?.Cancel();
@@ -2105,15 +2297,22 @@ namespace musicmate.Pages
                     _audio.StopCapture();
                     _isPlaying = false;
                     SetPlayButtonPlaying(false);
-                    StatusService.Instance.StatusMessage =  "Tap GO and play the notes. Tap Play for 'phone to play."; //  2026.06.13 2037  "Stopped. Tap circle to listen, Play to hear the tune.";
-                    _session.SessionCompleted = true;
+                    _session.SessionCompleted = false;
+                    _savedNotesToRepeat = null;
+                    _holdResultForChildSession = false;
+                    SetButtonStates(false);
+
+                    _session.Reset();
+                    if (_session.ChildLevel > 0)
+                        PickChildSessionSettingsIfNeeded(preserveRepeatSameTune: false);
+                    await RegenerateNotesAsync();
+
+                    StatusService.Instance.StatusMessage =
+                        "Tap GO and play the notes. Tap Play for 'phone to play.";
                 }
                 catch (Exception ex)
                 {
                     Debug.WriteLine($"Stop error: {ex}");
-                }
-                finally
-                {
                     SetButtonStates(false);
                 }
             }
@@ -2121,8 +2320,9 @@ namespace musicmate.Pages
             {
                 _holdResultForChildSession = false;
                 _session.SessionCompleted = false;
+                _savedNotesToRepeat = null;
                 StatusService.Instance.StatusMessage = "Listening, go ahead and play!";
-                await StartListeningAndEvaluatingAsync();
+                await StartListeningAndEvaluatingAsync(forceNewNotes: true);
             }
         }
 
@@ -2470,6 +2670,7 @@ namespace musicmate.Pages
             base.OnDisappearing();
             _isPageVisible = false;
             _autoStartCts?.Cancel();
+            _sessionStartCts?.Cancel();
             // Stop listening and evaluating
             _playCts?.Cancel();
             _audio?.StopCapture();
@@ -2907,8 +3108,13 @@ async Task UpdateNoteStatsDatabaseAsync()
             }
         }
 
-        private async Task StartListeningAndEvaluatingAsync(bool playBack = false)
+        private async Task StartListeningAndEvaluatingAsync(bool playBack = false, bool forceNewNotes = false)
         {
+            _sessionStartCts?.Cancel();
+            var startCts = new CancellationTokenSource();
+            _sessionStartCts = startCts;
+            var ct = startCts.Token;
+
             try
             {
                 // Any new session clears the post-autoplay results freeze.
@@ -2921,7 +3127,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                 StatusService.Instance.StatusMessage = playBack
                     ? "Playing… tap Stop to end playback"
                     : "Listening, tap red square to stop";
-                Debug.WriteLine($"[Start] Starting listening, playBack={playBack}");
+                Debug.WriteLine($"[Start] Starting listening, playBack={playBack}, forceNewNotes={forceNewNotes}");
                 SetButtonStates(true, keepPlayEnabled: playBack);
 
                 _lastProcess = DateTime.MinValue;
@@ -2929,10 +3135,13 @@ async Task UpdateNoteStatsDatabaseAsync()
                 _pitchBufferPos = 0;
                 _session.Reset();
 
-                PickChildSessionSettingsIfNeeded(preserveRepeatSameTune: true);
+                ct.ThrowIfCancellationRequested();
+
+                PickChildSessionSettingsIfNeeded(preserveRepeatSameTune: !forceNewNotes);
 
                 // Handle note generation based on repeat mode
-                if (_repeatSameTune && _savedNotesToRepeat != null && _savedNotesToRepeat.Count > 0)
+                if (!forceNewNotes
+                    && _repeatSameTune && _savedNotesToRepeat != null && _savedNotesToRepeat.Count > 0)
                 {
                     // Filter out notes that are now mastered before restoring
                     var notesToRestore = _savedNotesToRepeat.ToList();
@@ -2966,13 +3175,19 @@ async Task UpdateNoteStatsDatabaseAsync()
                         _session.FeedbackViewModels.Clear();
                         for (int i = 0; i < notesToRestore.Count; i++)
                             _session.FeedbackViewModels.Add(new FeedbackItem(i, 0, 0, false));
-                        await MainThread.InvokeOnMainThreadAsync(() => StaffGraphicsView.Invalidate());
+                        await MainThread.InvokeOnMainThreadAsync(() =>
+                        {
+                            if (_session.StaffDisplayMode == StaffDisplayMode.V3)
+                                V3StaffGraphicsView.Invalidate();
+                            else
+                                StaffGraphicsView.Invalidate();
+                        });
                         Debug.WriteLine($"[Start] Restored {notesToRestore.Count} notes for Repeat Same (filtered from {_savedNotesToRepeat.Count})");
                     }
                 }
                 else
                 {
-                    // Generate new notes (for first run, "Repeat New", or scale modes)
+                    // Generate new notes (for first run, "Repeat New", manual GO, or scale modes)
                     await RegenerateNotesAsync();
 
                     // Save notes for potential "Repeat Same" after generation
@@ -2983,10 +3198,25 @@ async Task UpdateNoteStatsDatabaseAsync()
                     }
                 }
 
+                ct.ThrowIfCancellationRequested();
+
                 if (!playBack)
                 {
+                    if (!_isRunning)
+                    {
+                        Debug.WriteLine("[Start] Aborted before capture: no longer running");
+                        return;
+                    }
+
                     Debug.WriteLine("[Start] Requesting audio permission...");
                     await _audio.EnsurePermissionAsync();
+                    ct.ThrowIfCancellationRequested();
+                    if (!_isRunning)
+                    {
+                        Debug.WriteLine("[Start] Aborted after permission: no longer running");
+                        return;
+                    }
+
                     try { _audio.StopCapture(); } catch { }
                     var expectedNotes = _session.NotesToDraw
                         .Take(5)
@@ -3011,6 +3241,8 @@ async Task UpdateNoteStatsDatabaseAsync()
 
                 if (playBack)
                 {
+                    ct.ThrowIfCancellationRequested();
+
                     if (_session.NotesToDraw.Count == 0)
                     {
                         _isPlaying = false;
@@ -3026,6 +3258,10 @@ async Task UpdateNoteStatsDatabaseAsync()
                     _playCts = new CancellationTokenSource();
                     _ = PlayDisplayedAsync(_playCts.Token);
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                Debug.WriteLine("[Start] Cancelled");
             }
             catch (Exception ex)
             {
@@ -3613,92 +3849,34 @@ async Task UpdateNoteStatsDatabaseAsync()
 
         private void UpdatePickersContainerVisibility()
         {
-            // In V3 mode the pickers live on the What to Play page
-            PickersContainer.IsVisible = _session.StaffDisplayMode != StaffDisplayMode.V3;
+            // V3-only: scale/key/instrument pickers live on the What to Play page.
+            PickersContainer.IsVisible = false;
         }
 
 
         private void UpdateTunerVisibility()
         {
             var isTuner = _session.Tune == "Tuner";
-            var isV3    = _session.StaffDisplayMode == StaffDisplayMode.V3;
-            var isV2Tuner = isTuner && _session.V2StaffMode;
 
-            if (isTuner)
-            {
-                // In V2 Tuner mode show the large V2 staff panel; otherwise hide all staff panels.
-                StaffBorder.IsVisible   = false;
-                V2StaffBorder.IsVisible = isV2Tuner;
-                V2ModeBanner.IsVisible  = false;
-                V3StaffBorder.IsVisible = false;
-            }
-            else if (isV3)
-            {
-                StaffBorder.IsVisible   = false;
-                V2StaffBorder.IsVisible = false;
-                V2ModeBanner.IsVisible  = false;
-                V3StaffBorder.IsVisible = true;
-            }
-            else if (_session.V2StaffMode)
-            {
-                StaffBorder.IsVisible  = false;
-                V2StaffBorder.IsVisible = true;
-                V2ModeBanner.IsVisible = true;
-                // Clear any width constraint left over from V2 Tuner mode.
-                V2StaffBorder.WidthRequest      = -1;
-                V2StaffBorder.HorizontalOptions = LayoutOptions.Fill;
-            }
-            else
-            {
-                StaffBorder.IsVisible  = true;
-                V2StaffBorder.IsVisible = false;
-                V2ModeBanner.IsVisible = false;
-                // Clear any width constraint left over from V2 Tuner mode.
-                V2StaffBorder.WidthRequest      = -1;
-                V2StaffBorder.HorizontalOptions = LayoutOptions.Fill;
-            }
+            // V3-only: hide legacy Classic/V2 staff panels; show V3 or tuner UI.
+            StaffBorder.IsVisible   = false;
+            V2StaffBorder.IsVisible = false;
+            V2ModeBanner.IsVisible  = false;
+            V3StaffBorder.IsVisible = !isTuner;
 
             TunerGrid.IsVisible = isTuner;
 
             if (isTuner)
             {
-                // In V2 Tuner mode the large staff is shown in V2StaffBorder; hide the duplicate
-                // staff canvas inside TunerGrid and collapse its column so only the info panel shows.
-                TunerBorder.IsVisible = !isV2Tuner;
-                if (isV2Tuner)
-                {
-                    // Constrain V2StaffBorder to a narrow fixed width so it ends just past the staff
-                    // lines, leaving the TunerGrid text column clearly separated to its right.
-                    const double staffPanelWidth = 220;
-                    V2StaffBorder.WidthRequest   = staffPanelWidth;
-                    V2StaffBorder.HorizontalOptions = LayoutOptions.Start;
-                    TunerGrid.ColumnDefinitions[0] = new ColumnDefinition(staffPanelWidth);
-                }
-                else
-                {
-                    V2StaffBorder.WidthRequest      = -1;
-                    V2StaffBorder.HorizontalOptions = LayoutOptions.Fill;
-                    TunerGrid.ColumnDefinitions[0] = new ColumnDefinition(GridLength.Star);
-                }
-
-                // V2 Tuner: use the StaffDrawable (which renders the tuner note) on the V2 panel.
-                if (isV2Tuner && _v2Drawable != null)
-                    V2StaffGraphicsView.Drawable = _drawable;
+                TunerBorder.IsVisible = true;
+                TunerGrid.ColumnDefinitions[0] = new ColumnDefinition(GridLength.Star);
 
                 _session.SessionCompleted = false;
-                if (isV2Tuner)
-                    V2StaffGraphicsView.Invalidate();
-                else
-                    TunerGraphicsView.Invalidate();
+                TunerGraphicsView.Invalidate();
                 if (!_isRunning)
                 {
                     _ = StartListeningAndEvaluatingAsync();
                 }
-            }
-            else if (_v2Drawable != null && V2StaffGraphicsView.Drawable != _v2Drawable)
-            {
-                // Restore V2 drawable when leaving Tuner mode.
-                V2StaffGraphicsView.Drawable = _v2Drawable;
             }
         }
         private void UpdateScaleTunePicker()
