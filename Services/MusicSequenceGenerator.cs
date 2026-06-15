@@ -124,6 +124,36 @@ namespace musicmate.Services
         /// </summary>
         public int RestChancePercent { get; set; } = -1;
 
+        /// <summary>
+        /// When true (default), random-mode fresh sequences reuse rhythmic motifs across
+        /// an A–A′–B–A phrase before picking new pitches for each pass.
+        /// </summary>
+        public bool UseMotifPhrases { get; set; } = true;
+
+        private readonly record struct RhythmSlot(NoteDuration Duration, bool IsRest);
+
+        private enum PhraseRole { A, APrime, B, AReturn }
+
+        /// <summary>Semitone steps between consecutive pitched notes in a phrase.</summary>
+        private sealed class PhraseContour
+        {
+            public int FirstPitchMidi { get; init; }
+            public List<int> SemitoneDeltas { get; init; } = new();
+
+            public static PhraseContour FromPitches(IReadOnlyList<int> pitches)
+            {
+                var deltas = new List<int>(Math.Max(0, pitches.Count - 1));
+                for (int i = 1; i < pitches.Count; i++)
+                    deltas.Add(pitches[i] - pitches[i - 1]);
+
+                return new PhraseContour
+                {
+                    FirstPitchMidi = pitches[0],
+                    SemitoneDeltas = deltas,
+                };
+            }
+        }
+
         // ── Public API ────────────────────────────────────────────────────────────
 
         /// <summary>
@@ -167,62 +197,266 @@ namespace musicmate.Services
                     : new Queue<int>(walk.Skip(startIdx).Concat(walk.Take(startIdx)));
             }
 
-            // 4. Fill measures.
+            // 4. Fill measures — motif phrases for random fresh sequences, else slot-by-slot.
+            if (ShouldUseMotifPhrases())
+                return GenerateMotifPhraseSequence(rng, pool, durationWeights);
+
+            return GenerateSlotBySlotSequence(rng, pool, durationWeights, scaleQueue);
+        }
+
+        private bool ShouldUseMotifPhrases()
+            => UseMotifPhrases
+               && !UseScaleOrder
+               && StartMeasureIndex == 0
+               && StartGlobalNoteIndex == 0
+               && SyncopationLevel == SyncopationLevel.None;
+
+        /// <summary>
+        /// Legacy slot-by-slot fill (scale walk, append batches, syncopation, and fallback).
+        /// </summary>
+        private List<Measure> GenerateSlotBySlotSequence(
+            Random rng,
+            List<int> pool,
+            Dictionary<NoteDuration, int> durationWeights,
+            Queue<int>? scaleQueue)
+        {
             var measures = new List<Measure>(MeasureCount);
             int globalNoteIndex = StartGlobalNoteIndex;
-            int prevPitch = -1;  // tracks last non-rest MIDI for ascending/descending spelling
-
-            // globalBeatCursor accumulates across measures so every note carries a
-            // sequence-wide beat position suitable for proportional layout and scrolling.
+            int prevPitch = -1;
             double globalBeatCursor = StartBeatOffset;
 
             for (int mi = 0; mi < MeasureCount; mi++)
             {
-                // Stop generating measures once the scale walk is complete.
                 if (UseScaleOrder && (scaleQueue == null || scaleQueue.Count == 0))
                     break;
 
                 var measure        = new Measure(TimeSignature);
-                double localCursor = 0.0;              // beats used within this measure
+                double localCursor = 0.0;
                 int absoluteMi     = StartMeasureIndex + mi;
 
                 while (measure.BeatsRemaining > 1e-9)
                 {
                     bool isPhraseEnding = (mi + 1) % 4 == 0 || (mi + 1) % 2 == 0;
 
-                    // Try a syncopated motif before the default on-beat pick.
                     if (TryApplySyncopationMotif(
                             rng, measure, ref localCursor, globalBeatCursor, absoluteMi,
                             ref globalNoteIndex, ref prevPitch, pool, scaleQueue,
                             isPhraseEnding))
                         continue;
 
-                    // Pick a duration that fits in the remaining space.
                     var dur = PickFittingDuration(rng, durationWeights, measure.BeatsRemaining, SmallestDuration);
-
-                    bool isRest = RestChancePercent >= 0
-                        ? RestChancePercent > 0 && rng.Next(100) < RestChancePercent
-                        : RhythmVarietyPercent > 0 && rng.Next(8) == 0;
-                    if (RestChancePercent < 0 && SyncopationLevel == SyncopationLevel.Full && !isRest && RhythmVarietyPercent > 0)
-                        isRest = rng.Next(12) == 0;
-
+                    bool isRest = ShouldSlotBeRest(rng);
                     bool isLastNoteOfMeasure = measure.BeatsRemaining - dur.ToBeatValue() < 1e-9;
                     AddRhythmSlot(rng, measure, ref localCursor, globalBeatCursor, absoluteMi,
                         ref globalNoteIndex, ref prevPitch, pool, scaleQueue,
                         dur, isRest, isPhraseEnding && isLastNoteOfMeasure);
                 }
 
-                // Advance global beat cursor by the full measure length.
                 globalBeatCursor += TimeSignature.TotalBeats;
                 measures.Add(measure);
             }
 
-            // In scale-order mode, trim any trailing rests from the final measure
-            // so the sequence ends cleanly on the last pitched note (the tonic).
             if (UseScaleOrder && measures.Count > 0)
                 measures[measures.Count - 1].TrimTrailingRests();
 
             return measures;
+        }
+
+        /// <summary>
+        /// Builds an A–A′–B–A tune by reusing rhythmic motifs and remapping pitches each pass.
+        /// </summary>
+        private List<Measure> GenerateMotifPhraseSequence(
+            Random rng,
+            List<int> pool,
+            Dictionary<NoteDuration, int> durationWeights)
+        {
+            var motifA = BuildTwoMeasureMotif(rng, durationWeights);
+            var motifB = BuildContrastingMotif(rng, durationWeights, motifA);
+
+            var measures = new List<Measure>(MeasureCount);
+            int globalNoteIndex = StartGlobalNoteIndex;
+            int prevPitch = -1;
+            double globalBeatCursor = StartBeatOffset;
+
+            for (int mi = 0; mi < MeasureCount; mi++)
+            {
+                var role           = GetPhraseRole(mi);
+                int measureInPhrase = mi % 2;
+                var rhythm         = SelectMotifMeasure(role, measureInPhrase, motifA, motifB);
+                bool phraseEnding  = role is PhraseRole.APrime or PhraseRole.AReturn && measureInPhrase == 1;
+
+                var measure    = new Measure(TimeSignature);
+                int absoluteMi = StartMeasureIndex + mi;
+                FillMeasureFromRhythm(rng, pool, rhythm, measure, absoluteMi, globalBeatCursor,
+                    ref globalNoteIndex, ref prevPitch, phraseEnding);
+
+                globalBeatCursor += TimeSignature.TotalBeats;
+                measures.Add(measure);
+            }
+
+#if DEBUG
+            System.Diagnostics.Debug.WriteLine(
+                $"[MotifPhrase] {MeasureCount} measures, A slots={motifA[0].Count}+{motifA[1].Count}, B slots={motifB[0].Count}+{motifB[1].Count}");
+#endif
+            return measures;
+        }
+
+        private static PhraseRole GetPhraseRole(int measureIndex)
+        {
+            int pos = measureIndex % 8;
+            if (pos < 2) return PhraseRole.A;
+            if (pos < 4) return PhraseRole.APrime;
+            if (pos < 6) return PhraseRole.B;
+            return PhraseRole.AReturn;
+        }
+
+        private static List<RhythmSlot> SelectMotifMeasure(
+            PhraseRole role, int measureInPhrase,
+            List<List<RhythmSlot>> motifA, List<List<RhythmSlot>> motifB)
+        {
+            measureInPhrase = Math.Clamp(measureInPhrase, 0, 1);
+            return role switch
+            {
+                PhraseRole.B => motifB[measureInPhrase],
+                _            => motifA[measureInPhrase],
+            };
+        }
+
+        private List<List<RhythmSlot>> BuildTwoMeasureMotif(
+            Random rng, Dictionary<NoteDuration, int> durationWeights)
+        {
+            return new List<List<RhythmSlot>>
+            {
+                BuildMeasureRhythmPattern(rng, durationWeights),
+                BuildMeasureRhythmPattern(rng, durationWeights),
+            };
+        }
+
+        /// <summary>
+        /// Builds a B phrase that shares the A skeleton but changes at least one rhythmic slot.
+        /// </summary>
+        private List<List<RhythmSlot>> BuildContrastingMotif(
+            Random rng,
+            Dictionary<NoteDuration, int> durationWeights,
+            List<List<RhythmSlot>> motifA)
+        {
+            var motifB = motifA
+                .Select(measure => measure.Select(slot => slot).ToList())
+                .ToList();
+
+            // Prefer mutating the second bar so the opening rhythm still feels familiar.
+            for (int attempt = 0; attempt < 6; attempt++)
+            {
+                int measureIdx = attempt < 3 ? 1 : 0;
+                var measure = motifB[measureIdx];
+                if (measure.Count == 0)
+                    continue;
+
+                int slotIdx = rng.Next(measure.Count);
+                var (dur, isRest) = measure[slotIdx];
+                if (isRest)
+                {
+                    measure[slotIdx] = new RhythmSlot(NoteDuration.Quarter, false);
+                    return motifB;
+                }
+
+                var replacement = PickAlternativeDuration(rng, durationWeights, dur);
+                if (replacement != dur)
+                {
+                    if (TryReplaceSlotDuration(measure, slotIdx, replacement, TimeSignature.TotalBeats))
+                        return motifB;
+                }
+            }
+
+            motifB[1] = BuildMeasureRhythmPattern(rng, durationWeights);
+            return motifB;
+        }
+
+        private static bool TryReplaceSlotDuration(
+            List<RhythmSlot> measure, int slotIdx, NoteDuration replacement, double measureBeats)
+        {
+            double oldBeats = measure[slotIdx].Duration.ToBeatValue();
+            double newBeats = replacement.ToBeatValue();
+            double delta    = newBeats - oldBeats;
+            if (measure.Sum(s => s.Duration.ToBeatValue()) + delta > measureBeats + 1e-9)
+                return false;
+
+            measure[slotIdx] = new RhythmSlot(replacement, measure[slotIdx].IsRest);
+            return true;
+        }
+
+        private List<RhythmSlot> BuildMeasureRhythmPattern(
+            Random rng, Dictionary<NoteDuration, int> durationWeights)
+        {
+            var slots = new List<RhythmSlot>();
+            double beatsRemaining = TimeSignature.TotalBeats;
+
+            while (beatsRemaining > 1e-9)
+            {
+                var dur = PickFittingDuration(rng, durationWeights, beatsRemaining, SmallestDuration);
+                slots.Add(new RhythmSlot(dur, ShouldSlotBeRest(rng)));
+                beatsRemaining -= dur.ToBeatValue();
+            }
+
+            return slots;
+        }
+
+        private bool ShouldSlotBeRest(Random rng)
+        {
+            if (RestChancePercent >= 0)
+                return RestChancePercent > 0 && rng.Next(100) < RestChancePercent;
+
+            if (RhythmVarietyPercent <= 0)
+                return false;
+
+            if (SyncopationLevel == SyncopationLevel.Full && rng.Next(12) == 0)
+                return true;
+
+            return rng.Next(8) == 0;
+        }
+
+        private void FillMeasureFromRhythm(
+            Random rng,
+            List<int> pool,
+            List<RhythmSlot> rhythm,
+            Measure measure,
+            int absoluteMi,
+            double globalBeatCursor,
+            ref int globalNoteIndex,
+            ref int prevPitch,
+            bool phraseEndingOnLastPitch)
+        {
+            double localCursor = 0.0;
+            int lastPitchIdx = -1;
+            for (int i = 0; i < rhythm.Count; i++)
+            {
+                if (!rhythm[i].IsRest)
+                    lastPitchIdx = i;
+            }
+
+            for (int i = 0; i < rhythm.Count; i++)
+            {
+                var slot = rhythm[i];
+                bool isPhraseEnding = phraseEndingOnLastPitch && i == lastPitchIdx && !slot.IsRest;
+                AddRhythmSlot(rng, measure, ref localCursor, globalBeatCursor, absoluteMi,
+                    ref globalNoteIndex, ref prevPitch, pool, scaleQueue: null,
+                    slot.Duration, slot.IsRest, isPhraseEnding);
+            }
+        }
+
+        private NoteDuration PickAlternativeDuration(
+            Random rng,
+            Dictionary<NoteDuration, int> durationWeights,
+            NoteDuration current)
+        {
+            var alternatives = durationWeights.Keys
+                .Where(d => d != current)
+                .ToList();
+
+            if (alternatives.Count == 0)
+                return current;
+
+            return alternatives[rng.Next(alternatives.Count)];
         }
 
         /// <summary>
