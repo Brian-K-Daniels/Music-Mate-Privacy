@@ -277,38 +277,179 @@ namespace musicmate.Services
             int globalNoteIndex = StartGlobalNoteIndex;
             int prevPitch = -1;
             double globalBeatCursor = StartBeatOffset;
+            PhraseContour? contourA = null;
 
-            for (int mi = 0; mi < MeasureCount; mi++)
+            for (int mi = 0; mi < MeasureCount;)
             {
-                var role           = GetPhraseRole(mi);
-                int measureInPhrase = mi % 2;
-                var rhythm         = SelectMotifMeasure(role, measureInPhrase, motifA, motifB);
-                bool phraseEnding  = role is PhraseRole.APrime or PhraseRole.AReturn && measureInPhrase == 1;
+                var role = GetPhraseRole(mi);
+                int phraseEnd = Math.Min(mi + 2, MeasureCount);
+                var phraseRhythms = new List<List<RhythmSlot>>(phraseEnd - mi);
 
-                var measure    = new Measure(TimeSignature);
-                int absoluteMi = StartMeasureIndex + mi;
-                FillMeasureFromRhythm(rng, pool, rhythm, measure, absoluteMi, globalBeatCursor,
-                    ref globalNoteIndex, ref prevPitch, phraseEnding);
+                for (int m = mi; m < phraseEnd; m++)
+                    phraseRhythms.Add(SelectMotifMeasure(role, m % 2, motifA, motifB));
 
-                globalBeatCursor += TimeSignature.TotalBeats;
-                measures.Add(measure);
+                bool cadenceLast = role is PhraseRole.APrime or PhraseRole.AReturn;
+                PhraseContour? reuse = role is PhraseRole.APrime or PhraseRole.AReturn ? contourA : null;
+                bool preferHomeStart = role == PhraseRole.AReturn;
+
+                var built = FillPhraseFromRhythm(
+                    rng, pool, phraseRhythms, measures, mi, globalBeatCursor,
+                    ref globalNoteIndex, ref prevPitch,
+                    reuse, preferHomeStart, cadenceLast);
+
+                if (role == PhraseRole.A)
+                    contourA = built;
+
+                globalBeatCursor += (phraseEnd - mi) * TimeSignature.TotalBeats;
+                mi = phraseEnd;
             }
 
 #if DEBUG
             System.Diagnostics.Debug.WriteLine(
-                $"[MotifPhrase] {MeasureCount} measures, A slots={motifA[0].Count}+{motifA[1].Count}, B slots={motifB[0].Count}+{motifB[1].Count}");
+                $"[MotifPhrase] {MeasureCount} measures, A slots={motifA[0].Count}+{motifA[1].Count}, B slots={motifB[0].Count}+{motifB[1].Count}, contourSteps={contourA?.SemitoneDeltas.Count ?? 0}");
 #endif
             return measures;
         }
 
-        private static PhraseRole GetPhraseRole(int measureIndex)
+        /// <summary>
+        /// Fills one 1–2 measure phrase.  Returns a new contour when generating freely,
+        /// or <c>null</c> when reusing an existing contour.
+        /// </summary>
+        private PhraseContour? FillPhraseFromRhythm(
+            Random rng,
+            List<int> pool,
+            IReadOnlyList<List<RhythmSlot>> measureRhythms,
+            List<Measure> measures,
+            int startMeasureIndex,
+            double globalBeatStart,
+            ref int globalNoteIndex,
+            ref int prevPitch,
+            PhraseContour? contourToReuse,
+            bool preferHomeStart,
+            bool cadenceOnLastPitch)
         {
-            int pos = measureIndex % 8;
-            if (pos < 2) return PhraseRole.A;
-            if (pos < 4) return PhraseRole.APrime;
-            if (pos < 6) return PhraseRole.B;
-            return PhraseRole.AReturn;
+            int pitchedSlotCount = measureRhythms.Sum(m => m.Count(s => !s.IsRest));
+            bool canReuse = contourToReuse != null
+                            && pitchedSlotCount > 0
+                            && contourToReuse.SemitoneDeltas.Count == pitchedSlotCount - 1;
+
+            var pitchedMidis = new List<int>(pitchedSlotCount);
+            double globalBeatCursor = globalBeatStart;
+
+            for (int mi = 0; mi < measureRhythms.Count; mi++)
+            {
+                var rhythm = measureRhythms[mi];
+                var measure = new Measure(TimeSignature);
+                double localCursor = 0.0;
+                int absoluteMi = StartMeasureIndex + startMeasureIndex + mi;
+
+                int lastPitchIdx = -1;
+                for (int i = 0; i < rhythm.Count; i++)
+                {
+                    if (!rhythm[i].IsRest)
+                        lastPitchIdx = i;
+                }
+
+                for (int i = 0; i < rhythm.Count; i++)
+                {
+                    var slot = rhythm[i];
+                    if (slot.IsRest)
+                    {
+                        measure.AddNote(GeneratedNote.Rest(slot.Duration, absoluteMi,
+                            globalBeatCursor + localCursor));
+                        localCursor += slot.Duration.ToBeatValue();
+                        continue;
+                    }
+
+                    bool isLastPhrasePitch = cadenceOnLastPitch
+                        && mi == measureRhythms.Count - 1
+                        && i == lastPitchIdx;
+
+                    int pitch;
+                    if (!canReuse)
+                    {
+                        pitch = PickPitch(rng, pool, prevPitch, isLastPhrasePitch);
+                    }
+                    else if (pitchedMidis.Count == 0)
+                    {
+                        pitch = ChooseTransposedStart(rng, pool, contourToReuse!, prevPitch, preferHomeStart);
+                    }
+                    else if (isLastPhrasePitch)
+                    {
+                        pitch = PickPitch(rng, pool, prevPitch, isPhraseEnding: true);
+                    }
+                    else
+                    {
+                        int deltaIdx = pitchedMidis.Count - 1;
+                        int target = pitchedMidis[^1] + contourToReuse!.SemitoneDeltas[deltaIdx];
+                        pitch = SnapPitchToPool(rng, pool, target, prevPitch, phraseEnding: false);
+                    }
+
+                    var note = BuildNote(pitch, slot.Duration, absoluteMi,
+                        globalBeatCursor + localCursor, globalNoteIndex, prevPitch);
+                    measure.AddNote(note);
+                    pitchedMidis.Add(pitch);
+                    prevPitch = pitch;
+                    globalNoteIndex++;
+                    localCursor += slot.Duration.ToBeatValue();
+                }
+
+                measures.Add(measure);
+                globalBeatCursor += TimeSignature.TotalBeats;
+            }
+
+            return canReuse ? null : PhraseContour.FromPitches(pitchedMidis);
         }
+
+        /// <summary>Picks a starting note for a transposed contour repeat.</summary>
+        private int ChooseTransposedStart(
+            Random rng, List<int> pool, PhraseContour contour, int prevMidi, bool preferHomeStart)
+        {
+            int baseStart = contour.FirstPitchMidi;
+            int[] offsets = preferHomeStart
+                ? new[] { 0, 0, 2, -2, 3, -3 }
+                : new[] { 2, -2, 3, -3, 4, -4, 5, -5, 0 };
+
+            foreach (int off in offsets.OrderBy(_ => rng.Next()))
+            {
+                int candidate = SnapPitchToPool(rng, pool, baseStart + off, prevMidi, phraseEnding: false);
+                if (candidate != baseStart || preferHomeStart)
+                    return candidate;
+            }
+
+            return SnapPitchToPool(rng, pool, baseStart, prevMidi, phraseEnding: false);
+        }
+
+        /// <summary>Nearest pool pitch to target, honouring interval cap and pitch-class variety.</summary>
+        private int SnapPitchToPool(
+            Random rng, List<int> pool, int targetMidi, int prevMidi, bool phraseEnding)
+        {
+            if (phraseEnding)
+                return PickPitch(rng, pool, prevMidi, isPhraseEnding: true);
+
+            IEnumerable<int> candidates = pool;
+            if (MaxMelodicIntervalSemitones > 0 && prevMidi >= 0)
+                candidates = candidates.Where(m => Math.Abs(m - prevMidi) <= MaxMelodicIntervalSemitones);
+
+            var ordered = candidates
+                .OrderBy(m => Math.Abs(m - targetMidi))
+                .ThenBy(m => prevMidi >= 0 && m % 12 == prevMidi % 12 ? 1 : 0)
+                .ToList();
+
+            if (ordered.Count > 0)
+                return ordered[0];
+
+            return PickPitch(rng, pool, prevMidi, isPhraseEnding: false);
+        }
+
+        private static PhraseRole GetPhraseRole(int measureIndex)
+            => ((measureIndex / 2) % 4) switch
+            {
+                0 => PhraseRole.A,
+                1 => PhraseRole.APrime,
+                2 => PhraseRole.B,
+                _ => PhraseRole.AReturn,
+            };
 
         private static List<RhythmSlot> SelectMotifMeasure(
             PhraseRole role, int measureInPhrase,
@@ -413,35 +554,6 @@ namespace musicmate.Services
                 return true;
 
             return rng.Next(8) == 0;
-        }
-
-        private void FillMeasureFromRhythm(
-            Random rng,
-            List<int> pool,
-            List<RhythmSlot> rhythm,
-            Measure measure,
-            int absoluteMi,
-            double globalBeatCursor,
-            ref int globalNoteIndex,
-            ref int prevPitch,
-            bool phraseEndingOnLastPitch)
-        {
-            double localCursor = 0.0;
-            int lastPitchIdx = -1;
-            for (int i = 0; i < rhythm.Count; i++)
-            {
-                if (!rhythm[i].IsRest)
-                    lastPitchIdx = i;
-            }
-
-            for (int i = 0; i < rhythm.Count; i++)
-            {
-                var slot = rhythm[i];
-                bool isPhraseEnding = phraseEndingOnLastPitch && i == lastPitchIdx && !slot.IsRest;
-                AddRhythmSlot(rng, measure, ref localCursor, globalBeatCursor, absoluteMi,
-                    ref globalNoteIndex, ref prevPitch, pool, scaleQueue: null,
-                    slot.Duration, slot.IsRest, isPhraseEnding);
-            }
         }
 
         private NoteDuration PickAlternativeDuration(
