@@ -71,15 +71,25 @@ namespace musicmate.Services
             => ChildLevelProgression.GetMainFocus(level);
 
         /// <summary>
-        /// Pick scale/key for this session and apply all child-level settings to the session.
+        /// Pick scale/key for this session and apply child-level settings to the session.
+        /// When <paramref name="preserveUserPracticeSettings"/> is true and the user has
+        /// customized settings, key/scale/rhythm/accidental values are kept; range and batch
+        /// sizing still follow the level.
         /// </summary>
         public static PracticeDifficultySettings PickAndApplyToSession(
-            int level, NoteSessionService session, bool forceClassicMode = false, Random? rng = null)
+            int level,
+            NoteSessionService session,
+            bool forceClassicMode = false,
+            Random? rng = null,
+            bool preserveUserPracticeSettings = false)
         {
             var settings = ResolveSessionSettings(level, rng);
-            ApplyToSession(settings, session, forceClassicMode);
+            bool preserve = preserveUserPracticeSettings && session.ChildPracticeSettingsCustomized;
+            ApplyToSession(settings, session, forceClassicMode,
+                applyKeyAndScale: !preserve,
+                applyPracticeSettings: !preserve);
 #if DEBUG
-            Debug.WriteLine($"[ChildLevel] Picked session settings: L{level} {settings.SuggestedKey} {settings.SuggestedScale}");
+            Debug.WriteLine($"[ChildLevel] Picked session settings: L{level} {settings.SuggestedKey} {settings.SuggestedScale} preserve={preserve}");
 #endif
             return settings;
         }
@@ -88,17 +98,25 @@ namespace musicmate.Services
         public static string BuildDiagnosticReport(IEnumerable<int>? levels = null)
             => ChildLevelProgression.BuildDiagnosticReport(levels);
 
-        public static void ApplyToSession(PracticeDifficultySettings settings, NoteSessionService session, bool forceClassicMode = true)
+        public static void ApplyToSession(
+            PracticeDifficultySettings settings,
+            NoteSessionService session,
+            bool forceClassicMode = true,
+            bool applyKeyAndScale = true,
+            bool applyPracticeSettings = true)
         {
             // V3-only: child levels and MainPage always use the two-staff display.
             session.StaffDisplayMode = StaffDisplayMode.V3;
 
-            if (settings.UseRandomMode)
-                session.IsRandomMode = true;
+            if (applyKeyAndScale)
+            {
+                if (settings.UseRandomMode)
+                    session.IsRandomMode = true;
 
-            session.Key = settings.ForceKey;
-            session.SelectedScale = settings.SuggestedScale;
-            session.AccidentalPercent = settings.AccidentalPercent;
+                session.Key = settings.ForceKey;
+                session.SelectedScale = settings.SuggestedScale;
+                session.Tune = "Selected Scale";
+            }
 
             var whiteKeys = session.WhiteKeyNoteNames;
             if (Array.IndexOf(whiteKeys, settings.LowestNote) >= 0 &&
@@ -110,14 +128,21 @@ namespace musicmate.Services
                 session.HighestNote = settings.HighestNote;
             }
 
-            session.V3SmallestNote = settings.V3SmallestNote;
-            session.V3RhythmMode   = settings.V3RhythmMode;
-            session.V3Syncopation  = settings.V3Syncopation;
             session.MaxMelodicIntervalSemitones = settings.MaxMelodicIntervalSemitones;
+            session.ChildMeasureBatchSize       = settings.MeasureBatchSize;
 
-            session.ChildMeasureBatchSize   = settings.MeasureBatchSize;
-            session.V3RhythmVarietyPercent  = settings.RhythmVarietyPercent;
-            session.V3RestChancePercent     = settings.RestChancePercent;
+            if (applyPracticeSettings)
+            {
+                session.AccidentalPercent        = settings.AccidentalPercent;
+                session.V3SmallestNote           = settings.V3SmallestNote;
+                session.V3RhythmMode             = settings.V3RhythmMode;
+                session.V3Syncopation            = settings.V3Syncopation;
+                session.V3RhythmVarietyPercent   = settings.RhythmVarietyPercent;
+                session.V3RestChancePercent      = settings.RestChancePercent;
+            }
+
+            if (applyKeyAndScale && applyPracticeSettings)
+                session.ClearChildPracticeSettingsCustomization();
         }
 
         private static PracticeDifficultySettings BuildSettings(

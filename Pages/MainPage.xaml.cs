@@ -2113,8 +2113,9 @@ namespace musicmate.Pages
         }
 
         /// <summary>
-        /// Randomly pick scale/key from the child-level weighted pools for a new session.
-        /// Skipped when Repeat Same will restore the previous tune (keeps key/scale stable).
+        /// Apply child-level session settings for a new run. Re-picks key/scale from level pools
+        /// unless the user has customized key, scale, accidental, or rhythm settings.
+        /// Skipped when Repeat Same will restore the previous tune.
         /// </summary>
         private void PickChildSessionSettingsIfNeeded(bool preserveRepeatSameTune)
         {
@@ -2124,7 +2125,8 @@ namespace musicmate.Pages
                 return;
 
             DifficultyLevelMapper.PickAndApplyToSession(
-                _session.ChildLevel, _session, forceClassicMode: false);
+                _session.ChildLevel, _session, forceClassicMode: false,
+                preserveUserPracticeSettings: true);
             UpdateKeyPickerSelection();
             UpdateScaleTunePicker();
             UpdateConcertKeyLabel();
@@ -3476,10 +3478,24 @@ async Task UpdateNoteStatsDatabaseAsync()
         {
             if (KeyPicker.ItemsSource is not string[] items) return;
             var idx = Array.IndexOf(items, _session.Key);
-            if (idx >= 0 && KeyPicker.SelectedIndex != idx)
-                KeyPicker.SelectedIndex = idx;
-            if (idx >= 0 && _v3HomeKeyPicker?.SelectedIndex != idx)
-                _v3HomeKeyPicker!.SelectedIndex = idx;
+            _suppressPickerSync = true;
+            try
+            {
+                if (idx >= 0 && KeyPicker.SelectedIndex != idx)
+                    KeyPicker.SelectedIndex = idx;
+                if (idx >= 0 && _v3HomeKeyPicker?.SelectedIndex != idx)
+                    _v3HomeKeyPicker!.SelectedIndex = idx;
+            }
+            finally
+            {
+                _suppressPickerSync = false;
+            }
+        }
+
+        private void MarkChildKeyScaleOverrideIfNeeded()
+        {
+            if (_session.ChildLevel > 0)
+                _session.MarkChildPracticeSettingsCustomized();
         }
 
         private void UpdateConcertKeyLabel()
@@ -3572,6 +3588,7 @@ async Task UpdateNoteStatsDatabaseAsync()
 
         private async void V3HomeKeyPicker_SelectedIndexChanged(object? sender, EventArgs e)
         {
+            if (_suppressPickerSync) return;
             var selectedKey = _v3HomeKeyPicker.SelectedItem?.ToString();
             if (selectedKey == null) return;
             var shortKey = selectedKey.Split(',')[0].Trim();
@@ -3583,6 +3600,7 @@ async Task UpdateNoteStatsDatabaseAsync()
             }
             else { _lastFreeKeyIndex = _v3HomeKeyPicker.SelectedIndex; }
             _session.Key = shortKey;
+            MarkChildKeyScaleOverrideIfNeeded();
             if (KeyPicker.SelectedIndex != _v3HomeKeyPicker.SelectedIndex)
                 KeyPicker.SelectedIndex = _v3HomeKeyPicker.SelectedIndex;
             UpdateConcertKeyLabel();
@@ -3654,6 +3672,7 @@ async Task UpdateNoteStatsDatabaseAsync()
             _lastValidScaleTuneIndex = sourcePicker.SelectedIndex;
             _session.Tune = "Selected Scale";
             _session.SelectedScale = selected;
+            MarkChildKeyScaleOverrideIfNeeded();
             Preferences.Default.Set("SelectedTune", "Selected Scale");
             IsAutoRepeatVisible = true;
             UpdateKeyPickerVisibility();
@@ -3689,6 +3708,7 @@ async Task UpdateNoteStatsDatabaseAsync()
 
         async void OnKeyPickerChangedWithPrompt(object? sender, EventArgs e)
         {
+            if (_suppressPickerSync) return;
             var selectedKey = KeyPicker.SelectedItem?.ToString();
             if (selectedKey == null)
                 return;
@@ -3712,6 +3732,7 @@ async Task UpdateNoteStatsDatabaseAsync()
             }
 
             _session.Key = shortKey;
+            MarkChildKeyScaleOverrideIfNeeded();
             OnSettingsChanged(sender, e);
         }
 

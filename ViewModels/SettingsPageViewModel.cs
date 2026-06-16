@@ -54,6 +54,20 @@ namespace musicmate.ViewModels
                 _theme.PropertyChanged += Theme_PropertyChanged;
         }
 
+        /// <summary>
+        /// User moved an accidental, rhythm, key, or scale control during a child session.
+        /// </summary>
+        private void MarkChildPracticeOverrideIfNeeded(bool rhythmModeChanged = false)
+        {
+            if (_session == null || _session.ChildLevel <= 0)
+                return;
+
+            if (rhythmModeChanged)
+                _session.V3RhythmVarietyPercent = -1;
+
+            _session.MarkChildPracticeSettingsCustomized();
+        }
+
         private void Session_PropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
             // Forward session property changes so UI bound to view-model updates
@@ -173,6 +187,7 @@ namespace musicmate.ViewModels
                 if (_session != null)
                 {
                     _session.SelectedScale = value;
+                    MarkChildPracticeOverrideIfNeeded();
                     OnPropertyChanged(nameof(SelectedScale));
                 }
                 else
@@ -241,6 +256,7 @@ namespace musicmate.ViewModels
                     if (_session != null)
                     {
                         _session.AccidentalPercent = value;
+                        MarkChildPracticeOverrideIfNeeded();
                         OnPropertyChanged(nameof(AccidentalPercent));
                     }
                     else
@@ -459,6 +475,7 @@ namespace musicmate.ViewModels
                 if (_session != null)
                 {
                     _session.V3TimeSignature = value;
+                    MarkChildPracticeOverrideIfNeeded();
                     OnPropertyChanged(nameof(V3TimeSignature));
                 }
                 else
@@ -480,6 +497,7 @@ namespace musicmate.ViewModels
                 if (_session != null)
                 {
                     _session.V3SmallestNote = value;
+                    MarkChildPracticeOverrideIfNeeded();
                     OnPropertyChanged(nameof(V3SmallestNote));
                 }
                 else
@@ -501,6 +519,7 @@ namespace musicmate.ViewModels
                 if (_session != null)
                 {
                     _session.V3RhythmMode = value;
+                    MarkChildPracticeOverrideIfNeeded(rhythmModeChanged: true);
                     OnPropertyChanged(nameof(V3RhythmMode));
                 }
                 else
@@ -522,6 +541,7 @@ namespace musicmate.ViewModels
                 if (_session != null)
                 {
                     _session.V3Syncopation = value;
+                    MarkChildPracticeOverrideIfNeeded();
                     OnPropertyChanged(nameof(V3Syncopation));
                 }
                 else
@@ -543,6 +563,7 @@ namespace musicmate.ViewModels
                 if (_session != null)
                 {
                     _session.V3NoteNameDisplay = value;
+                    MarkChildPracticeOverrideIfNeeded();
                     OnPropertyChanged(nameof(V3NoteNameDisplay));
                 }
                 else

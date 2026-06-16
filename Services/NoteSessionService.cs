@@ -1070,6 +1070,25 @@ namespace musicmate.Services
         /// Not persisted here — ChildHomePage owns persistence via Preferences("ChildHome.Level").
         /// </summary>
         public int ChildLevel { get; set; } = 0;
+
+        /// <summary>
+        /// When true, accidental, rhythm, key, and scale were changed by the user during a child
+        /// session and should not be overwritten until the child level changes.
+        /// </summary>
+        public bool ChildPracticeSettingsCustomized { get; private set; }
+
+        /// <summary>Marks user-owned child session settings for the current child level.</summary>
+        public void MarkChildPracticeSettingsCustomized()
+        {
+            if (ChildLevel <= 0)
+                return;
+            ChildPracticeSettingsCustomized = true;
+        }
+
+        /// <summary>Clears the child practice override flag (level defaults will apply again).</summary>
+        public void ClearChildPracticeSettingsCustomization()
+            => ChildPracticeSettingsCustomized = false;
+
         public string Key
         {
             get => _key;

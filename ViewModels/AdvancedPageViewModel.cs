@@ -102,7 +102,13 @@ namespace musicmate.ViewModels
         public int AccidentalPercent
         {
             get => _session.AccidentalPercent;
-            set { _session.AccidentalPercent = value; OnPropertyChanged(nameof(AccidentalPercent));}
+            set
+            {
+                _session.AccidentalPercent = value;
+                if (_session.ChildLevel > 0)
+                    _session.MarkChildPracticeSettingsCustomized();
+                OnPropertyChanged(nameof(AccidentalPercent));
+            }
         }
         public int AudioBufferSize
         {
