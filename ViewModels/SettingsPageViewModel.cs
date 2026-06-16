@@ -91,20 +91,18 @@ namespace musicmate.ViewModels
                     OnPropertyChanged(nameof(StreakCrit));
                     OnPropertyChanged(nameof(OmitSliderValue));
                     break;
-                case nameof(NoteSessionService.V2StaffMode):
-                    OnPropertyChanged(nameof(V2StaffMode)); break;
+                case nameof(NoteSessionService.V3TimeSignature):
+                    OnPropertyChanged(nameof(V3TimeSignature)); break;
+                case nameof(NoteSessionService.V3SmallestNote):
+                    OnPropertyChanged(nameof(V3SmallestNote)); break;
+                case nameof(NoteSessionService.V3RhythmMode):
+                    OnPropertyChanged(nameof(V3RhythmMode)); break;
+                case nameof(NoteSessionService.V3Syncopation):
+                    OnPropertyChanged(nameof(V3Syncopation)); break;
+                case nameof(NoteSessionService.V3NoteNameDisplay):
+                    OnPropertyChanged(nameof(V3NoteNameDisplay)); break;
                 case nameof(NoteSessionService.StaffDisplayMode):
                     OnPropertyChanged(nameof(StaffDisplayModeDisplay)); break;
-                case nameof(NoteSessionService.V2TimeSignature):
-                    OnPropertyChanged(nameof(V2TimeSignature)); break;
-                case nameof(NoteSessionService.V2SmallestNote):
-                    OnPropertyChanged(nameof(V2SmallestNote)); break;
-                case nameof(NoteSessionService.V2RhythmMode):
-                    OnPropertyChanged(nameof(V2RhythmMode)); break;
-                case nameof(NoteSessionService.V2Syncopation):
-                    OnPropertyChanged(nameof(V2Syncopation)); break;
-                case nameof(NoteSessionService.V2NoteNameDisplay):
-                    OnPropertyChanged(nameof(V2NoteNameDisplay)); break;
                 case nameof(NoteSessionService.WhiteKeyNoteNames):
                     OnPropertyChanged(nameof(WhiteKeyNoteNames)); break;
                 case nameof(NoteSessionService.AvailableScalesForBinding):
@@ -427,21 +425,7 @@ namespace musicmate.ViewModels
             }
         }
 
-        // ── Music Mate v2 Rhythm Settings ─────────────────────────────────────────
-
-        public bool V2StaffMode
-        {
-            get => _session?.V2StaffMode ?? false;
-            set
-            {
-                if ((_session?.V2StaffMode ?? false) == value) return;
-                if (_session != null)
-                {
-                    _session.V2StaffMode = value;
-                    OnPropertyChanged(nameof(V2StaffMode));
-                }
-            }
-        }
+        // ── Music Mate V3 Rhythm Settings ─────────────────────────────────────────
 
         public string[] StaffDisplayModeOptions => NoteSessionService.StaffDisplayModeOptions;
 
@@ -459,113 +443,113 @@ namespace musicmate.ViewModels
             }
         }
 
-        public List<string> V2TimeSignatureOptions { get; } = new() { "4/4", "3/4", "2/4" };
-        public List<string> V2SmallestNoteOptions  { get; } = new() { "Quarter", "Eighth", "Sixteenth" };
-        public List<string> V2RhythmModeOptions    { get; } = new() { "Simple", "Mixed" };
-        public List<string> V2SyncopationOptions   { get; } = new() { "None", "Simple", "Full" };
-        public List<string> V2NoteNameDisplayOptions { get; } = new() { "Current only", "All notes", "Off" };
+        public List<string> V3TimeSignatureOptions { get; } = new() { "4/4", "3/4", "2/4" };
+        public List<string> V3SmallestNoteOptions  { get; } = new() { "Quarter", "Eighth", "Sixteenth" };
+        public List<string> V3RhythmModeOptions    { get; } = new() { "Simple", "Mixed" };
+        public List<string> V3SyncopationOptions   { get; } = new() { "None", "Simple", "Full" };
+        public List<string> V3NoteNameDisplayOptions { get; } = new() { "Current only", "All notes", "Off" };
 
-        private string _v2TimeSignature = Preferences.Get("musicmate.V2TimeSignature", "4/4");
-        public string V2TimeSignature
+        private string _v3TimeSignature = Preferences.Get("musicmate.V3TimeSignature", "4/4");
+        public string V3TimeSignature
         {
-            get => _session?.V2TimeSignature ?? _v2TimeSignature;
+            get => _session?.V3TimeSignature ?? _v3TimeSignature;
             set
             {
-                if ((_session?.V2TimeSignature ?? _v2TimeSignature) == value) return;
+                if ((_session?.V3TimeSignature ?? _v3TimeSignature) == value) return;
                 if (_session != null)
                 {
-                    _session.V2TimeSignature = value;
-                    OnPropertyChanged(nameof(V2TimeSignature));
+                    _session.V3TimeSignature = value;
+                    OnPropertyChanged(nameof(V3TimeSignature));
                 }
                 else
                 {
-                    _v2TimeSignature = value;
-                    Preferences.Set("musicmate.V2TimeSignature", value);
-                    OnPropertyChanged(nameof(V2TimeSignature));
+                    _v3TimeSignature = value;
+                    Preferences.Set("musicmate.V3TimeSignature", value);
+                    OnPropertyChanged(nameof(V3TimeSignature));
                 }
             }
         }
 
-        private string _v2SmallestNote = Preferences.Get("musicmate.V2SmallestNote", "Quarter");
-        public string V2SmallestNote
+        private string _v3SmallestNote = Preferences.Get("musicmate.V3SmallestNote", "Quarter");
+        public string V3SmallestNote
         {
-            get => _session?.V2SmallestNote ?? _v2SmallestNote;
+            get => _session?.V3SmallestNote ?? _v3SmallestNote;
             set
             {
-                if ((_session?.V2SmallestNote ?? _v2SmallestNote) == value) return;
+                if ((_session?.V3SmallestNote ?? _v3SmallestNote) == value) return;
                 if (_session != null)
                 {
-                    _session.V2SmallestNote = value;
-                    OnPropertyChanged(nameof(V2SmallestNote));
+                    _session.V3SmallestNote = value;
+                    OnPropertyChanged(nameof(V3SmallestNote));
                 }
                 else
                 {
-                    _v2SmallestNote = value;
-                    Preferences.Set("musicmate.V2SmallestNote", value);
-                    OnPropertyChanged(nameof(V2SmallestNote));
+                    _v3SmallestNote = value;
+                    Preferences.Set("musicmate.V3SmallestNote", value);
+                    OnPropertyChanged(nameof(V3SmallestNote));
                 }
             }
         }
 
-        private string _v2RhythmMode = Preferences.Get("musicmate.V2RhythmMode", "Simple");
-        public string V2RhythmMode
+        private string _v3RhythmMode = Preferences.Get("musicmate.V3RhythmMode", "Simple");
+        public string V3RhythmMode
         {
-            get => _session?.V2RhythmMode ?? _v2RhythmMode;
+            get => _session?.V3RhythmMode ?? _v3RhythmMode;
             set
             {
-                if ((_session?.V2RhythmMode ?? _v2RhythmMode) == value) return;
+                if ((_session?.V3RhythmMode ?? _v3RhythmMode) == value) return;
                 if (_session != null)
                 {
-                    _session.V2RhythmMode = value;
-                    OnPropertyChanged(nameof(V2RhythmMode));
+                    _session.V3RhythmMode = value;
+                    OnPropertyChanged(nameof(V3RhythmMode));
                 }
                 else
                 {
-                    _v2RhythmMode = value;
-                    Preferences.Set("musicmate.V2RhythmMode", value);
-                    OnPropertyChanged(nameof(V2RhythmMode));
+                    _v3RhythmMode = value;
+                    Preferences.Set("musicmate.V3RhythmMode", value);
+                    OnPropertyChanged(nameof(V3RhythmMode));
                 }
             }
         }
 
-        private string _v2Syncopation = Preferences.Get("musicmate.V2Syncopation", "None");
-        public string V2Syncopation
+        private string _v3Syncopation = Preferences.Get("musicmate.V3Syncopation", "None");
+        public string V3Syncopation
         {
-            get => _session?.V2Syncopation ?? _v2Syncopation;
+            get => _session?.V3Syncopation ?? _v3Syncopation;
             set
             {
-                if ((_session?.V2Syncopation ?? _v2Syncopation) == value) return;
+                if ((_session?.V3Syncopation ?? _v3Syncopation) == value) return;
                 if (_session != null)
                 {
-                    _session.V2Syncopation = value;
-                    OnPropertyChanged(nameof(V2Syncopation));
+                    _session.V3Syncopation = value;
+                    OnPropertyChanged(nameof(V3Syncopation));
                 }
                 else
                 {
-                    _v2Syncopation = value;
-                    Preferences.Set("musicmate.V2Syncopation", value);
-                    OnPropertyChanged(nameof(V2Syncopation));
+                    _v3Syncopation = value;
+                    Preferences.Set("musicmate.V3Syncopation", value);
+                    OnPropertyChanged(nameof(V3Syncopation));
                 }
             }
         }
 
-        private string _v2NoteNameDisplay = Preferences.Get("musicmate.V2NoteNameDisplay", "Current only");
-        public string V2NoteNameDisplay
+        private string _v3NoteNameDisplay = Preferences.Get("musicmate.V3NoteNameDisplay", "Current only");
+        public string V3NoteNameDisplay
         {
-            get => _session?.V2NoteNameDisplay ?? _v2NoteNameDisplay;
+            get => _session?.V3NoteNameDisplay ?? _v3NoteNameDisplay;
             set
             {
-                if ((_session?.V2NoteNameDisplay ?? _v2NoteNameDisplay) == value) return;
+                if ((_session?.V3NoteNameDisplay ?? _v3NoteNameDisplay) == value) return;
                 if (_session != null)
                 {
-                    _session.V2NoteNameDisplay = value;
-                    OnPropertyChanged(nameof(V2NoteNameDisplay));
+                    _session.V3NoteNameDisplay = value;
+                    OnPropertyChanged(nameof(V3NoteNameDisplay));
                 }
                 else
                 {
-                    _v2NoteNameDisplay = value;
-                    Preferences.Set("musicmate.V2NoteNameDisplay", value);
-                    OnPropertyChanged(nameof(V2NoteNameDisplay));
+                    _v3NoteNameDisplay = value;
+                    Preferences.Set("musicmate.V3NoteNameDisplay", value);
+                    OnPropertyChanged(nameof(V3NoteNameDisplay));
                 }
             }
         }

@@ -12,9 +12,9 @@ namespace musicmate.Services
         public int AccidentalPercent { get; init; }
         public string LowestNote { get; init; } = "C4";
         public string HighestNote { get; init; } = "C5";
-        public string V2SmallestNote { get; init; } = "Quarter";
-        public string V2RhythmMode { get; init; } = "Simple";
-        public string V2Syncopation { get; init; } = "None";
+        public string V3SmallestNote { get; init; } = "Quarter";
+        public string V3RhythmMode { get; init; } = "Simple";
+        public string V3Syncopation { get; init; } = "None";
         public bool UseRandomMode { get; init; } = true;
         public string ForceKey { get; init; } = "C";
         public string SuggestedKey { get; init; } = "C";
@@ -22,13 +22,13 @@ namespace musicmate.Services
         public int SuggestedNoteCount { get; init; }
         public int MaxMelodicIntervalSemitones { get; init; }
 
-        /// <summary>0–100.  Drives half/eighth/sixteenth variety in V2 generation.</summary>
+        /// <summary>0–100.  Drives half/eighth/sixteenth variety in V3 generation.</summary>
         public int RhythmVarietyPercent { get; init; }
 
         /// <summary>0–100.  Per-slot rest probability (0 until level 21).</summary>
         public int RestChancePercent { get; init; }
 
-        /// <summary>Measures generated per V2 batch for child sessions.</summary>
+        /// <summary>Measures generated per batch for child sessions.</summary>
         public int MeasureBatchSize { get; init; } = 8;
 
         public string StageLabel { get; init; } = "Beginner";
@@ -110,14 +110,14 @@ namespace musicmate.Services
                 session.HighestNote = settings.HighestNote;
             }
 
-            session.V2SmallestNote = settings.V2SmallestNote;
-            session.V2RhythmMode   = settings.V2RhythmMode;
-            session.V2Syncopation  = settings.V2Syncopation;
+            session.V3SmallestNote = settings.V3SmallestNote;
+            session.V3RhythmMode   = settings.V3RhythmMode;
+            session.V3Syncopation  = settings.V3Syncopation;
             session.MaxMelodicIntervalSemitones = settings.MaxMelodicIntervalSemitones;
 
             session.ChildMeasureBatchSize   = settings.MeasureBatchSize;
-            session.V2RhythmVarietyPercent  = settings.RhythmVarietyPercent;
-            session.V2RestChancePercent     = settings.RestChancePercent;
+            session.V3RhythmVarietyPercent  = settings.RhythmVarietyPercent;
+            session.V3RestChancePercent     = settings.RestChancePercent;
         }
 
         private static PracticeDifficultySettings BuildSettings(
@@ -131,9 +131,9 @@ namespace musicmate.Services
                 AccidentalPercent           = profile.AccidentalPercent,
                 LowestNote                  = profile.LowestNote,
                 HighestNote                 = profile.HighestNote,
-                V2SmallestNote              = ChildLevelProgression.SmallestNoteForLevel(level),
-                V2RhythmMode                = variety > 0 ? "Mixed" : "Simple",
-                V2Syncopation               = ChildLevelProgression.SyncopationForLevel(level),
+                V3SmallestNote              = ChildLevelProgression.SmallestNoteForLevel(level),
+                V3RhythmMode                = variety > 0 ? "Mixed" : "Simple",
+                V3Syncopation               = ChildLevelProgression.SyncopationForLevel(level),
                 UseRandomMode               = true,
                 ForceKey                    = key,
                 SuggestedKey                = key,

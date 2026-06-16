@@ -675,7 +675,7 @@ namespace musicmate.Services
 
             if (ExcludedMidiNumbers.Count == 0)
             {
-                System.Diagnostics.Debug.WriteLine($"[V2Pool] AccPct={AccidentalPercent} diatonic={fullPool.Count(m => { int p=((m%12)+12)%12; return scalePcs.Contains(p); })} chromatic={fullPool.Count(m => { int p=((m%12)+12)%12; return !scalePcs.Contains(p); })} total={fullPool.Count}");
+                System.Diagnostics.Debug.WriteLine($"[V3Pool] AccPct={AccidentalPercent} diatonic={fullPool.Count(m => { int p=((m%12)+12)%12; return scalePcs.Contains(p); })} chromatic={fullPool.Count(m => { int p=((m%12)+12)%12; return !scalePcs.Contains(p); })} total={fullPool.Count}");
                 return fullPool;
             }
 

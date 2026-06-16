@@ -238,8 +238,8 @@ namespace musicmate.Pages
                           $"Stage={difficulty.StageLabel}, Scale={difficulty.SuggestedScale}, " +
                           $"Range={difficulty.LowestNote}–{difficulty.HighestNote}, " +
                           $"Key={difficulty.ForceKey}, Notes≈{difficulty.SuggestedNoteCount}, " +
-                          $"Rhythm={difficulty.V2SmallestNote} variety={difficulty.RhythmVarietyPercent}% " +
-                          $"rests={difficulty.RestChancePercent}%, Sync={difficulty.V2Syncopation}");
+                          $"Rhythm={difficulty.V3SmallestNote} variety={difficulty.RhythmVarietyPercent}% " +
+                          $"rests={difficulty.RestChancePercent}%, Sync={difficulty.V3Syncopation}");
 
                 Utils.Log($"[ChildHome] Session after apply → Level={_session.ChildLevel}, " +
                           $"LowestNote={_session.LowestNote}, HighestNote={_session.HighestNote}, " +

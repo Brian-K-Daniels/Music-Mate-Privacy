@@ -18,9 +18,9 @@ namespace musicmate.Services
     {
         /// <summary>Original single-note staff (StaffDrawable).</summary>
         Classic,
-        /// <summary>V2 scrolling measure staff (V2MeasureDrawable).</summary>
+        /// <summary>Legacy value kept for preference parse compatibility.</summary>
         V2,
-        /// <summary>V3 two-staff endless display (V3StaffDrawable — in development).</summary>
+        /// <summary>V3 two-staff display (V3StaffDrawable).</summary>
         V3
     }
 
@@ -135,25 +135,17 @@ namespace musicmate.Services
         }
 
         // ── Display mode ─────────────────────────────────────────────────────────
-        // StaffDisplayMode is the single source of truth for which staff renderer is
-        // active.  Classic = original single-note view; V2 = v2 measure staff;
-        // V3 = new two-staff endless display.
-        //
-        // V2StaffMode is kept as a computed shim so all existing call sites continue
-        // to compile and behave correctly without modification.
         private const string PrefStaffDisplayModeKey = "musicmate.StaffDisplayMode";
-        private const string PrefV2StaffModeKey      = "musicmate.V2StaffMode";
-        private const string PrefV2TimeSignatureKey  = "musicmate.V2TimeSignature";
-        private const string PrefV2SmallestNoteKey   = "musicmate.V2SmallestNote";
-        private const string PrefV2RhythmModeKey     = "musicmate.V2RhythmMode";
-        private const string PrefV2SyncopationKey    = "musicmate.V2Syncopation";
-        private const string PrefV2NoteNameDisplayKey = "musicmate.V2NoteNameDisplay";
+        private const string PrefV3TimeSignatureKey  = "musicmate.V3TimeSignature";
+        private const string PrefV3SmallestNoteKey   = "musicmate.V3SmallestNote";
+        private const string PrefV3RhythmModeKey     = "musicmate.V3RhythmMode";
+        private const string PrefV3SyncopationKey    = "musicmate.V3Syncopation";
+        private const string PrefV3NoteNameDisplayKey = "musicmate.V3NoteNameDisplay";
 
         private StaffDisplayMode _staffDisplayMode = LoadStaffDisplayMode();
 
         private static StaffDisplayMode LoadStaffDisplayMode()
         {
-            // V3-only: migrate any legacy Classic/V2 preference on load.
             StaffDisplayMode mode = StaffDisplayMode.V3;
             if (Preferences.ContainsKey(PrefStaffDisplayModeKey))
             {
@@ -161,53 +153,27 @@ namespace musicmate.Services
                 if (Enum.TryParse<StaffDisplayMode>(saved, out var parsed))
                     mode = parsed;
             }
-            else if (Preferences.Get(PrefV2StaffModeKey, false))
-            {
-                mode = StaffDisplayMode.V2;
-            }
 
             if (mode != StaffDisplayMode.V3)
                 mode = StaffDisplayMode.V3;
 
             Preferences.Set(PrefStaffDisplayModeKey, mode.ToString());
-            Preferences.Set(PrefV2StaffModeKey, false);
             return mode;
         }
 
-        /// <summary>
-        /// Active staff display mode.  Changing this property persists the choice and
-        /// raises <see cref="INotifyPropertyChanged"/> for both
-        /// <see cref="StaffDisplayMode"/> and the legacy <see cref="V2StaffMode"/> shim.
-        /// </summary>
+        /// <summary>Active staff display mode (app practice uses V3 only).</summary>
         public StaffDisplayMode StaffDisplayMode
         {
             get => _staffDisplayMode;
             set
             {
-                // Practice / MainPage uses V3 only.
                 value = StaffDisplayMode.V3;
                 if (_staffDisplayMode == value) return;
                 _staffDisplayMode = value;
                 Preferences.Set(PrefStaffDisplayModeKey, value.ToString());
-                // Keep the legacy bool key in sync so Settings pages that read it
-                // directly via Preferences still reflect the right state.
-                Preferences.Set(PrefV2StaffModeKey, value == StaffDisplayMode.V2);
                 OnPropertyChanged(nameof(StaffDisplayMode));
-                OnPropertyChanged(nameof(V2StaffMode));
                 OnPropertyChanged(nameof(StaffDisplayModeDisplay));
             }
-        }
-
-        /// <summary>
-        /// Legacy compatibility shim.  Backed by <see cref="StaffDisplayMode"/>.
-        /// Existing code that reads or writes this bool continues to work unchanged.
-        /// Setting it to <c>true</c> selects V2; <c>false</c> selects Classic.
-        /// Code that needs V3 should set <see cref="StaffDisplayMode"/> directly.
-        /// </summary>
-        public bool V2StaffMode
-        {
-            get => _staffDisplayMode == StaffDisplayMode.V2;
-            set => StaffDisplayMode = value ? StaffDisplayMode.V2 : StaffDisplayMode.Classic;
         }
 
         /// <summary>Human-readable label (V3-only; kept for binding compatibility).</summary>
@@ -219,91 +185,91 @@ namespace musicmate.Services
 
         public static string[] StaffDisplayModeOptions { get; } = { "V3 Two-Staff" };
 
-        private string _v2TimeSignature = Preferences.Get(PrefV2TimeSignatureKey, "4/4");
-        private string _v2SmallestNote  = Preferences.Get(PrefV2SmallestNoteKey,  "Quarter");
-        private string _v2RhythmMode    = Preferences.Get(PrefV2RhythmModeKey,    "Simple");
-        private string _v2Syncopation   = Preferences.Get(PrefV2SyncopationKey,   "None");
-        private string _v2NoteNameDisplay = Preferences.Get(PrefV2NoteNameDisplayKey, "Current only");
+        private string _v3TimeSignature = Preferences.Get(PrefV3TimeSignatureKey, "4/4");
+        private string _v3SmallestNote  = Preferences.Get(PrefV3SmallestNoteKey, "Quarter");
+        private string _v3RhythmMode    = Preferences.Get(PrefV3RhythmModeKey, "Simple");
+        private string _v3Syncopation   = Preferences.Get(PrefV3SyncopationKey, "None");
+        private string _v3NoteNameDisplay = Preferences.Get(PrefV3NoteNameDisplayKey, "Current only");
 
         /// <summary>
-        /// Time signature for v2 rhythm generation.
+        /// Time signature for V3 rhythm generation.
         /// Persisted value is the display string: "4/4", "3/4", or "2/4".
         /// </summary>
-        public string V2TimeSignature
+        public string V3TimeSignature
         {
-            get => _v2TimeSignature;
+            get => _v3TimeSignature;
             set
             {
-                if (_v2TimeSignature == value) return;
-                _v2TimeSignature = value;
-                Preferences.Set(PrefV2TimeSignatureKey, value);
-                OnPropertyChanged(nameof(V2TimeSignature));
+                if (_v3TimeSignature == value) return;
+                _v3TimeSignature = value;
+                Preferences.Set(PrefV3TimeSignatureKey, value);
+                OnPropertyChanged(nameof(V3TimeSignature));
             }
         }
 
         /// <summary>
-        /// Smallest note value allowed in v2 rhythm generation.
+        /// Smallest note value allowed in V3 rhythm generation.
         /// Persisted value is the display string: "Quarter", "Eighth", or "Sixteenth".
         /// </summary>
-        public string V2SmallestNote
+        public string V3SmallestNote
         {
-            get => _v2SmallestNote;
+            get => _v3SmallestNote;
             set
             {
-                if (_v2SmallestNote == value) return;
-                _v2SmallestNote = value;
-                Preferences.Set(PrefV2SmallestNoteKey, value);
-                OnPropertyChanged(nameof(V2SmallestNote));
+                if (_v3SmallestNote == value) return;
+                _v3SmallestNote = value;
+                Preferences.Set(PrefV3SmallestNoteKey, value);
+                OnPropertyChanged(nameof(V3SmallestNote));
             }
         }
 
         /// <summary>
-        /// Rhythm variety mode for v2 generation.
+        /// Rhythm variety mode for V3 generation.
         /// "Simple" uses only quarter notes (and half/whole occasionally).
-        /// "Mixed" allows the full range of durations up to <see cref="V2SmallestNote"/>.
+        /// "Mixed" allows the full range of durations up to <see cref="V3SmallestNote"/>.
         /// </summary>
-        public string V2RhythmMode
+        public string V3RhythmMode
         {
-            get => _v2RhythmMode;
+            get => _v3RhythmMode;
             set
             {
-                if (_v2RhythmMode == value) return;
-                _v2RhythmMode = value;
-                Preferences.Set(PrefV2RhythmModeKey, value);
-                OnPropertyChanged(nameof(V2RhythmMode));
+                if (_v3RhythmMode == value) return;
+                _v3RhythmMode = value;
+                Preferences.Set(PrefV3RhythmModeKey, value);
+                OnPropertyChanged(nameof(V3RhythmMode));
             }
         }
 
         /// <summary>
-        /// Syncopation level for v2 rhythm generation.
+        /// Syncopation level for V3 rhythm generation.
         /// "None" = on-beat sequential fill; "Simple" = mild off-beat accents;
         /// "Full" = stronger syncopated motifs.
         /// </summary>
-        public string V2Syncopation
+        public string V3Syncopation
         {
-            get => _v2Syncopation;
+            get => _v3Syncopation;
             set
             {
-                if (_v2Syncopation == value) return;
-                _v2Syncopation = value;
-                Preferences.Set(PrefV2SyncopationKey, value);
-                OnPropertyChanged(nameof(V2Syncopation));
+                if (_v3Syncopation == value) return;
+                _v3Syncopation = value;
+                Preferences.Set(PrefV3SyncopationKey, value);
+                OnPropertyChanged(nameof(V3Syncopation));
             }
         }
 
         /// <summary>
-        /// Controls when note names are shown above/below noteheads in the v2 staff.
+        /// Controls when note names are shown above/below noteheads in the V3 staff.
         /// Values: "Current only", "All notes", "Off".
         /// </summary>
-        public string V2NoteNameDisplay
+        public string V3NoteNameDisplay
         {
-            get => _v2NoteNameDisplay;
+            get => _v3NoteNameDisplay;
             set
             {
-                if (_v2NoteNameDisplay == value) return;
-                _v2NoteNameDisplay = value;
-                Preferences.Set(PrefV2NoteNameDisplayKey, value);
-                OnPropertyChanged(nameof(V2NoteNameDisplay));
+                if (_v3NoteNameDisplay == value) return;
+                _v3NoteNameDisplay = value;
+                Preferences.Set(PrefV3NoteNameDisplayKey, value);
+                OnPropertyChanged(nameof(V3NoteNameDisplay));
             }
         }
         public int AccidentalPercent
@@ -340,14 +306,14 @@ namespace musicmate.Services
             }
         }
 
-        /// <summary>Child-home V2 measure batch size; 0 = use MainPage default.</summary>
+        /// <summary>Child-home measure batch size; 0 = use MainPage default.</summary>
         public int ChildMeasureBatchSize { get; set; }
 
-        /// <summary>Explicit rhythm variety (0–100); -1 = derive from <see cref="V2RhythmMode"/>.</summary>
-        public int V2RhythmVarietyPercent { get; set; } = -1;
+        /// <summary>Explicit rhythm variety (0–100); -1 = derive from <see cref="V3RhythmMode"/>.</summary>
+        public int V3RhythmVarietyPercent { get; set; } = -1;
 
         /// <summary>Per-slot rest chance (0–100); -1 = legacy rest logic in generator.</summary>
-        public int V2RestChancePercent { get; set; } = -1;
+        public int V3RestChancePercent { get; set; } = -1;
         public string[] WhiteKeyNoteNames { get; } =
             Enumerable.Range(21, 88) // MIDI 21 (A0) to 108 (C8)
                 .Select(midi => MidiToNoteName(midi, false))

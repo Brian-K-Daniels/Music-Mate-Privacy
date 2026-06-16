@@ -192,40 +192,40 @@
       <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
         <Label Grid.Column="0" Text="Time signature" />
         <Picker Grid.Column="1"
-                ItemsSource="{Binding V2TimeSignatureOptions}"
-                SelectedItem="{Binding V2TimeSignature, Mode=TwoWay}"
+                ItemsSource="{Binding V3TimeSignatureOptions}"
+                SelectedItem="{Binding V3TimeSignature, Mode=TwoWay}"
                 TextColor="Black" BackgroundColor="White" FontSize="12" />
       </Grid>
 
       <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
         <Label Grid.Column="0" Text="Smallest note" />
         <Picker Grid.Column="1"
-                ItemsSource="{Binding V2SmallestNoteOptions}"
-                SelectedItem="{Binding V2SmallestNote, Mode=TwoWay}"
+                ItemsSource="{Binding V3SmallestNoteOptions}"
+                SelectedItem="{Binding V3SmallestNote, Mode=TwoWay}"
                 TextColor="Black" BackgroundColor="White" FontSize="12" />
       </Grid>
 
       <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
         <Label Grid.Column="0" Text="Rhythm mode" />
         <Picker Grid.Column="1"
-                ItemsSource="{Binding V2RhythmModeOptions}"
-                SelectedItem="{Binding V2RhythmMode, Mode=TwoWay}"
+                ItemsSource="{Binding V3RhythmModeOptions}"
+                SelectedItem="{Binding V3RhythmMode, Mode=TwoWay}"
                 TextColor="Black" BackgroundColor="White" FontSize="12" />
       </Grid>
 
       <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
         <Label Grid.Column="0" Text="Syncopation" />
         <Picker Grid.Column="1"
-                ItemsSource="{Binding V2SyncopationOptions}"
-                SelectedItem="{Binding V2Syncopation, Mode=TwoWay}"
+                ItemsSource="{Binding V3SyncopationOptions}"
+                SelectedItem="{Binding V3Syncopation, Mode=TwoWay}"
                 TextColor="Black" BackgroundColor="White" FontSize="12" />
       </Grid>
 
       <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
         <Label Grid.Column="0" Text="Show note names" />
         <Picker Grid.Column="1"
-                ItemsSource="{Binding V2NoteNameDisplayOptions}"
-                SelectedItem="{Binding V2NoteNameDisplay, Mode=TwoWay}"
+                ItemsSource="{Binding V3NoteNameDisplayOptions}"
+                SelectedItem="{Binding V3NoteNameDisplay, Mode=TwoWay}"
                 TextColor="Black" BackgroundColor="White" FontSize="12" />
       </Grid>
 

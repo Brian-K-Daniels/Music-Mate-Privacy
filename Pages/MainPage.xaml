@@ -222,31 +222,6 @@
                               VerticalOptions="Start"/>
               </Border>
 
-              <!-- V2 measure display (shown when V2StaffMode is enabled) -->
-              <Border x:Name="V2StaffBorder"
-                      Stroke="DodgerBlue"
-                      StrokeThickness="2"
-                      StrokeShape="RoundRectangle 8"
-                      BackgroundColor="{Binding PanelBackgroundColor}"
-                      Padding="0"
-                      IsVisible="False"
-                      VerticalOptions="Start">
-                <GraphicsView x:Name="V2StaffGraphicsView"
-                              HeightRequest="120"
-                              BackgroundColor="{Binding PanelBackgroundColor}"
-                              Margin="0" />
-              </Border>
-              <!-- V2 mode label overlay (outside the border so it doesn't affect height) -->
-              <Label x:Name="V2ModeBanner"
-                     Text="V2 Staff Mode"
-                     FontSize="10"
-                     TextColor="DodgerBlue"
-                     HorizontalOptions="End"
-                     VerticalOptions="Start"
-                     Margin="0,4,10,0"
-                     IsVisible="False"
-                     InputTransparent="True" />
-
               <!-- V3 two-staff display (shown when StaffDisplayMode is V3) -->
               <Border x:Name="V3StaffBorder"
                       Stroke="MediumPurple"

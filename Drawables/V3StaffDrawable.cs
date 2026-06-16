@@ -47,12 +47,12 @@ namespace musicmate.Drawables
         /// <summary>
         /// Visual state for every note on the upper staff, parallel to <see cref="UpperNotes"/>.
         /// </summary>
-        public V2NoteState[] UpperNoteStates { get; set; } = Array.Empty<V2NoteState>();
+        public V3NoteState[] UpperNoteStates { get; set; } = Array.Empty<V3NoteState>();
 
         /// <summary>
         /// Visual state for every note on the lower staff, parallel to <see cref="LowerNotes"/>.
         /// </summary>
-        public V2NoteState[] LowerNoteStates { get; set; } = Array.Empty<V2NoteState>();
+        public V3NoteState[] LowerNoteStates { get; set; } = Array.Empty<V3NoteState>();
 
         /// <summary>
         /// When <c>true</c> the player is currently on the upper staff.
@@ -286,7 +286,7 @@ namespace musicmate.Drawables
         private float MinNoteGap(bool isRest) => _planInkGap;
 
         private float NoteHalfWidth(bool isRest)
-            => isRest ? _layout.NoteHeadR * 0.95f : _layout.NoteHeadR;
+            => isRest ? _layout.NoteHeadR * 0.95f : _layout.NoteHeadR + StemStrokeHalfWidth;
 
         /// <summary>Right edge after note/rest center (stem-ward for notes).</summary>
         private float NoteTrailingRight(bool isRest, float centerX)
@@ -487,7 +487,7 @@ namespace musicmate.Drawables
                 ChildLevel = _session.ChildLevel,
                 SessionKey = _session.Key ?? string.Empty,
                 SessionScale = _session.SelectedScale ?? string.Empty,
-                TimeSig = _session.V2TimeSignature ?? "4/4",
+                TimeSig = _session.V3TimeSignature ?? "4/4",
             };
 
         private bool TryDrawFromLayoutCache(
@@ -1699,7 +1699,7 @@ namespace musicmate.Drawables
             try
             {
                 var sortedBars = barBeats.Select(b => b - beatOrigin).OrderBy(b => b).ToList();
-                var timeSig = _session.V2TimeSignature ?? "4/4";
+                var timeSig = _session.V3TimeSignature ?? "4/4";
                 var tsParts = timeSig.Split('/');
                 double expectedMeasureBeats = tsParts.Length == 2 && int.TryParse(tsParts[0], out int tsNum) ? tsNum : 4;
 
@@ -2651,18 +2651,21 @@ namespace musicmate.Drawables
         private float StemStrokeHalfWidth => _layout.GlyphScale;
 
         /// <summary>
+        /// Draw radius for a notehead: filled heads expand to the half-note outer ink extent.
+        /// </summary>
+        private float NoteHeadDrawR(bool filled)
+            => filled ? _layout.NoteHeadR + StemStrokeHalfWidth : _layout.NoteHeadR;
+
+        /// <summary>
         /// Stem attach at notehead center height: up-stems — outer (right) stroke edge tangent to outer right boundary;
         /// down-stems — outer (left) stroke edge tangent to outer left boundary.
-        /// Hollow half-note heads extend outer boundary by half stroke.
         /// </summary>
-        private (float stemX, float stemY) GetStemAttachPoint(float noteX, float noteY, bool stemUp, NoteDuration duration)
+        private (float stemX, float stemY) GetStemAttachPoint(float noteX, float noteY, bool stemUp)
         {
             float r = _layout.NoteHeadR;
             float halfStroke = StemStrokeHalfWidth;
-            bool hollowHead = duration == NoteDuration.Half;
-
-            float outerRight = noteX + r + (hollowHead ? halfStroke : 0f);
-            float outerLeft  = noteX - r - (hollowHead ? halfStroke : 0f);
+            float outerRight = noteX + r + halfStroke;
+            float outerLeft  = noteX - r - halfStroke;
             float stemX = stemUp ? outerRight - halfStroke : outerLeft + halfStroke;
             return (stemX, noteY);
         }
@@ -2673,7 +2676,7 @@ namespace musicmate.Drawables
                 return noteCenterX;
             float ny = NoteY(note, staffTop, staffMid);
             bool stemUp = ny >= staffMid;
-            return GetStemAttachPoint(noteCenterX, ny, stemUp, note.Duration).stemX;
+            return GetStemAttachPoint(noteCenterX, ny, stemUp).stemX;
         }
 
         private void LogV3StaffLayoutDiagnostics(
@@ -2753,7 +2756,7 @@ namespace musicmate.Drawables
         private void DrawStaff(
             ICanvas canvas, RectF dirtyRect, Color ink,
             float staffTop, float staffMid, float staffBot,
-            List<GeneratedNote> notes, V2NoteState[] states,
+            List<GeneratedNote> notes, V3NoteState[] states,
             NoteLayout[] noteLayouts, BarLayout[] barLayouts,
             IReadOnlyList<double> barBeats, double beatOrigin,
             float alpha,
@@ -2866,7 +2869,7 @@ namespace musicmate.Drawables
         private void DrawStaffDynamic(
             ICanvas canvas, RectF dirtyRect, Color ink,
             float staffTop, float staffMid, float staffBot,
-            List<GeneratedNote> notes, V2NoteState[] states,
+            List<GeneratedNote> notes, V3NoteState[] states,
             NoteLayout[] noteLayouts, BarLayout[] barLayouts,
             IReadOnlyList<double> barBeats, double beatOrigin,
             float alpha,
@@ -2905,7 +2908,7 @@ namespace musicmate.Drawables
                 if (!float.IsFinite(layout.X))
                     continue;
 
-                var state = (states.Length > i) ? states[i] : V2NoteState.Pending;
+                var state = (states.Length > i) ? states[i] : V3NoteState.Pending;
                 double beat = (note.BeatPosition ?? 0.0) - beatOrigin;
 
                 ResetAccidentalStateIfCrossedBar(beat, prevBeat, barBeats, beatOrigin,
@@ -2947,9 +2950,9 @@ namespace musicmate.Drawables
                     DrawLedgerLines(canvas, note, layout.X, staffTop, staffBot, ink, fadeAlpha);
                     DrawAccidental(canvas, note, layout, ny, ink, accHistory, barCancelledAccidentals, fadeAlpha, headerRightAbs);
 
-                    var nameDisplay = _session.V2NoteNameDisplay;
+                    var nameDisplay = _session.V3NoteNameDisplay;
                     bool showName = nameDisplay == "All notes"
-                        || (nameDisplay == "Current only" && state == V2NoteState.Current);
+                        || (nameDisplay == "Current only" && state == V3NoteState.Current);
                     if (showName)
                         DrawNoteName(canvas, note, layout.X, ny, staffTop, staffBot, ink, fadeAlpha);
                 }
@@ -3150,7 +3153,7 @@ namespace musicmate.Drawables
                 foreach (int i in indices)
                 {
                     float ny = NoteY(notes[i], staffTop, staffMid);
-                    (float sx, float sy) = GetStemAttachPoint(noteLayouts[i].X, ny, stemUp, notes[i].Duration);
+                    (float sx, float sy) = GetStemAttachPoint(noteLayouts[i].X, ny, stemUp);
                     attaches.Add((i, sx, sy));
                 }
 
@@ -3593,17 +3596,17 @@ namespace musicmate.Drawables
         private static Color ApplyAlpha(Color c, byte alpha)
             => Color.FromRgba(c.Red, c.Green, c.Blue, alpha / 255f);
 
-        private static Color GetNoteColor(V2NoteState state, Color ink, byte fadeAlpha) => state switch
+        private static Color GetNoteColor(V3NoteState state, Color ink, byte fadeAlpha) => state switch
         {
-            V2NoteState.Current => ApplyAlpha(Colors.Yellow,             fadeAlpha),  //  2026.06.13 1552  Color.FromArgb("#007BFF"), fadeAlpha),
-            V2NoteState.Correct => ApplyAlpha(Color.FromArgb("#22AA44"), fadeAlpha),
-            V2NoteState.Wrong   => ApplyAlpha(Color.FromArgb("#CC2222"), fadeAlpha),
+            V3NoteState.Current => ApplyAlpha(Colors.Yellow,             fadeAlpha),  //  2026.06.13 1552  Color.FromArgb("#007BFF"), fadeAlpha),
+            V3NoteState.Correct => ApplyAlpha(Color.FromArgb("#22AA44"), fadeAlpha),
+            V3NoteState.Wrong   => ApplyAlpha(Color.FromArgb("#CC2222"), fadeAlpha),
             _ => ApplyAlpha(Colors.Black, (byte)(fadeAlpha * 0.85f))
         };
 
         private void DrawNote(ICanvas canvas, NoteDuration duration, float x, float y,
                               float staffTop, float staffBot, Color ink,
-                              V2NoteState state, byte fadeAlpha,
+                              V3NoteState state, byte fadeAlpha,
                               bool? forceStemUp, bool isBeamed, float? beamedStemEndY,
                               out float stemTipX, out float stemTipY)
         {
@@ -3612,18 +3615,16 @@ namespace musicmate.Drawables
             canvas.SaveState();
             try
             {
-                float r = _layout.NoteHeadR;
-
                 Color noteColor;
                 switch (state)
                 {
-                    case V2NoteState.Current:
+                    case V3NoteState.Current:
                         noteColor = ApplyAlpha(Colors.Yellow, fadeAlpha);  //  2026.06.13 1601  Color.FromArgb("#007BFF"), fadeAlpha);
                         break;
-                    case V2NoteState.Correct:
+                    case V3NoteState.Correct:
                         noteColor = ApplyAlpha(Color.FromArgb("#22AA44"), fadeAlpha);
                         break;
-                    case V2NoteState.Wrong:
+                    case V3NoteState.Wrong:
                         noteColor = ApplyAlpha(Color.FromArgb("#CC2222"), fadeAlpha);
                         break;
                     default:
@@ -3636,16 +3637,20 @@ namespace musicmate.Drawables
                 canvas.StrokeSize  = stroke;
 
                 bool filled = duration != NoteDuration.Whole && duration != NoteDuration.Half;
+                float drawR = NoteHeadDrawR(filled);
+                float headTop = y - drawR * NoteHeadHeightFactor * 0.5f;
+                float headW = drawR * 2f;
+                float headH = drawR * NoteHeadHeightFactor;
                 if (filled)
                 {
                     canvas.FillColor = noteColor;
-                    canvas.FillEllipse(x - r, y - r * 0.75f, r * 2f, r * 1.5f);
+                    canvas.FillEllipse(x - drawR, headTop, headW, headH);
                 }
                 else
                 {
                     canvas.StrokeColor = noteColor;
                     canvas.StrokeSize  = stroke;
-                    canvas.DrawEllipse(x - r, y - r * 0.75f, r * 2f, r * 1.5f);
+                    canvas.DrawEllipse(x - drawR, headTop, headW, headH);
                 }
 
                 if (duration != NoteDuration.Whole)
@@ -3653,7 +3658,7 @@ namespace musicmate.Drawables
                     // Stem direction: notes ABOVE middle line stem DOWN; notes BELOW middle stem UP
                     float staffMiddle = staffTop + (staffBot - staffTop) * 0.5f;
                     bool stemUp = forceStemUp ?? (y >= staffMiddle);  // note at/below middle → stem up
-                    (float stemX, float stemY) = GetStemAttachPoint(x, y, stemUp, duration);
+                    (float stemX, float stemY) = GetStemAttachPoint(x, y, stemUp);
                     float stemEnd = beamedStemEndY ?? (stemUp
                         ? stemY - _layout.StemLen
                         : stemY + _layout.StemLen);
@@ -3679,13 +3684,13 @@ namespace musicmate.Drawables
 
         private void DrawRest(ICanvas canvas, NoteDuration duration, float x,
                               float staffTop, float staffMid, float staffBot,
-                              Color ink, V2NoteState state, byte fadeAlpha)
+                              Color ink, V3NoteState state, byte fadeAlpha)
         {
             canvas.SaveState();
             try
             {
                 float r = _layout.NoteHeadR;
-                if (state == V2NoteState.Current)
+                if (state == V3NoteState.Current)
                 {
                     canvas.FillColor   = ApplyAlpha(Color.FromArgb("#007BFF"), (byte)(fadeAlpha * 0.19f));
                     canvas.StrokeColor = ApplyAlpha(Color.FromArgb("#007BFF"), fadeAlpha);
@@ -3695,9 +3700,9 @@ namespace musicmate.Drawables
 
                 Color rc = state switch
                 {
-                    V2NoteState.Correct => ApplyAlpha(Colors.Green,   fadeAlpha),
-                    V2NoteState.Wrong   => ApplyAlpha(Colors.DarkRed, fadeAlpha),
-                    V2NoteState.Current => ApplyAlpha(Color.FromArgb("#007BFF"), fadeAlpha),
+                    V3NoteState.Correct => ApplyAlpha(Colors.Green,   fadeAlpha),
+                    V3NoteState.Wrong   => ApplyAlpha(Colors.DarkRed, fadeAlpha),
+                    V3NoteState.Current => ApplyAlpha(Color.FromArgb("#007BFF"), fadeAlpha),
                     _ => ApplyAlpha(ink, fadeAlpha)
                 };
 
@@ -4030,7 +4035,7 @@ namespace musicmate.Drawables
             canvas.SaveState();
             try
             {
-                string timeSig = _session.V2TimeSignature ?? "4/4";
+                string timeSig = _session.V3TimeSignature ?? "4/4";
                 var parts = timeSig.Split('/');
                 if (parts.Length != 2) return;
 

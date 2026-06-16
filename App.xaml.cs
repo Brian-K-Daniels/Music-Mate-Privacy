@@ -16,6 +16,8 @@ namespace musicmate
         {
             InitializeComponent();
 
+            Services.PrefSchemaMigration.ApplyIfNeeded();
+
             // Initialize premium status at app startup
             InitializePremiumStatus();
         // Deploy saved panel background color early so pages bind to ThemeService with the right color
