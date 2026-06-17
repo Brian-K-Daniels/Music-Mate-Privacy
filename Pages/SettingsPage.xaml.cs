@@ -91,7 +91,7 @@ namespace musicmate.Pages
         {
             bool confirmed = await DisplayAlertAsync(
                 "Reset Settings",
-                "Reset all settings to factory defaults?",
+                "Reset all settings to factory defaults? This includes advanced audio, level-up criteria, and practice options.",
                 "Reset", "Cancel");
 
             if (!confirmed) return;

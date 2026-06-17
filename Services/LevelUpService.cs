@@ -73,6 +73,16 @@ public static class LevelUpService
     public const int DefaultMinNotesPerSession = 4;
     public const double DefaultMinOverallAccuracyFloor = 8.0;  //  2026.06.06 1801  60.0; // Minimum floor for any session in group
 
+    /// <summary>Restores level-up criteria preferences to <see cref="DefaultSessionCount"/> and related defaults.</summary>
+    public static void ResetCriteriaToDefaults()
+    {
+        Preferences.Default.Set("LevelUp.SessionCount", DefaultSessionCount);
+        Preferences.Default.Set("LevelUp.MinPitchPct", DefaultMinPitchAccuracyPercent);
+        Preferences.Default.Set("LevelUp.MinTimingPct", DefaultMinTimingAccuracyPercent);
+        Preferences.Default.Set("LevelUp.MinOverallPct", DefaultMinOverallAccuracyPercent);
+        Preferences.Default.Set("LevelUp.MinNotes", DefaultMinNotesPerSession);
+    }
+
     // ── Preference keys ────────────────────────────────────────────────────
     private const string PrefLevelKey = "ChildHome.Level";
     private const string PrefCountSinceUtcKey = "LevelUp.CountSinceUtc";

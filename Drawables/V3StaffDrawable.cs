@@ -3619,7 +3619,7 @@ namespace musicmate.Drawables
                 switch (state)
                 {
                     case V3NoteState.Current:
-                        noteColor = ApplyAlpha(Colors.Yellow, fadeAlpha);  //  2026.06.13 1601  Color.FromArgb("#007BFF"), fadeAlpha);
+                        noteColor = ApplyAlpha(Colors.Lime, fadeAlpha);  //  2026.06.13 1601  Color.FromArgb("#007BFF"), fadeAlpha);
                         break;
                     case V3NoteState.Correct:
                         noteColor = ApplyAlpha(Color.FromArgb("#22AA44"), fadeAlpha);
@@ -3998,7 +3998,7 @@ namespace musicmate.Drawables
 
             V3Log($"[V3] KeySig key={_session.Key} scale={_session.SelectedScale} count={accCount}");
 
-            bool useFlats = IsKeyFlat(_session.Key);
+            bool useFlats = KeySignatureUsesFlats(_session.Key, _session.SelectedScale);
             string glyph  = useFlats ? "\uE260" : "\uE262";
             float fontSize  = KeySigAccidentalFontSize();
             var pitches = useFlats ? KeySigFlatPitches : KeySigSharpPitches;
@@ -4087,12 +4087,23 @@ namespace musicmate.Drawables
         private static bool IsKeyFlat(string key)
             => key is "F" or "Bb" or "Eb" or "Ab" or "Db" or "Gb" or "Cb";
 
+        private static bool KeySignatureUsesFlats(string key, string scale)
+        {
+            string majorKey = scale switch
+            {
+                "Natural Minor" or "Aeolian" or "Harmonic Minor"
+                    or "Melodic Minor" or "Jazz Melodic Minor" => RelativeMajorOf(key),
+                _ => key
+            };
+            return IsKeyFlat(majorKey);
+        }
+
         private string? GetSignatureAccidentalForLetter(char letter)
         {
             int accCount = GetAccidentalCount(_session.Key, _session.SelectedScale);
             if (accCount == 0) return null;
 
-            bool useFlats = IsKeyFlat(_session.Key);
+            bool useFlats = KeySignatureUsesFlats(_session.Key, _session.SelectedScale);
             char[] flatLetters  = { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
             char[] sharpLetters = { 'F', 'C', 'G', 'D', 'A', 'E', 'B' };
             char[] letters = useFlats ? flatLetters : sharpLetters;
@@ -4114,7 +4125,7 @@ namespace musicmate.Drawables
             int accCount = GetAccidentalCount(_session.Key, _session.SelectedScale);
             if (accCount == 0) return false;
 
-            bool useFlats = IsKeyFlat(_session.Key);
+            bool useFlats = KeySignatureUsesFlats(_session.Key, _session.SelectedScale);
             bool typeMatch = useFlats
                 ? accidental == Accidental.Flat
                 : accidental == Accidental.Sharp;
@@ -4142,7 +4153,7 @@ namespace musicmate.Drawables
             int accCount = GetAccidentalCount(key, scale);
             if (accCount == 0) return false;
 
-            bool useFlats = IsKeyFlat(key);
+            bool useFlats = KeySignatureUsesFlats(key, scale);
             char[] flatLetters  = { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
             char[] sharpLetters = { 'F', 'C', 'G', 'D', 'A', 'E', 'B' };
             char[] letters = useFlats ? flatLetters : sharpLetters;

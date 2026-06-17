@@ -717,13 +717,17 @@ namespace musicmate.ViewModels
                 _session.Instrument = DefaultInstrument;
                 _session.Key = DefaultKey;
                 _session.Tune = DefaultTune;
+                _session.ResetAdvancedDetectionDefaults();
             }
             else
             {
                 Preferences.Set("musicmate.Instrument", DefaultInstrument);
                 Preferences.Set("musicmate.Key", DefaultKey);
                 Preferences.Set("musicmate.Tune", DefaultTune);
+                Preferences.Set("musicmate.Tolerance", NoteSessionService.DefaultTolerance);
+                Preferences.Set("musicmate.PitchOffsetCents", NoteSessionService.DefaultPitchOffsetCents);
             }
+            LevelUpService.ResetCriteriaToDefaults();
         }
 
         // Helper for MIDI to note name

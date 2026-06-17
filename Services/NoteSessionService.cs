@@ -453,10 +453,12 @@ namespace musicmate.Services
         private string _selectedScale = Preferences.Get(PrefSelectedScaleKey, "Major");
         private string? _tune = Preferences.Get(PrefTuneKey, "Selected Scale");
         private int _playbackBpm = Preferences.Get(PrefPlaybackBpmKey, 100);
-        private int _tolerance = Preferences.Get(PrefToleranceKey, 50);
+        private int _tolerance = Preferences.Get(PrefToleranceKey, DefaultTolerance);
+        public const int DefaultTolerance = 50;
         private int _accidentalPercent = Preferences.Get(PrefAccidentalPercentKey, 0);
         private int _correctThreshold = Preferences.Get(PrefCorrectThresholdKey, 50);
-        private double _pitchOffsetCents = Preferences.Get(PrefPitchOffsetCentsKey, 0.0);
+        private double _pitchOffsetCents = Preferences.Get(PrefPitchOffsetCentsKey, DefaultPitchOffsetCents);
+        public const double DefaultPitchOffsetCents = 0.0;
 
         public double PitchOffsetCents
         {
@@ -1157,6 +1159,7 @@ namespace musicmate.Services
         }
 
         private float _rmsThreshold = 0.025f;
+        public const float DefaultRmsThreshold = 0.025f;
         public float RmsThreshold
         {
             get => _rmsThreshold;
@@ -1172,6 +1175,7 @@ namespace musicmate.Services
             }
         }
         private int _cooldownMs = 50;
+        public const int DefaultCooldownMs = 50;
         public int CooldownMs
         {
             get => _cooldownMs;
@@ -1187,6 +1191,16 @@ namespace musicmate.Services
                 OnPropertyChanged(nameof(CooldownMs));
             }
         }
+
+        /// <summary>Restores advanced pitch-detection settings to factory defaults.</summary>
+        public void ResetAdvancedDetectionDefaults()
+        {
+            Tolerance = DefaultTolerance;
+            RmsThreshold = DefaultRmsThreshold;
+            CooldownMs = DefaultCooldownMs;
+            PitchOffsetCents = DefaultPitchOffsetCents;
+        }
+
         public bool OneOctaveMode { get; set; } = true;
         public int NoteAdvanceIgnoreMs { get; set; } = 200;
         public ObservableCollection<FeedbackItem> FeedbackViewModels { get; } = new();

@@ -209,23 +209,6 @@ namespace musicmate.ViewModels
             set { Preferences.Default.Set("LevelUp.MinNotes", value); OnPropertyChanged(nameof(MinNotesPerSession)); }
         }
 
-        public void ResetLevelUpDefaults()
-        {
-            SessionCount = LevelUpService.DefaultSessionCount;
-            MinPitchAccuracyPercent = LevelUpService.DefaultMinPitchAccuracyPercent;
-            MinTimingAccuracyPercent = LevelUpService.DefaultMinTimingAccuracyPercent;
-            MinOverallAccuracyPercent = LevelUpService.DefaultMinOverallAccuracyPercent;
-            MinNotesPerSession = LevelUpService.DefaultMinNotesPerSession;
-        }
-
-        public void ResetAdvancedSettings()
-        {
-            Tolerance = 50; // or your app's default
-            RmsThreshold = 0.02f; // or your app's default
-            CooldownMs = 100; // or your app's default
-            PitchOffsetCents = 0.0; // or your app's default
-        }
-
         public event PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged(string propertyName)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));

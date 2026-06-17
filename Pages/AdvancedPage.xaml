@@ -84,8 +84,6 @@
             <Slider Grid.Row="3" Grid.Column="1" Minimum="-50" Maximum="50" Value="{Binding PitchOffsetCents, Mode=TwoWay}"/>
             <Label Grid.Row="3" Grid.Column="2" Text="{Binding PitchOffsetCents, StringFormat='{0:F1}'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
           </Grid>
-
-          <Button Text="Reset Advanced Settings" Clicked="OnResetAdvancedClicked" BackgroundColor="#0078D7" TextColor="White"/>
         </VerticalStackLayout>
       </Frame>
 
@@ -129,8 +127,6 @@
             <Label Grid.Row="4" Grid.Column="2" Text="{Binding MinNotesPerSession}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
             <Label Grid.Row="4" Grid.Column="3" Text="{Binding CurrentSessionNotesCount}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
           </Grid>
-
-          <Button Text="Reset Criteria" Clicked="OnResetCriteriaClicked" BackgroundColor="#0078D7" TextColor="White"/>
         </VerticalStackLayout>
       </Frame>
     </VerticalStackLayout>

@@ -38,15 +38,5 @@ namespace musicmate.Pages
         {
             await Shell.Current.GoToAsync("//MainPage");
         }
-
-        private void OnResetAdvancedClicked(object sender, EventArgs e)
-        {
-            _viewModel.ResetAdvancedSettings();
-        }
-
-        private void OnResetCriteriaClicked(object sender, EventArgs e)
-        {
-            _viewModel.ResetLevelUpDefaults();
-        }
     }
 }

@@ -597,7 +597,7 @@ namespace musicmate.Services
             if (minMidi < 0 || maxMidi < 0 || minMidi > maxMidi)
                 return new List<int>();
 
-            bool preferFlats = KeyUsesFlats(Key);
+            bool preferFlats = KeyUsesFlats(Key, Scale);
             var scalePcs = GetScalePitchClasses(Key, Scale);
 
             if (UseScaleOrder)
@@ -1019,7 +1019,7 @@ namespace musicmate.Services
         /// </summary>
         private GeneratedNote BuildNote(int midi, NoteDuration dur, int measureIndex, double beatPos, int globalIndex, int prevMidi = -1)
         {
-            bool preferFlats = KeyUsesFlats(Key);
+            bool preferFlats = KeyUsesFlats(Key, Scale);
 
             // For C major (and other keys with no key signature), choose sharp/flat for
             // chromatic notes based on melodic direction: ascending → sharp, descending → flat.
@@ -1165,8 +1165,16 @@ namespace musicmate.Services
         private static string RelativeMajorForKeySig(string minorKey)
             => NoteSessionService.RelativeMajorForKeySignature(minorKey);
 
-        private static bool KeyUsesFlats(string key)
-            => key is "F" or "Bb" or "Eb" or "Ab" or "Db" or "Gb" or "Cb";
+        private static bool KeyUsesFlats(string key, string scale)
+        {
+            string majorKey = scale switch
+            {
+                "Natural Minor" or "Aeolian" or "Harmonic Minor"
+                    or "Melodic Minor" or "Jazz Melodic Minor" => RelativeMajorForKeySig(key),
+                _ => key
+            };
+            return majorKey is "F" or "Bb" or "Eb" or "Ab" or "Db" or "Gb" or "Cb";
+        }
 
         private static double MidiToFreq(int midi)
             => 440.0 * Math.Pow(2.0, (midi - 69) / 12.0);
