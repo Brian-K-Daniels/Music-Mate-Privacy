@@ -146,10 +146,20 @@ namespace musicmate.Drawables
 
             var stepSize = staffSpacing / 2f;
             var extraTop = maxStepsAbove * stepSize + noteHeadH * 1.5f;
-            var extraBottom = maxStepsBelow * stepSize + noteHeadH * 2.5f;
+            var extraBottom = maxStepsBelow * stepSize + noteHeadH * (_session.Tune == "Tuner" ? 1.0f : 2.5f);
 
-            // Calculate staff positions exactly as Draw method does
-            var staffCoreTop = topMargin + extraTop;
+            float staffCoreTop;
+            if (_session.Tune == "Tuner")
+            {
+                const float bottomMargin = 8f;
+                var contentHeight = topMargin + extraTop + 4f * staffSpacing + extraBottom + bottomMargin;
+                var verticalOffset = Math.Max(0f, (dirtyRect.Height - contentHeight) / 2f);
+                staffCoreTop = verticalOffset + topMargin + extraTop;
+            }
+            else
+            {
+                staffCoreTop = topMargin + extraTop;
+            }
             var staffCoreBottom = staffCoreTop + 4f * staffSpacing;
 
             // Draw staff lines
@@ -323,8 +333,9 @@ namespace musicmate.Drawables
                 }
             }
 
-            // Draw feedback boxes - no shifting, just positioned naturally
-            DrawSmallFeedback(canvas, staffCoreTop, staffCoreBottom, staffSpacing, noteHeadH, headW, leftMargin, minSrcX, scale, dirtyRect.Height);
+            // Draw feedback boxes - skip in Tuner mode (no note sequence to evaluate)
+            if (_session.Tune != "Tuner")
+                DrawSmallFeedback(canvas, staffCoreTop, staffCoreBottom, staffSpacing, noteHeadH, headW, leftMargin, minSrcX, scale, dirtyRect.Height);
 
             canvas.RestoreState();
             canvas.RestoreState();

@@ -208,6 +208,27 @@ namespace musicmate.Services
         }
 
         /// <summary>
+        /// Time signature drawn on the staff.  Built-in practice tunes use their own
+        /// meter; generated sequences use <see cref="V3TimeSignature"/>.
+        /// </summary>
+        public string GetDisplayTimeSignature()
+        {
+            if (Tune == "Practice Tune" && CurrentTune != null)
+                return CurrentTune.TimeSignature.ToString();
+            return V3TimeSignature ?? "4/4";
+        }
+
+        /// <summary>Quarter-note beats per measure for layout validation.</summary>
+        public double GetDisplayMeasureBeats()
+        {
+            if (Tune == "Practice Tune" && CurrentTune != null)
+                return CurrentTune.TimeSignature.TotalBeats;
+
+            var parts = (V3TimeSignature ?? "4/4").Split('/');
+            return parts.Length == 2 && int.TryParse(parts[0], out int beats) ? beats : 4.0;
+        }
+
+        /// <summary>
         /// Smallest note value allowed in V3 rhythm generation.
         /// Persisted value is the display string: "Quarter", "Eighth", or "Sixteenth".
         /// </summary>
@@ -336,6 +357,7 @@ namespace musicmate.Services
         private const string PrefSelectedScaleKey = "musicmate.SelectedScale";
         private const string PrefTuneKey = "musicmate.Tune";
         private const string PrefPlaybackBpmKey = "musicmate.PlaybackBpm";
+        private const string PrefMusicBpmKey = "musicmate.MusicBpm";
         private const string PrefPitchMethodKey = "musicmate.PitchMethod";
         private const string PrefToleranceKey = "musicmate.Tolerance";
         private const string PrefAutoStartKey = "musicmate.AutoStart";
@@ -453,8 +475,10 @@ namespace musicmate.Services
         private string _selectedScale = Preferences.Get(PrefSelectedScaleKey, "Major");
         private string? _tune = Preferences.Get(PrefTuneKey, "Selected Scale");
         private int _playbackBpm = Preferences.Get(PrefPlaybackBpmKey, 100);
+        private int _musicBpm = Preferences.Get(PrefMusicBpmKey, 100);
         private int _tolerance = Preferences.Get(PrefToleranceKey, DefaultTolerance);
         public const int DefaultTolerance = 50;
+        public const int DefaultMusicBpm = 100;
         private int _accidentalPercent = Preferences.Get(PrefAccidentalPercentKey, 0);
         private int _correctThreshold = Preferences.Get(PrefCorrectThresholdKey, 50);
         private double _pitchOffsetCents = Preferences.Get(PrefPitchOffsetCentsKey, DefaultPitchOffsetCents);
@@ -1126,6 +1150,21 @@ namespace musicmate.Services
                 _playbackBpm = clamped;
                 Preferences.Set(PrefPlaybackBpmKey, _playbackBpm);
                 OnPropertyChanged(nameof(PlaybackBpm));
+            }
+        }
+        public int MusicBpm
+        {
+            get => _musicBpm;
+            set
+            {
+                var clamped = Math.Clamp(value, 30, 200);
+                if (_musicBpm == clamped)
+                {
+                    return;
+                }
+                _musicBpm = clamped;
+                Preferences.Set(PrefMusicBpmKey, _musicBpm);
+                OnPropertyChanged(nameof(MusicBpm));
             }
         }
         public int Tolerance

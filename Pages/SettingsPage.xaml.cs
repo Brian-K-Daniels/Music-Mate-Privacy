@@ -35,6 +35,7 @@ namespace musicmate.Pages
             _viewModel.LowestNote = _session.LowestNote;
             _viewModel.HighestNote = _session.HighestNote;
             _viewModel.PlaybackBpm = _session.PlaybackBpm;
+            _viewModel.MusicBpm = _session.MusicBpm;
             _viewModel.AccidentalPercent = _session.AccidentalPercent;
             _viewModel.CorrectThreshold = _session.CorrectThreshold;
             _viewModel.MinCorrectCount = _session.MinCorrectCount;

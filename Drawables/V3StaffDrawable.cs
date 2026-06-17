@@ -487,7 +487,7 @@ namespace musicmate.Drawables
                 ChildLevel = _session.ChildLevel,
                 SessionKey = _session.Key ?? string.Empty,
                 SessionScale = _session.SelectedScale ?? string.Empty,
-                TimeSig = _session.V3TimeSignature ?? "4/4",
+                TimeSig = _session.GetDisplayTimeSignature(),
             };
 
         private bool TryDrawFromLayoutCache(
@@ -1699,9 +1699,7 @@ namespace musicmate.Drawables
             try
             {
                 var sortedBars = barBeats.Select(b => b - beatOrigin).OrderBy(b => b).ToList();
-                var timeSig = _session.V3TimeSignature ?? "4/4";
-                var tsParts = timeSig.Split('/');
-                double expectedMeasureBeats = tsParts.Length == 2 && int.TryParse(tsParts[0], out int tsNum) ? tsNum : 4;
+                double expectedMeasureBeats = _session.GetDisplayMeasureBeats();
 
                 for (int i = 0; i < sortedBars.Count; i++)
                 {
@@ -4035,7 +4033,7 @@ namespace musicmate.Drawables
             canvas.SaveState();
             try
             {
-                string timeSig = _session.V3TimeSignature ?? "4/4";
+                string timeSig = _session.GetDisplayTimeSignature();
                 var parts = timeSig.Split('/');
                 if (parts.Length != 2) return;
 

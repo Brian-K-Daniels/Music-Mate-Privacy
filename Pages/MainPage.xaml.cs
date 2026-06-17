@@ -233,8 +233,10 @@ namespace musicmate.Pages
         public bool IsNotV3Mode => _session?.StaffDisplayMode != StaffDisplayMode.V3;
         public bool IsV3Mode => _session?.StaffDisplayMode == StaffDisplayMode.V3;
         public bool IsV3PlayButtonVisible => IsV3Mode && (!_isRunning || _isPlaying);
+        public bool IsV3BottomPickersVisible => IsV3Mode && _session?.Tune != "Tuner";
+        public bool IsBottomButtonRowVisible => IsNotV3Mode || _session?.Tune != "Tuner";
         public bool IsPlayEvaluateButtonVisible => IsNotV3Mode && (!_isRunning || _isPlaying);
-        public bool IsChildLevelSliderVisible => _session?.ChildLevel > 0;
+        public bool IsChildLevelSliderVisible => _session?.ChildLevel > 0 && _session.Tune != "Tuner";
         private string _selectedInstrumentShort = "";
         public string SelectedInstrumentShort
         {
@@ -412,9 +414,16 @@ namespace musicmate.Pages
 
                 // Tuner graphics setup
                 TunerBorder.BindingContext = _theme_service;
+                TunerInfoBorder.SetBinding(Border.BackgroundColorProperty,
+                    new Binding("PanelBackgroundColor", source: _theme_service));
                 TunerGraphicsView.BindingContext = _theme_service;
                 TunerGraphicsView.Drawable = _drawable;
                 TunerGraphicsView.SetBinding(GraphicsView.BackgroundColorProperty, new Binding("PanelBackgroundColor"));
+                MainPageRootGrid.SizeChanged += (_, _) =>
+                {
+                    if (_session?.Tune == "Tuner")
+                        ApplyTunerHeight();
+                };
 
                 // ColorPickerDialog event: update theme color for all pages
                 ColorPickerDialog.ColorPicked += async (s, color) =>
@@ -735,12 +744,9 @@ namespace musicmate.Pages
             }
 #endif
 
-            if (_session.Tune == "Tuner")
-            {
-                // Tuner mode: never generate a scale sequence — just update visibility.
-                UpdateTunerVisibility();
-            }
-            else if (_session.StaffDisplayMode == StaffDisplayMode.V3)
+            UpdateTunerVisibility();
+
+            if (_session.Tune != "Tuner" && _session.StaffDisplayMode == StaffDisplayMode.V3)
             {
                 // Show V3 border first so the GraphicsView gets a layout width before we draw.
                 StaffBorder.IsVisible   = false;
@@ -753,7 +759,7 @@ namespace musicmate.Pages
 
                 await UpdateV3DisplayAsync();
             }
-            else
+            else if (_session.Tune != "Tuner")
             {
                 StaffBorder.IsVisible = true;
                 V3StaffBorder.IsVisible = false;
@@ -844,9 +850,15 @@ namespace musicmate.Pages
                 _     => TimeSignature.FourFour
             };
 
-            int rhythmVariety = _session.V3RhythmVarietyPercent >= 0
-                ? _session.V3RhythmVarietyPercent
-                : _session.V3RhythmMode == "Mixed" ? 60 : 0;
+            // Selected-scale practice (Major, etc. from What to Play) is a straight
+            // quarter-note scale walk — no rests, halves, or mixed rhythm.
+            bool simpleSelectedScale = _session.Tune == "Selected Scale" && !_session.IsRandomMode;
+
+            int rhythmVariety = simpleSelectedScale
+                ? 0
+                : _session.V3RhythmVarietyPercent >= 0
+                    ? _session.V3RhythmVarietyPercent
+                    : _session.V3RhythmMode == "Mixed" ? 60 : 0;
 
             var gen = new MusicSequenceGenerator
             {
@@ -857,7 +869,9 @@ namespace musicmate.Pages
                 TimeSignature        = timeSig,
                 MeasureCount         = measureCount,
                 RhythmVarietyPercent = rhythmVariety,
-                SmallestDuration     = _session.V3SmallestNote switch
+                SmallestDuration     = simpleSelectedScale
+                    ? NoteDuration.Quarter
+                    : _session.V3SmallestNote switch
                 {
                     "Sixteenth" => NoteDuration.Sixteenth,
                     "Eighth"    => NoteDuration.Eighth,
@@ -871,13 +885,15 @@ namespace musicmate.Pages
                 ScaleWalkOffset      = _v3SeqNextGlobalNoteIndex,
                 AccidentalPercent    = _session.IsRandomMode ? _session.AccidentalPercent : 0,
                 MaxMelodicIntervalSemitones = _session.IsRandomMode ? _session.MaxMelodicIntervalSemitones : 0,
-                SyncopationLevel         = SyncopationLevelHelper.Parse(_session.V3Syncopation),
-                RestChancePercent        = _session.V3RestChancePercent,
+                SyncopationLevel         = simpleSelectedScale
+                    ? SyncopationLevel.None
+                    : SyncopationLevelHelper.Parse(_session.V3Syncopation),
+                RestChancePercent        = simpleSelectedScale ? 0 : _session.V3RestChancePercent,
                 RandomSeed               = Environment.TickCount
                                            ^ _v3GenerationSeed
                                            ^ (_session.ChildLevel * 7919)
             };
-            Debug.WriteLine($"[V3Gen] Tune={_session.Tune} Random={_session.IsRandomMode} AccPct={_session.AccidentalPercent} EffectiveAccPct={(_session.IsRandomMode ? _session.AccidentalPercent : 0)}");
+            Debug.WriteLine($"[V3Gen] Tune={_session.Tune} Random={_session.IsRandomMode} SimpleScale={simpleSelectedScale} AccPct={_session.AccidentalPercent} EffectiveAccPct={(_session.IsRandomMode ? _session.AccidentalPercent : 0)}");
             return gen;
         }
 
@@ -1588,6 +1604,39 @@ namespace musicmate.Pages
             UpdateV3PlayButtonPosition();
         }
 
+        /// <summary>
+        /// Expand the tuner staff panel to fill the content area below the title bar.
+        /// </summary>
+        private void ApplyTunerHeight()
+        {
+            if (_session?.Tune != "Tuner" || TunerGraphicsView == null)
+                return;
+
+            try
+            {
+                var win = Application.Current?.Windows?.FirstOrDefault();
+                double availH = 400;
+                if (win != null)
+                    availH = Math.Max(200, win.Height - 50);
+
+                if (SessionResultBanner?.IsVisible == true && SessionResultBanner.Height > 0)
+                    availH -= SessionResultBanner.Height + 4;
+
+                var h = (float)availH;
+                MainPageMainLayout.Spacing = 0;
+                StaffAreaStack.HeightRequest = h;
+                TunerGrid.HeightRequest = h;
+                TunerBorder.HeightRequest = h;
+                TunerGraphicsView.HeightRequest = h;
+                TunerInfoBorder.HeightRequest = h;
+                TunerGraphicsView.Invalidate();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApplyTunerHeight] ERROR: {ex}");
+            }
+        }
+
         private const double V3PlayButtonSizeMm = 6;
 
         private void UpdateV3PlayButtonPosition()
@@ -2265,6 +2314,7 @@ namespace musicmate.Pages
 
             Debug.WriteLine($"[DEBUG] OnAppearing: IsAutoRepeatVisible={IsAutoRepeatVisible}, Tune={_session.Tune}");
             IsAutoRepeatVisible = _session.Tune != "Tuner";
+            UpdateTunerVisibility();
             DeviceDisplay.Current.KeepScreenOn = true;
 
             // Populate V3 home pickers here — visual tree is guaranteed ready after InitializeComponent
@@ -3433,7 +3483,6 @@ async Task UpdateNoteStatsDatabaseAsync()
                 if (_isPageVisible && !_suppressSessionRegenerate)
                 {
                     await RegenerateNotesAsync();
-                    UpdateTunerVisibility();
                     UpdateKeyPickerVisibility();
                 }
             }
@@ -3531,17 +3580,33 @@ async Task UpdateNoteStatsDatabaseAsync()
 
             TunerGrid.IsVisible = isTuner;
 
+            OnPropertyChanged(nameof(IsChildLevelSliderVisible));
+            OnPropertyChanged(nameof(IsV3BottomPickersVisible));
+            OnPropertyChanged(nameof(IsBottomButtonRowVisible));
+
             if (isTuner)
             {
                 TunerBorder.IsVisible = true;
                 TunerGrid.ColumnDefinitions[0] = new ColumnDefinition(GridLength.Star);
 
                 _session.SessionCompleted = false;
+                ApplyTunerHeight();
+                Dispatcher.Dispatch(ApplyTunerHeight);
                 TunerGraphicsView.Invalidate();
                 if (!_isRunning)
                 {
                     _ = StartListeningAndEvaluatingAsync();
                 }
+            }
+            else
+            {
+                TunerBorder.IsVisible = false;
+                StaffAreaStack.HeightRequest = -1;
+                TunerGrid.HeightRequest = -1;
+                TunerBorder.HeightRequest = -1;
+                TunerGraphicsView.HeightRequest = -1;
+                TunerInfoBorder.HeightRequest = -1;
+                MainPageMainLayout.Spacing = 16;
             }
         }
         private void UpdateScaleTunePicker()

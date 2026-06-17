@@ -68,25 +68,39 @@
       <Setter Property="VerticalOptions" Value="Center" />
       <Setter Property="HorizontalOptions" Value="Center" />
     </Style>
-    <converters:InverseBoolConverter x:Key="InverseBoolConverter" />
+    <Style x:Key="WtpPlayModePickerBorder" TargetType="Border">
+      <Setter Property="Background" Value="#8B4513" />
+      <Setter Property="Stroke" Value="Black" />
+      <Setter Property="StrokeThickness" Value="2" />
+      <Setter Property="Padding" Value="4,6" />
+      <Setter Property="MinimumHeightRequest" Value="52" />
+      <Setter Property="StrokeShape">
+        <Setter.Value>
+          <RoundRectangle CornerRadius="8" />
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="WtpPlayModePicker" TargetType="Picker">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="TextColor" Value="#000000" />
+      <Setter Property="BackgroundColor" Value="Transparent" />
+      <Setter Property="VerticalOptions" Value="Center" />
+      <Setter Property="HorizontalOptions" Value="Fill" />
+      <Setter Property="HorizontalTextAlignment" Value="Center" />
+      <Setter Property="Margin" Value="2,0" />
+    </Style>
   </ContentPage.Resources>
 
   <!-- Root Grid so ColorPickerDialog can overlay everything -->
   <Grid>
 
-    <!-- Main layout: Auto top row | * center | Auto bottom buttons -->
-    <Grid RowDefinitions="Auto,*,Auto">
-      <Grid.Margin>
-        <OnPlatform x:TypeArguments="Thickness">
-          <On Platform="WinUI"   Value="0,20,0,0" />
-          <On Platform="Android" Value="0,0,0,0" />
-        </OnPlatform>
-      </Grid.Margin>
+    <ScrollView Orientation="Vertical">
+      <VerticalStackLayout Spacing="12"
+                          Padding="0,4,0,32">
 
-      <!-- ── Row 0: Instrument | Key | Concert key (evenly spaced) ── -->
-      <Grid Grid.Row="0"
-            ColumnDefinitions="*,*,*"
-            Margin="8,4,8,4">
+      <!-- Instrument | Key | Concert key -->
+      <Grid ColumnDefinitions="*,*,*"
+            Margin="8,4,8,0">
 
         <!-- Instrument -->
         <VerticalStackLayout Grid.Column="0"
@@ -164,109 +178,131 @@
 
       </Grid>
 
-      <!-- ── Row 1: Scale / Tune picker + Random checkbox centered ── -->
-      <VerticalStackLayout Grid.Row="1"
+      <!-- Tunes | Scales | Arpeggios | Random/Tuner -->
+      <VerticalStackLayout Spacing="8"
                            HorizontalOptions="Center"
-                           VerticalOptions="Center"
-                           Spacing="6">
-        <Border HeightRequest="48" Padding="8,4"
-                Background="#8B4513" Stroke="Black" StrokeThickness="2">
-          <Border.StrokeShape>
-            <RoundRectangle CornerRadius="8" />
-          </Border.StrokeShape>
-          <Picker x:Name="ScaleTunePicker"
-                  WidthRequest="350"
-                  HeightRequest="60"
-                  FontSize="22"
-                  TextColor="#000000"
-                  BackgroundColor="White"
-                  VerticalOptions="Fill"
-                  HorizontalOptions="Fill" />
-        </Border>
-        <!-- Random checkbox row -->
-        <HorizontalStackLayout Spacing="6" HorizontalOptions="Center" VerticalOptions="Center" Margin="0,4,0,0">
-          <CheckBox x:Name="RandomModeCheckBox"
-                    IsChecked="{Binding IsRandomMode, Mode=TwoWay}"
-                    Color="#8B4513"
-                    HeightRequest="36"
-                    WidthRequest="36"
-                    VerticalOptions="Center"
-                    CheckedChanged="OnRandomModeCheckBoxChanged" />
-          <Label Text="Random"
-                 FontSize="16"
-                 FontAttributes="Bold"
-                 TextColor="#333333"
-                 VerticalOptions="Center">
-            <Label.GestureRecognizers>
-              <TapGestureRecognizer Tapped="OnRandomModeLabelTapped" />
-            </Label.GestureRecognizers>
-          </Label>
-          <Label x:Name="RandomModeWarningLabel"
-                 Text="⚠ Select a scale for Random mode"
-                 FontSize="12"
-                 TextColor="DarkRed"
-                 IsVisible="False"
-                 VerticalOptions="Center" />
-        </HorizontalStackLayout>
+                           Margin="8,0">
+        <Grid ColumnDefinitions="*,*"
+              RowDefinitions="Auto,Auto"
+              ColumnSpacing="12"
+              RowSpacing="10"
+              WidthRequest="380">
+          <!-- Tunes -->
+          <VerticalStackLayout Grid.Row="0" Grid.Column="0" Spacing="4">
+            <Label Text="Tunes"
+                   FontSize="13"
+                   FontAttributes="Bold"
+                   TextColor="#333333"
+                   HorizontalOptions="Center" />
+            <Border Style="{StaticResource WtpPlayModePickerBorder}">
+              <Grid BackgroundColor="White">
+                <Picker x:Name="TunesPicker"
+                        Style="{StaticResource WtpPlayModePicker}"
+                        SelectedIndexChanged="OnTunesPickerChanged" />
+              </Grid>
+            </Border>
+          </VerticalStackLayout>
+
+          <!-- Scales -->
+          <VerticalStackLayout Grid.Row="0" Grid.Column="1" Spacing="4">
+            <Label Text="Scales"
+                   FontSize="13"
+                   FontAttributes="Bold"
+                   TextColor="#333333"
+                   HorizontalOptions="Center" />
+            <Border Style="{StaticResource WtpPlayModePickerBorder}">
+              <Grid BackgroundColor="White">
+                <Picker x:Name="ScalesPicker"
+                        Style="{StaticResource WtpPlayModePicker}"
+                        SelectedIndexChanged="OnScalesPickerChanged" />
+              </Grid>
+            </Border>
+          </VerticalStackLayout>
+
+          <!-- Arpeggios (placeholder — no items yet) -->
+          <VerticalStackLayout Grid.Row="1" Grid.Column="0" Spacing="4">
+            <Label Text="Arpeggios"
+                   FontSize="13"
+                   FontAttributes="Bold"
+                   TextColor="#333333"
+                   HorizontalOptions="Center" />
+            <Border Style="{StaticResource WtpPlayModePickerBorder}" Opacity="0.55">
+              <Grid BackgroundColor="#EEEEEE">
+                <Picker x:Name="ArpeggiosPicker"
+                        Style="{StaticResource WtpPlayModePicker}"
+                        IsEnabled="False" />
+              </Grid>
+            </Border>
+          </VerticalStackLayout>
+
+          <!-- Random / Tuner -->
+          <VerticalStackLayout Grid.Row="1" Grid.Column="1" Spacing="4">
+            <Label Text="Random/Tuner"
+                   FontSize="13"
+                   FontAttributes="Bold"
+                   TextColor="#333333"
+                   HorizontalOptions="Center" />
+            <Border Style="{StaticResource WtpPlayModePickerBorder}">
+              <Grid BackgroundColor="White">
+                <Picker x:Name="RandomTunerPicker"
+                        Style="{StaticResource WtpPlayModePicker}"
+                        SelectedIndexChanged="OnRandomTunerPickerChanged" />
+              </Grid>
+            </Border>
+          </VerticalStackLayout>
+        </Grid>
+
+        <Label x:Name="RandomModeWarningLabel"
+               Text="⚠ Random mode works best with a scale selected"
+               FontSize="12"
+               TextColor="DarkRed"
+               IsVisible="False"
+               HorizontalOptions="Center" />
       </VerticalStackLayout>
 
-      <!-- ── Row 2: Repeat / Background Color buttons (evenly spaced) ── -->
-      <Grid x:Name="RepeatButtonRow"
-            Grid.Row="2"
-            Margin="12,0,12,8"
-            ColumnDefinitions="*,*,*,*"
-            ColumnSpacing="8"
-            HorizontalOptions="Fill">
+      <!-- Repeat / Background Color buttons -->
+      <VerticalStackLayout Spacing="8"
+                           Margin="12,4,12,0">
 
-        <!-- Scale mode: Repeat (spans cols 0-1 when visible) -->
+        <!-- Scale mode: single Repeat button -->
         <Button x:Name="AutoRepeatScaleButton"
-                Grid.Column="0"
-                Grid.ColumnSpan="2"
                 Text="Repeat"
                 Style="{StaticResource WtpBrownButton}"
                 HeightRequest="44"
                 HorizontalOptions="Fill"
-                VerticalOptions="Fill"
                 Clicked="OnAutoRepeatScaleClicked"
                 IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsScaleRepeatButtonVisible}" />
 
-        <!-- Random mode: Repeat New -->
-        <Button x:Name="AutoRepeatNewButton"
-                Grid.Column="0"
-                Text="Repeat New"
+        <!-- Random mode: Repeat New + Repeat Same side by side -->
+        <Grid ColumnDefinitions="*,*"
+              ColumnSpacing="8"
+              IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsRandomRepeatButtonsVisible}">
+          <Button x:Name="AutoRepeatNewButton"
+                  Grid.Column="0"
+                  Text="Repeat New"
+                  Style="{StaticResource WtpBrownButton}"
+                  HeightRequest="44"
+                  HorizontalOptions="Fill"
+                  Clicked="OnAutoRepeatNewClicked" />
+          <Button x:Name="AutoRepeatSameButton"
+                  Grid.Column="1"
+                  Text="Repeat Same"
+                  Style="{StaticResource WtpBrownButton}"
+                  HeightRequest="44"
+                  HorizontalOptions="Fill"
+                  Clicked="OnAutoRepeatSameClicked" />
+        </Grid>
+
+        <Button Text="Background Color"
                 Style="{StaticResource WtpBrownButton}"
                 HeightRequest="44"
                 HorizontalOptions="Fill"
-                VerticalOptions="Fill"
-                Clicked="OnAutoRepeatNewClicked"
-                IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsRandomRepeatButtonsVisible}" />
-
-        <!-- Random mode: Repeat Same -->
-        <Button x:Name="AutoRepeatSameButton"
-                Grid.Column="1"
-                Text="Repeat Same"
-                Style="{StaticResource WtpBrownButton}"
-                HeightRequest="44"
-                HorizontalOptions="Fill"
-                VerticalOptions="Fill"
-                Clicked="OnAutoRepeatSameClicked"
-                IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsRandomRepeatButtonsVisible}" />
-
-        <!-- Placeholder col 2 keeps Background Color in col 3 -->
-        <BoxView Grid.Column="2" IsVisible="False" />
-
-        <!-- Background Color -->
-        <Button Grid.Column="3"
-                Text="Background Color"
-                Style="{StaticResource WtpBrownButton}"
-                HeightRequest="44"
-                HorizontalOptions="Fill"
-                VerticalOptions="Fill"
                 Clicked="OnColorButtonClicked" />
 
-      </Grid>
+      </VerticalStackLayout>
 
-    </Grid>
+      </VerticalStackLayout>
+    </ScrollView>
 
     <!-- Color picker dialog overlay (full-page, above everything) -->
     <controls:ColorPickerDialog x:Name="ColorPickerDialog"

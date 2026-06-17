@@ -90,6 +90,15 @@
                HorizontalTextAlignment="End" />
       </Grid>
 
+      <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center">
+        <Label Grid.Column="0" Text="Music BPM" />
+        <Slider Grid.Column="1" Minimum="30" Maximum="200"
+                Value="{Binding MusicBpm, Mode=TwoWay}"
+                Style="{StaticResource SliderStyle}" />
+        <Label Grid.Column="2" Text="{Binding MusicBpm}"
+               HorizontalTextAlignment="End" />
+      </Grid>
+
       <!-- Accidental % -->
       <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center">
         <Label Grid.Column="0" Text="Accidental %" />

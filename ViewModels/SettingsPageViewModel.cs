@@ -31,6 +31,7 @@ namespace musicmate.ViewModels
         public const string DefaultLowestNote       = "C4";
         public const string DefaultHighestNote      = "F5";
         public const int    DefaultPlaybackBpm      = 100;
+        public const int    DefaultMusicBpm         = NoteSessionService.DefaultMusicBpm;
         public const int    DefaultAccidentalPct    = 30;
         public const int    DefaultCorrectThreshold = 95;
         public const int    DefaultMinCorrectCount  = 6;
@@ -83,6 +84,8 @@ namespace musicmate.ViewModels
                     OnPropertyChanged(nameof(AccidentalPercent)); break;
                 case nameof(NoteSessionService.PlaybackBpm):
                     OnPropertyChanged(nameof(PlaybackBpm)); break;
+                case nameof(NoteSessionService.MusicBpm):
+                    OnPropertyChanged(nameof(MusicBpm)); break;
                 case nameof(NoteSessionService.CorrectThreshold):
                     OnPropertyChanged(nameof(CorrectThreshold));
                     OnPropertyChanged(nameof(OmitSliderValue));
@@ -288,6 +291,28 @@ namespace musicmate.ViewModels
                     _playbackBpm = clamped;
                     Preferences.Set("musicmate.PlaybackBpm", _playbackBpm);
                     OnPropertyChanged(nameof(PlaybackBpm));
+                }
+            }
+        }
+
+        private int _musicBpm = Preferences.Get("musicmate.MusicBpm", DefaultMusicBpm);
+        public int MusicBpm
+        {
+            get => _session?.MusicBpm ?? _musicBpm;
+            set
+            {
+                var clamped = Math.Clamp(value, 30, 200);
+                if ((_session?.MusicBpm ?? _musicBpm) == clamped) return;
+                if (_session != null)
+                {
+                    _session.MusicBpm = clamped;
+                    OnPropertyChanged(nameof(MusicBpm));
+                }
+                else
+                {
+                    _musicBpm = clamped;
+                    Preferences.Set("musicmate.MusicBpm", _musicBpm);
+                    OnPropertyChanged(nameof(MusicBpm));
                 }
             }
         }
@@ -700,6 +725,7 @@ namespace musicmate.ViewModels
             LowestNote          = DefaultLowestNote;
             HighestNote         = DefaultHighestNote;
             PlaybackBpm         = DefaultPlaybackBpm;
+            MusicBpm            = DefaultMusicBpm;
             AccidentalPercent   = DefaultAccidentalPct;
             CorrectThreshold    = DefaultCorrectThreshold;
             MinCorrectCount     = DefaultMinCorrectCount;

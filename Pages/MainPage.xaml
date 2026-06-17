@@ -203,11 +203,11 @@
           </Border>
 
           <!-- Staff area: control buttons + staff/tuner panel + color button -->
-        <VerticalStackLayout Spacing="0" HorizontalOptions="Fill">
-          <Grid ColumnDefinitions="*" HorizontalOptions="Fill">
+        <VerticalStackLayout x:Name="StaffAreaStack" Spacing="0" HorizontalOptions="Fill" VerticalOptions="Fill">
+          <Grid ColumnDefinitions="*" HorizontalOptions="Fill" VerticalOptions="Fill">
 
             <!-- Staff panel and Tuner panel fill the full column -->
-            <Grid Grid.Column="0">
+            <Grid Grid.Column="0" VerticalOptions="Fill">
               <!-- Selected Scale / Random mode (v1) -->
               <Border x:Name="StaffBorder"
                       Stroke="Green"
@@ -239,27 +239,37 @@
                               Margin="0" />
               </Border>
 
-              <!-- Tuner mode: staff canvas on left (wider), note/freq info on right -->
-              <Grid x:Name="TunerGrid" ColumnDefinitions="3*,2*" IsVisible="False">
+              <!-- Tuner mode: staff canvas on left, note/cents readout on right (no staff on right) -->
+              <Grid x:Name="TunerGrid" ColumnDefinitions="3*,2*" IsVisible="False" VerticalOptions="Fill">
                 <Border x:Name="TunerBorder"
                         Grid.Column="0"
                         Stroke="Green"
                         StrokeShape="RoundRectangle 8"
                         Padding="0"
-                        VerticalOptions="Center">
-                  <GraphicsView x:Name="TunerGraphicsView" HeightRequest="200" />
+                        HorizontalOptions="Fill"
+                        VerticalOptions="Fill">
+                  <GraphicsView x:Name="TunerGraphicsView"
+                                HorizontalOptions="Fill"
+                                VerticalOptions="Fill" />
                 </Border>
-                <VerticalStackLayout Grid.Column="1" Padding="8" Spacing="6"
-                                     HorizontalOptions="Center" VerticalOptions="Center">
-                  <Label Text="Tuner" FontSize="20" FontAttributes="Bold"
-                         HorizontalOptions="Center" TextColor="#000000" />
-                  <Label Text="{Binding TunerDisplay}" FontSize="40" FontAttributes="Bold"
-                         HorizontalOptions="Center" TextColor="#000000" />
-                  <Label Text="{Binding TunerLastDetectedFreq, StringFormat='Heard: {0:F2} Hz'}"
-                         FontSize="13" HorizontalOptions="Center" TextColor="#000000" />
-                  <Label Text="{Binding TunerLastNearestFreq, StringFormat='Nearest: {0:F2} Hz'}"
-                         FontSize="13" HorizontalOptions="Center" TextColor="#000000" />
-                </VerticalStackLayout>
+                <Border x:Name="TunerInfoBorder"
+                        Grid.Column="1"
+                        Stroke="Green"
+                        StrokeShape="RoundRectangle 8"
+                        Padding="8"
+                        VerticalOptions="Fill">
+                  <VerticalStackLayout Spacing="6"
+                                       HorizontalOptions="Center" VerticalOptions="Center">
+                    <Label Text="Tuner" FontSize="20" FontAttributes="Bold"
+                           HorizontalOptions="Center" TextColor="#000000" />
+                    <Label Text="{Binding TunerDisplay}" FontSize="40" FontAttributes="Bold"
+                           HorizontalOptions="Center" TextColor="#000000" />
+                    <Label Text="{Binding TunerLastDetectedFreq, StringFormat='Heard: {0:F2} Hz'}"
+                           FontSize="13" HorizontalOptions="Center" TextColor="#000000" />
+                    <Label Text="{Binding TunerLastNearestFreq, StringFormat='Nearest: {0:F2} Hz'}"
+                           FontSize="13" HorizontalOptions="Center" TextColor="#000000" />
+                  </VerticalStackLayout>
+                </Border>
               </Grid>
             </Grid>
           </Grid>
@@ -396,7 +406,8 @@
           <Grid x:Name="BottomButtonRow"
                 Margin="12,8,12,8"
                 ColumnSpacing="8"
-                HorizontalOptions="Fill">
+                HorizontalOptions="Fill"
+                IsVisible="{Binding Source={x:Reference mainPage}, Path=IsBottomButtonRowVisible}">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="64" />   <!-- Play -->
               <ColumnDefinition Width="64" />   <!-- Start/Stop -->
@@ -491,7 +502,7 @@
             <HorizontalStackLayout x:Name="V3BottomPickersLayout"
                                    Grid.Column="0" Grid.ColumnSpan="5"
                                    Spacing="2" VerticalOptions="Center"
-                                   IsVisible="{Binding Source={x:Reference mainPage}, Path=IsV3Mode}">
+                                   IsVisible="{Binding Source={x:Reference mainPage}, Path=IsV3BottomPickersVisible}">
               <Label Text="Inst." FontSize="10" TextColor="#333333" VerticalOptions="Center" Margin="2,0,0,0"/>
               <Border Style="{StaticResource CompactBrownBox}">
                 <Picker x:Name="V3HomeInstrumentPicker"
