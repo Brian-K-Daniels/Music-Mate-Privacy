@@ -77,7 +77,17 @@ namespace musicmate.Pages
         private CancellationTokenSource? _sessionStartCts;
         private bool _suppressSessionRegenerate;
         private const string ChildLevelPrefKey = "ChildHome.Level";
+#if DEBUG //  2026.06.18 0935 TEMP BLOCK
+        private static readonly bool UseArpeggioPreview = false;//  2026.06.18 0935 
+        private const string ArpeggioPreviewRootNote = "Bb3"; //  2026.06.18 0935 
+#endif //  2026.06.18 0935 
+        private readonly Dictionary<string, ArpeggioPickerChoice> _arpeggioPickerChoices = new(StringComparer.Ordinal);
 #pragma warning restore CS0414
+
+        private sealed record ArpeggioPickerChoice(
+            string Label,
+            ArpeggioPattern Pattern,
+            string RootNote);
 
         /// <summary>
         /// Apply saved panel background color at startup. If no saved color exists,
@@ -466,9 +476,7 @@ namespace musicmate.Pages
                         // Capture display stats before SaveSessionStatAsync — a level-up refreshes
                         // the staff and clears NoteFeedbacks / CorrectNoteIndices.
                         var (correct, wrong, apc) = _session.GetSessionCorrectWrongTotals();
-#pragma warning disable CS0618
-                        var (meanBpm, stdBpm) = _session.GetFinalBpmStats();
-#pragma warning restore CS0618
+                        var detectedBpm = _session.GetDetectedBpm();
 
                         // Rolling per-note attempt history runs unconditionally,
                         // independent of the CollectNoteStats preference.
@@ -490,7 +498,7 @@ namespace musicmate.Pages
                         // Append a level-up notice when the child has just advanced.
                         await MainThread.InvokeOnMainThreadAsync(() =>
                         {
-                            var bpmText = meanBpm.HasValue ? $"  ·  Tempo {meanBpm.Value:F0} BPM" : string.Empty;
+                            var bpmText = detectedBpm.HasValue ? $"  ·  Detected {detectedBpm.Value} BPM" : string.Empty;
                             var levelUpText = newChildLevel.HasValue
                                 ? $"  🎉 Great job! You advanced to Level {newChildLevel.Value}!"
                                 : string.Empty;
@@ -593,12 +601,9 @@ namespace musicmate.Pages
                     KeyPicker.SelectedIndex = 0;
                 _lastFreeKeyIndex = KeyPicker.SelectedIndex;
 
-                // Combined Scale + Tune picker: Tuner / individual practice tunes / scales
+                // Combined Scale + Tune picker: Tuner / individual practice tunes / arpeggios / scales
                 var practiceTuneTitles = musicmate.Models.TuneLibrary.All.Select(t => t.Title).ToArray();
-                var scaleTuneOptions = new[] { "Tuner" }
-                    .Concat(practiceTuneTitles)
-                    .Concat(NoteSessionService.AvailableScales)
-                    .ToArray();
+                var scaleTuneOptions = BuildScaleTuneOptions();
                 ScaleTunePicker.ItemsSource = scaleTuneOptions;
 
                 var savedTune = Preferences.Default.Get<string?>("SelectedTune", null);
@@ -610,10 +615,15 @@ namespace musicmate.Pages
                     if (savedPT != null)
                         _session.SelectPracticeTune(savedPT);
                 }
+                else if (!string.IsNullOrEmpty(savedTune) && _arpeggioPickerChoices.TryGetValue(savedTune, out var savedArpeggio))
+                {
+                    _session.SelectArpeggio(savedArpeggio.Pattern, savedArpeggio.RootNote, savedArpeggio.Label);
+                }
                 // else _session.Tune stays "Selected Scale" (persisted via SelectedTune preference)
 
                 var initialScaleTuneSelection = _session.Tune == "Tuner" ? "Tuner"
                     : _session.Tune == "Practice Tune" ? (_session.CurrentTune?.Title ?? practiceTuneTitles[0])
+                    : _session.Tune == "Arpeggio" ? _session.SelectedArpeggioDisplay
                     : _session.SelectedScale;
                 var scaleTuneIdx = Array.IndexOf(scaleTuneOptions, initialScaleTuneSelection);
                 ScaleTunePicker.SelectedIndex = scaleTuneIdx >= 0 ? scaleTuneIdx : 0;
@@ -1093,6 +1103,25 @@ namespace musicmate.Pages
                     _v3LowerGlobalNoteIndex = _v3SeqNextGlobalNoteIndex;
                     if (_v3Drawable != null) _v3Drawable.UpperHasEndBar = false;
                 }
+                else if (_session.Tune == "Arpeggio")
+                {
+                    var pattern = ArpeggioCatalog.All.FirstOrDefault(p => p.Id == _session.SelectedArpeggioId)
+                        ?? ArpeggioCatalog.MajorTriad;
+                    var allNotes = await _session.LoadArpeggioAsync(pattern, _session.SelectedArpeggioRoot);
+
+                    upperFlat = allNotes;
+                    lowerFlat = new List<GeneratedNote>();
+                    upperBarBeats = ComputeNewBarBeats(upperFlat, existingUpper);
+                    lowerBarBeats = new List<double>();
+
+                    _v3SeqNextMeasureIndex = 0;
+                    _v3SeqNextBeatOffset = allNotes.Sum(n => n.BeatDuration);
+                    _v3SeqNextGlobalNoteIndex = allNotes.Count(n => !n.IsRest);
+                    _v3LowerMeasureIndex = _v3SeqNextMeasureIndex;
+                    _v3LowerBeatOffset = _v3SeqNextBeatOffset;
+                    _v3LowerGlobalNoteIndex = _v3SeqNextGlobalNoteIndex;
+                    if (_v3Drawable != null) _v3Drawable.UpperHasEndBar = false;
+                }
                 else
                 {
                     await LoadV3ExcludedMidisAsync();
@@ -1298,25 +1327,47 @@ namespace musicmate.Pages
                 }
 
                 // ── Push to V3 drawable ────────────────────────────────────────────
-                _v3Drawable.UpperNotes      = upperFlat;
-                _v3Drawable.LowerNotes      = lowerFlat;
-                _v3Drawable.UpperBarBeats   = upperBarBeats;
-                _v3Drawable.LowerBarBeats   = lowerBarBeats;
-                _v3Drawable.InvalidateLayoutCache();
-                _v3Drawable.UpperNoteStates = new V3NoteState[upperFlat.Count];
-                _v3Drawable.LowerNoteStates = new V3NoteState[lowerFlat.Count];
-                _v3Drawable.IsUpperActive   = true;
-                _v3Drawable.ActiveNoteIndex = 0;
-                _v3Drawable.UpperAlpha      = 1f;
-                _v3Drawable.LowerAlpha      = 1f;
+                var v3Drawable = _v3Drawable;
+                if (v3Drawable == null) return;
+#if DEBUG //  2026.06.18 0935 TEMP BLOCK
+                if (UseArpeggioPreview) //  2026.06.18 0935 
+                { //  2026.06.18 0935 
+                    var preview = await _session.LoadArpeggioPreviewAsync( //  2026.06.18 0935 
+                        ArpeggioCatalog.MajorTriad, //  2026.06.18 0935 
+                        rootNote: ArpeggioPreviewRootNote); //  2026.06.18 0935 
+                    upperFlat = preview; //  2026.06.18 0935 
+                    lowerFlat = new List<GeneratedNote>(); //  2026.06.18 0935 
+                    upperBarBeats = ComputeNewBarBeats(upperFlat, new HashSet<double>()); //  2026.06.18 0935 
+                    lowerBarBeats = new List<double>(); //  2026.06.18 0935 
+                    v3Drawable.UpperHasEndBar = false; //  2026.06.18 0935 
+                    _v3SeqNextMeasureIndex = 0; //  2026.06.18 0935 
+                    _v3SeqNextBeatOffset = upperFlat.Sum(n => n.BeatDuration); //  2026.06.18 0935 
+                    _v3SeqNextGlobalNoteIndex = upperFlat.Count(n => !n.IsRest); //  2026.06.18 0935 
+                    _v3LowerMeasureIndex = _v3SeqNextMeasureIndex; //  2026.06.18 0935 
+                    _v3LowerBeatOffset = _v3SeqNextBeatOffset; //  2026.06.18 0935 
+                    _v3LowerGlobalNoteIndex = _v3SeqNextGlobalNoteIndex; //  2026.06.18 0935 
+                    StatusService.Instance.StatusMessage = $"DEBUG arpeggio preview: {ArpeggioPreviewRootNote} major triad"; //  2026.06.18 0935 
+                } //  2026.06.18 0935 
+#endif //  2026.06.18 0935 
+                v3Drawable.UpperNotes      = upperFlat;
+                v3Drawable.LowerNotes      = lowerFlat;
+                v3Drawable.UpperBarBeats   = upperBarBeats;
+                v3Drawable.LowerBarBeats   = lowerBarBeats;
+                v3Drawable.InvalidateLayoutCache();
+                v3Drawable.UpperNoteStates = new V3NoteState[upperFlat.Count];
+                v3Drawable.LowerNoteStates = new V3NoteState[lowerFlat.Count];
+                v3Drawable.IsUpperActive   = true;
+                v3Drawable.ActiveNoteIndex = 0;
+                v3Drawable.UpperAlpha      = 1f;
+                v3Drawable.LowerAlpha      = 1f;
 
                 // Mark first non-rest note on upper staff as Current.
                 for (int i = 0; i < upperFlat.Count; i++)
                 {
                     if (!upperFlat[i].IsRest)
                     {
-                        _v3Drawable.UpperNoteStates[i] = V3NoteState.Current;
-                        _v3Drawable.ActiveNoteIndex = i;
+                        v3Drawable.UpperNoteStates[i] = V3NoteState.Current;
+                        v3Drawable.ActiveNoteIndex = i;
                         break;
                     }
                 }
@@ -1451,7 +1502,7 @@ namespace musicmate.Pages
         /// </summary>
         private async Task RefreshV3UpperStaffAsync()
         {
-            if (_v3Drawable == null || _session.Tune == "Practice Tune" || V3LayoutTestTune.IsEnabled) return;
+            if (_v3Drawable == null || _session.Tune == "Practice Tune" || _session.Tune == "Arpeggio" || V3LayoutTestTune.IsEnabled) return;
             try
             {
                 var gen      = BuildV3SequenceGenerator(GetV3StaffMeasureCounts().upper);
@@ -1502,7 +1553,7 @@ namespace musicmate.Pages
         /// </summary>
         private async Task RefreshV3LowerStaffAsync()
         {
-            if (_v3Drawable == null || _session.Tune == "Practice Tune" || V3LayoutTestTune.IsEnabled) return;
+            if (_v3Drawable == null || _session.Tune == "Practice Tune" || _session.Tune == "Arpeggio" || V3LayoutTestTune.IsEnabled) return;
             int lowerMc = GetV3StaffMeasureCounts().lower;
             if (lowerMc <= 0) return;
             try
@@ -2205,12 +2256,12 @@ namespace musicmate.Pages
             double avgTiming = timingSessions.Count > 0
                 ? timingSessions.Average(r => r.TimingAccuracyPercent!.Value)
                 : 0.0;
-            var tempoSessions = recent.Where(r => r.AverageTempoBpm.HasValue).ToList();
-            int avgTemo = tempoSessions.Count > 0
-                ? (int)Math.Round(tempoSessions.Average(r => r.AverageTempoBpm!.Value))
+            var tempoSessions = recent.Where(r => r.DetectedBpm.HasValue).ToList();
+            int avgDetectedBpm = tempoSessions.Count > 0
+                ? (int)Math.Round(tempoSessions.Average(r => r.DetectedBpm!.Value))
                 : 0;
             SetSessionEndMarqueeMessage(
-                progressLevel, ssns, sessionCount, avgPitch, avgOverall, avgTiming, avgTemo);
+                progressLevel, ssns, sessionCount, avgPitch, avgOverall, avgTiming, avgDetectedBpm);
         }
 
         private async Task HideSessionResultBannerAsync(bool refreshMarqueeForNewLevel)
@@ -2254,14 +2305,14 @@ namespace musicmate.Pages
             double avgPitch,
             double avgOverall,
             double avgTiming,
-            int avgTemo)
+            int avgDetectedBpm)
         {
 #if DEBUG
             _sessionEndMarqueeMessage =
-                $"L{progressLevel} ssns={ssns}/{sessionCount}, Pch={avgPitch:F0}%, Ovrl={avgOverall:F0}%, Tmg={avgTiming:F0}%, Temo={avgTemo}";
+                $"L{progressLevel} ssns={ssns}/{sessionCount}, Pch={avgPitch:F0}%, Ovrl={avgOverall:F0}%, Tmg={avgTiming:F0}%, Det={avgDetectedBpm}";
 #else
             _sessionEndMarqueeMessage =
-                $"ssns={ssns}/{sessionCount}, Pch={avgPitch:F0}%, Ovrl={avgOverall:F0}%, Tmg={avgTiming:F0}%, Temo={avgTemo}";
+                $"ssns={ssns}/{sessionCount}, Pch={avgPitch:F0}%, Ovrl={avgOverall:F0}%, Tmg={avgTiming:F0}%, Det={avgDetectedBpm}";
 #endif
             StatusService.Instance.StatusMessage = _sessionEndMarqueeMessage;
         }
@@ -2388,6 +2439,12 @@ namespace musicmate.Pages
             }
 
             RestoreSessionEndMarqueeIfNeeded();
+            //TEMP
+#if DEBUG
+            var notes = _session.BuildArpeggioPreviewNotes(
+                ArpeggioCatalog.MajorTriad,
+                rootNote: "Bb3");
+#endif 
         }
 
         protected override void OnNavigatedTo(NavigatedToEventArgs args)
@@ -3213,7 +3270,7 @@ async Task UpdateNoteStatsDatabaseAsync()
 
                         var playbackBpm = (double)_session.PlaybackBpm;
                         StatusService.Instance.StatusMessage =
-                            $"Played at {playbackBpm:F0} BPM. Tap GO to listen or Play to hear again.";
+                            $"Playback {playbackBpm:F0} BPM. Tap GO to listen or Play to hear again.";
                     }
 
                     // Restore instrument after freeze — its PropertyChanged will
@@ -3258,9 +3315,7 @@ async Task UpdateNoteStatsDatabaseAsync()
             var (correct, wrong, apc) = _session.GetSessionCorrectWrongTotals();
             var total = correct + wrong;
             var pc = total > 0 ? (double)correct * 100.0 / total : 0.0;
-            #pragma warning disable CS0618 // Type or member is obsolete
-            var (meanBpm, stdBpm) = _session.GetFinalBpmStats();
-            #pragma warning restore CS0618
+            var detectedBpm = _session.GetDetectedBpm();
             var hi = _session.NotesToDraw.OrderByDescending(n => n.Midi).FirstOrDefault();
             var lo = _session.NotesToDraw.OrderBy(n => n.Midi).FirstOrDefault();
 
@@ -3290,8 +3345,8 @@ async Task UpdateNoteStatsDatabaseAsync()
                 Lo = lo?.Name ?? "",
                 Pc = apc,
                 PcRaw = pc,
-                Tp = meanBpm ?? 0,
-                Ts = stdBpm ?? 0,
+                Tp = detectedBpm ?? 0,
+                Ts = 0,
                 // New timing/accuracy fields
                 Level = _session.ChildLevel,
                 Pch = apc,
@@ -3412,7 +3467,7 @@ async Task UpdateNoteStatsDatabaseAsync()
 
                 // Get timing accuracy from least-squares onset fitting
                 double? timingAccuracyPercent = _session.GetTimingAccuracyPercent();
-                int? averageTempoBpm = _session.GetAverageTempoBpm();
+                int? detectedBpm = _session.GetDetectedBpm();
 
                 // Blend pitch and timing into overall accuracy.
                 // When timing data is unavailable (< 3 notes), fall back to pitch only.
@@ -3434,7 +3489,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                     PitchAccuracyPercent   = pitchAccuracyPercent,
                     AveragePitchErrorCents = avgCents,
                     TimingAccuracyPercent  = timingAccuracyPercent,
-                    AverageTempoBpm      = averageTempoBpm,
+                    DetectedBpm            = detectedBpm,
                     OverallAccuracyPercent = overallAccuracy,
                     PitchRightCount        = pitchRight,
                     PitchWrongCount        = pitchWrong,
@@ -3491,7 +3546,8 @@ async Task UpdateNoteStatsDatabaseAsync()
                 e.PropertyName == nameof(NoteSessionService.Key) ||
                 e.PropertyName == nameof(NoteSessionService.Instrument) ||
                 e.PropertyName == nameof(NoteSessionService.Tune) ||
-                e.PropertyName == nameof(NoteSessionService.CurrentTune))
+                e.PropertyName == nameof(NoteSessionService.CurrentTune) ||
+                e.PropertyName == nameof(NoteSessionService.SelectedArpeggioDisplay))
             {
                 UpdateConcertKeyLabel();
                 UpdateScaleTunePicker();
@@ -3509,6 +3565,13 @@ async Task UpdateNoteStatsDatabaseAsync()
                 UpdateRepeatButtonsVisibility();
                 if (!_suppressSessionRegenerate)
                     await RegenerateNotesAsync();
+            }
+
+            if (e.PropertyName == nameof(NoteSessionService.MusicBpm)
+                && _session.StaffDisplayMode == StaffDisplayMode.V3)
+            {
+                _v3Drawable?.InvalidateLayoutCache();
+                MainThread.BeginInvokeOnMainThread(() => V3StaffGraphicsView?.Invalidate());
             }
         }
 
@@ -3609,11 +3672,100 @@ async Task UpdateNoteStatsDatabaseAsync()
                 MainPageMainLayout.Spacing = 16;
             }
         }
+
+        private string[] BuildScaleTuneOptions()
+        {
+            var practiceTuneTitles = musicmate.Models.TuneLibrary.All.Select(t => t.Title).ToArray();
+            var arpeggioTitles = BuildArpeggioPickerChoices().Select(choice => choice.Label).ToArray();
+            return new[] { "Tuner" }
+                .Concat(practiceTuneTitles)
+                .Concat(arpeggioTitles)
+                .Concat(NoteSessionService.AvailableScales)
+                .ToArray();
+        }
+
+        private IReadOnlyList<ArpeggioPickerChoice> BuildArpeggioPickerChoices()
+        {
+            _arpeggioPickerChoices.Clear();
+            int level = _session.ChildLevel > 0 ? _session.ChildLevel : 1;
+            var availability = ArpeggioCatalog.GetAvailabilityForLevel(level);
+            var choices = new List<ArpeggioPickerChoice>();
+
+            foreach (var root in availability.RootOptions)
+            {
+                int rootMidi = GetScaleDegreeMidi(_session.Key, _session.SelectedScale, root.ScaleDegree);
+                foreach (var pattern in availability.Patterns)
+                {
+                    string rootNote = ChooseArpeggioRootInRange(rootMidi);
+                    string rootName = TrimOctave(rootNote);
+                    string label = $"{rootName} {pattern.DisplayName.ToLowerInvariant()}";
+                    if (_arpeggioPickerChoices.ContainsKey(label))
+                        continue;
+
+                    var choice = new ArpeggioPickerChoice(label, pattern, rootNote);
+                    _arpeggioPickerChoices[label] = choice;
+                    choices.Add(choice);
+                }
+            }
+
+            return choices;
+        }
+
+        private string ChooseArpeggioRootInRange(int rootMidi)
+        {
+            int minMidi = NoteSessionService.NoteNameToMidi(_session.LowestNote);
+            int maxMidi = NoteSessionService.NoteNameToMidi(_session.HighestNote);
+            bool preferFlats = KeyPrefersFlats(_session.Key);
+            if (minMidi < 0 || maxMidi < minMidi)
+                return NoteSessionService.MidiToNoteName(rootMidi, preferFlats);
+
+            int candidate = rootMidi;
+            while (candidate < minMidi)
+                candidate += 12;
+            while (candidate > maxMidi)
+                candidate -= 12;
+
+            return NoteSessionService.MidiToNoteName(candidate, preferFlats);
+        }
+
+        private static int GetScaleDegreeMidi(string key, string scale, int degree)
+        {
+            int[] intervals = scale switch
+            {
+                "Natural Minor" or "Aeolian" => new[] { 0, 2, 3, 5, 7, 8, 10 },
+                "Harmonic Minor" => new[] { 0, 2, 3, 5, 7, 8, 11 },
+                "Melodic Minor" or "Jazz Melodic Minor" => new[] { 0, 2, 3, 5, 7, 9, 11 },
+                "Dorian" => new[] { 0, 2, 3, 5, 7, 9, 10 },
+                "Phrygian" => new[] { 0, 1, 3, 5, 7, 8, 10 },
+                "Lydian" => new[] { 0, 2, 4, 6, 7, 9, 11 },
+                "Mixolydian" => new[] { 0, 2, 4, 5, 7, 9, 10 },
+                "Locrian" => new[] { 0, 1, 3, 5, 6, 8, 10 },
+                "Major Pentatonic" => new[] { 0, 2, 4, 7, 9, 12, 14 },
+                "Minor Pentatonic" => new[] { 0, 3, 5, 7, 10, 12, 15 },
+                "Blues" or "Minor Blues" => new[] { 0, 3, 5, 6, 7, 10, 12 },
+                _ => new[] { 0, 2, 4, 5, 7, 9, 11 }
+            };
+
+            int tonicMidi = NoteSessionService.NoteNameToMidi($"{key}4");
+            int idx = Math.Clamp(degree, 1, 7) - 1;
+            return tonicMidi + intervals[idx % intervals.Length];
+        }
+
+        private static bool KeyPrefersFlats(string key)
+            => key is "F" or "Bb" or "Eb" or "Ab" or "Db" or "Gb" or "Cb";
+
+        private static string TrimOctave(string noteName)
+            => new(noteName.TakeWhile(c => !char.IsDigit(c)).ToArray());
+
         private void UpdateScaleTunePicker()
         {
-            if (ScaleTunePicker.ItemsSource is not string[] items) return;
+            var items = BuildScaleTuneOptions();
+            ScaleTunePicker.ItemsSource = items;
+            if (_v3HomeScaleTunePicker != null)
+                _v3HomeScaleTunePicker.ItemsSource = items;
             var selection = _session.Tune == "Tuner" ? "Tuner"
                 : _session.Tune == "Practice Tune" ? (_session.CurrentTune?.Title ?? string.Empty)
+                : _session.Tune == "Arpeggio" ? _session.SelectedArpeggioDisplay
                 : _session.SelectedScale;
             var idx = Array.IndexOf(items, selection);
             _suppressPickerSync = true;
@@ -3624,8 +3776,6 @@ async Task UpdateNoteStatsDatabaseAsync()
                 // Keep V3 home picker in sync — populate ItemsSource on first call if needed
                 if (_v3HomeScaleTunePicker != null)
                 {
-                    if (_v3HomeScaleTunePicker.ItemsSource == null)
-                        _v3HomeScaleTunePicker.ItemsSource = items;
                     if (_v3HomeScaleTunePicker.ItemsSource is string[] v3Items)
                     {
                         var v3Idx = Array.IndexOf(v3Items, selection);
@@ -3708,6 +3858,17 @@ async Task UpdateNoteStatsDatabaseAsync()
             {
                 _lastValidScaleTuneIndex = sourcePicker.SelectedIndex;
                 _session.SelectPracticeTune(practiceTune);
+                Preferences.Default.Set("SelectedTune", selected);
+                IsAutoRepeatVisible = true;
+                UpdateKeyPickerVisibility();
+                await RegenerateNotesAsync();
+                return;
+            }
+
+            if (_arpeggioPickerChoices.TryGetValue(selected, out var arpeggioChoice))
+            {
+                _lastValidScaleTuneIndex = sourcePicker.SelectedIndex;
+                _session.SelectArpeggio(arpeggioChoice.Pattern, arpeggioChoice.RootNote, arpeggioChoice.Label);
                 Preferences.Default.Set("SelectedTune", selected);
                 IsAutoRepeatVisible = true;
                 UpdateKeyPickerVisibility();

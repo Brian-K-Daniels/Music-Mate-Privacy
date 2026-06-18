@@ -31,7 +31,32 @@ namespace musicmate.Pages
             _orientationService?.ForceLandscape();
             base.OnAppearing();
             _viewModel.RefreshCurrentSessionMetrics();
+            _viewModel.LoadCompositionPercentsFromSession();
             var mainLayout = this.FindByName<VerticalStackLayout>("AdvancedMainLayout");
+        }
+
+        private void OnPcTunesDragCompleted(object? sender, EventArgs e)
+        {
+            if (sender is Slider slider)
+                _viewModel.CommitCompositionPercent(0, (int)Math.Round(slider.Value));
+        }
+
+        private void OnPcRandomDragCompleted(object? sender, EventArgs e)
+        {
+            if (sender is Slider slider)
+                _viewModel.CommitCompositionPercent(1, (int)Math.Round(slider.Value));
+        }
+
+        private void OnPcScalesDragCompleted(object? sender, EventArgs e)
+        {
+            if (sender is Slider slider)
+                _viewModel.CommitCompositionPercent(2, (int)Math.Round(slider.Value));
+        }
+
+        private void OnPcArpeggiosDragCompleted(object? sender, EventArgs e)
+        {
+            if (sender is Slider slider)
+                _viewModel.CommitCompositionPercent(3, (int)Math.Round(slider.Value));
         }
 
         private async void OnNavigateHomeClicked(object sender, EventArgs e)

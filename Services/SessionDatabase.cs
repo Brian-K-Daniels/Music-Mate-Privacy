@@ -22,8 +22,8 @@ public class SessionStat
     public string Lo { get; set; } = "";  // Lowest note
     public double Pc { get; set; }        // % correct
     public double PcRaw { get; set; }     // % correct raw (before any adjustments)
-    public double Tp { get; set; }        // Tempo (mean BPM) - DEPRECATED, use Tmg instead
-    public double Ts { get; set; }        // Tempo StdDev - DEPRECATED
+    public double Tp { get; set; }        // Detected BPM (deprecated column name) — use Tmg for timing accuracy
+    public double Ts { get; set; }        // Detected BPM std dev (deprecated, unused)
 
     // New timing/accuracy fields
     public int Level { get; set; }        // Child level (0 for adult mode)

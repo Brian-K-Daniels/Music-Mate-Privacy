@@ -103,15 +103,20 @@
               <On Platform="Android" Value="0,0,0,0" />
             </OnPlatform>
           </VerticalStackLayout.Margin>
-          <HorizontalStackLayout Spacing="6" VerticalOptions="Center" Margin="0,4,0,4">
+          <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*"
+                ColumnSpacing="6"
+                VerticalOptions="Center"
+                Margin="0,4,0,4"
+                HorizontalOptions="Fill">
 
             <!-- Instrument -->
-            <Label Text="Instrument"
+            <Label Grid.Column="0"
+                   Text="Instrument"
                    FontSize="11"
                    TextColor="#333333"
                    Margin="8,0,0,0"
                    VerticalOptions="Center" />
-            <Border Style="{StaticResource CompactBrownBox}">
+            <Border Grid.Column="1" Style="{StaticResource CompactBrownBox}">
               <Grid WidthRequest="160">
                 <Picker x:Name="InstrumentPicker"
                         SelectedIndexChanged="InstrumentPicker_SelectedIndexChanged"
@@ -147,11 +152,12 @@
 
             <!-- Key (hidden in Tuner mode) -->
             <Label x:Name="KeyLabel"
+                   Grid.Column="2"
                    Text="Key"
                    FontSize="11"
                    TextColor="#333333"
                    VerticalOptions="Center" />
-            <Border x:Name="KeyBorder" Style="{StaticResource CompactBrownBox}">
+            <Border x:Name="KeyBorder" Grid.Column="3" Style="{StaticResource CompactBrownBox}">
               <Picker x:Name="KeyPicker"
                       WidthRequest="50"
                       HeightRequest="28"
@@ -164,14 +170,17 @@
 
             <!-- Concert key e.g. "(Concert E)" (hidden in Tuner mode) -->
             <Label x:Name="ConcertKeyLabel"
+                   Grid.Column="4"
                    FontSize="11"
                    TextColor="#333333"
                    VerticalOptions="Center" />
 
             <!-- Combined Scale / Tune picker -->
-            <Border Style="{StaticResource CompactBrownBox}">
+            <Border Grid.Column="5"
+                    Style="{StaticResource CompactBrownBox}"
+                    HorizontalOptions="Fill"
+                    Margin="0,0,8,0">
               <Picker x:Name="ScaleTunePicker"
-                      WidthRequest="180"
                       HeightRequest="28"
                       FontSize="11"
                       TextColor="#000000"
@@ -180,7 +189,7 @@
                       HorizontalOptions="Fill" />
             </Border>
 
-          </HorizontalStackLayout>
+          </Grid>
 
           </VerticalStackLayout>
 
@@ -499,35 +508,40 @@
                     Clicked="OnColorButtonClicked" />
 
             <!-- V3 mode: compact pickers fill the bottom row (play is on the staff) -->
-            <HorizontalStackLayout x:Name="V3BottomPickersLayout"
-                                   Grid.Column="0" Grid.ColumnSpan="5"
-                                   Spacing="2" VerticalOptions="Center"
-                                   IsVisible="{Binding Source={x:Reference mainPage}, Path=IsV3BottomPickersVisible}">
-              <Label Text="Inst." FontSize="10" TextColor="#333333" VerticalOptions="Center" Margin="2,0,0,0"/>
-              <Border Style="{StaticResource CompactBrownBox}">
+            <Grid x:Name="V3BottomPickersLayout"
+                  Grid.Column="0" Grid.ColumnSpan="5"
+                  ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*"
+                  ColumnSpacing="2"
+                  VerticalOptions="Center"
+                  HorizontalOptions="Fill"
+                  IsVisible="{Binding Source={x:Reference mainPage}, Path=IsV3BottomPickersVisible}">
+              <Label Grid.Column="0" Text="Inst." FontSize="10" TextColor="#333333" VerticalOptions="Center" Margin="2,0,0,0"/>
+              <Border Grid.Column="1" Style="{StaticResource CompactBrownBox}">
                 <Picker x:Name="V3HomeInstrumentPicker"
                         WidthRequest="70" HeightRequest="28" FontSize="10"
                         TextColor="#000000" BackgroundColor="White"
                         VerticalOptions="Fill" HorizontalOptions="Fill"
                         SelectedIndexChanged="V3HomeInstrumentPicker_SelectedIndexChanged" />
               </Border>
-              <Label Text="Key" FontSize="10" TextColor="#333333" VerticalOptions="Center"/>
-              <Border Style="{StaticResource CompactBrownBox}">
+              <Label Grid.Column="2" Text="Key" FontSize="10" TextColor="#333333" VerticalOptions="Center"/>
+              <Border Grid.Column="3" Style="{StaticResource CompactBrownBox}">
                 <Picker x:Name="V3HomeKeyPicker"
                         WidthRequest="50" HeightRequest="28" FontSize="10"
                         TextColor="#000000" BackgroundColor="White"
                         VerticalOptions="Fill" HorizontalOptions="Fill"
                         SelectedIndexChanged="V3HomeKeyPicker_SelectedIndexChanged" />
               </Border>
-              <Label x:Name="V3HomeConcertKeyLabel" FontSize="10" TextColor="#333333" VerticalOptions="Center"/>
-              <Border Style="{StaticResource CompactBrownBox}">
+              <Label x:Name="V3HomeConcertKeyLabel" Grid.Column="4" FontSize="10" TextColor="#333333" VerticalOptions="Center"/>
+              <Border Grid.Column="5"
+                      Style="{StaticResource CompactBrownBox}"
+                      HorizontalOptions="Fill">
                 <Picker x:Name="V3HomeScaleTunePicker"
-                        WidthRequest="150" HeightRequest="28" FontSize="10"
+                        HeightRequest="28" FontSize="10"
                         TextColor="#000000" BackgroundColor="White"
                         VerticalOptions="Fill" HorizontalOptions="Fill"
                         SelectedIndexChanged="V3HomeScaleTunePickerChanged" />
               </Border>
-            </HorizontalStackLayout>
+            </Grid>
 
           </Grid>
         </VerticalStackLayout>

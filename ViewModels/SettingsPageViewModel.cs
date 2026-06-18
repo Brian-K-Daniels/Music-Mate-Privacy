@@ -30,7 +30,7 @@ namespace musicmate.ViewModels
         public const string DefaultTune             = "Major";
         public const string DefaultLowestNote       = "C4";
         public const string DefaultHighestNote      = "F5";
-        public const int    DefaultPlaybackBpm      = 100;
+        public const int    DefaultPlaybackBpm      = NoteSessionService.DefaultPlaybackBpm;
         public const int    DefaultMusicBpm         = NoteSessionService.DefaultMusicBpm;
         public const int    DefaultAccidentalPct    = 30;
         public const int    DefaultCorrectThreshold = 95;
@@ -744,6 +744,7 @@ namespace musicmate.ViewModels
                 _session.Key = DefaultKey;
                 _session.Tune = DefaultTune;
                 _session.ResetAdvancedDetectionDefaults();
+                _session.ResetPracticeCompositionDefaults();
             }
             else
             {
@@ -752,6 +753,10 @@ namespace musicmate.ViewModels
                 Preferences.Set("musicmate.Tune", DefaultTune);
                 Preferences.Set("musicmate.Tolerance", NoteSessionService.DefaultTolerance);
                 Preferences.Set("musicmate.PitchOffsetCents", NoteSessionService.DefaultPitchOffsetCents);
+                Preferences.Set("musicmate.PcTunes", NoteSessionService.DefaultPcTunes);
+                Preferences.Set("musicmate.PcRandom", NoteSessionService.DefaultPcRandom);
+                Preferences.Set("musicmate.PcScales", NoteSessionService.DefaultPcScales);
+                Preferences.Set("musicmate.PcArpeggios", NoteSessionService.DefaultPcArpeggios);
             }
             LevelUpService.ResetCriteriaToDefaults();
         }

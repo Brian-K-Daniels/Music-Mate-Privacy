@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using musicmate.Models;
 
 namespace musicmate.Services
 {
@@ -47,6 +48,10 @@ namespace musicmate.Services
         /// <summary>Inspectable profile (pools + range) for a level without random picks.</summary>
         public static ChildLevelDifficultyProfile GetProfile(int level)
             => ChildLevelProgression.GetProfile(level);
+
+        /// <summary>Inspectable arpeggio catalog availability for a level. Not used by Random generation yet.</summary>
+        public static ArpeggioLevelAvailability GetArpeggioAvailability(int level)
+            => ArpeggioCatalog.GetAvailabilityForLevel(level);
 
         /// <summary>
         /// Resolve a full session settings bundle, randomly picking scale and key from

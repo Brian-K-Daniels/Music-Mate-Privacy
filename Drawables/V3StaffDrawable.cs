@@ -120,7 +120,7 @@ namespace musicmate.Drawables
         private const float BeginnerNoteHeadSpaceRatio = 0.9f; // target: 90% of staff-space height
         private const float CompactNoteHeadRRatio    = 0.32f;
         /// <summary>Child levels 31+: modest notehead enlargement without beginner-scale collision risk.</summary>
-        private const float MidLevelNoteHeadRRatio   = 0.38f;
+        private const float MidLevelNoteHeadRRatio   = 0.41f;
         /// <summary>Horizontal gap between key signature and time signature (px).</summary>
         private const float KeySigTimeSigGap         = 1f;
         private const float CompactStemLenRatio      = 2.15f;
@@ -142,6 +142,9 @@ namespace musicmate.Drawables
             float beginnerR = _layout.Sls * BeginnerNoteHeadSpaceRatio / NoteHeadHeightFactor;
             return beginnerR / compactR;
         }
+
+        private const float KeySigFlatSizeBoost = 1.38f;
+        private const float BodyFlatSizeBoost = 1.25f;
 
         /// <summary>
         /// Body-accidental scale factor for child levels 31+ (compact noteheads).
@@ -178,8 +181,9 @@ namespace musicmate.Drawables
         private float KeySigSymbolWidth()
             => CompactAccidentalRefPx * (_layout.Sls / 12f) * KeySigAccidentalScale();
 
-        private float BodyAccidentalSymbolWidth()
-            => CompactAccidentalRefPx * (_layout.Sls / 12f) * BodyAccidentalGlyphScale();
+        private float BodyAccidentalSymbolWidth(bool isFlat = false)
+            => CompactAccidentalRefPx * (_layout.Sls / 12f) * BodyAccidentalGlyphScale()
+                * (isFlat ? BodyFlatSizeBoost : 1f);
 
         private static bool IsFlatBodyAccidental(Accidental acc)
             => acc == Accidental.Flat || acc == Accidental.DoubleFlat;
@@ -190,7 +194,7 @@ namespace musicmate.Drawables
         /// <summary>Layout/draw width for a body accidental beside the notehead.</summary>
         private float BodyAccidentalDrawWidth(bool isFlat, bool isNatural = false)
             => isFlat
-                ? BodyAccidentalSymbolWidth()
+                ? BodyAccidentalSymbolWidth(isFlat: true)
                 : BodyAccidentalSymbolWidth() * (isNatural ? 0.70f : 1.0f);
 
         private float NoteHeadLeft(float centerX) => centerX - _layout.NoteHeadR;
@@ -412,6 +416,7 @@ namespace musicmate.Drawables
             public string SessionKey { get; init; }
             public string SessionScale { get; init; }
             public string TimeSig { get; init; }
+            public int MusicBpm { get; init; }
 
             public bool Equals(LayoutCacheKey other) =>
                 Width == other.Width && Height == other.Height
@@ -421,7 +426,7 @@ namespace musicmate.Drawables
                 && UpperHasEndBar == other.UpperHasEndBar && BeginnerLayout == other.BeginnerLayout
                 && ChildLevel == other.ChildLevel
                 && SessionKey == other.SessionKey && SessionScale == other.SessionScale
-                && TimeSig == other.TimeSig;
+                && TimeSig == other.TimeSig && MusicBpm == other.MusicBpm;
 
             public override bool Equals(object? obj) => obj is LayoutCacheKey other && Equals(other);
             public override int GetHashCode()
@@ -432,7 +437,7 @@ namespace musicmate.Drawables
                 hc.Add(UpperNotesHash); hc.Add(LowerNotesHash);
                 hc.Add(UpperBarHash); hc.Add(LowerBarHash);
                 hc.Add(UpperHasEndBar); hc.Add(BeginnerLayout); hc.Add(ChildLevel);
-                hc.Add(SessionKey); hc.Add(SessionScale); hc.Add(TimeSig);
+                hc.Add(SessionKey); hc.Add(SessionScale); hc.Add(TimeSig); hc.Add(MusicBpm);
                 return hc.ToHashCode();
             }
         }
@@ -488,6 +493,7 @@ namespace musicmate.Drawables
                 SessionKey = _session.Key ?? string.Empty,
                 SessionScale = _session.SelectedScale ?? string.Empty,
                 TimeSig = _session.GetDisplayTimeSignature(),
+                MusicBpm = _session.MusicBpm,
             };
 
         private bool TryDrawFromLayoutCache(
@@ -765,6 +771,11 @@ namespace musicmate.Drawables
             int eA2 = Math.Max(0, -4 - minS2) + breathing;
             int eB2 = Math.Max(0,  maxS2 - 4) + breathing;
 
+            // The MusicBpm quarter-note marking lives above the upper staff; reserve enough
+            // room for its tangential stem so it does not clip at the top of the canvas.
+            if (_session.Tune != "Tuner")
+                eA1 = Math.Max(eA1, 9);
+
             // Total half-spaces consumed by the two staffs (each staff = 8 hs for 5 lines / 4 spaces).
             float totalHalfSpaces = (float)(8 + eA1 + eB1 + 8 + eA2 + eB2);
 
@@ -872,6 +883,10 @@ namespace musicmate.Drawables
                 .ToList();
         }
 
+        private static bool IsBeamableNote(GeneratedNote note)
+            => !note.IsRest
+               && (note.Duration == NoteDuration.Eighth || note.Duration == NoteDuration.Sixteenth);
+
         /// <summary>Beat-only beam membership for layout (same window rules as <see cref="ComputeBeamGroups"/>).</summary>
         private static Dictionary<int, int> ComputeLayoutBeamGroupIds(
             IReadOnlyList<GeneratedNote> notes,
@@ -889,20 +904,15 @@ namespace musicmate.Drawables
                 var n = notes[i];
                 double pos = (n.BeatPosition ?? 0.0) - beatOrigin;
 
-                bool isBeamable = !n.IsRest
-                    && (n.Duration == NoteDuration.Eighth || n.Duration == NoteDuration.Sixteenth);
+                bool isBeamable = IsBeamableNote(n);
                 if (!isBeamable)
                 {
                     oi++;
                     continue;
                 }
 
-                double groupStart = n.Duration == NoteDuration.Sixteenth
-                    ? Math.Floor(pos + 1e-9)
-                    : Math.Floor(pos * 2.0) / 2.0;
-                double groupEnd = n.Duration == NoteDuration.Sixteenth
-                    ? groupStart + 1.0
-                    : groupStart + 0.5;
+                double groupStart = Math.Floor(pos + 1e-9);
+                double groupEnd = groupStart + 1.0;
                 groupEnd = Math.Min(groupEnd, measureEndBeat - 1e-6);
                 if (groupEnd <= groupStart + 1e-6)
                 {
@@ -918,13 +928,9 @@ namespace musicmate.Drawables
                     var nj = notes[noteIdx];
                     double pj = (nj.BeatPosition ?? groupEnd) - beatOrigin;
 
-                    if (nj.IsRest || (nj.Duration != NoteDuration.Eighth && nj.Duration != NoteDuration.Sixteenth))
+                    if (!IsBeamableNote(nj))
                         break;
                     if (pj >= measureEndBeat - 1e-6)
-                        break;
-                    if (n.Duration == NoteDuration.Sixteenth && nj.Duration != NoteDuration.Sixteenth)
-                        break;
-                    if (n.Duration == NoteDuration.Eighth && nj.Duration == NoteDuration.Sixteenth)
                         break;
                     if (pj < groupStart - 1e-6 || pj >= groupEnd + 1e-6)
                         break;
@@ -2648,11 +2654,10 @@ namespace musicmate.Drawables
 
         private float StemStrokeHalfWidth => _layout.GlyphScale;
 
-        /// <summary>
-        /// Draw radius for a notehead: filled heads expand to the half-note outer ink extent.
-        /// </summary>
-        private float NoteHeadDrawR(bool filled)
-            => filled ? _layout.NoteHeadR + StemStrokeHalfWidth : _layout.NoteHeadR;
+        private float NoteHeadOuterR => _layout.NoteHeadR + StemStrokeHalfWidth;
+
+        /// <summary>Draw radius for noteheads; filled and half-note heads share the same outside dimensions.</summary>
+        private float NoteHeadDrawR(bool filled) => NoteHeadOuterR;
 
         /// <summary>
         /// Stem attach at notehead center height: up-stems — outer (right) stroke edge tangent to outer right boundary;
@@ -2660,10 +2665,9 @@ namespace musicmate.Drawables
         /// </summary>
         private (float stemX, float stemY) GetStemAttachPoint(float noteX, float noteY, bool stemUp)
         {
-            float r = _layout.NoteHeadR;
             float halfStroke = StemStrokeHalfWidth;
-            float outerRight = noteX + r + halfStroke;
-            float outerLeft  = noteX - r - halfStroke;
+            float outerRight = noteX + NoteHeadOuterR;
+            float outerLeft  = noteX - NoteHeadOuterR;
             float stemX = stemUp ? outerRight - halfStroke : outerLeft + halfStroke;
             return (stemX, noteY);
         }
@@ -2859,9 +2863,57 @@ namespace musicmate.Drawables
 
             if (drawKeyAndTimeSig)
             {
+                DrawMusicBpmMarking(canvas, ink, staffTop);
                 float keySigEndX = DrawKeySignature(canvas, staffTop, staffMid, ink);
                 DrawTimeSignature(canvas, staffTop, staffMid, ink, keySigEndX + KeySigTimeSigGap);
             }
+        }
+
+        /// <summary>Quarter-note = MusicBpm marking above the upper staff; "=" centered over the time signature.</summary>
+        private void DrawMusicBpmMarking(ICanvas canvas, Color ink, float staffTop)
+        {
+            if (_session.Tune == "Tuner")
+                return;
+
+            int bpm = Math.Clamp(_session.MusicBpm, 30, 200);
+            float fontSize = Math.Max(10f, _layout.Sls * 1.6f);
+            const float timeSigW = 24f;
+            float timeSigCenterX = _headerMetrics.TimeSigX + timeSigW * 0.5f;
+
+            string marking = $"= {bpm}";
+            float textWidth = Math.Max(64f, fontSize * (2.5f + marking.Length * 0.55f));
+            float textHeight = fontSize * 1.35f;
+            float textY = staffTop - textHeight - 2f;
+
+            // Left-align marking so the "=" character sits over the time-signature center.
+            float equalsOffset = fontSize * 0.42f;
+            float textX = timeSigCenterX - equalsOffset;
+
+            float headR = NoteHeadDrawR(filled: true);
+            float stemH = Math.Min(_layout.StemLen, fontSize * 1.15f);
+            float gapBeforeEquals = fontSize * 0.35f;
+            float headCx = textX - gapBeforeEquals - headR;
+            float headCy = textY + textHeight * 0.5f;
+
+            canvas.SaveState();
+            canvas.FillColor = ink;
+            canvas.StrokeColor = ink;
+            canvas.StrokeSize = 2f * _layout.GlyphScale;
+
+            canvas.FillEllipse(
+                headCx - headR,
+                headCy - headR * NoteHeadHeightFactor * 0.5f,
+                headR * 2f,
+                headR * NoteHeadHeightFactor);
+            var (stemX, stemY) = GetStemAttachPoint(headCx, headCy, stemUp: true);
+            canvas.DrawLine(stemX, stemY, stemX, stemY - stemH);
+
+            canvas.Font = Microsoft.Maui.Graphics.Font.Default;
+            canvas.FontSize = fontSize;
+            canvas.FontColor = ink;
+            canvas.DrawString(marking, textX, textY, textWidth, textHeight,
+                HorizontalAlignment.Left, VerticalAlignment.Center);
+            canvas.RestoreState();
         }
 
         private void DrawStaffDynamic(
@@ -2987,8 +3039,8 @@ namespace musicmate.Drawables
         /// Identifies beam groups from notes and their pre-computed X positions.
         /// Returns a dictionary mapping note index to (groupId, stemUp).
         /// 
-        /// In 4/4 time, beam groups are formed within half-beat boundaries:
-        /// - Beat 0.0-0.5, 0.5-1.0, 1.0-1.5, 1.5-2.0, etc.
+        /// In 4/4 time, beam groups are formed within one-beat boundaries:
+        /// - Beat 0.0-1.0, 1.0-2.0, etc.
         /// - Don't cross beat boundaries
         /// - Don't cross measure boundaries
         /// - Only beam consecutive eighth/sixteenth notes (no rests between)
@@ -3017,8 +3069,7 @@ namespace musicmate.Drawables
                 double pos = (n.BeatPosition ?? 0.0) - beatOrigin;
 
                 // Only beam eighth or sixteenth non-rest notes
-                bool isBeamable = !n.IsRest
-                    && (n.Duration == NoteDuration.Eighth || n.Duration == NoteDuration.Sixteenth);
+                bool isBeamable = IsBeamableNote(n);
 
                 if (!isBeamable)
                 {
@@ -3031,13 +3082,9 @@ namespace musicmate.Drawables
                     ? sortedBarBeatsRel[currentMeasure]
                     : double.PositiveInfinity;
 
-                // Eighths beam within half-beat groups; sixteenths beam within a full beat.
-                double groupStart = n.Duration == NoteDuration.Sixteenth
-                    ? Math.Floor(pos + 1e-9)
-                    : Math.Floor(pos * 2.0) / 2.0;
-                double groupEnd = n.Duration == NoteDuration.Sixteenth
-                    ? groupStart + 1.0
-                    : groupStart + 0.5;
+                // Beam within a beat so mixed eighth/sixteenth patterns render as one group.
+                double groupStart = Math.Floor(pos + 1e-9);
+                double groupEnd = groupStart + 1.0;
                 groupEnd = Math.Min(groupEnd, measureEnd - 1e-6);
                 if (groupEnd <= groupStart + 1e-6)
                 {
@@ -3056,18 +3103,12 @@ namespace musicmate.Drawables
                     double pj = (nj.BeatPosition ?? groupEnd) - beatOrigin;
 
                     // Stop if we hit a rest or unbeamable duration
-                    if (nj.IsRest || (nj.Duration != NoteDuration.Eighth && nj.Duration != NoteDuration.Sixteenth))
+                    if (!IsBeamableNote(nj))
                         break;
 
                     // Stop if we cross into a different measure or reach the bar beat
                     if (GetMeasureIndexForBeat(pj, sortedBarBeatsRel) != currentMeasure
                         || pj >= measureEnd - 1e-6)
-                        break;
-
-                    // Sixteenths only group with other sixteenths in the same beat
-                    if (n.Duration == NoteDuration.Sixteenth && nj.Duration != NoteDuration.Sixteenth)
-                        break;
-                    if (n.Duration == NoteDuration.Eighth && nj.Duration == NoteDuration.Sixteenth)
                         break;
 
                     // Stop if this note starts outside our beam group window
@@ -3513,9 +3554,11 @@ namespace musicmate.Drawables
         private float KeySigLineY(char letter, int octave, float staffMid)
             => staffMid + DiatonicStepsFromB4(letter, octave) * _layout.HS;
 
-        private float KeySigAccidentalFontSize() => _layout.Sls * 2.4f * KeySigAccidentalScale();
+        private float KeySigAccidentalFontSize(bool isFlat)
+            => _layout.Sls * 2.4f * KeySigAccidentalScale() * (isFlat ? KeySigFlatSizeBoost : 1f);
 
-        private float BodyAccidentalFontSize() => _layout.Sls * 2.4f * BodyAccidentalGlyphScale();
+        private float BodyAccidentalFontSize(bool isFlat = false)
+            => _layout.Sls * 2.4f * BodyAccidentalGlyphScale() * (isFlat ? BodyFlatSizeBoost : 1f);
 
         /// <summary>
         /// Top of the body-accidental draw box so ink centers on the notehead ellipse center
@@ -3539,7 +3582,7 @@ namespace musicmate.Drawables
             bool isFlat,
             bool isNatural)
         {
-            float fontSize = BodyAccidentalFontSize();
+            float fontSize = BodyAccidentalFontSize(isFlat);
             if (!SmuFLGlyphMetrics.TryMeasure(glyph, fontSize, out var m))
                 return false;
 
@@ -3646,9 +3689,19 @@ namespace musicmate.Drawables
                 }
                 else
                 {
-                    canvas.StrokeColor = noteColor;
-                    canvas.StrokeSize  = stroke;
-                    canvas.DrawEllipse(x - drawR, headTop, headW, headH);
+                    canvas.FillColor = noteColor;
+                    canvas.FillEllipse(x - drawR, headTop, headW, headH);
+
+                    float inset = Math.Min(stroke, drawR * 0.45f);
+                    if (headW > inset * 2f && headH > inset * 2f)
+                    {
+                        canvas.FillColor = _theme.PanelBackgroundColor;
+                        canvas.FillEllipse(
+                            x - drawR + inset,
+                            headTop + inset,
+                            headW - inset * 2f,
+                            headH - inset * 2f);
+                    }
                 }
 
                 if (duration != NoteDuration.Whole)
@@ -3778,7 +3831,7 @@ namespace musicmate.Drawables
 
                 canvas.FontColor = ApplyAlpha(ink, fadeAlpha);
 
-                float bodyFont = _layout.Sls * 2.2f * BodyAccidentalGlyphScale();
+                float bodyFont = BodyAccidentalFontSize(isFlat);
 
                 if (isFlat)
                 {
@@ -3787,7 +3840,7 @@ namespace musicmate.Drawables
                     {
                         float symH = symW * 1.1f;
                         float yTop = BodyAccidentalDrawTop(y, symH, isFlat: true, isNatural: false);
-                        canvas.FontSize = BodyAccidentalFontSize();
+                        canvas.FontSize = BodyAccidentalFontSize(isFlat: true);
                         canvas.DrawString(glyph, boxLeft, yTop, boxW, symH,
                             HorizontalAlignment.Right, VerticalAlignment.Center);
                     }
@@ -3998,7 +4051,7 @@ namespace musicmate.Drawables
 
             bool useFlats = KeySignatureUsesFlats(_session.Key, _session.SelectedScale);
             string glyph  = useFlats ? "\uE260" : "\uE262";
-            float fontSize  = KeySigAccidentalFontSize();
+            float fontSize  = KeySigAccidentalFontSize(useFlats);
             var pitches = useFlats ? KeySigFlatPitches : KeySigSharpPitches;
 
             canvas.SaveState();

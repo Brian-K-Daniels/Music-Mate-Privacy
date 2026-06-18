@@ -56,33 +56,42 @@
 
   <ScrollView>
     <VerticalStackLayout x:Name="AdvancedMainLayout" Spacing="16" HorizontalOptions="Fill" Padding="16, 8">
-      <!-- Advanced Settings Section -->
+      <!-- Practice composition % -->
       <Frame BorderColor="#8B4513" CornerRadius="10" Padding="12" Margin="0,0,0,0" BackgroundColor="#F8F8FF">
         <VerticalStackLayout Spacing="10">
-          <Label Text="Advanced Audio &amp; Pitch Settings" FontAttributes="Bold" FontSize="16" TextColor="#8B4513"/>
+          <Label Text="Practice composition %" FontAttributes="Bold" FontSize="16" TextColor="#8B4513"/>
 
-          <Grid ColumnDefinitions="160,*,60" RowSpacing="8" >
+          <Grid ColumnDefinitions="160,*,60" RowSpacing="8">
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto"/>
               <RowDefinition Height="Auto"/>
               <RowDefinition Height="Auto"/>
               <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
-            <Label Grid.Row="0" Grid.Column="0" Text="Pitch Tolerance (cents)" VerticalOptions="Center"/>
-            <Slider Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Tolerance, Mode=TwoWay}"/>
-            <Label Grid.Row="0" Grid.Column="2" Text="{Binding Tolerance}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
 
-            <Label Grid.Row="1" Grid.Column="0" Text="RMS Threshold" VerticalOptions="Center"/>
-            <Slider Grid.Row="1" Grid.Column="1" Minimum="0.0" Maximum="0.1" Value="{Binding RmsThreshold, Mode=TwoWay}"/>
-            <Label Grid.Row="1" Grid.Column="2" Text="{Binding RmsThreshold, StringFormat='{0:F3}'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+            <Label Grid.Row="0" Grid.Column="0" Text="Tunes" VerticalOptions="Center"/>
+            <Slider x:Name="PcTunesSlider" Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="100"
+                    Value="{Binding PcTunesDraft, Mode=TwoWay}"
+                    DragCompleted="OnPcTunesDragCompleted"/>
+            <Label Grid.Row="0" Grid.Column="2" Text="{Binding PcTunesDraft}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
 
-            <Label Grid.Row="2" Grid.Column="0" Text="Cooldown (ms)" VerticalOptions="Center"/>
-            <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="300" Value="{Binding CooldownMs, Mode=TwoWay}"/>
-            <Label Grid.Row="2" Grid.Column="2" Text="{Binding CooldownMs}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+            <Label Grid.Row="1" Grid.Column="0" Text="Random" VerticalOptions="Center"/>
+            <Slider x:Name="PcRandomSlider" Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="100"
+                    Value="{Binding PcRandomDraft, Mode=TwoWay}"
+                    DragCompleted="OnPcRandomDragCompleted"/>
+            <Label Grid.Row="1" Grid.Column="2" Text="{Binding PcRandomDraft}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
 
-            <Label Grid.Row="3" Grid.Column="0" Text="Pitch Offset (cents)" VerticalOptions="Center"/>
-            <Slider Grid.Row="3" Grid.Column="1" Minimum="-50" Maximum="50" Value="{Binding PitchOffsetCents, Mode=TwoWay}"/>
-            <Label Grid.Row="3" Grid.Column="2" Text="{Binding PitchOffsetCents, StringFormat='{0:F1}'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+            <Label Grid.Row="2" Grid.Column="0" Text="Scales" VerticalOptions="Center"/>
+            <Slider x:Name="PcScalesSlider" Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="100"
+                    Value="{Binding PcScalesDraft, Mode=TwoWay}"
+                    DragCompleted="OnPcScalesDragCompleted"/>
+            <Label Grid.Row="2" Grid.Column="2" Text="{Binding PcScalesDraft}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+
+            <Label Grid.Row="3" Grid.Column="0" Text="Arpeggios" VerticalOptions="Center"/>
+            <Slider x:Name="PcArpeggiosSlider" Grid.Row="3" Grid.Column="1" Minimum="0" Maximum="100"
+                    Value="{Binding PcArpeggiosDraft, Mode=TwoWay}"
+                    DragCompleted="OnPcArpeggiosDragCompleted"/>
+            <Label Grid.Row="3" Grid.Column="2" Text="{Binding PcArpeggiosDraft}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
           </Grid>
         </VerticalStackLayout>
       </Frame>
@@ -126,6 +135,37 @@
             <Slider Grid.Row="4" Grid.Column="1" Minimum="1" Maximum="20" Value="{Binding MinNotesPerSession, Mode=TwoWay}"/>
             <Label Grid.Row="4" Grid.Column="2" Text="{Binding MinNotesPerSession}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
             <Label Grid.Row="4" Grid.Column="3" Text="{Binding CurrentSessionNotesCount}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+          </Grid>
+        </VerticalStackLayout>
+      </Frame>
+
+      <!-- Advanced Settings Section -->
+      <Frame BorderColor="#8B4513" CornerRadius="10" Padding="12" Margin="0,16,0,0" BackgroundColor="#F8F8FF">
+        <VerticalStackLayout Spacing="10">
+          <Label Text="Advanced Audio &amp; Pitch Settings" FontAttributes="Bold" FontSize="16" TextColor="#8B4513"/>
+
+          <Grid ColumnDefinitions="160,*,60" RowSpacing="8" >
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <Label Grid.Row="0" Grid.Column="0" Text="Pitch Tolerance (cents)" VerticalOptions="Center"/>
+            <Slider Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Tolerance, Mode=TwoWay}"/>
+            <Label Grid.Row="0" Grid.Column="2" Text="{Binding Tolerance}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+
+            <Label Grid.Row="1" Grid.Column="0" Text="RMS Threshold" VerticalOptions="Center"/>
+            <Slider Grid.Row="1" Grid.Column="1" Minimum="0.0" Maximum="0.1" Value="{Binding RmsThreshold, Mode=TwoWay}"/>
+            <Label Grid.Row="1" Grid.Column="2" Text="{Binding RmsThreshold, StringFormat='{0:F3}'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+
+            <Label Grid.Row="2" Grid.Column="0" Text="Cooldown (ms)" VerticalOptions="Center"/>
+            <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="300" Value="{Binding CooldownMs, Mode=TwoWay}"/>
+            <Label Grid.Row="2" Grid.Column="2" Text="{Binding CooldownMs}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+
+            <Label Grid.Row="3" Grid.Column="0" Text="Pitch Offset (cents)" VerticalOptions="Center"/>
+            <Slider Grid.Row="3" Grid.Column="1" Minimum="-50" Maximum="50" Value="{Binding PitchOffsetCents, Mode=TwoWay}"/>
+            <Label Grid.Row="3" Grid.Column="2" Text="{Binding PitchOffsetCents, StringFormat='{0:F1}'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
           </Grid>
         </VerticalStackLayout>
       </Frame>

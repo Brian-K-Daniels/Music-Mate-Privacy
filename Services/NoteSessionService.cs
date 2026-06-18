@@ -356,8 +356,15 @@ namespace musicmate.Services
         private const string PrefKeySignatureKey = "musicmate.Key";
         private const string PrefSelectedScaleKey = "musicmate.SelectedScale";
         private const string PrefTuneKey = "musicmate.Tune";
+        private const string PrefSelectedArpeggioIdKey = "musicmate.SelectedArpeggioId";
+        private const string PrefSelectedArpeggioRootKey = "musicmate.SelectedArpeggioRoot";
+        private const string PrefSelectedArpeggioDisplayKey = "musicmate.SelectedArpeggioDisplay";
         private const string PrefPlaybackBpmKey = "musicmate.PlaybackBpm";
         private const string PrefMusicBpmKey = "musicmate.MusicBpm";
+        private const string PrefPcTunesKey = "musicmate.PcTunes";
+        private const string PrefPcRandomKey = "musicmate.PcRandom";
+        private const string PrefPcScalesKey = "musicmate.PcScales";
+        private const string PrefPcArpeggiosKey = "musicmate.PcArpeggios";
         private const string PrefPitchMethodKey = "musicmate.PitchMethod";
         private const string PrefToleranceKey = "musicmate.Tolerance";
         private const string PrefAutoStartKey = "musicmate.AutoStart";
@@ -474,11 +481,23 @@ namespace musicmate.Services
         private string _key = Preferences.Get(PrefKeySignatureKey, "C");
         private string _selectedScale = Preferences.Get(PrefSelectedScaleKey, "Major");
         private string? _tune = Preferences.Get(PrefTuneKey, "Selected Scale");
+        private string _selectedArpeggioId = Preferences.Get(PrefSelectedArpeggioIdKey, "major-triad");
+        private string _selectedArpeggioRoot = Preferences.Get(PrefSelectedArpeggioRootKey, "C4");
+        private string _selectedArpeggioDisplay = Preferences.Get(PrefSelectedArpeggioDisplayKey, "C major triad");
         private int _playbackBpm = Preferences.Get(PrefPlaybackBpmKey, 100);
         private int _musicBpm = Preferences.Get(PrefMusicBpmKey, 100);
         private int _tolerance = Preferences.Get(PrefToleranceKey, DefaultTolerance);
         public const int DefaultTolerance = 50;
         public const int DefaultMusicBpm = 100;
+        public const int DefaultPlaybackBpm = 100;
+        public const int DefaultPcTunes = 20;
+        public const int DefaultPcRandom = 60;
+        public const int DefaultPcScales = 20;
+        public const int DefaultPcArpeggios = 0;
+        private int _pcTunes = Preferences.Get(PrefPcTunesKey, DefaultPcTunes);
+        private int _pcRandom = Preferences.Get(PrefPcRandomKey, DefaultPcRandom);
+        private int _pcScales = Preferences.Get(PrefPcScalesKey, DefaultPcScales);
+        private int _pcArpeggios = Preferences.Get(PrefPcArpeggiosKey, DefaultPcArpeggios);
         private int _accidentalPercent = Preferences.Get(PrefAccidentalPercentKey, 0);
         private int _correctThreshold = Preferences.Get(PrefCorrectThresholdKey, 50);
         private double _pitchOffsetCents = Preferences.Get(PrefPitchOffsetCentsKey, DefaultPitchOffsetCents);
@@ -952,14 +971,15 @@ namespace musicmate.Services
             return set;
         }
 
-        public string BpmStatsDisplay =>
+        public string TimingStatsDisplay =>
             _timingAccuracyPercent.HasValue
                 ? $"Timing: {_timingAccuracyPercent.Value:F1}%"
                 : "Timing: N/A";
 
-        private void NotifyBpmStatsChanged()
+        private void NotifyTimingStatsChanged()
         {
-            OnPropertyChanged(nameof(BpmStatsDisplay));
+            OnPropertyChanged(nameof(TimingStatsDisplay));
+            OnPropertyChanged(nameof(DetectedBpm));
         }
 
         private static string[] SpellDescendingDegrees(
@@ -1137,6 +1157,7 @@ namespace musicmate.Services
                 OnPropertyChanged(nameof(SelectedScale));
             }
         }
+        /// <summary>Playback tempo (BPM) when the device plays notes (Auto Play).</summary>
         public int PlaybackBpm
         {
             get => _playbackBpm;
@@ -1152,6 +1173,7 @@ namespace musicmate.Services
                 OnPropertyChanged(nameof(PlaybackBpm));
             }
         }
+        /// <summary>Written tempo (BPM) shown on the score (quarter note = value).</summary>
         public int MusicBpm
         {
             get => _musicBpm;
@@ -1167,6 +1189,126 @@ namespace musicmate.Services
                 OnPropertyChanged(nameof(MusicBpm));
             }
         }
+
+        /// <summary>
+        /// Future pool weights (sum 100): practice tunes, random, scales, arpeggios.
+        /// Subsets of each master collection will vary by Level when wired into generation.
+        /// </summary>
+        public int PcTunes
+        {
+            get => _pcTunes;
+            set => SetSinglePracticeCompositionPercent(ref _pcTunes, PrefPcTunesKey, value, nameof(PcTunes));
+        }
+
+        public int PcRandom
+        {
+            get => _pcRandom;
+            set => SetSinglePracticeCompositionPercent(ref _pcRandom, PrefPcRandomKey, value, nameof(PcRandom));
+        }
+
+        public int PcScales
+        {
+            get => _pcScales;
+            set => SetSinglePracticeCompositionPercent(ref _pcScales, PrefPcScalesKey, value, nameof(PcScales));
+        }
+
+        public int PcArpeggios
+        {
+            get => _pcArpeggios;
+            set => SetSinglePracticeCompositionPercent(ref _pcArpeggios, PrefPcArpeggiosKey, value, nameof(PcArpeggios));
+        }
+
+        public void SetPracticeCompositionPercents(int tunes, int random, int scales, int arpeggios)
+        {
+            tunes = Math.Clamp(tunes, 0, 100);
+            random = Math.Clamp(random, 0, 100);
+            scales = Math.Clamp(scales, 0, 100);
+            arpeggios = Math.Clamp(arpeggios, 0, 100);
+            if (tunes + random + scales + arpeggios != 100)
+                return;
+
+            _pcTunes = tunes;
+            _pcRandom = random;
+            _pcScales = scales;
+            _pcArpeggios = arpeggios;
+            Preferences.Set(PrefPcTunesKey, _pcTunes);
+            Preferences.Set(PrefPcRandomKey, _pcRandom);
+            Preferences.Set(PrefPcScalesKey, _pcScales);
+            Preferences.Set(PrefPcArpeggiosKey, _pcArpeggios);
+            OnPropertyChanged(nameof(PcTunes));
+            OnPropertyChanged(nameof(PcRandom));
+            OnPropertyChanged(nameof(PcScales));
+            OnPropertyChanged(nameof(PcArpeggios));
+        }
+
+        /// <summary>
+        /// Redistributes the three unchanged categories so all four values sum to 100,
+        /// preserving their relative proportions.
+        /// </summary>
+        public static int[] RedistributePracticeComposition(int[] current, int changedIndex, int newValue)
+        {
+            if (current.Length != 4)
+                throw new ArgumentException("Expected four composition percentages.", nameof(current));
+            if (changedIndex < 0 || changedIndex > 3)
+                throw new ArgumentOutOfRangeException(nameof(changedIndex));
+
+            newValue = Math.Clamp(newValue, 0, 100);
+            var result = new int[4];
+            result[changedIndex] = newValue;
+
+            int remainder = 100 - newValue;
+            var otherIndices = new int[3];
+            int o = 0;
+            for (int i = 0; i < 4; i++)
+                if (i != changedIndex)
+                    otherIndices[o++] = i;
+
+            if (remainder <= 0)
+            {
+                for (int i = 0; i < 3; i++)
+                    result[otherIndices[i]] = 0;
+                return result;
+            }
+
+            int sumOthers = otherIndices.Sum(i => current[i]);
+            if (sumOthers == 0)
+            {
+                int each = remainder / 3;
+                int extra = remainder % 3;
+                for (int j = 0; j < 3; j++)
+                    result[otherIndices[j]] = each + (j < extra ? 1 : 0);
+                return result;
+            }
+
+            int assigned = 0;
+            for (int j = 0; j < 2; j++)
+            {
+                result[otherIndices[j]] = (int)Math.Round(
+                    remainder * (current[otherIndices[j]] / (double)sumOthers));
+                assigned += result[otherIndices[j]];
+            }
+
+            result[otherIndices[2]] = remainder - assigned;
+            return result;
+        }
+
+        public void ResetPracticeCompositionDefaults()
+        {
+            SetPracticeCompositionPercents(
+                DefaultPcTunes, DefaultPcRandom, DefaultPcScales, DefaultPcArpeggios);
+        }
+
+        private void SetSinglePracticeCompositionPercent(
+            ref int field, string prefKey, int value, string propertyName)
+        {
+            var clamped = Math.Clamp(value, 0, 100);
+            if (field == clamped)
+                return;
+            field = clamped;
+            Preferences.Set(prefKey, field);
+            OnPropertyChanged(propertyName);
+        }
+
         public int Tolerance
         {
             get => _tolerance;
@@ -1280,9 +1422,9 @@ namespace musicmate.Services
         /// </summary>
         private bool _requireSilenceBeforeNote;
 
-        // V3 sustain/rest earliest-start gate (uses PlaybackBpm as listening tempo)
+        // V3 sustain/rest earliest-start gate (uses MusicBpm as written tempo)
         private bool _rhythmStartGateEnabled;
-        private int _listeningGateBpm;
+        private int _rhythmGateMusicBpm;
         private double _rhythmGateUntilMs;
         private double _rhythmGateStartMs;
         private int _rhythmGateAcceptedIdx = -1;
@@ -1311,11 +1453,14 @@ namespace musicmate.Services
         private readonly List<(double OnsetMs, double ExpectedBeat)> _onsetData = new();
         private double? _timingAccuracyPercent;
 
-        // Deprecated BPM fields (kept for compatibility until all references are removed)
-        [Obsolete("Use least-squares onset timing instead")]
-        private double? _meanBpm;
-        [Obsolete("Use least-squares onset timing instead")]
-        private double? _stddevBpm;
+        /// <summary>Detected tempo (BPM) from the user's performance this session.</summary>
+        private int? _detectedBpm;
+
+        /// <summary>
+        /// Detected tempo in beats per minute from the user's playing this session.
+        /// Null until <see cref="FinalizeSessionStats"/> runs or when detection is unavailable.
+        /// </summary>
+        public int? DetectedBpm => _detectedBpm;
         public string? Tune
         {
             get => _tune;
@@ -1328,6 +1473,50 @@ namespace musicmate.Services
                     OnPropertyChanged(nameof(Tune));
                 }
             }
+        }
+
+        public string SelectedArpeggioId
+        {
+            get => _selectedArpeggioId;
+            set
+            {
+                if (string.IsNullOrWhiteSpace(value) || _selectedArpeggioId == value) return;
+                _selectedArpeggioId = value;
+                Preferences.Set(PrefSelectedArpeggioIdKey, _selectedArpeggioId);
+                OnPropertyChanged(nameof(SelectedArpeggioId));
+            }
+        }
+
+        public string SelectedArpeggioRoot
+        {
+            get => _selectedArpeggioRoot;
+            set
+            {
+                if (string.IsNullOrWhiteSpace(value) || _selectedArpeggioRoot == value) return;
+                _selectedArpeggioRoot = value;
+                Preferences.Set(PrefSelectedArpeggioRootKey, _selectedArpeggioRoot);
+                OnPropertyChanged(nameof(SelectedArpeggioRoot));
+            }
+        }
+
+        public string SelectedArpeggioDisplay
+        {
+            get => _selectedArpeggioDisplay;
+            set
+            {
+                if (string.IsNullOrWhiteSpace(value) || _selectedArpeggioDisplay == value) return;
+                _selectedArpeggioDisplay = value;
+                Preferences.Set(PrefSelectedArpeggioDisplayKey, _selectedArpeggioDisplay);
+                OnPropertyChanged(nameof(SelectedArpeggioDisplay));
+            }
+        }
+
+        public void SelectArpeggio(ArpeggioPattern pattern, string rootNote, string displayName)
+        {
+            SelectedArpeggioId = pattern.Id;
+            SelectedArpeggioRoot = rootNote;
+            SelectedArpeggioDisplay = displayName;
+            Tune = "Arpeggio";
         }
         private readonly Queue<double> _pitchMedianHistory = new();
 
@@ -1359,7 +1548,7 @@ namespace musicmate.Services
             _lockedPitchClassAfterAdvance = null;
             _requireSilenceBeforeNote = false;
             _rhythmStartGateEnabled = false;
-            _listeningGateBpm = 0;
+            _rhythmGateMusicBpm = 0;
             _rhythmGateUntilMs = 0;
             _rhythmGateStartMs = 0;
             _rhythmGateAcceptedIdx = -1;
@@ -1371,10 +1560,7 @@ namespace musicmate.Services
             // Clear timing data and stats
             _onsetData.Clear();
             _timingAccuracyPercent = null;
-            #pragma warning disable CS0618 // Type or member is obsolete
-            _meanBpm = null;
-            _stddevBpm = null;
-            #pragma warning restore CS0618
+            _detectedBpm = null;
             _lastCorrectNoteUtc = null;
             OmitMsAvgThreshold = Preferences.Get(PrefOmitMsAvgThresholdKey, 500);
             _lastWrongTimePerIndex.Clear();
@@ -1397,7 +1583,7 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// Enables sustain/rest earliest-start gating for V3 sessions using <see cref="PlaybackBpm"/>.
+        /// Enables sustain/rest earliest-start gating for V3 sessions using <see cref="MusicBpm"/>.
         /// </summary>
         public void ConfigureRhythmStartGates(bool enabled)
         {
@@ -1405,11 +1591,11 @@ namespace musicmate.Services
             if (!enabled || StaffDisplayMode != StaffDisplayMode.V3 || NotesToDraw.Count == 0)
             {
                 _rhythmStartGateEnabled = false;
-                _listeningGateBpm = 0;
+                _rhythmGateMusicBpm = 0;
                 return;
             }
 
-            _listeningGateBpm = Math.Clamp(PlaybackBpm, 40, 240);
+            _rhythmGateMusicBpm = Math.Clamp(MusicBpm, 30, 200);
             _rhythmStartGateEnabled = NotesToDraw.Any(n => n.GateBeatsAfterPrevious > 0);
         }
 
@@ -1417,7 +1603,7 @@ namespace musicmate.Services
             => _sessionStopwatch.Elapsed.TotalMilliseconds;
 
         private double BeatToGateMs(double beats)
-            => beats * 60000.0 / _listeningGateBpm;
+            => beats * 60000.0 / _rhythmGateMusicBpm;
 
         private void ArmRhythmGateAfterAdvance(int acceptedIdx)
         {
@@ -1649,11 +1835,13 @@ namespace musicmate.Services
         /// </summary>
         public void FinalizeSessionStats()
         {
+            _detectedBpm = ComputeDetectedBpmFromOnsets();
+
             // Need at least 3 notes for meaningful linear regression
             if (_onsetData.Count < 3)
             {
                 _timingAccuracyPercent = null;
-                NotifyBpmStatsChanged();
+                NotifyTimingStatsChanged();
                 TimingDiagnostics.Flush();
                 TimingDiagnostics.WriteSessionSummary();
                 return;
@@ -1664,7 +1852,7 @@ namespace musicmate.Services
             if (beatValues.Distinct().Count() < 2)
             {
                 _timingAccuracyPercent = null;
-                NotifyBpmStatsChanged();
+                NotifyTimingStatsChanged();
                 TimingDiagnostics.Flush();
                 TimingDiagnostics.WriteSessionSummary();
                 return;
@@ -1705,7 +1893,7 @@ namespace musicmate.Services
             }
 
             _timingAccuracyPercent = noteScores.Average();
-            NotifyBpmStatsChanged();
+            NotifyTimingStatsChanged();
             TimingDiagnostics.Flush();
             TimingDiagnostics.WriteSessionSummary();
         }
@@ -1716,11 +1904,13 @@ namespace musicmate.Services
         public double? GetTimingAccuracyPercent() => _timingAccuracyPercent;
 
         /// <summary>
-        /// Average playing tempo (BPM) from consecutive onset intervals, with IQR outlier removal.
+        /// Detected tempo (beats per minute) from consecutive user onsets, with IQR outlier removal.
         /// Each interval uses written beat spacing: BPM = 60000 × Δbeats / Δms.
         /// Returns null when fewer than 2 onsets or no valid intervals remain after filtering.
         /// </summary>
-        public int? GetAverageTempoBpm()
+        public int? GetDetectedBpm() => ComputeDetectedBpmFromOnsets();
+
+        private int? ComputeDetectedBpmFromOnsets()
         {
             if (_onsetData.Count < 2)
                 return null;
@@ -1750,6 +1940,9 @@ namespace musicmate.Services
             return (int)Math.Round(filtered.Average());
         }
 
+        [Obsolete("Use GetDetectedBpm() instead.")]
+        public int? GetAverageTempoBpm() => GetDetectedBpm();
+
         private static List<double> FilterOutliersIqr(List<double> values)
         {
             if (values.Count < 4)
@@ -1774,17 +1967,9 @@ namespace musicmate.Services
             return sorted[lo] + (pos - lo) * (sorted[hi] - sorted[lo]);
         }
 
-        /// <summary>
-        /// [DEPRECATED] Returns old BPM-based timing stats for backward compatibility.
-        /// Use GetTimingAccuracyPercent() instead.
-        /// </summary>
-        [Obsolete("Use GetTimingAccuracyPercent() for least-squares onset timing")]
+        [Obsolete("Use GetDetectedBpm() instead.")]
         public (double? MeanBpm, double? StdDevBpm) GetFinalBpmStats()
-        {
-            #pragma warning disable CS0618
-            return (_meanBpm, _stddevBpm);
-            #pragma warning restore CS0618
-        }
+            => (_detectedBpm, null);
         public bool UpdateFeedbackForCurrent(double freq, (bool correct, int cents) result)
         {
 
@@ -1964,6 +2149,8 @@ namespace musicmate.Services
         }
         private async Task<string[]> BuildRandomSequenceAsync()
         {
+            // Future: use PcTunes / PcRandom / PcScales / PcArpeggios to pick a pool category
+            // before drawing from Level-specific subsets of each master collection.
             // 1. Build all notes in the scale between LowestNote and HighestNote (inclusive)
             var availableNotes = new List<string>();
             for (int midi = NoteNameToMidi(LowestNote); midi <= NoteNameToMidi(HighestNote); midi++)
@@ -2205,6 +2392,97 @@ namespace musicmate.Services
 
             return result.ToArray();
         }
+
+        /// <summary>
+        /// Builds normal V3 <see cref="GeneratedNote"/> objects from the arpeggio catalog
+        /// without wiring arpeggios into Random weighting.
+        /// </summary>
+        public List<GeneratedNote> BuildArpeggioNotes(
+            ArpeggioPattern? pattern = null,
+            string? rootNote = null,
+            bool descendingAfterAscending = true)
+        {
+            pattern ??= ArpeggioCatalog.MajorTriad;
+            rootNote = string.IsNullOrWhiteSpace(rootNote) ? $"{Key}4" : rootNote.Trim();
+
+            var builder = new ArpeggioSequenceBuilder
+            {
+                Key = Key,
+                Scale = SelectedScale,
+                LowestNote = LowestNote,
+                HighestNote = HighestNote,
+                Duration = NoteDuration.Quarter
+            };
+
+            var notes = builder.Build(pattern, rootNote, descendingAfterAscending);
+            Debug.WriteLine(
+                $"[Arpeggio] {pattern.DisplayName} root={rootNote} " +
+                $"range={LowestNote}-{HighestNote}: {string.Join(" ", notes.Select(n => n.SpelledName))}");
+            return notes;
+        }
+
+        /// <summary>
+        /// Loads an arpeggio through the existing listen/play session state.  The returned
+        /// notes are the displayed V3 rhythm order; callers assign them to the V3 drawable.
+        /// </summary>
+        public Task<List<GeneratedNote>> LoadArpeggioAsync(
+            ArpeggioPattern? pattern = null,
+            string? rootNote = null,
+            bool descendingAfterAscending = true)
+        {
+            var previewNotes = BuildArpeggioNotes(pattern, rootNote, descendingAfterAscending);
+
+            Reset();
+            CurrentTune = null;
+            StaffDisplayMode = StaffDisplayMode.V3;
+
+            var rhythmSlots = RhythmStartGate.BuildSlots(previewNotes);
+            int sessionIdx = 0;
+            int pitchIdx = 0;
+            foreach (var note in previewNotes)
+            {
+                if (note.IsRest)
+                    continue;
+
+                var slot = rhythmSlots[pitchIdx++];
+                string name = ResolveWrittenNoteName(
+                    note.SpelledName, note.MidiNumber, note.Letter, note.Octave, Key, SelectedScale);
+
+                NotesToDraw.Add(new NoteInfo
+                {
+                    Midi = note.MidiNumber,
+                    Name = name,
+                    TargetFreq = note.TargetFrequency,
+                    X = 0f,
+                    Duration = note.Duration,
+                    StartBeat = slot.StartBeat,
+                    DurationBeats = slot.DurationBeats,
+                    GateBeatsAfterPrevious = slot.GateBeatsAfterPrevious
+                });
+                FeedbackViewModels.Add(new FeedbackItem(sessionIdx++, 0, 0, false));
+            }
+
+            ConfigureRhythmStartGates(StaffDisplayMode == StaffDisplayMode.V3);
+            Debug.WriteLine(
+                $"[Arpeggio] Loaded {NotesToDraw.Count} playable notes into session state.");
+
+            return Task.FromResult(previewNotes);
+        }
+
+#if DEBUG
+        public List<GeneratedNote> BuildArpeggioPreviewNotes(
+            ArpeggioPattern? pattern = null,
+            string? rootNote = null,
+            bool descendingAfterAscending = true)
+            => BuildArpeggioNotes(pattern, rootNote, descendingAfterAscending);
+
+        public Task<List<GeneratedNote>> LoadArpeggioPreviewAsync(
+            ArpeggioPattern? pattern = null,
+            string? rootNote = null,
+            bool descendingAfterAscending = true)
+            => LoadArpeggioAsync(pattern, rootNote, descendingAfterAscending);
+#endif
+
         public bool ShouldIgnoreAudio(DateTime utcNow)
         {
             return utcNow < IgnoreAudioUntilUtc;

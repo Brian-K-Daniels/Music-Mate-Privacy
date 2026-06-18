@@ -219,18 +219,18 @@
             </Border>
           </VerticalStackLayout>
 
-          <!-- Arpeggios (placeholder — no items yet) -->
+          <!-- Arpeggios -->
           <VerticalStackLayout Grid.Row="1" Grid.Column="0" Spacing="4">
             <Label Text="Arpeggios"
                    FontSize="13"
                    FontAttributes="Bold"
                    TextColor="#333333"
                    HorizontalOptions="Center" />
-            <Border Style="{StaticResource WtpPlayModePickerBorder}" Opacity="0.55">
-              <Grid BackgroundColor="#EEEEEE">
+            <Border Style="{StaticResource WtpPlayModePickerBorder}">
+              <Grid BackgroundColor="White">
                 <Picker x:Name="ArpeggiosPicker"
                         Style="{StaticResource WtpPlayModePicker}"
-                        IsEnabled="False" />
+                        SelectedIndexChanged="OnArpeggiosPickerChanged" />
               </Grid>
             </Border>
           </VerticalStackLayout>

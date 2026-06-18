@@ -241,9 +241,9 @@ namespace musicmate.ViewModels
         public string HiHeader => "Hi " + HiSortIndicator;
         public string LoHeader => "Lo " + LoSortIndicator;
         public string InstrumentHeader => "Inst " + InstrumentSortIndicator;
-        public string TempoHeader => "Tempo " + TempoSortIndicator;
-        public string TempoCVHeader => "Tempo CV " + TempoCVSortIndicator;
-        public string TempoSDHeader => "Tempo SD " + TempoSDSortIndicator;
+        public string TempoHeader => "Detected BPM " + TempoSortIndicator;
+        public string TempoCVHeader => "Detected BPM CV " + TempoCVSortIndicator;
+        public string TempoSDHeader => "Detected BPM SD " + TempoSDSortIndicator;
 
         // Returns a sort key for a note name such as "C#4" or "Bb3".
         // Priority: octave (largest), then letter (C<D<E<F<G<A<B), then accidental (flat < natural < sharp).

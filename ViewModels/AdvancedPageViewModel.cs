@@ -79,7 +79,13 @@ namespace musicmate.ViewModels
                     case nameof(NoteSessionService.WrongDebounceMs):
                         OnPropertyChanged(nameof(WrongDebounceMs));
                         break;
-                    case nameof(NoteSessionService.BpmStatsDisplay):
+                    case nameof(NoteSessionService.PcTunes):
+                    case nameof(NoteSessionService.PcRandom):
+                    case nameof(NoteSessionService.PcScales):
+                    case nameof(NoteSessionService.PcArpeggios):
+                        SyncCompositionDraftsFromSession();
+                        break;
+                    case nameof(NoteSessionService.TimingStatsDisplay):
                     case nameof(NoteSessionService.SessionCompleted):
                         RefreshCurrentSessionMetrics();
                         break;
@@ -207,6 +213,58 @@ namespace musicmate.ViewModels
         {
             get => Preferences.Default.Get("LevelUp.MinNotes", LevelUpService.DefaultMinNotesPerSession);
             set { Preferences.Default.Set("LevelUp.MinNotes", value); OnPropertyChanged(nameof(MinNotesPerSession)); }
+        }
+
+        public int PcTunesDraft
+        {
+            get => _pcTunesDraft;
+            set { _pcTunesDraft = value; OnPropertyChanged(nameof(PcTunesDraft)); }
+        }
+
+        public int PcRandomDraft
+        {
+            get => _pcRandomDraft;
+            set { _pcRandomDraft = value; OnPropertyChanged(nameof(PcRandomDraft)); }
+        }
+
+        public int PcScalesDraft
+        {
+            get => _pcScalesDraft;
+            set { _pcScalesDraft = value; OnPropertyChanged(nameof(PcScalesDraft)); }
+        }
+
+        public int PcArpeggiosDraft
+        {
+            get => _pcArpeggiosDraft;
+            set { _pcArpeggiosDraft = value; OnPropertyChanged(nameof(PcArpeggiosDraft)); }
+        }
+
+        private int _pcTunesDraft;
+        private int _pcRandomDraft;
+        private int _pcScalesDraft;
+        private int _pcArpeggiosDraft;
+
+        public void LoadCompositionPercentsFromSession() => SyncCompositionDraftsFromSession();
+
+        public void CommitCompositionPercent(int changedIndex, int newValue)
+        {
+            var current = new[]
+            {
+                _session.PcTunes, _session.PcRandom, _session.PcScales, _session.PcArpeggios
+            };
+            var redistributed = NoteSessionService.RedistributePracticeComposition(
+                current, changedIndex, newValue);
+            _session.SetPracticeCompositionPercents(
+                redistributed[0], redistributed[1], redistributed[2], redistributed[3]);
+            SyncCompositionDraftsFromSession();
+        }
+
+        private void SyncCompositionDraftsFromSession()
+        {
+            PcTunesDraft = _session.PcTunes;
+            PcRandomDraft = _session.PcRandom;
+            PcScalesDraft = _session.PcScales;
+            PcArpeggiosDraft = _session.PcArpeggios;
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
