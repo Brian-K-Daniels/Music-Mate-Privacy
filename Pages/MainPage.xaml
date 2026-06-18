@@ -14,23 +14,8 @@
     <Grid x:Name="TitleMarqueeGrid"
           ColumnDefinitions="Auto,Auto,*,Auto" HeightRequest="32" VerticalOptions="Fill"
           BackgroundColor="#8B0000">
-      <Label Text="Home  "
-             TextColor="White"
-             FontAttributes="Bold"
-             FontSize="18"
-             VerticalOptions="Center"
-             HorizontalOptions="Start"
-             Grid.Column="0" />
-      <Label x:Name="StatusLabelShell"
-             Text="{Binding Source={x:Static services:StatusService.Instance}, Path=StatusMessage}"
-             TextColor="Yellow"
-             FontAttributes="Bold"
-             FontSize="10"
-             VerticalOptions="Center"
-             HorizontalOptions="Start"
-             Grid.Column="2"/>
       <!-- 38dp slot preserves horizontal center for the play overlay below. -->
-      <Grid Grid.Column="1"
+      <Grid Grid.Column="0"
             WidthRequest="38"
             HeightRequest="32"
             VerticalOptions="Center"
@@ -50,6 +35,21 @@
           </Border.GestureRecognizers>
         </Border>
       </Grid>
+      <Label Text="Home  "
+             TextColor="White"
+             FontAttributes="Bold"
+             FontSize="18"
+             VerticalOptions="Center"
+             HorizontalOptions="Start"
+             Grid.Column="1" />
+      <Label x:Name="StatusLabelShell"
+             Text="{Binding Source={x:Static services:StatusService.Instance}, Path=StatusMessage}"
+             TextColor="Yellow"
+             FontAttributes="Bold"
+             FontSize="10"
+             VerticalOptions="Center"
+             HorizontalOptions="Start"
+             Grid.Column="2"/>
       <Image Source="logo.png"
              HeightRequest="32"
              WidthRequest="32"
@@ -523,8 +523,8 @@
                         VerticalOptions="Fill" HorizontalOptions="Fill"
                         SelectedIndexChanged="V3HomeInstrumentPicker_SelectedIndexChanged" />
               </Border>
-              <Label Grid.Column="2" Text="Key" FontSize="10" TextColor="#333333" VerticalOptions="Center"/>
-              <Border Grid.Column="3" Style="{StaticResource CompactBrownBox}">
+              <Label x:Name="V3HomeKeyLabel" Grid.Column="2" Text="Key" FontSize="10" TextColor="#333333" VerticalOptions="Center"/>
+              <Border x:Name="V3HomeKeyBorder" Grid.Column="3" Style="{StaticResource CompactBrownBox}">
                 <Picker x:Name="V3HomeKeyPicker"
                         WidthRequest="50" HeightRequest="28" FontSize="10"
                         TextColor="#000000" BackgroundColor="White"

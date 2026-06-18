@@ -77,10 +77,6 @@ namespace musicmate.Pages
         private CancellationTokenSource? _sessionStartCts;
         private bool _suppressSessionRegenerate;
         private const string ChildLevelPrefKey = "ChildHome.Level";
-#if DEBUG //  2026.06.18 0935 TEMP BLOCK
-        private static readonly bool UseArpeggioPreview = false;//  2026.06.18 0935 
-        private const string ArpeggioPreviewRootNote = "Bb3"; //  2026.06.18 0935 
-#endif //  2026.06.18 0935 
         private readonly Dictionary<string, ArpeggioPickerChoice> _arpeggioPickerChoices = new(StringComparer.Ordinal);
 #pragma warning restore CS0414
 
@@ -768,6 +764,8 @@ namespace musicmate.Pages
                     await Task.Delay(20);
 
                 await UpdateV3DisplayAsync();
+                if (_session.Tune == "Arpeggio")
+                    StatusService.Instance.StatusMessage = GetCurrentPlayItemName();
             }
             else if (_session.Tune != "Tuner")
             {
@@ -1109,12 +1107,17 @@ namespace musicmate.Pages
                         ?? ArpeggioCatalog.MajorTriad;
                     var allNotes = await _session.LoadArpeggioAsync(pattern, _session.SelectedArpeggioRoot);
 
-                    upperFlat = allNotes;
-                    lowerFlat = new List<GeneratedNote>();
+                    const int arpeggioUpperMeasureCount = 4;
+                    upperFlat = allNotes
+                        .Where(n => (n.MeasureIndex ?? 0) < arpeggioUpperMeasureCount)
+                        .ToList();
+                    lowerFlat = allNotes
+                        .Where(n => (n.MeasureIndex ?? 0) >= arpeggioUpperMeasureCount)
+                        .ToList();
                     upperBarBeats = ComputeNewBarBeats(upperFlat, existingUpper);
-                    lowerBarBeats = new List<double>();
+                    lowerBarBeats = ComputeNewBarBeats(lowerFlat, existingLower);
 
-                    _v3SeqNextMeasureIndex = 0;
+                    _v3SeqNextMeasureIndex = 8;
                     _v3SeqNextBeatOffset = allNotes.Sum(n => n.BeatDuration);
                     _v3SeqNextGlobalNoteIndex = allNotes.Count(n => !n.IsRest);
                     _v3LowerMeasureIndex = _v3SeqNextMeasureIndex;
@@ -1329,26 +1332,7 @@ namespace musicmate.Pages
                 // ── Push to V3 drawable ────────────────────────────────────────────
                 var v3Drawable = _v3Drawable;
                 if (v3Drawable == null) return;
-#if DEBUG //  2026.06.18 0935 TEMP BLOCK
-                if (UseArpeggioPreview) //  2026.06.18 0935 
-                { //  2026.06.18 0935 
-                    var preview = await _session.LoadArpeggioPreviewAsync( //  2026.06.18 0935 
-                        ArpeggioCatalog.MajorTriad, //  2026.06.18 0935 
-                        rootNote: ArpeggioPreviewRootNote); //  2026.06.18 0935 
-                    upperFlat = preview; //  2026.06.18 0935 
-                    lowerFlat = new List<GeneratedNote>(); //  2026.06.18 0935 
-                    upperBarBeats = ComputeNewBarBeats(upperFlat, new HashSet<double>()); //  2026.06.18 0935 
-                    lowerBarBeats = new List<double>(); //  2026.06.18 0935 
-                    v3Drawable.UpperHasEndBar = false; //  2026.06.18 0935 
-                    _v3SeqNextMeasureIndex = 0; //  2026.06.18 0935 
-                    _v3SeqNextBeatOffset = upperFlat.Sum(n => n.BeatDuration); //  2026.06.18 0935 
-                    _v3SeqNextGlobalNoteIndex = upperFlat.Count(n => !n.IsRest); //  2026.06.18 0935 
-                    _v3LowerMeasureIndex = _v3SeqNextMeasureIndex; //  2026.06.18 0935 
-                    _v3LowerBeatOffset = _v3SeqNextBeatOffset; //  2026.06.18 0935 
-                    _v3LowerGlobalNoteIndex = _v3SeqNextGlobalNoteIndex; //  2026.06.18 0935 
-                    StatusService.Instance.StatusMessage = $"DEBUG arpeggio preview: {ArpeggioPreviewRootNote} major triad"; //  2026.06.18 0935 
-                } //  2026.06.18 0935 
-#endif //  2026.06.18 0935 
+
                 v3Drawable.UpperNotes      = upperFlat;
                 v3Drawable.LowerNotes      = lowerFlat;
                 v3Drawable.UpperBarBeats   = upperBarBeats;
@@ -2094,6 +2078,28 @@ namespace musicmate.Pages
             UpdateV3PlayButtonPosition();
         }
 
+        private string GetCurrentPlayItemName()
+        {
+            if (V3LayoutTestTune.IsEnabled)
+                return "Fixed Tune";
+
+            if (_session.Tune == "Tuner")
+                return "Tuner";
+
+            if (_session.Tune == "Arpeggio")
+                return string.IsNullOrWhiteSpace(_session.SelectedArpeggioDisplay)
+                    ? "Arpeggio"
+                    : _session.SelectedArpeggioDisplay;
+
+            if (_session.Tune == "Practice Tune")
+                return _session.CurrentTune?.Title ?? "Practice Tune";
+
+            if (_session.IsRandomMode)
+                return "Random";
+
+            return _session.SelectedScale ?? "Selected Scale";
+        }
+
         private async void OnStartStopToggleClicked(object? sender, EventArgs e)
         {
             if (_isRunning)
@@ -2116,8 +2122,7 @@ namespace musicmate.Pages
                         PickChildSessionSettingsIfNeeded(preserveRepeatSameTune: false);
                     await RegenerateNotesAsync();
 
-                    StatusService.Instance.StatusMessage =
-                        "Tap GO and play the notes. Tap Play for 'phone to play.";
+                    StatusService.Instance.StatusMessage = GetCurrentPlayItemName();
                 }
                 catch (Exception ex)
                 {
@@ -2130,7 +2135,7 @@ namespace musicmate.Pages
                 _holdResultForChildSession = false;
                 _session.SessionCompleted = false;
                 _savedNotesToRepeat = null;
-                StatusService.Instance.StatusMessage = "Listening, go ahead and play!";
+                StatusService.Instance.StatusMessage = GetCurrentPlayItemName();
                 await StartListeningAndEvaluatingAsync(forceNewNotes: true);
             }
         }
@@ -2172,6 +2177,7 @@ namespace musicmate.Pages
                 UpdateKeyPickerSelection();
                 UpdateScaleTunePicker();
                 UpdateConcertKeyLabel();
+                UpdateKeyPickerVisibility();
             }
             finally
             {
@@ -2920,9 +2926,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                 // Assign a fresh session ID so all NoteAttempts from this run are grouped together.
                 _currentSessionId = Guid.NewGuid().ToString();
 
-                StatusService.Instance.StatusMessage = playBack
-                    ? "Playing… tap Stop to end playback"
-                    : "Listening, tap red square to stop";
+                StatusService.Instance.StatusMessage = GetCurrentPlayItemName();
                 Debug.WriteLine($"[Start] Starting listening, playBack={playBack}, forceNewNotes={forceNewNotes}");
                 SetButtonStates(true, keepPlayEnabled: playBack);
 
@@ -3289,8 +3293,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                 if (cancelled)
                 {
                     SetButtonStates(false);
-                    StatusService.Instance.StatusMessage =
-                        "Stopped. Tap GO to listen or Play to hear the tune.";
+                    StatusService.Instance.StatusMessage = GetCurrentPlayItemName();
                 }
             }
         }
@@ -3551,6 +3554,7 @@ async Task UpdateNoteStatsDatabaseAsync()
             {
                 UpdateConcertKeyLabel();
                 UpdateScaleTunePicker();
+                UpdateKeyPickerVisibility();
             }
 
             if (e.PropertyName == nameof(NoteSessionService.Instrument))
@@ -3619,11 +3623,21 @@ async Task UpdateNoteStatsDatabaseAsync()
 
         private void UpdateKeyPickerVisibility()
         {
-            var hide = _session.Tune == "Tuner";
-            KeyPicker.IsVisible = !hide;
-            KeyLabel.IsVisible = !hide;
-            KeyBorder.IsVisible = !hide;
-            ConcertKeyLabel.IsVisible = !hide;
+            var show = _session.Tune != "Tuner" && _session.Tune != "Arpeggio";
+            KeyPicker.IsVisible = show;
+            KeyPicker.IsEnabled = show;
+            KeyLabel.IsVisible = show;
+            KeyBorder.IsVisible = show;
+            ConcertKeyLabel.IsVisible = show;
+
+            if (_v3HomeKeyPicker != null)
+            {
+                _v3HomeKeyPicker.IsVisible = show;
+                _v3HomeKeyPicker.IsEnabled = show;
+            }
+            if (V3HomeKeyLabel != null) V3HomeKeyLabel.IsVisible = show;
+            if (V3HomeKeyBorder != null) V3HomeKeyBorder.IsVisible = show;
+            if (_v3HomeConcertKeyLabel != null) _v3HomeConcertKeyLabel.IsVisible = show;
         }
 
         private void UpdatePickersContainerVisibility()
@@ -3757,6 +3771,49 @@ async Task UpdateNoteStatsDatabaseAsync()
         private static string TrimOctave(string noteName)
             => new(noteName.TakeWhile(c => !char.IsDigit(c)).ToArray());
 
+        private static string GetArpeggioKeySignature(ArpeggioPickerChoice choice)
+        {
+            var root = NormalizeMajorKeyName(TrimOctave(choice.RootNote));
+            if (UsesMinorFamilyKeySignature(choice.Pattern))
+                return RelativeMajorKeyForMinorRoot(root);
+
+            return root;
+        }
+
+        private static bool UsesMinorFamilyKeySignature(ArpeggioPattern pattern)
+            => pattern.SemitoneIntervals.Contains(3) && !pattern.SemitoneIntervals.Contains(4);
+
+        private static string RelativeMajorKeyForMinorRoot(string minorRoot) => minorRoot switch
+        {
+            "A" => "C",
+            "E" => "G",
+            "B" => "D",
+            "F#" => "A",
+            "C#" => "E",
+            "G#" => "B",
+            "D#" => "F#",
+            "A#" => "C#",
+            "D" => "F",
+            "G" => "Bb",
+            "C" => "Eb",
+            "F" => "Ab",
+            "Bb" => "Db",
+            "Eb" => "Gb",
+            "Ab" => "Cb",
+            _ => minorRoot
+        };
+
+        private static string NormalizeMajorKeyName(string key) => key switch
+        {
+            "A#" => "Bb",
+            "D#" => "Eb",
+            "G#" => "Ab",
+            "E#" => "F",
+            "B#" => "C",
+            "Fb" => "E",
+            _ => key
+        };
+
         private void UpdateScaleTunePicker()
         {
             var items = BuildScaleTuneOptions();
@@ -3868,9 +3925,12 @@ async Task UpdateNoteStatsDatabaseAsync()
             if (_arpeggioPickerChoices.TryGetValue(selected, out var arpeggioChoice))
             {
                 _lastValidScaleTuneIndex = sourcePicker.SelectedIndex;
+                _session.Key = GetArpeggioKeySignature(arpeggioChoice);
                 _session.SelectArpeggio(arpeggioChoice.Pattern, arpeggioChoice.RootNote, arpeggioChoice.Label);
                 Preferences.Default.Set("SelectedTune", selected);
                 IsAutoRepeatVisible = true;
+                UpdateKeyPickerSelection();
+                UpdateConcertKeyLabel();
                 UpdateKeyPickerVisibility();
                 await RegenerateNotesAsync();
                 return;

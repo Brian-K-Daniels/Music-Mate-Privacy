@@ -1,6 +1,7 @@
 using musicmate.Models;
 using musicmate.Services;
 using musicmate.Utilities;
+using musicmate.V3LayoutDebug;
 using System.ComponentModel;
 using System.Diagnostics;
 
@@ -32,12 +33,14 @@ namespace musicmate.Pages
         private string[] _tuneTitles = Array.Empty<string>();
         private string[] _scaleOptions = Array.Empty<string>();
         private ArpeggioPickerChoice[] _arpeggioOptions = Array.Empty<ArpeggioPickerChoice>();
-        private static readonly string[] RandomTunerOptions = { "Random", "Tuner" };
+        private static readonly string[] RandomTunerOptions = { "Random", "Tuner", "Fixed Tune" };
 
         private sealed record ArpeggioPickerChoice(
-            string Label,
+            string PickerLabel,
+            string DisplayLabel,
             ArpeggioPattern Pattern,
-            string RootNote);
+            string RootNote,
+            string KeySignature);
 
         // ── Bindable UI-state properties ─────────────────────────────────────────
 
@@ -200,6 +203,7 @@ namespace musicmate.Pages
                     case nameof(NoteSessionService.ChildLevel):
                         RefreshArpeggioPickerOptions();
                         UpdatePlayModePickersFromSession();
+                        UpdateKeyPickerVisibility();
                         UpdateConcertKeyLabel();
                         break;
                     case nameof(NoteSessionService.IsRandomMode):
@@ -257,31 +261,68 @@ namespace musicmate.Pages
             var availability = ArpeggioCatalog.GetAvailabilityForLevel(level);
             var choices = new List<ArpeggioPickerChoice>();
             var seen = new HashSet<string>(StringComparer.Ordinal);
+            string selectedKey = NormalizeMajorKeyName(_session.Key);
 
-            foreach (var root in availability.RootOptions)
+            foreach (string rootKey in GetArpeggioRootKeys())
             {
-                int rootMidi = GetScaleDegreeMidi(_session.Key, _session.SelectedScale, root.ScaleDegree);
                 foreach (var pattern in availability.Patterns)
                 {
-                    string rootNote = ChooseArpeggioRootInRange(rootMidi);
-                    string label = $"{TrimOctave(rootNote)} {pattern.DisplayName.ToLowerInvariant()}";
-                    if (!seen.Add(label))
+                    string rootNote = ChooseArpeggioRootInRange(rootKey);
+                    string displayLabel = $"{TrimOctave(rootNote)} {pattern.DisplayName.ToLowerInvariant()}";
+                    if (!seen.Add($"{rootNote}|{pattern.Id}"))
                         continue;
-                    choices.Add(new ArpeggioPickerChoice(label, pattern, rootNote));
+
+                    var choice = new ArpeggioPickerChoice(
+                        PickerLabel: displayLabel,
+                        DisplayLabel: displayLabel,
+                        Pattern: pattern,
+                        RootNote: rootNote,
+                        KeySignature: GetArpeggioKeySignature(pattern, rootNote));
+
+                    bool matchesSelectedKey = choice.KeySignature == selectedKey;
+                    choices.Add(choice with
+                    {
+                        PickerLabel = matchesSelectedKey ? $"★ {displayLabel}" : displayLabel
+                    });
                 }
             }
 
-            _arpeggioOptions = choices.ToArray();
-            ArpeggiosPicker.ItemsSource = _arpeggioOptions.Select(o => o.Label).ToArray();
+            _arpeggioOptions = choices
+                .OrderByDescending(choice => choice.KeySignature == selectedKey)
+                .ThenBy(choice => TrimOctave(choice.RootNote), StringComparer.Ordinal)
+                .ThenBy(choice => choice.Pattern.FirstAvailableLevel)
+                .ThenBy(choice => choice.Pattern.DisplayName, StringComparer.Ordinal)
+                .ToArray();
+            ArpeggiosPicker.ItemsSource = _arpeggioOptions.Select(o => o.PickerLabel).ToArray();
         }
 
-        private string ChooseArpeggioRootInRange(int rootMidi)
+        private static IEnumerable<string> GetArpeggioRootKeys()
         {
+            yield return "C";
+            yield return "G";
+            yield return "D";
+            yield return "A";
+            yield return "E";
+            yield return "B";
+            yield return "F#";
+            yield return "C#";
+            yield return "F";
+            yield return "Bb";
+            yield return "Eb";
+            yield return "Ab";
+            yield return "Db";
+            yield return "Gb";
+            yield return "Cb";
+        }
+
+        private string ChooseArpeggioRootInRange(string rootKey)
+        {
+            const int baseOctave = 4;
+            int rootMidi = NoteSessionService.NoteNameToMidi($"{rootKey}{baseOctave}");
             int minMidi = NoteSessionService.NoteNameToMidi(_session.LowestNote);
             int maxMidi = NoteSessionService.NoteNameToMidi(_session.HighestNote);
-            bool preferFlats = KeyPrefersFlats(_session.Key);
             if (minMidi < 0 || maxMidi < minMidi)
-                return NoteSessionService.MidiToNoteName(rootMidi, preferFlats);
+                return $"{rootKey}{baseOctave}";
 
             int candidate = rootMidi;
             while (candidate < minMidi)
@@ -289,7 +330,8 @@ namespace musicmate.Pages
             while (candidate > maxMidi)
                 candidate -= 12;
 
-            return NoteSessionService.MidiToNoteName(candidate, preferFlats);
+            int octave = baseOctave + ((candidate - rootMidi) / 12);
+            return $"{rootKey}{octave}";
         }
 
         private static int GetScaleDegreeMidi(string key, string scale, int degree)
@@ -321,6 +363,55 @@ namespace musicmate.Pages
         private static string TrimOctave(string noteName)
             => new(noteName.TakeWhile(c => !char.IsDigit(c)).ToArray());
 
+        private static string GetArpeggioKeySignature(ArpeggioPickerChoice choice)
+            => choice.KeySignature;
+
+        private static string GetArpeggioKeySignature(ArpeggioPattern pattern, string rootNote)
+        {
+            var root = NormalizeMajorKeyName(TrimOctave(rootNote));
+
+            // The app currently stores major key-signature names only. Minor-family
+            // arpeggios therefore use their relative major signature until minor keys are modeled.
+            if (UsesMinorFamilyKeySignature(pattern))
+                return RelativeMajorKeyForMinorRoot(root);
+
+            return root;
+        }
+
+        private static bool UsesMinorFamilyKeySignature(ArpeggioPattern pattern)
+            => pattern.SemitoneIntervals.Contains(3) && !pattern.SemitoneIntervals.Contains(4);
+
+        private static string RelativeMajorKeyForMinorRoot(string minorRoot) => minorRoot switch
+        {
+            "A" => "C",
+            "E" => "G",
+            "B" => "D",
+            "F#" => "A",
+            "C#" => "E",
+            "G#" => "B",
+            "D#" => "F#",
+            "A#" => "C#",
+            "D" => "F",
+            "G" => "Bb",
+            "C" => "Eb",
+            "F" => "Ab",
+            "Bb" => "Db",
+            "Eb" => "Gb",
+            "Ab" => "Cb",
+            _ => minorRoot
+        };
+
+        private static string NormalizeMajorKeyName(string key) => key switch
+        {
+            "A#" => "Bb",
+            "D#" => "Eb",
+            "G#" => "Ab",
+            "E#" => "F",
+            "B#" => "C",
+            "Fb" => "E",
+            _ => key
+        };
+
         private void UpdatePlayModePickersFromSession(bool suppressClear = false)
         {
             if (_suppressPickerSync) return;
@@ -331,7 +422,11 @@ namespace musicmate.Pages
                 ClearPlayModePickerSelections();
                 RefreshArpeggioPickerOptions();
 
-                if (_session.Tune == "Tuner")
+                if (V3LayoutTestTune.IsEnabled)
+                {
+                    SetPickerSelection(RandomTunerPicker, "Fixed Tune", RandomTunerOptions);
+                }
+                else if (_session.Tune == "Tuner")
                 {
                     SetPickerSelection(RandomTunerPicker, "Tuner", RandomTunerOptions);
                 }
@@ -347,8 +442,7 @@ namespace musicmate.Pages
                 }
                 else if (_session.Tune == "Arpeggio")
                 {
-                    SetPickerSelection(ArpeggiosPicker, _session.SelectedArpeggioDisplay,
-                        _arpeggioOptions.Select(o => o.Label).ToArray());
+                    SetArpeggioPickerSelection();
                 }
                 else
                 {
@@ -386,6 +480,20 @@ namespace musicmate.Pages
             var idx = Array.IndexOf(options, value);
             if (idx >= 0 && picker.SelectedIndex != idx)
                 picker.SelectedIndex = idx;
+        }
+
+        private void SetArpeggioPickerSelection()
+        {
+            var idx = Array.FindIndex(_arpeggioOptions, choice =>
+                choice.Pattern.Id == _session.SelectedArpeggioId
+                && choice.RootNote == _session.SelectedArpeggioRoot);
+
+            if (idx < 0)
+                idx = Array.FindIndex(_arpeggioOptions, choice =>
+                    choice.DisplayLabel == _session.SelectedArpeggioDisplay);
+
+            if (idx >= 0 && ArpeggiosPicker.SelectedIndex != idx)
+                ArpeggiosPicker.SelectedIndex = idx;
         }
 
         private void ClearOtherPlayModePickers(Picker activePicker)
@@ -443,11 +551,12 @@ namespace musicmate.Pages
 
         private void UpdateKeyPickerVisibility()
         {
-            var hide = _session.Tune == "Tuner";
-            KeyPicker.IsVisible       = !hide;
-            KeyLabel.IsVisible        = !hide;
-            KeyBorder.IsVisible       = !hide;
-            ConcertKeyLabel.IsVisible = !hide;
+            var show = _session.Tune != "Tuner" && _session.Tune != "Arpeggio";
+            KeyPicker.IsVisible       = show;
+            KeyPicker.IsEnabled       = show;
+            KeyLabel.IsVisible        = show;
+            KeyBorder.IsVisible       = show;
+            ConcertKeyLabel.IsVisible = show;
         }
 
         private void UpdateRepeatButtonsVisibility()
@@ -545,6 +654,7 @@ namespace musicmate.Pages
             if (practiceTune == null) return;
 
             ClearOtherPlayModePickers(TunesPicker);
+            V3LayoutTestTune.SetEnabled(false);
 
             ApplyPlayModeSessionChange(() =>
             {
@@ -574,6 +684,7 @@ namespace musicmate.Pages
             }
 
             ClearOtherPlayModePickers(ScalesPicker);
+            V3LayoutTestTune.SetEnabled(false);
 
             _lastValidScaleIndex = idx;
             ApplyPlayModeSessionChange(() =>
@@ -588,7 +699,7 @@ namespace musicmate.Pages
             UpdateRandomModeWarning();
         }
 
-        private void OnArpeggiosPickerChanged(object? sender, EventArgs e)
+        private async void OnArpeggiosPickerChanged(object? sender, EventArgs e)
         {
             if (_suppressPickerSync) return;
 
@@ -597,16 +708,21 @@ namespace musicmate.Pages
             var selected = _arpeggioOptions[idx];
 
             ClearOtherPlayModePickers(ArpeggiosPicker);
+            V3LayoutTestTune.SetEnabled(false);
 
             ApplyPlayModeSessionChange(() =>
             {
                 _session.IsRandomMode = false;
-                _session.SelectArpeggio(selected.Pattern, selected.RootNote, selected.Label);
+                _session.Key = GetArpeggioKeySignature(selected);
+                _session.SelectArpeggio(selected.Pattern, selected.RootNote, selected.DisplayLabel);
             });
-            Preferences.Default.Set("SelectedTune", selected.Label);
+            Preferences.Default.Set("SelectedTune", selected.DisplayLabel);
+            UpdateKeyPickerSelection();
+            UpdateConcertKeyLabel();
             UpdateKeyPickerVisibility();
             UpdateRepeatButtonsVisibility();
             UpdateRandomModeWarning();
+            await Shell.Current.GoToAsync("//MainPage");
         }
 
         private void OnRandomTunerPickerChanged(object? sender, EventArgs e)
@@ -621,16 +737,17 @@ namespace musicmate.Pages
 
             if (selected == "Tuner")
             {
+                V3LayoutTestTune.SetEnabled(false);
                 ApplyPlayModeSessionChange(() =>
                 {
                     _session.IsRandomMode = false;
                     _session.Tune = "Tuner";
                 });
                 Preferences.Default.Set("SelectedTune", "Tuner");
-                UpdateKeyPickerVisibility();
             }
             else if (selected == "Random")
             {
+                V3LayoutTestTune.SetEnabled(false);
                 ApplyPlayModeSessionChange(() =>
                 {
                     _session.IsRandomMode = true;
@@ -639,7 +756,19 @@ namespace musicmate.Pages
                 });
                 Preferences.Default.Set("SelectedTune", "Random");
             }
+            else if (selected == "Fixed Tune")
+            {
+                V3LayoutTestTune.SetEnabled(true);
+                ApplyPlayModeSessionChange(() =>
+                {
+                    _session.IsRandomMode = false;
+                    if (_session.Tune == "Tuner")
+                        _session.Tune = "Selected Scale";
+                });
+                Preferences.Default.Set("SelectedTune", "Fixed Tune");
+            }
 
+            UpdateKeyPickerVisibility();
             UpdateRepeatButtonsVisibility();
             UpdateRandomModeWarning();
         }

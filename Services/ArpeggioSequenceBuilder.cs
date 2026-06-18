@@ -28,35 +28,72 @@ namespace musicmate.Services
             int rootMidi = NoteSessionService.NoteNameToMidi(rootNote);
             int minMidi = NoteSessionService.NoteNameToMidi(LowestNote);
             int maxMidi = NoteSessionService.NoteNameToMidi(HighestNote);
-            if (rootMidi < 0 || minMidi < 0 || maxMidi < 0 || minMidi > maxMidi)
+            if (rootMidi < 0)
                 return new List<GeneratedNote>();
 
-            var ascending = pattern.SemitoneIntervals
-                .Select(interval => rootMidi + interval)
-                .Where(midi => midi >= minMidi && midi <= maxMidi)
-                .Distinct()
-                .OrderBy(midi => midi)
+            var chordIntervals = BuildCoreChordIntervals(pattern);
+            rootMidi = FitRootForFullChord(rootMidi, chordIntervals, minMidi, maxMidi);
+
+            int root = rootMidi + chordIntervals[0];
+            int third = rootMidi + chordIntervals[1];
+            int fifth = rootMidi + chordIntervals[2];
+            int octave = rootMidi + chordIntervals[3];
+
+            var exercise = new (int MeasureOffset, double Beat, int Midi, NoteDuration Duration)[]
+            {
+                // M1: root, third, fifth, octave
+                (0, 0.0, root, NoteDuration.Quarter),
+                (0, 1.0, third, NoteDuration.Quarter),
+                (0, 2.0, fifth, NoteDuration.Quarter),
+                (0, 3.0, octave, NoteDuration.Quarter),
+
+                // M2: octave, fifth, third, root
+                (1, 0.0, octave, NoteDuration.Quarter),
+                (1, 1.0, fifth, NoteDuration.Quarter),
+                (1, 2.0, third, NoteDuration.Quarter),
+                (1, 3.0, root, NoteDuration.Quarter),
+
+                // M3: third, fifth, octave, fifth
+                (2, 0.0, third, NoteDuration.Quarter),
+                (2, 1.0, fifth, NoteDuration.Quarter),
+                (2, 2.0, octave, NoteDuration.Quarter),
+                (2, 3.0, fifth, NoteDuration.Quarter),
+
+                // M4: third, root, root as a half note
+                (3, 0.0, third, NoteDuration.Quarter),
+                (3, 1.0, root, NoteDuration.Quarter),
+                (3, 2.0, root, NoteDuration.Half),
+
+                // M5: root, fifth, third, fifth
+                (4, 0.0, root, NoteDuration.Quarter),
+                (4, 1.0, fifth, NoteDuration.Quarter),
+                (4, 2.0, third, NoteDuration.Quarter),
+                (4, 3.0, fifth, NoteDuration.Quarter),
+
+                // M6: octave, fifth, third, root
+                (5, 0.0, octave, NoteDuration.Quarter),
+                (5, 1.0, fifth, NoteDuration.Quarter),
+                (5, 2.0, third, NoteDuration.Quarter),
+                (5, 3.0, root, NoteDuration.Quarter),
+
+                // M7: root, third, fifth, third
+                (6, 0.0, root, NoteDuration.Quarter),
+                (6, 1.0, third, NoteDuration.Quarter),
+                (6, 2.0, fifth, NoteDuration.Quarter),
+                (6, 3.0, third, NoteDuration.Quarter),
+
+                // M8: root held for the full measure as two half-note slots.
+                (7, 0.0, root, NoteDuration.Half),
+                (7, 2.0, root, NoteDuration.Half)
+            };
+
+            return exercise
+                .Select(slot => CreateNote(
+                    slot.Midi,
+                    slot.Duration,
+                    StartMeasureIndex + slot.MeasureOffset,
+                    StartBeatPosition + slot.MeasureOffset * 4.0 + slot.Beat))
                 .ToList();
-
-            if (ascending.Count == 0)
-                return new List<GeneratedNote>();
-
-            var sequence = new List<int>(ascending);
-            if (descendingAfterAscending && ascending.Count > 1)
-            {
-                for (int i = ascending.Count - 2; i >= 0; i--)
-                    sequence.Add(ascending[i]);
-            }
-
-            var notes = new List<GeneratedNote>(sequence.Count);
-            double beat = StartBeatPosition;
-            for (int i = 0; i < sequence.Count; i++)
-            {
-                notes.Add(CreateNote(sequence[i], Duration, StartMeasureIndex, beat));
-                beat += Duration.ToBeatValue();
-            }
-
-            return notes;
         }
 
         public List<GeneratedNote> Build(
@@ -125,6 +162,50 @@ namespace musicmate.Services
                 rootNote: "C4");
 
             return sb.ToString();
+        }
+
+        private static int[] BuildCoreChordIntervals(ArpeggioPattern pattern)
+        {
+            var unique = pattern.SemitoneIntervals
+                .Distinct()
+                .OrderBy(interval => interval)
+                .ToArray();
+
+            int root = unique.FirstOrDefault();
+            int third = FindInterval(unique, interval => interval is 3 or 4, fallback: 4);
+            int fifth = FindInterval(unique, interval => interval is 6 or 7 or 8, fallback: 7);
+            int octave = FindInterval(unique, interval => interval >= 12, fallback: 12);
+
+            return new[] { root, third, fifth, octave };
+        }
+
+        private static int FindInterval(IEnumerable<int> intervals, Func<int, bool> predicate, int fallback)
+        {
+            foreach (var interval in intervals)
+            {
+                if (predicate(interval))
+                    return interval;
+            }
+
+            return fallback;
+        }
+
+        private static int FitRootForFullChord(int rootMidi, IReadOnlyList<int> intervals, int minMidi, int maxMidi)
+        {
+            if (minMidi < 0 || maxMidi < 0 || minMidi > maxMidi)
+                return rootMidi;
+
+            int lowestOffset = intervals.Min();
+            int highestOffset = intervals.Max();
+            int candidate = rootMidi;
+
+            while (candidate + lowestOffset < minMidi)
+                candidate += 12;
+
+            while (candidate + highestOffset > maxMidi && candidate - 12 + lowestOffset >= minMidi)
+                candidate -= 12;
+
+            return candidate;
         }
 
         private GeneratedNote CreateNote(

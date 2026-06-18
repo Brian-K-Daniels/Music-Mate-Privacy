@@ -179,7 +179,7 @@ namespace musicmate.Drawables
             Math.Max(3.5f * BodyAccidentalGlyphScale(), AccidentalRightGap * _layout.Sls * 0.1f);
 
         private float KeySigSymbolWidth()
-            => CompactAccidentalRefPx * (_layout.Sls / 12f) * KeySigAccidentalScale();
+            => CompactAccidentalRefPx * (_layout.Sls / 12f) * KeySigAccidentalScale() * ArpeggioKeySigSizeBoost();
 
         private float BodyAccidentalSymbolWidth(bool isFlat = false)
             => CompactAccidentalRefPx * (_layout.Sls / 12f) * BodyAccidentalGlyphScale()
@@ -305,6 +305,9 @@ namespace musicmate.Drawables
 
         private float KeySigGlyphWidth() => KeySigSymbolWidth();
 
+        private float ArpeggioKeySigSizeBoost()
+            => _session.Tune == "Arpeggio" ? 1.18f : 1f;
+
         /// <summary>
         /// Horizontal advance between key-sig symbols (tight cluster).
         /// Draw box width stays <see cref="KeySigGlyphWidth"/>; slot matches V2 (~14px at sls=12).
@@ -415,6 +418,7 @@ namespace musicmate.Drawables
             public int ChildLevel { get; init; }
             public string SessionKey { get; init; }
             public string SessionScale { get; init; }
+            public string SessionTune { get; init; }
             public string TimeSig { get; init; }
             public int MusicBpm { get; init; }
 
@@ -426,6 +430,7 @@ namespace musicmate.Drawables
                 && UpperHasEndBar == other.UpperHasEndBar && BeginnerLayout == other.BeginnerLayout
                 && ChildLevel == other.ChildLevel
                 && SessionKey == other.SessionKey && SessionScale == other.SessionScale
+                && SessionTune == other.SessionTune
                 && TimeSig == other.TimeSig && MusicBpm == other.MusicBpm;
 
             public override bool Equals(object? obj) => obj is LayoutCacheKey other && Equals(other);
@@ -437,7 +442,7 @@ namespace musicmate.Drawables
                 hc.Add(UpperNotesHash); hc.Add(LowerNotesHash);
                 hc.Add(UpperBarHash); hc.Add(LowerBarHash);
                 hc.Add(UpperHasEndBar); hc.Add(BeginnerLayout); hc.Add(ChildLevel);
-                hc.Add(SessionKey); hc.Add(SessionScale); hc.Add(TimeSig); hc.Add(MusicBpm);
+                hc.Add(SessionKey); hc.Add(SessionScale); hc.Add(SessionTune); hc.Add(TimeSig); hc.Add(MusicBpm);
                 return hc.ToHashCode();
             }
         }
@@ -492,6 +497,7 @@ namespace musicmate.Drawables
                 ChildLevel = _session.ChildLevel,
                 SessionKey = _session.Key ?? string.Empty,
                 SessionScale = _session.SelectedScale ?? string.Empty,
+                SessionTune = _session.Tune ?? string.Empty,
                 TimeSig = _session.GetDisplayTimeSignature(),
                 MusicBpm = _session.MusicBpm,
             };
@@ -2880,19 +2886,20 @@ namespace musicmate.Drawables
             const float timeSigW = 24f;
             float timeSigCenterX = _headerMetrics.TimeSigX + timeSigW * 0.5f;
 
-            string marking = $"= {bpm}";
-            float textWidth = Math.Max(64f, fontSize * (2.5f + marking.Length * 0.55f));
+            string bpmText = bpm.ToString();
+            float equalsWidth = fontSize * 0.8f;
+            float bpmWidth = Math.Max(fontSize * 2.2f, fontSize * bpmText.Length * 0.7f);
             float textHeight = fontSize * 1.35f;
             float textY = staffTop - textHeight - 2f;
 
-            // Left-align marking so the "=" character sits over the time-signature center.
-            float equalsOffset = fontSize * 0.42f;
-            float textX = timeSigCenterX - equalsOffset;
+            // Draw the "=" as its own centered glyph so it sits directly above the time signature.
+            float equalsX = timeSigCenterX - equalsWidth * 0.5f;
+            float bpmX = timeSigCenterX + equalsWidth * 0.5f + fontSize * 0.18f;
 
             float headR = NoteHeadDrawR(filled: true);
             float stemH = Math.Min(_layout.StemLen, fontSize * 1.15f);
             float gapBeforeEquals = fontSize * 0.35f;
-            float headCx = textX - gapBeforeEquals - headR;
+            float headCx = equalsX - gapBeforeEquals - headR;
             float headCy = textY + textHeight * 0.5f;
 
             canvas.SaveState();
@@ -2911,7 +2918,9 @@ namespace musicmate.Drawables
             canvas.Font = Microsoft.Maui.Graphics.Font.Default;
             canvas.FontSize = fontSize;
             canvas.FontColor = ink;
-            canvas.DrawString(marking, textX, textY, textWidth, textHeight,
+            canvas.DrawString("=", equalsX, textY, equalsWidth, textHeight,
+                HorizontalAlignment.Center, VerticalAlignment.Center);
+            canvas.DrawString(bpmText, bpmX, textY, bpmWidth, textHeight,
                 HorizontalAlignment.Left, VerticalAlignment.Center);
             canvas.RestoreState();
         }
@@ -3517,9 +3526,10 @@ namespace musicmate.Drawables
             float clefOnlyLeftMargin = clefOnlyRightRel + _layout.NoteHeadR + _layout.NoteHeadR;
 
             string key   = _session.Key;
-            string scale = _session.SelectedScale;
+            string scale = ActiveKeySignatureScale();
             bool suppressKeySig = _session.Tune == "Tuner"
-                || _session.Tune == "Practice Tune" || scale == "Chromatic";
+                || _session.Tune == "Practice Tune"
+                || (_session.Tune != "Arpeggio" && _session.SelectedScale == "Chromatic");
             int accCount = suppressKeySig ? 0 : GetAccidentalCount(key, scale);
 
             float clefX = safeLeft + clefPad;
@@ -3555,7 +3565,7 @@ namespace musicmate.Drawables
             => staffMid + DiatonicStepsFromB4(letter, octave) * _layout.HS;
 
         private float KeySigAccidentalFontSize(bool isFlat)
-            => _layout.Sls * 2.4f * KeySigAccidentalScale() * (isFlat ? KeySigFlatSizeBoost : 1f);
+            => _layout.Sls * 2.4f * KeySigAccidentalScale() * ArpeggioKeySigSizeBoost() * (isFlat ? KeySigFlatSizeBoost : 1f);
 
         private float BodyAccidentalFontSize(bool isFlat = false)
             => _layout.Sls * 2.4f * BodyAccidentalGlyphScale() * (isFlat ? BodyFlatSizeBoost : 1f);
@@ -4034,22 +4044,26 @@ namespace musicmate.Drawables
 
         // ── Key / time signature drawing ──────────────────────────────────────────
 
+        private string ActiveKeySignatureScale()
+            => _session.Tune == "Arpeggio" ? "Major" : _session.SelectedScale;
+
         private float DrawKeySignature(ICanvas canvas, float staffTop, float staffMid, Color ink)
         {
             float symW     = KeySigGlyphWidth();
             float symSlot  = KeySigSymbolSlot();
 
             if (_session.Tune == "Tuner"
-                || _session.Tune == "Practice Tune" || _session.SelectedScale == "Chromatic")
+                || _session.Tune == "Practice Tune"
+                || (_session.Tune != "Arpeggio" && _session.SelectedScale == "Chromatic"))
                 return _headerMetrics.KeySigStartX;
 
-            int accCount = GetAccidentalCount(_session.Key, _session.SelectedScale);
+            int accCount = GetAccidentalCount(_session.Key, ActiveKeySignatureScale());
             if (accCount == 0)
                 return _headerMetrics.KeySigStartX;
 
             V3Log($"[V3] KeySig key={_session.Key} scale={_session.SelectedScale} count={accCount}");
 
-            bool useFlats = KeySignatureUsesFlats(_session.Key, _session.SelectedScale);
+            bool useFlats = KeySignatureUsesFlats(_session.Key, ActiveKeySignatureScale());
             string glyph  = useFlats ? "\uE260" : "\uE262";
             float fontSize  = KeySigAccidentalFontSize(useFlats);
             var pitches = useFlats ? KeySigFlatPitches : KeySigSharpPitches;
@@ -4151,10 +4165,10 @@ namespace musicmate.Drawables
 
         private string? GetSignatureAccidentalForLetter(char letter)
         {
-            int accCount = GetAccidentalCount(_session.Key, _session.SelectedScale);
+            int accCount = GetAccidentalCount(_session.Key, ActiveKeySignatureScale());
             if (accCount == 0) return null;
 
-            bool useFlats = KeySignatureUsesFlats(_session.Key, _session.SelectedScale);
+            bool useFlats = KeySignatureUsesFlats(_session.Key, ActiveKeySignatureScale());
             char[] flatLetters  = { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
             char[] sharpLetters = { 'F', 'C', 'G', 'D', 'A', 'E', 'B' };
             char[] letters = useFlats ? flatLetters : sharpLetters;
@@ -4173,10 +4187,10 @@ namespace musicmate.Drawables
         {
             if (accidental == Accidental.None || accidental == Accidental.Natural) return false;
 
-            int accCount = GetAccidentalCount(_session.Key, _session.SelectedScale);
+            int accCount = GetAccidentalCount(_session.Key, ActiveKeySignatureScale());
             if (accCount == 0) return false;
 
-            bool useFlats = KeySignatureUsesFlats(_session.Key, _session.SelectedScale);
+            bool useFlats = KeySignatureUsesFlats(_session.Key, ActiveKeySignatureScale());
             bool typeMatch = useFlats
                 ? accidental == Accidental.Flat
                 : accidental == Accidental.Sharp;
