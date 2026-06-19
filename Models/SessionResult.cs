@@ -10,7 +10,7 @@ namespace musicmate.Models
     /// FUTURE (level-up criteria): query this table for the last N sessions at
     /// the current level and decide whether to advance.  Example:
     ///   var recent = await db.GetByLevelAsync(level, last: 5);
-    ///   bool ready = recent.Count == 5 && recent.All(r => r.OverallAccuracyPercent >= 80);
+    ///   bool ready = recent.Count == 5 &amp;&amp; this was a double &amp;&amp; recent.All(r => r.OverallAccuracyPercent >= 80);
     /// </summary>
     public class SessionResult
     {

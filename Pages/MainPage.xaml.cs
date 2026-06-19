@@ -728,6 +728,9 @@ namespace musicmate.Pages
             await HideSessionResultBannerAsync(refreshMarqueeForNewLevel: true);
             _holdResultForChildSession = false;
 
+            if (_session.ChildLevel > 0)
+                DifficultyLevelMapper.ApplyLevelDerivedSettings(_session.ChildLevel, _session);
+
             // While showing post-autoplay results, do not overwrite the staff.
             if (_freezeStaff)
                 return;
@@ -847,7 +850,7 @@ namespace musicmate.Pages
         /// Builds a <see cref="MusicSequenceGenerator"/> configured with the current
         /// session parameters, append offsets, and mastery exclusions.
         /// </summary>
-        private MusicSequenceGenerator BuildV3SequenceGenerator(int measureCount)
+        private MusicSequenceGenerator BuildV3SequenceGenerator(int measureCount, int startPrevPitch = -1)
         {
             // Translate persisted string settings to model types.
             var timeSig = _session.V3TimeSignature switch
@@ -887,6 +890,7 @@ namespace musicmate.Pages
                 StartMeasureIndex    = _v3SeqNextMeasureIndex,
                 StartBeatOffset      = _v3SeqNextBeatOffset,
                 StartGlobalNoteIndex = _v3SeqNextGlobalNoteIndex,
+                StartPrevPitch       = startPrevPitch,
                 ExcludedMidiNumbers  = _v3ExcludedMidis,
                 UseScaleOrder        = !_session.IsRandomMode,
                 ScaleWalkOffset      = _v3SeqNextGlobalNoteIndex,
@@ -1003,6 +1007,76 @@ namespace musicmate.Pages
             return result;
         }
 
+        /// <summary>
+        /// Bar lines every <paramref name="measureBeats"/> from the first note's beat
+        /// through the staff content end. Used for written tunes with a fixed meter.
+        /// </summary>
+        private static List<double> ComputeRegularBarBeats(
+            IReadOnlyList<GeneratedNote> notes,
+            double measureBeats,
+            HashSet<double> existingBarBeats)
+        {
+            var result = new List<double>();
+            if (notes.Count == 0 || measureBeats <= 0)
+                return result;
+
+            double origin = double.PositiveInfinity;
+            double contentEnd = 0;
+            foreach (var n in notes)
+            {
+                double start = n.BeatPosition ?? 0.0;
+                if (start < origin)
+                    origin = start;
+                double end = start + n.BeatDuration;
+                if (end > contentEnd)
+                    contentEnd = end;
+            }
+
+            if (double.IsPositiveInfinity(origin))
+                origin = 0.0;
+
+            for (double bar = origin + measureBeats; bar < contentEnd - 1e-6; bar += measureBeats)
+            {
+                if (!existingBarBeats.Contains(bar))
+                {
+                    result.Add(bar);
+                    existingBarBeats.Add(bar);
+                }
+            }
+
+            return result;
+        }
+
+        private static List<GeneratedNote> ShiftStaffBeatPositions(
+            IReadOnlyList<GeneratedNote> notes,
+            double beatShift)
+        {
+            if (beatShift <= 1e-9)
+                return notes.ToList();
+
+            var shifted = new List<GeneratedNote>(notes.Count);
+            foreach (var n in notes)
+            {
+                shifted.Add(new GeneratedNote
+                {
+                    MidiNumber        = n.MidiNumber,
+                    Letter            = n.Letter,
+                    Octave            = n.Octave,
+                    Accidental        = n.Accidental,
+                    SpelledName       = n.SpelledName,
+                    TargetFrequency   = n.TargetFrequency,
+                    Duration          = n.Duration,
+                    IsRest            = n.IsRest,
+                    MeasureIndex      = n.MeasureIndex,
+                    BeatPosition      = (n.BeatPosition ?? 0.0) - beatShift,
+                    IsPlayedCorrectly = n.IsPlayedCorrectly,
+                    CentsDeviation    = n.CentsDeviation,
+                    RenderX           = n.RenderX,
+                });
+            }
+            return shifted;
+        }
+
         // ── V3 two-staff display ──────────────────────────────────────────────────
 
         /// <summary>How many measures to put on each V3 staff (non-child / high levels).</summary>
@@ -1058,9 +1132,12 @@ namespace musicmate.Pages
                             splitBeat += mn.Duration.ToBeatValue();
 
                     upperFlat     = allNotes.Where(n => (n.BeatPosition ?? 0) < splitBeat).ToList();
-                    lowerFlat     = allNotes.Where(n => (n.BeatPosition ?? 0) >= splitBeat).ToList();
-                    upperBarBeats = ComputeNewBarBeats(upperFlat, existingUpper);
-                    lowerBarBeats = ComputeNewBarBeats(lowerFlat, existingLower);
+                    lowerFlat     = ShiftStaffBeatPositions(
+                        allNotes.Where(n => (n.BeatPosition ?? 0) >= splitBeat).ToList(),
+                        splitBeat);
+                    double measureBeats = testTune.TimeSignature.TotalBeats;
+                    upperBarBeats = ComputeRegularBarBeats(upperFlat, measureBeats, existingUpper);
+                    lowerBarBeats = ComputeRegularBarBeats(lowerFlat, measureBeats, existingLower);
 
                     _v3SeqNextMeasureIndex    = testTune.Measures.Count;
                     _v3SeqNextBeatOffset      = allNotes.Sum(n => n.BeatDuration);
@@ -1087,9 +1164,12 @@ namespace musicmate.Pages
                             splitBeat += mn.Duration.ToBeatValue();
 
                     upperFlat     = allNotes.Where(n => (n.BeatPosition ?? 0) < splitBeat).ToList();
-                    lowerFlat     = allNotes.Where(n => (n.BeatPosition ?? 0) >= splitBeat).ToList();
-                    upperBarBeats = ComputeNewBarBeats(upperFlat, existingUpper);
-                    lowerBarBeats = ComputeNewBarBeats(lowerFlat, existingLower);
+                    lowerFlat     = ShiftStaffBeatPositions(
+                        allNotes.Where(n => (n.BeatPosition ?? 0) >= splitBeat).ToList(),
+                        splitBeat);
+                    double measureBeats = _session.CurrentTune.TimeSignature.TotalBeats;
+                    upperBarBeats = ComputeRegularBarBeats(upperFlat, measureBeats, existingUpper);
+                    lowerBarBeats = ComputeRegularBarBeats(lowerFlat, measureBeats, existingLower);
 
                     _v3SeqNextMeasureIndex    = allMeasures;
                     _v3SeqNextBeatOffset      = allNotes.Sum(n => n.BeatDuration);
@@ -1256,7 +1336,8 @@ namespace musicmate.Pages
                         double lowerBeatShift = 0.0;
                         if (lowerMc > 0)
                         {
-                            var genLower = BuildV3SequenceGenerator(lowerMc);
+                            int lowerStartPitch = MusicSequenceGenerator.LastPitchedMidi(upperFlat);
+                            var genLower = BuildV3SequenceGenerator(lowerMc, lowerStartPitch);
                             var lowerMeasures = genLower.GenerateSequence();
                             lowerFlat     = MusicSequenceGenerator.Flatten(lowerMeasures);
 
@@ -1488,7 +1569,8 @@ namespace musicmate.Pages
             if (_v3Drawable == null || _session.Tune == "Practice Tune" || _session.Tune == "Arpeggio" || V3LayoutTestTune.IsEnabled) return;
             try
             {
-                var gen      = BuildV3SequenceGenerator(GetV3StaffMeasureCounts().upper);
+                int upperStartPitch = MusicSequenceGenerator.LastPitchedMidi(_v3Drawable?.LowerNotes);
+                var gen      = BuildV3SequenceGenerator(GetV3StaffMeasureCounts().upper, upperStartPitch);
                 var measures = gen.GenerateSequence();
                 var newNotes = MusicSequenceGenerator.Flatten(measures);
                 var barBeats = ComputeNewBarBeats(newNotes, new HashSet<double>());
@@ -1541,7 +1623,8 @@ namespace musicmate.Pages
             if (lowerMc <= 0) return;
             try
             {
-                var gen      = BuildV3SequenceGenerator(lowerMc);
+                int lowerStartPitch = MusicSequenceGenerator.LastPitchedMidi(_v3Drawable?.UpperNotes);
+                var gen      = BuildV3SequenceGenerator(lowerMc, lowerStartPitch);
                 var measures = gen.GenerateSequence();
                 var newNotes = MusicSequenceGenerator.Flatten(measures);
                 var barBeats = ComputeNewBarBeats(newNotes, new HashSet<double>());
@@ -2349,6 +2432,7 @@ namespace musicmate.Pages
 
             int level = GetChildLevelForSlider();
             _session.ChildLevel = level;
+            DifficultyLevelMapper.ApplyLevelDerivedSettings(level, _session);
 
             ChildLevelSliderValueLabel.Text = level.ToString();
         }

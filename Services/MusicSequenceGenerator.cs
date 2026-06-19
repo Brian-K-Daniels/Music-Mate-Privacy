@@ -74,6 +74,12 @@ namespace musicmate.Services
         public int StartGlobalNoteIndex { get; set; } = 0;
 
         /// <summary>
+        /// Previous pitched MIDI for the note immediately before this batch (−1 = none).
+        /// Keeps melodic intervals continuous across upper/lower staff generation.
+        /// </summary>
+        public int StartPrevPitch { get; set; } = -1;
+
+        /// <summary>
         /// Optional set of MIDI numbers (written pitch) to exclude from pitch selection.
         /// Used to skip notes the player has already mastered.  When all pool notes are
         /// excluded the full pool is used as fallback so the sequence never runs dry.
@@ -213,7 +219,7 @@ namespace musicmate.Services
                && !UseScaleOrder
                && StartMeasureIndex == 0
                && StartGlobalNoteIndex == 0
-               && SyncopationLevel == SyncopationLevel.None;
+               && SyncopationLevel != SyncopationLevel.Full;
 
         /// <summary>
         /// Legacy slot-by-slot fill (scale walk, append batches, syncopation, and fallback).
@@ -226,7 +232,7 @@ namespace musicmate.Services
         {
             var measures = new List<Measure>(MeasureCount);
             int globalNoteIndex = StartGlobalNoteIndex;
-            int prevPitch = -1;
+            int prevPitch = StartPrevPitch;
             double globalBeatCursor = StartBeatOffset;
 
             for (int mi = 0; mi < MeasureCount; mi++)
@@ -279,7 +285,7 @@ namespace musicmate.Services
 
             var measures = new List<Measure>(MeasureCount);
             int globalNoteIndex = StartGlobalNoteIndex;
-            int prevPitch = -1;
+            int prevPitch = StartPrevPitch;
             double globalBeatCursor = StartBeatOffset;
             PhraseContour? contourA = null;
 
@@ -446,7 +452,32 @@ namespace musicmate.Services
             if (ordered.Count > 0)
                 return ordered[0];
 
-            return PickPitch(rng, pool, prevMidi, isPhraseEnding: false);
+            return PickFallbackPitch(rng, pool, prevMidi, targetMidi);
+        }
+
+        /// <summary>
+        /// Last-resort pitch pick that still honours <see cref="MaxMelodicIntervalSemitones"/>.
+        /// </summary>
+        private int PickFallbackPitch(Random rng, List<int> pool, int prevMidi, int targetMidi = -1)
+        {
+            if (pool.Count == 0)
+                throw new InvalidOperationException("Pitch pool is empty.");
+
+            if (prevMidi < 0)
+                return pool[rng.Next(pool.Count)];
+
+            IEnumerable<int> candidates = pool;
+            if (MaxMelodicIntervalSemitones > 0)
+                candidates = candidates.Where(m => Math.Abs(m - prevMidi) <= MaxMelodicIntervalSemitones);
+
+            var capped = candidates.ToList();
+            if (capped.Count == 0)
+                return pool.OrderBy(m => Math.Abs(m - prevMidi)).ThenBy(m => m).First();
+
+            if (targetMidi >= 0)
+                return capped.OrderBy(m => Math.Abs(m - targetMidi)).ThenBy(m => m).First();
+
+            return capped[rng.Next(capped.Count)];
         }
 
         private static PhraseRole GetPhraseRole(int measureIndex)
@@ -589,6 +620,21 @@ namespace musicmate.Services
             foreach (var m in measures)
                 result.AddRange(m.GeneratedNotes);
             return result;
+        }
+
+        /// <summary>Last non-rest MIDI in note order, or −1 if none.</summary>
+        public static int LastPitchedMidi(IEnumerable<GeneratedNote>? notes)
+        {
+            if (notes == null)
+                return -1;
+
+            foreach (var n in notes.Reverse())
+            {
+                if (!n.IsRest && n.MidiNumber >= 0)
+                    return n.MidiNumber;
+            }
+
+            return -1;
         }
 
         // ── Private helpers ───────────────────────────────────────────────────────
@@ -1004,10 +1050,7 @@ namespace musicmate.Services
             }
 
             if (weighted.Count == 0)
-            {
-                // Fallback: all candidates had same pitch-class — pick any.
-                return pool[rng.Next(pool.Count)];
-            }
+                return PickFallbackPitch(rng, pool, prevMidi);
 
             int roll = rng.Next(totalWeight);
             int cumulative = 0;

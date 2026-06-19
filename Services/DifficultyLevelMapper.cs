@@ -103,6 +103,19 @@ namespace musicmate.Services
         public static string BuildDiagnosticReport(IEnumerable<int>? levels = null)
             => ChildLevelProgression.BuildDiagnosticReport(levels);
 
+        /// <summary>
+        /// Applies interval cap, measure batch size, and instrument range for a child level
+        /// without re-picking key, scale, or rhythm settings.
+        /// </summary>
+        public static void ApplyLevelDerivedSettings(int level, NoteSessionService session)
+        {
+            level = Math.Clamp(level, 1, 100);
+            session.MaxMelodicIntervalSemitones = ChildLevelProgression.MaxIntervalForLevel(level);
+            session.ChildMeasureBatchSize = ChildLevelProgression.MeasureBatchSizeForLevel(
+                level, ChildLevelProgression.NoteCountForLevel(level));
+            session.ApplyAutomaticInstrumentRange();
+        }
+
         public static void ApplyToSession(
             PracticeDifficultySettings settings,
             NoteSessionService session,
@@ -123,10 +136,9 @@ namespace musicmate.Services
                 session.Tune = "Selected Scale";
             }
 
-            session.ApplyAutomaticInstrumentRange();
-
             session.MaxMelodicIntervalSemitones = settings.MaxMelodicIntervalSemitones;
             session.ChildMeasureBatchSize       = settings.MeasureBatchSize;
+            session.ApplyAutomaticInstrumentRange();
 
             if (applyPracticeSettings)
             {

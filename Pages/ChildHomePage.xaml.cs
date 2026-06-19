@@ -82,7 +82,7 @@ namespace musicmate.Pages
         {
             try
             {
-                var result = await DisplayActionSheet(
+                var result = await DisplayActionSheetAsync(
                     "Pick your instrument", "Cancel", null, _instrumentOptions);
                 if (result == null || result == "Cancel") return;
                 var idx = Array.IndexOf(_instrumentOptions, result);

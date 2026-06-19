@@ -143,8 +143,9 @@ namespace musicmate.Drawables
             return beginnerR / compactR;
         }
 
-        private const float KeySigFlatSizeBoost = 1.38f;
-        private const float BodyFlatSizeBoost = 1.25f;
+        private const float KeySigFlatSizeBoost = 0.95f;
+        private const float BodyFlatSizeBoost = 1.34f;
+        private const float KeySigFlatRaiseStaffSpace = 0.24f;
 
         /// <summary>
         /// Body-accidental scale factor for child levels 31+ (compact noteheads).
@@ -893,6 +894,10 @@ namespace musicmate.Drawables
             => !note.IsRest
                && (note.Duration == NoteDuration.Eighth || note.Duration == NoteDuration.Sixteenth);
 
+        /// <summary>True when <paramref name="beatPos"/> lies in the half-open beat window [start, end).</summary>
+        private static bool IsInBeamBeatWindow(double beatPos, double groupStart, double groupEnd)
+            => beatPos >= groupStart - 1e-6 && beatPos < groupEnd - 1e-6;
+
         /// <summary>Beat-only beam membership for layout (same window rules as <see cref="ComputeBeamGroups"/>).</summary>
         private static Dictionary<int, int> ComputeLayoutBeamGroupIds(
             IReadOnlyList<GeneratedNote> notes,
@@ -938,7 +943,7 @@ namespace musicmate.Drawables
                         break;
                     if (pj >= measureEndBeat - 1e-6)
                         break;
-                    if (pj < groupStart - 1e-6 || pj >= groupEnd + 1e-6)
+                    if (!IsInBeamBeatWindow(pj, groupStart, groupEnd))
                         break;
 
                     groupIndices.Add(noteIdx);
@@ -1613,6 +1618,7 @@ namespace musicmate.Drawables
                 return (Array.Empty<NoteLayout>(), Array.Empty<BarLayout>(), staffLeftMargin);
 
             double beatOrigin = GetStaffBeatOrigin(notes, barBeats);
+            barBeats = EnsureRegularBarBeats(notes, barBeats, beatOrigin);
 
             double totalBeats = 0.0;
             for (int i = 0; i < notes.Count; i++)
@@ -2497,6 +2503,60 @@ namespace musicmate.Drawables
             return double.IsPositiveInfinity(origin) ? 0.0 : origin;
         }
 
+        /// <summary>
+        /// Snaps internal bar lines to a regular meter grid when the supplied beats drift
+        /// (e.g. per-note measure indices). Pickup and partial final measures are kept.
+        /// </summary>
+        private List<double> EnsureRegularBarBeats(
+            IReadOnlyList<GeneratedNote> notes,
+            List<double> barBeats,
+            double beatOrigin)
+        {
+            double measureBeats = _session.GetDisplayMeasureBeats();
+            if (notes.Count == 0 || measureBeats <= 0)
+                return barBeats;
+
+            double totalBeats = 0.0;
+            for (int i = 0; i < notes.Count; i++)
+            {
+                double rel = (notes[i].BeatPosition ?? 0.0) - beatOrigin;
+                totalBeats = Math.Max(totalBeats, rel + notes[i].BeatDuration);
+            }
+
+            if (totalBeats <= measureBeats + 1e-6)
+                return barBeats;
+
+            int expectedInternalBars = 0;
+            for (double b = measureBeats; b < totalBeats - 1e-6; b += measureBeats)
+                expectedInternalBars++;
+            var relIncoming = barBeats
+                .Select(b => b - beatOrigin)
+                .Where(b => b > 1e-6)
+                .OrderBy(b => b)
+                .ToList();
+
+            bool aligned = relIncoming.Count == expectedInternalBars;
+            if (aligned)
+            {
+                for (int i = 0; i < relIncoming.Count; i++)
+                {
+                    if (Math.Abs(relIncoming[i] - (i + 1) * measureBeats) > 0.05)
+                    {
+                        aligned = false;
+                        break;
+                    }
+                }
+            }
+
+            if (aligned)
+                return barBeats;
+
+            var fixedBeats = new List<double>(expectedInternalBars);
+            for (int m = 1; m <= expectedInternalBars; m++)
+                fixedBeats.Add(beatOrigin + m * measureBeats);
+            return fixedBeats;
+        }
+
         /// <summary>Forward pass within each measure only — avoids stealing space across bar lines.</summary>
         private void EnforceMonotonicNoteSpacingInMeasures(
             IReadOnlyList<GeneratedNote> notes,
@@ -2754,10 +2814,7 @@ namespace musicmate.Drawables
 
         /// <summary>
         /// Apply horizontal offset when no compression is needed.
-        /// </summary>
-        // ── Per-staff rendering ───────────────────────────────────────────────────
-
-        /// <summary>
+        /// ── Per-staff rendering ───────────────────────────────────────────────────
         /// Draws a single staff using pre-computed horizontal layout.
         /// All X positions are read from noteLayouts and barLayouts arrays.
         /// </summary>
@@ -3120,10 +3177,8 @@ namespace musicmate.Drawables
                         || pj >= measureEnd - 1e-6)
                         break;
 
-                    // Stop if this note starts outside our beam group window
-                    if (pj < groupStart - 1e-6)
-                        break;
-                    if (pj >= groupEnd + 1e-6)
+                    // Stop if this note starts outside our half-open beat window [groupStart, groupEnd)
+                    if (!IsInBeamBeatWindow(pj, groupStart, groupEnd))
                         break;
 
                     groupIndices.Add(noteIdx);
@@ -3251,8 +3306,9 @@ namespace musicmate.Drawables
             Dictionary<int, (float x, float y, Color color, NoteDuration dur)> beamStemTips,
             BarLayout[] barLayouts)
         {
-            float beamThick = 4f * _layout.GlyphScale;
-            float beamGap   = 3f * _layout.GlyphScale;
+            // ~0.38 sls thick; center-to-center spacing ~0.72 sls keeps a clear gap between double beams.
+            float beamThick = Math.Max(3f, _layout.Sls * 0.38f);
+            float beamGap   = Math.Max(2f, _layout.Sls * 0.34f);
 
             // Build per-group stem tip lists
             var groupTips = new Dictionary<int, List<(int noteIdx, float x, float y, Color color, NoteDuration dur)>>();
@@ -3296,7 +3352,9 @@ namespace musicmate.Drawables
                     var segments = SplitBeamAtBarLines(x0, x1, barLayouts);
                     foreach (var (segLeft, segRight) in segments)
                     {
-                        if (segRight - segLeft < 1f)
+                        float drawLeft = Math.Max(segLeft, x0);
+                        float drawRight = Math.Min(segRight, x1);
+                        if (drawRight - drawLeft < 1f)
                             continue;
 
                         canvas.SaveState();
@@ -3304,7 +3362,7 @@ namespace musicmate.Drawables
 
                         // Primary beam (eighth notes)
                         canvas.StrokeSize = beamThick;
-                        canvas.DrawLine(segLeft, BeamY(segLeft), segRight, BeamY(segRight));
+                        canvas.DrawLine(drawLeft, BeamY(drawLeft), drawRight, BeamY(drawRight));
 
                         // Secondary beam (sixteenth notes)
                         float secondaryOffset = grpStemUp ? (beamThick + beamGap) : -(beamThick + beamGap);
@@ -3317,8 +3375,8 @@ namespace musicmate.Drawables
                                 ti++;
                             int segEnd = ti;
 
-                            float sx0 = Math.Max(subTips[segStart].x, segLeft);
-                            float sx1 = Math.Min(subTips[segEnd].x, segRight);
+                            float sx0 = Math.Max(subTips[segStart].x, drawLeft);
+                            float sx1 = Math.Min(subTips[segEnd].x, drawRight);
                             if (sx1 - sx0 < 1f)
                                 continue;
 
@@ -3326,9 +3384,9 @@ namespace musicmate.Drawables
                             {
                                 float halfSlot = (x1 - x0) / Math.Max(subTips.Count - 1, 1) * 0.5f;
                                 if (segStart == 0)
-                                    sx1 = Math.Min(sx0 + halfSlot, segRight);
+                                    sx1 = Math.Min(sx0 + halfSlot, drawRight);
                                 else
-                                    sx0 = Math.Max(sx1 - halfSlot, segLeft);
+                                    sx0 = Math.Max(sx1 - halfSlot, drawLeft);
                             }
 
                             canvas.StrokeSize = beamThick;
@@ -4077,13 +4135,23 @@ namespace musicmate.Drawables
                 float yLine = KeySigLineY(letter, octave, staffMid);
 
                 canvas.SaveState();
-                if (!DrawKeySigAccidental(canvas, glyph, sigX, symW, yLine, fontSize, ink, useFlats))
+                if (useFlats)
                 {
                     float boxH = symW * 1.1f;
-                    float top  = yLine - boxH * 0.5f;
+                    float top  = BodyAccidentalDrawTop(yLine, boxH, isFlat: true, isNatural: false)
+                        - _layout.Sls * KeySigFlatRaiseStaffSpace;
                     canvas.Font     = Microsoft.Maui.Graphics.Font.Default;
-                    canvas.FontSize = fontSize;
-                    canvas.DrawString(useFlats ? "♭" : "♯", sigX, top, symW, boxH,
+                    canvas.FontSize = BodyAccidentalFontSize(isFlat: true);
+                    canvas.DrawString("♭", sigX, top, symW, boxH,
+                        HorizontalAlignment.Center, VerticalAlignment.Center);
+                }
+                else if (!useFlats)
+                {
+                    float boxH = symW * 1.05f;
+                    float top  = BodyAccidentalDrawTop(yLine, boxH, isFlat: false, isNatural: false);
+                    canvas.Font     = Microsoft.Maui.Graphics.Font.Default;
+                    canvas.FontSize = BodyAccidentalFontSize(isFlat: false);
+                    canvas.DrawString("♯", sigX, top, symW, boxH,
                         HorizontalAlignment.Center, VerticalAlignment.Center);
                 }
 

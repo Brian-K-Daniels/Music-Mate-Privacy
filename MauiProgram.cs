@@ -27,6 +27,9 @@ namespace musicmate
             // Preload Bravura for GraphicsView rest glyphs (ICanvas ignores MauiFont names).
             SmuFLFont.EnsureLoaded();
 
+            // Configure sqlite-net-base to use the SourceGear SQLite native provider.
+            SQLitePCL.Batteries.Init();
+
             builder.Services.AddSingleton<NoteSessionService>();
             builder.Services.AddSingleton<PitchDetectionService>();
             #if ANDROID || WINDOWS

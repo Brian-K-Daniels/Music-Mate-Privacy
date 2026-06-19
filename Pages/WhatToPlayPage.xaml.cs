@@ -177,6 +177,8 @@ namespace musicmate.Pages
 
             MainThread.BeginInvokeOnMainThread(() =>
             {
+                if (_localPlayModeChange) return;
+
                 switch (e.PropertyName)
                 {
                     case nameof(NoteSessionService.Tune):
@@ -293,6 +295,19 @@ namespace musicmate.Pages
                 .ThenBy(choice => choice.Pattern.DisplayName, StringComparer.Ordinal)
                 .ToArray();
             ArpeggiosPicker.ItemsSource = _arpeggioOptions.Select(o => o.PickerLabel).ToArray();
+            if (_session.Tune == "Arpeggio")
+            {
+                var wasSuppressed = _suppressPickerSync;
+                _suppressPickerSync = true;
+                try
+                {
+                    SetArpeggioPickerSelection();
+                }
+                finally
+                {
+                    _suppressPickerSync = wasSuppressed;
+                }
+            }
         }
 
         private static IEnumerable<string> GetArpeggioRootKeys()
@@ -418,8 +433,8 @@ namespace musicmate.Pages
             _suppressPickerSync = true;
             try
             {
-                ClearPlayModePickerSelections();
-                RefreshArpeggioPickerOptions();
+                Picker? activePicker = GetActivePlayModePicker();
+                ClearInactivePlayModePickerSelections(activePicker);
 
                 if (V3LayoutTestTune.IsEnabled)
                 {
@@ -460,12 +475,31 @@ namespace musicmate.Pages
                 UpdateRandomModeWarning();
         }
 
+        private Picker? GetActivePlayModePicker()
+        {
+            if (V3LayoutTestTune.IsEnabled || _session.Tune == "Tuner" || _session.IsRandomMode)
+                return RandomTunerPicker;
+            if (_session.Tune == "Practice Tune")
+                return TunesPicker;
+            if (_session.Tune == "Arpeggio")
+                return ArpeggiosPicker;
+            return ScalesPicker;
+        }
+
         private void ClearPlayModePickerSelections()
         {
             ClearPicker(TunesPicker);
             ClearPicker(ScalesPicker);
             ClearPicker(ArpeggiosPicker);
             ClearPicker(RandomTunerPicker);
+        }
+
+        private void ClearInactivePlayModePickerSelections(Picker? activePicker)
+        {
+            if (activePicker != TunesPicker)       ClearPicker(TunesPicker);
+            if (activePicker != ScalesPicker)      ClearPicker(ScalesPicker);
+            if (activePicker != ArpeggiosPicker)   ClearPicker(ArpeggiosPicker);
+            if (activePicker != RandomTunerPicker) ClearPicker(RandomTunerPicker);
         }
 
         private void ClearPicker(Picker picker)
@@ -579,6 +613,9 @@ namespace musicmate.Pages
             });
         }
 
+        private static Task NavigateToPracticePageAsync()
+            => Shell.Current.GoToAsync("//MainPage");
+
         // ── Instrument picker handlers ───────────────────────────────────────────
 
         private void InstrumentPicker_SelectedIndexChanged(object? sender, EventArgs e)
@@ -621,6 +658,8 @@ namespace musicmate.Pages
 
         private async void OnKeyPickerChangedWithPrompt(object? sender, EventArgs e)
         {
+            if (_suppressPickerSync) return;
+
             var selectedKey = KeyPicker.SelectedItem?.ToString();
             if (selectedKey == null) return;
             var shortKey = selectedKey.Split(',')[0].Trim();
@@ -637,11 +676,12 @@ namespace musicmate.Pages
             }
 
             _session.Key = shortKey;
+            await NavigateToPracticePageAsync();
         }
 
         // ── Play-mode picker handlers ────────────────────────────────────────────
 
-        private void OnTunesPickerChanged(object? sender, EventArgs e)
+        private async void OnTunesPickerChanged(object? sender, EventArgs e)
         {
             if (_suppressPickerSync) return;
 
@@ -664,6 +704,7 @@ namespace musicmate.Pages
             UpdateKeyPickerVisibility();
             UpdateRepeatButtonsVisibility();
             UpdateRandomModeWarning();
+            await NavigateToPracticePageAsync();
         }
 
         private async void OnScalesPickerChanged(object? sender, EventArgs e)
@@ -696,6 +737,7 @@ namespace musicmate.Pages
             UpdateKeyPickerVisibility();
             UpdateRepeatButtonsVisibility();
             UpdateRandomModeWarning();
+            await NavigateToPracticePageAsync();
         }
 
         private async void OnArpeggiosPickerChanged(object? sender, EventArgs e)
@@ -721,10 +763,10 @@ namespace musicmate.Pages
             UpdateKeyPickerVisibility();
             UpdateRepeatButtonsVisibility();
             UpdateRandomModeWarning();
-            await Shell.Current.GoToAsync("//MainPage");
+            await NavigateToPracticePageAsync();
         }
 
-        private void OnRandomTunerPickerChanged(object? sender, EventArgs e)
+        private async void OnRandomTunerPickerChanged(object? sender, EventArgs e)
         {
             if (_suppressPickerSync) return;
 
@@ -739,8 +781,8 @@ namespace musicmate.Pages
                 V3LayoutTestTune.SetEnabled(false);
                 ApplyPlayModeSessionChange(() =>
                 {
-                    _session.IsRandomMode = false;
                     _session.Tune = "Tuner";
+                    _session.IsRandomMode = false;
                 });
                 Preferences.Default.Set("SelectedTune", "Tuner");
             }
@@ -749,9 +791,8 @@ namespace musicmate.Pages
                 V3LayoutTestTune.SetEnabled(false);
                 ApplyPlayModeSessionChange(() =>
                 {
+                    _session.Tune = "Selected Scale";
                     _session.IsRandomMode = true;
-                    if (_session.Tune != "Practice Tune" && _session.Tune != "Tuner")
-                        _session.Tune = "Selected Scale";
                 });
                 Preferences.Default.Set("SelectedTune", "Random");
             }
@@ -767,9 +808,11 @@ namespace musicmate.Pages
                 Preferences.Default.Set("SelectedTune", "Fixed Tune");
             }
 
+            UpdatePlayModePickersFromSession(suppressClear: true);
             UpdateKeyPickerVisibility();
             UpdateRepeatButtonsVisibility();
             UpdateRandomModeWarning();
+            await NavigateToPracticePageAsync();
         }
 
         // ── Repeat button handlers ───────────────────────────────────────────────
