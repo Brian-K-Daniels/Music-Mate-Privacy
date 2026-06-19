@@ -123,15 +123,7 @@ namespace musicmate.Services
                 session.Tune = "Selected Scale";
             }
 
-            var whiteKeys = session.WhiteKeyNoteNames;
-            if (Array.IndexOf(whiteKeys, settings.LowestNote) >= 0 &&
-                Array.IndexOf(whiteKeys, settings.HighestNote) >= 0 &&
-                NoteSessionService.NoteNameToMidi(settings.LowestNote) <
-                NoteSessionService.NoteNameToMidi(settings.HighestNote))
-            {
-                session.LowestNote  = settings.LowestNote;
-                session.HighestNote = settings.HighestNote;
-            }
+            session.ApplyAutomaticInstrumentRange();
 
             session.MaxMelodicIntervalSemitones = settings.MaxMelodicIntervalSemitones;
             session.ChildMeasureBatchSize       = settings.MeasureBatchSize;

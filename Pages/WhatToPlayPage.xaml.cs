@@ -103,11 +103,10 @@ namespace musicmate.Pages
                 // ── Instrument picker ────────────────────────────────────────────
                 var instrumentOptions = NoteSessionService.InstrumentOptions.Cast<string>().ToArray();
                 InstrumentPicker.ItemsSource = instrumentOptions;
-                var instrumentShort = _session.Instrument?.Split(',')[0].Trim()
-                                      ?? instrumentOptions[0].Split(',')[0].Trim();
-                var selIdx = Array.FindIndex(instrumentOptions, s => s.Split(',')[0].Trim() == instrumentShort);
+                var instrumentShort = _session.InstrumentDisplayName;
+                var selIdx = Array.FindIndex(instrumentOptions, s => s == instrumentShort);
                 InstrumentPicker.SelectedIndex = selIdx >= 0 ? selIdx : 0;
-                SelectedInstrumentShort = instrumentOptions[InstrumentPicker.SelectedIndex].Split(',')[0].Trim();
+                SelectedInstrumentShort = _session.InstrumentDisplayName;
 
                 InstrumentPicker.SelectedIndexChanged += InstrumentPicker_SelectedIndexChanged;
 
@@ -226,10 +225,10 @@ namespace musicmate.Pages
         private void UpdateInstrumentPickerSelection()
         {
             if (InstrumentPicker.ItemsSource is not string[] items) return;
-            var idx = Array.FindIndex(items, s => s == _session.Instrument);
+            var idx = Array.FindIndex(items, s => s == _session.InstrumentDisplayName);
             if (idx >= 0 && InstrumentPicker.SelectedIndex != idx)
                 InstrumentPicker.SelectedIndex = idx;
-            SelectedInstrumentShort = _session.Instrument?.Split(',')[0].Trim() ?? string.Empty;
+            SelectedInstrumentShort = _session.InstrumentDisplayName;
         }
 
         private void UpdateKeyPickerSelection()
@@ -586,8 +585,8 @@ namespace musicmate.Pages
         {
             if (InstrumentPicker.SelectedItem is string s)
             {
-                SelectedInstrumentShort   = s.Split(',')[0].Trim();
                 _session.Instrument       = s;
+                SelectedInstrumentShort   = _session.InstrumentDisplayName;
                 IsInstrumentPickerVisible = false;
                 IsInstrumentLabelVisible  = true;
                 InstrumentPicker.Unfocus();

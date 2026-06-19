@@ -17,8 +17,7 @@ namespace musicmate.ViewModels
                 var opts = NoteSessionService.InstrumentOptions;
                 if (opts != null && opts.Length > 0)
                 {
-                    // Match the 0-semitone "C" entry (short name starts with "C,")
-                    var preferC = opts.FirstOrDefault(i => i.Split(',')[0].Trim() == "C");
+                    var preferC = opts.FirstOrDefault(i => i == "Concert Pitch");
                     if (!string.IsNullOrEmpty(preferC))
                         return preferC;
                     return opts[0];
@@ -77,9 +76,13 @@ namespace musicmate.ViewModels
                 case nameof(NoteSessionService.SelectedScale):
                     OnPropertyChanged(nameof(SelectedScale)); break;
                 case nameof(NoteSessionService.LowestNote):
-                    OnPropertyChanged(nameof(LowestNote)); break;
+                    OnPropertyChanged(nameof(LowestNote));
+                    OnPropertyChanged(nameof(AutomaticNoteRangeDisplay));
+                    break;
                 case nameof(NoteSessionService.HighestNote):
-                    OnPropertyChanged(nameof(HighestNote)); break;
+                    OnPropertyChanged(nameof(HighestNote));
+                    OnPropertyChanged(nameof(AutomaticNoteRangeDisplay));
+                    break;
                 case nameof(NoteSessionService.AccidentalPercent):
                     OnPropertyChanged(nameof(AccidentalPercent)); break;
                 case nameof(NoteSessionService.PlaybackBpm):
@@ -247,6 +250,8 @@ namespace musicmate.ViewModels
                 }
             }
         }
+
+        public string AutomaticNoteRangeDisplay => _session?.AutomaticNoteRangeDisplay ?? $"{LowestNote} - {HighestNote}";
 
         private int _accidentalPercent = Preferences.Get("musicmate.AccidentalPercent", 0);
         public int AccidentalPercent
@@ -722,8 +727,6 @@ namespace musicmate.ViewModels
         /// <summary>Resets all settings to their factory defaults.</summary>
         public void ResetToDefaults()
         {
-            LowestNote          = DefaultLowestNote;
-            HighestNote         = DefaultHighestNote;
             PlaybackBpm         = DefaultPlaybackBpm;
             MusicBpm            = DefaultMusicBpm;
             AccidentalPercent   = DefaultAccidentalPct;
@@ -743,6 +746,7 @@ namespace musicmate.ViewModels
                 _session.Instrument = DefaultInstrument;
                 _session.Key = DefaultKey;
                 _session.Tune = DefaultTune;
+                _session.ApplyAutomaticInstrumentRange();
                 _session.ResetAdvancedDetectionDefaults();
                 _session.ResetPracticeCompositionDefaults();
             }

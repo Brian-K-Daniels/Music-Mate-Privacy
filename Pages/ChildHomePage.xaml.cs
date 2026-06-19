@@ -43,13 +43,8 @@ namespace musicmate.Pages
                 _orientation = ServiceHelper.GetService<IOrientationService>()!;
 
                 // Restore saved instrument selection
-                var savedInstrument = _session.Instrument ?? string.Empty;
+                var savedInstrument = _session.InstrumentDisplayName;
                 var idx = Array.IndexOf(_instrumentOptions, savedInstrument);
-                if (idx < 0)
-                {
-                    var savedShort = savedInstrument.Split(',')[0].Trim();
-                    idx = Array.FindIndex(_instrumentOptions, s => s.Split(',')[0].Trim() == savedShort);
-                }
                 if (idx >= 0)
                     SetInstrumentSelection(idx);
 
@@ -220,13 +215,8 @@ namespace musicmate.Pages
                 // END OF             TEMPORARY BLOCK
                 var idx = _selectedInstrumentIndex;
                 if (idx >= 0)
-                    _session.Instrument = _instrumentOptions[idx]; // full label for transpose lookup
-
-                // Extract the short key (e.g. "Bb") to pass into the difficulty mapper so it
-                // can convert the level-based concert key to the correct written key.
-                var shortInstrumentKey = idx >= 0
-                    ? _instrumentOptions[idx].Split(',')[0].Trim()
-                    : "C";
+                    _session.Instrument = _instrumentOptions[idx];
+                _session.ChildLevel = _selectedLevel;
 
                 // Apply difficulty settings derived from the selected level.
                 // DifficultyLevelMapper translates level 1–100 into concrete session
@@ -245,9 +235,6 @@ namespace musicmate.Pages
                           $"LowestNote={_session.LowestNote}, HighestNote={_session.HighestNote}, " +
                           $"Key={_session.Key}, IsRandomMode={_session.IsRandomMode}");
 
-                // Tell the session which child-home level started it so that
-                // SaveSessionStatAsync (in MainPage) can record a SessionResult.
-                _session.ChildLevel = _selectedLevel;
                 LevelUpService.MarkCountSinceNow();
 
                 // FUTURE: level-up / congratulations logic will be triggered from

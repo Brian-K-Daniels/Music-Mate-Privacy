@@ -86,12 +86,11 @@ namespace musicmate.Services
     {
         private static readonly HashSet<string> FreeScales = new() { "Major", "Harmonic Minor" };
         private static readonly HashSet<string> FreeKeys = new() { "C", "F", "Bb", "G", "D" };
-        private const string FreeLowestNote = "A3";
-        private const string FreeHighestNote = "G5";
 
         public NoteSessionService()
         {
             Instrument = _instrument;
+            ApplyAutomaticInstrumentRange();
 
             StatusService.Instance.PropertyChanged += (_, e) =>
             {
@@ -107,13 +106,7 @@ namespace musicmate.Services
             if (!FreeKeys.Contains(Key))
                 Key = "C";
 
-            var notes = WhiteKeyNoteNames.ToList();
-            int minIdx = notes.IndexOf(FreeLowestNote);
-            int maxIdx = notes.IndexOf(FreeHighestNote);
-            if (minIdx >= 0 && notes.IndexOf(LowestNote) is int loIdx && (loIdx < minIdx || loIdx > maxIdx))
-                LowestNote = FreeLowestNote;
-            if (maxIdx >= 0 && notes.IndexOf(HighestNote) is int hiIdx && (hiIdx < minIdx || hiIdx > maxIdx))
-                HighestNote = FreeHighestNote;
+            ApplyAutomaticInstrumentRange();
         }
 
         public int SampleRate { get; set; } = 44100;
@@ -384,8 +377,8 @@ namespace musicmate.Services
         private int _audioBufferSize = Preferences.Get(PrefAudioBufferSizeKey, 1024);
         private bool _autoStart = Preferences.Get(PrefAutoStartKey, true);
         private int _pitchWindowSize = Preferences.Get(PrefPitchWindowSizeKey, 4096);
-        private string _highestNote = Preferences.Get("musicmate.HighestNote", "C6");
-        private string _lowestNote = Preferences.Get("musicmate.LowestNote", "E3");
+        private string _highestNote = Preferences.Get("musicmate.HighestNote", "C6") ?? "C6";
+        private string _lowestNote = Preferences.Get("musicmate.LowestNote", "E3") ?? "E3";
         private int _minFrequency = Preferences.Get(PrefMinFrequencyKey, 60);
         private int _maxFrequency = Preferences.Get(PrefMaxFrequencyKey, 8000);
         private int _smoothingWindowSize = Preferences.Get(PrefSmoothingWindowSizeKey, 3);
@@ -484,6 +477,7 @@ namespace musicmate.Services
         private string _selectedArpeggioId = Preferences.Get(PrefSelectedArpeggioIdKey, "major-triad");
         private string _selectedArpeggioRoot = Preferences.Get(PrefSelectedArpeggioRootKey, "C4");
         private string _selectedArpeggioDisplay = Preferences.Get(PrefSelectedArpeggioDisplayKey, "C major triad");
+        private int _childLevel;
         private int _playbackBpm = Preferences.Get(PrefPlaybackBpmKey, 100);
         private int _musicBpm = Preferences.Get(PrefMusicBpmKey, 100);
         private int _tolerance = Preferences.Get(PrefToleranceKey, DefaultTolerance);
@@ -829,12 +823,13 @@ namespace musicmate.Services
 
         public string LowestNote
         {
-            get => _lowestNote;
+            get => string.IsNullOrWhiteSpace(_lowestNote) ? "E3" : _lowestNote;
             set
             {
-                if (_lowestNote != value)
+                var normalized = string.IsNullOrWhiteSpace(value) ? "E3" : value;
+                if (_lowestNote != normalized)
                 {
-                    _lowestNote = value;
+                    _lowestNote = normalized;
                     Preferences.Set("musicmate.LowestNote", _lowestNote);
                     OnPropertyChanged(nameof(LowestNote));
                     if (IsRandomMode)
@@ -847,12 +842,13 @@ namespace musicmate.Services
 
         public string HighestNote
         {
-            get => _highestNote;
+            get => string.IsNullOrWhiteSpace(_highestNote) ? "C6" : _highestNote;
             set
             {
-                if (_highestNote != value)
+                var normalized = string.IsNullOrWhiteSpace(value) ? "C6" : value;
+                if (_highestNote != normalized)
                 {
-                    _highestNote = value;
+                    _highestNote = normalized;
                     Preferences.Set("musicmate.HighestNote", _highestNote);
                     OnPropertyChanged(nameof(HighestNote));
                     if (IsRandomMode)
@@ -892,70 +888,45 @@ namespace musicmate.Services
             return false;
         }
 
-        public static readonly string[] InstrumentOptions = 
-        {
-            "C + 2 octaves, Glockenspiel",                      // +24 semitones
-            "C + 1 octave,  Piccolo",                           // +12 semitones
-            "Eb,            Clarinet",                          // +3 semitones
-            "C, Flute Oboe Bassoon Trumpet Trombone Euphoneum Tuba Piano", // 0 semitones
-            "Bb,            Clarinet, Soprano Sax, Trumpet",    // -2 semitones
-            "A,             Clarinet",                          // -3 semitones
-            "F,             English Horn, French Horn",         // -7 semitones
-            "Eb,            Alto Clarinet, Alto Sax",           // -9 semitones
-            "C - 1 octave,  Double Bass, Contrabassoon",        // -12 semitones
-            "Bb - 1 octave, Tenor Sax, Bass Clarinet",          // -14 semitones
-            "Eb - 1 octave, Baritone Sax"                       // -21 semitones
-        };
-
-        private static readonly int[] InstrumentTransposeOffsets = new[]
-        {
-            24,  // C + 2 octaves, Glockenspiel
-            12,  // C + 1 octave,  Piccolo
-            3,   // Eb,            Clarinet
-            0,   // C, Flute Oboe Bassoon Trumpet Trombone Euphoneum Tuba Piano
-            -2,  // Bb,            Clarinet, Soprano Sax, Trumpet
-            -3,  // A,             Clarinet
-            -7,  // F,             English Horn, French Horn
-            -9,  // Eb,            Alto Clarinet, Alto Sax
-            -12, // C - 1 octave,  Double Bass, Contrabassoon
-            -14, // Bb - 1 octave, Tenor Sax, Bass Clarinet
-            -21  // Eb - 1 octave, Baritone Sax
-        };
+        public static string[] InstrumentOptions => InstrumentCatalog.DisplayNames;
 
         /// <summary>
         /// Maps a stored instrument value (short key like "Bb" or a full InstrumentOptions entry)
         /// to the canonical InstrumentOptions string.
         /// </summary>
         public static string NormalizeInstrumentOption(string? value)
-        {
-            var raw = value?.Trim() ?? string.Empty;
-            if (string.IsNullOrEmpty(raw))
-                return InstrumentOptions.Length > 0 ? InstrumentOptions[0] : raw;
-
-            var exactIdx = Array.IndexOf(InstrumentOptions, raw);
-            if (exactIdx >= 0)
-                return InstrumentOptions[exactIdx];
-
-            var shortKey = raw.Split(',')[0].Trim();
-            var shortIdx = Array.FindIndex(InstrumentOptions, o => o.Split(',')[0].Trim() == shortKey);
-            if (shortIdx >= 0)
-                return InstrumentOptions[shortIdx];
-
-            return raw;
-        }
+            => InstrumentCatalog.Resolve(value).Id;
 
         private int GetInstrumentTransposeOffset()
-        {
-            int idx = Array.IndexOf(InstrumentOptions, Instrument);
-            if (idx < 0)
-            {
-                var shortKey = Instrument?.Split(',')[0].Trim() ?? string.Empty;
-                idx = Array.FindIndex(InstrumentOptions, o => o.Split(',')[0].Trim() == shortKey);
-            }
-            return (idx >= 0 && idx < InstrumentTransposeOffsets.Length) ? InstrumentTransposeOffsets[idx] : 0;
-        }
+            => CurrentInstrumentProfile.TransposeOffset;
 
         public int InstrumentTransposeOffset => GetInstrumentTransposeOffset();
+
+        public InstrumentProfile CurrentInstrumentProfile => InstrumentCatalog.Resolve(_instrument);
+
+        public string InstrumentDisplayName => CurrentInstrumentProfile.DisplayName;
+
+        public string InstrumentKey => CurrentInstrumentProfile.InstrumentKey;
+
+        public string AutomaticNoteRangeDisplay => $"{LowestNote} - {HighestNote}";
+
+        public IReadOnlyList<int> AvailableInstrumentMidis
+            => InstrumentCatalog.BuildAvailableMidiSet(CurrentInstrumentProfile, ChildLevel);
+
+        public IReadOnlyList<string> AvailableInstrumentNoteNames
+            => AvailableInstrumentMidis
+                .Select(midi => MidiToNoteName(midi, KeyUsesFlats(Key)))
+                .ToArray();
+
+        public void ApplyAutomaticInstrumentRange()
+        {
+            var (lowest, highest) = InstrumentCatalog.GetAutomaticRange(CurrentInstrumentProfile, ChildLevel);
+            LowestNote = string.IsNullOrWhiteSpace(lowest) ? "E3" : lowest;
+            HighestNote = string.IsNullOrWhiteSpace(highest) ? "C6" : highest;
+            OnPropertyChanged(nameof(AutomaticNoteRangeDisplay));
+            OnPropertyChanged(nameof(AvailableInstrumentMidis));
+            OnPropertyChanged(nameof(AvailableInstrumentNoteNames));
+        }
 
         private static HashSet<int> GetUnadornedNoteMidis(IEnumerable<string> scaleNotes)
         {
@@ -1104,7 +1075,11 @@ namespace musicmate.Services
                 if (_instrument == normalized) return;
                 _instrument = normalized;
                 Preferences.Set(PrefInstrumentKey, _instrument);
+                ApplyAutomaticInstrumentRange();
                 OnPropertyChanged(nameof(Instrument));
+                OnPropertyChanged(nameof(InstrumentDisplayName));
+                OnPropertyChanged(nameof(InstrumentKey));
+                OnPropertyChanged(nameof(InstrumentTransposeOffset));
             }
         }
 
@@ -1115,7 +1090,18 @@ namespace musicmate.Services
         ///
         /// Not persisted here — ChildHomePage owns persistence via Preferences("ChildHome.Level").
         /// </summary>
-        public int ChildLevel { get; set; } = 0;
+        public int ChildLevel
+        {
+            get => _childLevel;
+            set
+            {
+                var clamped = Math.Clamp(value, 0, 100);
+                if (_childLevel == clamped) return;
+                _childLevel = clamped;
+                ApplyAutomaticInstrumentRange();
+                OnPropertyChanged(nameof(ChildLevel));
+            }
+        }
 
         /// <summary>
         /// When true, accidental, rhythm, key, and scale were changed by the user during a child
@@ -2151,19 +2137,7 @@ namespace musicmate.Services
         {
             // Future: use PcTunes / PcRandom / PcScales / PcArpeggios to pick a pool category
             // before drawing from Level-specific subsets of each master collection.
-            // 1. Build all notes in the scale between LowestNote and HighestNote (inclusive)
-            var availableNotes = new List<string>();
-            for (int midi = NoteNameToMidi(LowestNote); midi <= NoteNameToMidi(HighestNote); midi++)
-            {
-                string noteName = MidiToNoteName(midi, KeyUsesFlats(Key));
-                if (noteName.Length > 0 && BuildScaleDegrees(Key, SelectedScale)
-                        .Contains(noteName.TrimEnd('0', '1', '2', '3', '4', '5', '6', '7', '8', '9')))
-                {
-                    availableNotes.Add(noteName);
-                }
-            }
-
-            availableNotes = availableNotes.Distinct().ToList();
+            var availableNotes = BuildAvailableNotesForCurrentInstrumentAndScale();
 
             if (availableNotes.Count < 2)
                 return availableNotes.ToArray();
@@ -2178,7 +2152,10 @@ namespace musicmate.Services
             await db.InitializeAsync();
 
             var statsList = await db.GetAllAsync();
-            var stats = statsList.ToDictionary(s => s.WrittenName, s => s);
+            var stats = (statsList ?? Enumerable.Empty<NoteStat>())
+                .Where(s => !string.IsNullOrWhiteSpace(s.WrittenName))
+                .GroupBy(s => s.WrittenName)
+                .ToDictionary(g => g.Key, g => g.First());
 
             // Exclude mastered notes based on MasteredMethod
             availableNotes = availableNotes
@@ -2193,18 +2170,7 @@ namespace musicmate.Services
             // otherwise fall back to the full unfiltered pool (all notes need more practice)
             if (availableNotes.Count < 2)
             {
-                // Build the full note pool for this range/scale
-                var fullPool = new List<string>();
-                for (int midi = NoteNameToMidi(LowestNote); midi <= NoteNameToMidi(HighestNote); midi++)
-                {
-                    string noteName = MidiToNoteName(midi, KeyUsesFlats(Key));
-                    if (noteName.Length > 0 && BuildScaleDegrees(Key, SelectedScale)
-                            .Contains(noteName.TrimEnd('0', '1', '2', '3', '4', '5', '6', '7', '8', '9')))
-                    {
-                        fullPool.Add(noteName);
-                    }
-                }
-                fullPool = fullPool.Distinct().ToList();
+                var fullPool = BuildAvailableNotesForCurrentInstrumentAndScale();
 
                 if (fullPool.Count >= 2)
                 {
@@ -2228,8 +2194,8 @@ namespace musicmate.Services
 
             // Remove enharmonic boundary notes that would be out of range when respelled
             // (e.g. Cb4 if lowest is C4, or B#5 if highest is B5)
-            string lowestNote = LowestNote;
-            string highestNote = HighestNote;
+            string lowestNote = string.IsNullOrWhiteSpace(LowestNote) ? "E3" : LowestNote;
+            string highestNote = string.IsNullOrWhiteSpace(HighestNote) ? "C6" : HighestNote;
 
             string flatOfLowest = "";
             if (lowestNote.Length > 1 && !lowestNote.Contains("#") && !lowestNote.Contains("b"))
@@ -2242,6 +2208,9 @@ namespace musicmate.Services
             availableNotes = availableNotes
                 .Where(n => n != flatOfLowest && n != sharpOfHighest)
                 .ToList();
+
+            if (availableNotes.Count < 2)
+                return availableNotes.ToArray();
 
             // Interval-weighted random ordering
             // Intervals 1–7 (index distance) get descending weights; farther notes fall back to unweighted pick
@@ -2318,9 +2287,7 @@ namespace musicmate.Services
             }
 
             // --- Accidental logic ---
-            // Build all non-scale MIDIs within the playable range as the accidental pool.
-            int minMidi = NoteNameToMidi(LowestNote);
-            int maxMidi = NoteNameToMidi(HighestNote);
+            // Build all non-scale MIDIs within the generated instrument note set as the accidental pool.
             var scaleMidis = new HashSet<int>(availableNotes.Select(n => NoteNameToMidi(n)));
 
             // Collect every chromatic pitch in range that is NOT a scale tone.
@@ -2328,7 +2295,7 @@ namespace musicmate.Services
             if (StatusService.Instance.IsPremiumUser && AccidentalPercent > 0)
             {
                 bool useFlats = KeyUsesFlats(Key);
-                for (int midi = minMidi; midi <= maxMidi; midi++)
+                foreach (int midi in AvailableInstrumentMidis)
                 {
                     if (scaleMidis.Contains(midi)) continue;
                     accidentalPool.Add(MidiToNoteName(midi, useFlats));
@@ -2391,6 +2358,17 @@ namespace musicmate.Services
             }
 
             return result.ToArray();
+        }
+
+        private List<string> BuildAvailableNotesForCurrentInstrumentAndScale()
+        {
+            var scaleDegrees = BuildScaleDegrees(Key, SelectedScale);
+            return AvailableInstrumentMidis
+                .Select(midi => MidiToNoteName(midi, KeyUsesFlats(Key)))
+                .Where(noteName => noteName.Length > 0 && scaleDegrees
+                    .Contains(noteName.TrimEnd('0', '1', '2', '3', '4', '5', '6', '7', '8', '9')))
+                .Distinct()
+                .ToList();
         }
 
         /// <summary>
@@ -2911,11 +2889,7 @@ namespace musicmate.Services
         /// Returns 0 if not found (concert pitch / C instrument).
         /// </summary>
         public static int GetTransposeOffsetForShortKey(string shortKey)
-        {
-            var key = shortKey?.Trim() ?? string.Empty;
-            var idx = Array.FindIndex(InstrumentOptions, o => o.Split(',')[0].Trim() == key);
-            return (idx >= 0 && idx < InstrumentTransposeOffsets.Length) ? InstrumentTransposeOffsets[idx] : 0;
-        }
+            => InstrumentCatalog.Resolve(shortKey).TransposeOffset;
         private static string[] RespellToAvoidConsecutiveSameLetter(string[] notes, bool preferFlats)
         {
             if (notes.Length == 0)

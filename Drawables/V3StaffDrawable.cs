@@ -306,7 +306,7 @@ namespace musicmate.Drawables
         private float KeySigGlyphWidth() => KeySigSymbolWidth();
 
         private float ArpeggioKeySigSizeBoost()
-            => _session.Tune == "Arpeggio" ? 1.18f : 1f;
+            => _session.Tune == "Arpeggio" ? 1.05f : 1f;
 
         /// <summary>
         /// Horizontal advance between key-sig symbols (tight cluster).

@@ -465,7 +465,7 @@ namespace musicmate.Pages
 
                         await UpdateNoteStatsDatabaseAsync();
 
-                        string shortInstrumentForMarquee = _session.Instrument?.Split(',')[0].Trim() ?? "";
+                        string shortInstrumentForMarquee = _session.InstrumentDisplayName;
                         int levelBeforeSave = _session.ChildLevel;
                         var countSinceBeforeSave = Services.LevelUpService.CountSinceUtc;
 
@@ -576,15 +576,14 @@ namespace musicmate.Pages
                 IsAutoRepeatVisible = _session.Tune != "Tuner";
                 UpdateRepeatButtonsVisibility();
 
-                // Show full long strings in picker
+                // Show instrument names only; the session maps each name to InstrumentKey internally.
                 var instrumentOptions = NoteSessionService.InstrumentOptions.Cast<string>().ToArray();
                 InstrumentPicker.ItemsSource = instrumentOptions;
-                // Select by matching short string
-                var instrumentShort = _session.Instrument?.Split(',')[0].Trim() ?? instrumentOptions[0].Split(',')[0].Trim();
-                var selectedIndex = Array.FindIndex(instrumentOptions, s => s.Split(',')[0].Trim() == instrumentShort);
+                var instrumentShort = _session.InstrumentDisplayName;
+                var selectedIndex = Array.FindIndex(instrumentOptions, s => s == instrumentShort);
                 InstrumentPicker.SelectedIndex = selectedIndex >= 0 ? selectedIndex : 0;
                 _session.Instrument = instrumentOptions[InstrumentPicker.SelectedIndex];
-                SelectedInstrumentShort = instrumentOptions[InstrumentPicker.SelectedIndex].Split(',')[0].Trim();
+                SelectedInstrumentShort = _session.InstrumentDisplayName;
 
                 KeyPicker.ItemsSource = new[]
                 {
@@ -628,7 +627,7 @@ namespace musicmate.Pages
 
                 ScaleTunePicker.SelectedIndexChanged += OnScaleTunePickerChanged;
 
-                _v3HomeInstrumentPicker.ItemsSource = instrumentOptions.Select(s => s.Split(',')[0].Trim()).ToArray();
+                _v3HomeInstrumentPicker.ItemsSource = instrumentOptions;
                 _v3HomeInstrumentPicker.SelectedIndex = InstrumentPicker.SelectedIndex;
 
                 _v3HomeKeyPicker.ItemsSource = KeyPicker.ItemsSource;
@@ -2289,8 +2288,7 @@ namespace musicmate.Pages
 
             _deferNewLevelMarqueeUntilBannerDismissed = false;
             string instrument = _pendingInstrumentForMarquee
-                ?? _session.Instrument?.Split(',')[0].Trim()
-                ?? string.Empty;
+                ?? _session.InstrumentDisplayName;
             _pendingInstrumentForMarquee = null;
 
             if (_session.ChildLevel > 0 && !string.IsNullOrEmpty(instrument))
@@ -2385,7 +2383,7 @@ namespace musicmate.Pages
             if (_v3HomeInstrumentPicker != null && _v3HomeInstrumentPicker.ItemsSource == null)
             {
                 var instrumentOptions = NoteSessionService.InstrumentOptions.Cast<string>().ToArray();
-                _v3HomeInstrumentPicker.ItemsSource = instrumentOptions.Select(s => s.Split(',')[0].Trim()).ToArray();
+                _v3HomeInstrumentPicker.ItemsSource = instrumentOptions;
                 _v3HomeInstrumentPicker.SelectedIndex = InstrumentPicker.SelectedIndex;
             }
             if (_v3HomeKeyPicker != null && _v3HomeKeyPicker.ItemsSource == null)
@@ -2525,12 +2523,12 @@ namespace musicmate.Pages
             try
             {
                 var instrumentOptions = NoteSessionService.InstrumentOptions.Cast<string>().ToArray();
-                var instIdx = Array.FindIndex(instrumentOptions, s => s.Split(',')[0].Trim() == "C");
+                var instIdx = Array.FindIndex(instrumentOptions, s => s == "Concert Pitch");
                 if (instIdx >= 0)
                 {
                     InstrumentPicker?.SelectedIndex = instIdx;
                     _session.Instrument = instrumentOptions[instIdx];
-                    SelectedInstrumentShort = instrumentOptions[instIdx].Split(',')[0].Trim();
+                    SelectedInstrumentShort = _session.InstrumentDisplayName;
                     UpdateInstrumentPickerVisibility();
                 }
             }
@@ -3338,7 +3336,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                 Dt = DateTime.Now,
                 Key = _session.Key,
                 Tune = _session.Tune ?? string.Empty,
-                Instrument = _session.Instrument?.Split(',')[0].Trim() ?? string.Empty,
+                Instrument = _session.InstrumentDisplayName,
                 Sc = _session.Tune == "Practice Tune"
                     ? (_session.CurrentTune?.Title ?? "Practice Tune")
                     : _session.SelectedScale,
@@ -3380,7 +3378,7 @@ async Task UpdateNoteStatsDatabaseAsync()
 
                 if (_sessionResultDb != null)
                 {
-                    var shortInstrument = _session.Instrument?.Split(',')[0].Trim() ?? "";
+                    var shortInstrument = _session.InstrumentKey;
                     Utils.Log($"[LevelUpDebug] Calling CheckAndApplyLevelUpAsync: level={_session.ChildLevel}, instrument={shortInstrument}");
                     var newLevel = await Services.LevelUpService.CheckAndApplyLevelUpAsync(
                         _sessionResultDb, _session.ChildLevel, shortInstrument);
@@ -3388,9 +3386,9 @@ async Task UpdateNoteStatsDatabaseAsync()
                     if (newLevel.HasValue)
                     {
                         Utils.Log($"[LevelUpDebug] Level up! New level={newLevel.Value}");
+                        _session.ChildLevel = newLevel.Value;
                         DifficultyLevelMapper.PickAndApplyToSession(
                             newLevel.Value, _session, forceClassicMode: false);
-                        _session.ChildLevel = newLevel.Value;
                         UpdateChildLevelSliderDisplay();
                         UpdateKeyPickerSelection();
                         UpdateScaleTunePicker();
@@ -3484,7 +3482,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                 var result = new Models.SessionResult
                 {
                     DateTime               = DateTime.UtcNow,
-                    Instrument             = _session.Instrument?.Split(',')[0].Trim() ?? "",
+                    Instrument             = _session.InstrumentKey,
                     Level                  = _session.ChildLevel,
                     TotalNotes             = totalNotes,
                     CorrectPitchCount      = (int)correctCount,
@@ -3582,12 +3580,12 @@ async Task UpdateNoteStatsDatabaseAsync()
         private void UpdateInstrumentPickerSelection()
         {
             if (InstrumentPicker.ItemsSource is not string[] items) return;
-            var idx = Array.IndexOf(items, _session.Instrument);
+            var idx = Array.IndexOf(items, _session.InstrumentDisplayName);
             if (idx >= 0 && InstrumentPicker.SelectedIndex != idx)
                 InstrumentPicker.SelectedIndex = idx;
             if (idx >= 0 && _v3HomeInstrumentPicker?.SelectedIndex != idx)
                 _v3HomeInstrumentPicker!.SelectedIndex = idx;
-            SelectedInstrumentShort = _session.Instrument?.Split(',')[0].Trim() ?? string.Empty;
+            SelectedInstrumentShort = _session.InstrumentDisplayName;
         }
 
         private void UpdateKeyPickerSelection()
@@ -3855,7 +3853,7 @@ async Task UpdateNoteStatsDatabaseAsync()
             _session.Instrument = fullInstrument;
             if (InstrumentPicker.SelectedIndex != idx)
                 InstrumentPicker.SelectedIndex = idx;
-            SelectedInstrumentShort = fullInstrument.Split(',')[0].Trim();
+            SelectedInstrumentShort = _session.InstrumentDisplayName;
         }
 
         private async void V3HomeKeyPicker_SelectedIndexChanged(object? sender, EventArgs e)
@@ -3979,11 +3977,8 @@ async Task UpdateNoteStatsDatabaseAsync()
         {
             if (InstrumentPicker.SelectedItem is string s)
             {
-                // Always show only the short string in overlay label
-                var shortInstrument = s.Split(',')[0].Trim();
-                SelectedInstrumentShort = shortInstrument;
-                // Store the full string so GetInstrumentTransposeOffset can match it
                 _session.Instrument = s;
+                SelectedInstrumentShort = _session.InstrumentDisplayName;
                 // Hide picker and show label immediately
                 IsInstrumentPickerVisible = false;
                 IsInstrumentLabelVisible = true;

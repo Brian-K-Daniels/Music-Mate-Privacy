@@ -53,8 +53,25 @@
   <ScrollView>
     <VerticalStackLayout Padding="8,6" Spacing="6">
 
-      <!-- ── Note Range: bold label + both pickers on one line ────────── -->
-      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="4" VerticalOptions="Center">
+      <!-- ── Note Range: automatically generated from Instrument + Level ────────── -->
+      <Grid ColumnDefinitions="170,*,Auto,Auto" ColumnSpacing="4" VerticalOptions="Center">
+        <Label Grid.Column="0" Text="Note Range" FontAttributes="Bold" FontSize="13" />
+        <Label Grid.Column="1"
+               Text="{Binding AutomaticNoteRangeDisplay}"
+               FontAttributes="Bold"
+               HorizontalTextAlignment="Start" />
+        <Label Grid.Column="2" Text="Mastered" VerticalOptions="Center" />
+        <Picker Grid.Column="3"
+                WidthRequest="100"
+                ItemsSource="{Binding MasteredMethodOptions}"
+                SelectedItem="{Binding MasteredMethod, Mode=TwoWay}"
+                TextColor="Black" BackgroundColor="White" FontSize="12" />
+      </Grid>
+
+      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto"
+            ColumnSpacing="4"
+            VerticalOptions="Center"
+            IsVisible="False">
         <Label Grid.Column="0" Text="Note Range" FontAttributes="Bold" FontSize="13" />
         <Label Grid.Column="1" Text="Low" HorizontalTextAlignment="End"/>
         <Picker x:Name="LowestNotePicker"

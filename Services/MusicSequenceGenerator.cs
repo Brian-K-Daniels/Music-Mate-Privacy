@@ -142,6 +142,9 @@ namespace musicmate.Services
 
             public static PhraseContour FromPitches(IReadOnlyList<int> pitches)
             {
+                if (pitches.Count == 0)
+                    return new PhraseContour();
+
                 var deltas = new List<int>(Math.Max(0, pitches.Count - 1));
                 for (int i = 1; i < pitches.Count; i++)
                     deltas.Add(pitches[i] - pitches[i - 1]);
@@ -168,6 +171,7 @@ namespace musicmate.Services
         public List<Measure> GenerateSequence()
         {
             var rng = RandomSeed.HasValue ? new Random(RandomSeed.Value) : new Random();
+            ExcludedMidiNumbers ??= new HashSet<int>();
 
             // 1. Build the allowed pitch pool from the scale + range settings.
             var pool = BuildPitchPool();
@@ -398,7 +402,10 @@ namespace musicmate.Services
                 globalBeatCursor += TimeSignature.TotalBeats;
             }
 
-            return canReuse ? null : PhraseContour.FromPitches(pitchedMidis);
+            if (canReuse || pitchedMidis.Count == 0)
+                return null;
+
+            return PhraseContour.FromPitches(pitchedMidis);
         }
 
         /// <summary>Picks a starting note for a transposed contour repeat.</summary>
