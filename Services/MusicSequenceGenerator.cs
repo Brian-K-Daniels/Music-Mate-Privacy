@@ -300,12 +300,12 @@ namespace musicmate.Services
 
                 bool cadenceLast = role is PhraseRole.APrime or PhraseRole.AReturn;
                 PhraseContour? reuse = role is PhraseRole.APrime or PhraseRole.AReturn ? contourA : null;
-                bool preferHomeStart = role == PhraseRole.AReturn;
+                bool preferPracticeStart = role == PhraseRole.AReturn;
 
                 var built = FillPhraseFromRhythm(
                     rng, pool, phraseRhythms, measures, mi, globalBeatCursor,
                     ref globalNoteIndex, ref prevPitch,
-                    reuse, preferHomeStart, cadenceLast);
+                    reuse, preferPracticeStart, cadenceLast);
 
                 if (role == PhraseRole.A)
                     contourA = built;
@@ -335,7 +335,7 @@ namespace musicmate.Services
             ref int globalNoteIndex,
             ref int prevPitch,
             PhraseContour? contourToReuse,
-            bool preferHomeStart,
+            bool preferPracticeStart,
             bool cadenceOnLastPitch)
         {
             int pitchedSlotCount = measureRhythms.Sum(m => m.Count(s => !s.IsRest));
@@ -382,7 +382,7 @@ namespace musicmate.Services
                     }
                     else if (pitchedMidis.Count == 0)
                     {
-                        pitch = ChooseTransposedStart(rng, pool, contourToReuse!, prevPitch, preferHomeStart);
+                        pitch = ChooseTransposedStart(rng, pool, contourToReuse!, prevPitch, preferPracticeStart);
                     }
                     else if (isLastPhrasePitch)
                     {
@@ -416,17 +416,17 @@ namespace musicmate.Services
 
         /// <summary>Picks a starting note for a transposed contour repeat.</summary>
         private int ChooseTransposedStart(
-            Random rng, List<int> pool, PhraseContour contour, int prevMidi, bool preferHomeStart)
+            Random rng, List<int> pool, PhraseContour contour, int prevMidi, bool preferPracticeStart)
         {
             int baseStart = contour.FirstPitchMidi;
-            int[] offsets = preferHomeStart
+            int[] offsets = preferPracticeStart
                 ? new[] { 0, 0, 2, -2, 3, -3 }
                 : new[] { 2, -2, 3, -3, 4, -4, 5, -5, 0 };
 
             foreach (int off in offsets.OrderBy(_ => rng.Next()))
             {
                 int candidate = SnapPitchToPool(rng, pool, baseStart + off, prevMidi, phraseEnding: false);
-                if (candidate != baseStart || preferHomeStart)
+                if (candidate != baseStart || preferPracticeStart)
                     return candidate;
             }
 
@@ -464,7 +464,15 @@ namespace musicmate.Services
                 throw new InvalidOperationException("Pitch pool is empty.");
 
             if (prevMidi < 0)
+            {
+                if (MaxMelodicIntervalSemitones > 0)
+                {
+                    int center = (pool.Min() + pool.Max()) / 2;
+                    return pool.OrderBy(m => Math.Abs(m - center)).ThenBy(m => m).First();
+                }
+
                 return pool[rng.Next(pool.Count)];
+            }
 
             IEnumerable<int> candidates = pool;
             if (MaxMelodicIntervalSemitones > 0)
@@ -974,8 +982,21 @@ namespace musicmate.Services
         /// <param name="isPhraseEnding">True if this is the last note of a phrase (measure 2, 4, etc.)</param>
         private int PickPitch(Random rng, List<int> pool, int prevMidi = -1, bool isPhraseEnding = false)
         {
-            if (prevMidi < 0 || pool.Count <= 1)
+            if (pool.Count <= 1)
+                return pool[0];
+
+            if (prevMidi < 0)
+            {
+                // Start near the middle of the allowed range so the first note is not
+                // an extreme ledger-line pitch when an interval cap is active.
+                if (MaxMelodicIntervalSemitones > 0)
+                {
+                    int center = (pool.Min() + pool.Max()) / 2;
+                    return pool.OrderBy(m => Math.Abs(m - center)).ThenBy(m => m).First();
+                }
+
                 return pool[rng.Next(pool.Count)];
+            }
 
             int prevPc = prevMidi % 12;
             var scalePcs = GetScalePitchClasses(Key, Scale);

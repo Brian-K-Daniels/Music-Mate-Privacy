@@ -12,7 +12,7 @@ using musicmate.Utilities;
 namespace musicmate.Services
 {
     /// <summary>
-    /// Controls which staff renderer is active on the Home / V3 Home page.
+    /// Controls which staff renderer is active on the Practice / V3 Practice page.
     /// </summary>
     public enum StaffDisplayMode
     {
@@ -320,7 +320,7 @@ namespace musicmate.Services
             }
         }
 
-        /// <summary>Child-home measure batch size; 0 = use MainPage default.</summary>
+        /// <summary>Child-Practice measure batch size; 0 = use MainPage default.</summary>
         public int ChildMeasureBatchSize { get; set; }
 
         /// <summary>Explicit rhythm variety (0–100); -1 = derive from <see cref="V3RhythmMode"/>.</summary>
@@ -918,14 +918,35 @@ namespace musicmate.Services
                 .Select(midi => MidiToNoteName(midi, KeyUsesFlats(Key)))
                 .ToArray();
 
-        public void ApplyAutomaticInstrumentRange()
+        public void ApplyAutomaticInstrumentRange(int? levelOverride = null)
         {
-            var (lowest, highest) = InstrumentCatalog.GetAutomaticRange(CurrentInstrumentProfile, ChildLevel);
+            int level = levelOverride ?? ChildLevel;
+            var (lowest, highest) = InstrumentCatalog.GetAutomaticRange(CurrentInstrumentProfile, level);
             LowestNote = string.IsNullOrWhiteSpace(lowest) ? "E3" : lowest;
             HighestNote = string.IsNullOrWhiteSpace(highest) ? "C6" : highest;
             OnPropertyChanged(nameof(AutomaticNoteRangeDisplay));
             OnPropertyChanged(nameof(AvailableInstrumentMidis));
             OnPropertyChanged(nameof(AvailableInstrumentNoteNames));
+        }
+
+        /// <summary>
+        /// Ensures random-mode generation has an interval cap and instrument range.
+        /// Uses <see cref="ChildLevel"/> when set; otherwise falls back to the saved
+        /// ChildPractice level preference; otherwise applies a modest adult default cap.
+        /// </summary>
+        public void EnsureRandomModeGenerationSettings()
+        {
+            if (!IsRandomMode)
+                return;
+
+            int level = ChildLevel;
+            if (level <= 0)
+                level = Preferences.Get("ChildPractice.Level", 0);
+
+            if (level > 0)
+                DifficultyLevelMapper.ApplyLevelDerivedSettings(level, this);
+            else if (MaxMelodicIntervalSemitones <= 0)
+                MaxMelodicIntervalSemitones = 7;
         }
 
         private static HashSet<int> GetUnadornedNoteMidis(IEnumerable<string> scaleNotes)
@@ -1084,11 +1105,11 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// The child difficulty level (1–100) selected on ChildHomePage before this session
+        /// The child difficulty level (1–100) selected on HomePage before this session
         /// started.  0 means the session was started from the standard practice pages, not
-        /// from ChildHomePage, and no child-level SessionResult should be recorded.
+        /// from HomePage, and no child-level SessionResult should be recorded.
         ///
-        /// Not persisted here — ChildHomePage owns persistence via Preferences("ChildHome.Level").
+        /// Not persisted here — HomePage owns persistence via Preferences("ChildPractice.Level").
         /// </summary>
         public int ChildLevel
         {

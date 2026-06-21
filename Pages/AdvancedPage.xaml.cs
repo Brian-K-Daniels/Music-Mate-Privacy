@@ -59,7 +59,7 @@ namespace musicmate.Pages
                 _viewModel.CommitCompositionPercent(3, (int)Math.Round(slider.Value));
         }
 
-        private async void OnNavigateHomeClicked(object sender, EventArgs e)
+        private async void OnNavigatePracticeClicked(object sender, EventArgs e)
         {
             await Shell.Current.GoToAsync("//MainPage");
         }

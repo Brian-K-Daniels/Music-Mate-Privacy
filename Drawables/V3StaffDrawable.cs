@@ -82,6 +82,15 @@ namespace musicmate.Drawables
         /// </summary>
         public bool UpperHasEndBar { get; set; } = false;
 
+        /// <summary>Result of assigning whole measures to upper/lower staves by width.</summary>
+        public sealed class V3StaffMeasureSplitResult
+        {
+            public List<GeneratedNote> UpperNotes { get; } = new();
+            public List<GeneratedNote> LowerNotes { get; } = new();
+            public int UpperMeasureCount { get; set; }
+            public int TotalMeasureCount { get; set; }
+        }
+
         // ── Fixed horizontal constants ─────────────────────────────────────────
         private const float ScrollPxPerBeat = 42f;   // reduced from 48 for better fit
         private const float RightMargin     = 36f;
@@ -112,8 +121,6 @@ namespace musicmate.Drawables
 
         private const float AccidentalRightGap = 0.5f;
         private const float DoubleBarExtraWidth  = 4f;
-        private const float BodyAccidentalRaise  = 0.32f; // staff-space fraction — lifts body glyphs
-        private const float NaturalAccidentalRaiseBoost = 1.55f;
 
         // Notehead ellipse is drawn with height = NoteHeadR * NoteHeadHeightFactor.
         private const float NoteHeadHeightFactor     = 1.5f;
@@ -145,7 +152,7 @@ namespace musicmate.Drawables
 
         private const float KeySigFlatSizeBoost = 0.95f;
         private const float BodyFlatSizeBoost = 1.34f;
-        private const float KeySigFlatRaiseStaffSpace = 0.24f;
+        private const float BodyNaturalSizeBoost = 1.22f;
 
         /// <summary>
         /// Body-accidental scale factor for child levels 31+ (compact noteheads).
@@ -196,7 +203,7 @@ namespace musicmate.Drawables
         private float BodyAccidentalDrawWidth(bool isFlat, bool isNatural = false)
             => isFlat
                 ? BodyAccidentalSymbolWidth(isFlat: true)
-                : BodyAccidentalSymbolWidth() * (isNatural ? 0.70f : 1.0f);
+                : BodyAccidentalSymbolWidth() * (isNatural ? 0.92f : 1.0f);
 
         private float NoteHeadLeft(float centerX) => centerX - _layout.NoteHeadR;
 
@@ -328,7 +335,7 @@ namespace musicmate.Drawables
 
         /// <summary>
         /// Available canvas height set by the page before calling <see cref="ComputeRequiredHeight"/>.
-        /// The drawable scales staff geometry to fill this height, reserving space for the OS home bar.
+        /// The drawable scales staff geometry to fill this height, reserving space for the OS Practice bar.
         /// </summary>
         public float AvailableHeight { get; set; } = 300f;
 
@@ -734,8 +741,129 @@ namespace musicmate.Drawables
             _safeArea = safeArea;
         }
 
+        /// <summary>
+        /// Measure-based two-staff assignment: compute each measure's minimum width,
+        /// pack whole measures onto the upper staff until the next measure will not fit,
+        /// then place remaining measures on the lower staff.  Never splits a measure.
+        /// </summary>
+        public V3StaffMeasureSplitResult SplitMeasuresAcrossStaves(
+            List<GeneratedNote> allNotes,
+            IReadOnlyList<double> barBeats,
+            float canvasWidth,
+            float canvasHeight)
+        {
+            var result = new V3StaffMeasureSplitResult();
+            if (allNotes.Count == 0)
+                return result;
+
+            var insets = _safeArea?.GetSafeAreaInsets() ?? (0f, 0f, 0f, 0f);
+            float effectiveRightInset = Math.Max(0f, insets.Right - V3RelaxCutoutInsetRightDp);
+            float safeLeft = insets.Left;
+            float layoutRightLimit = canvasWidth - effectiveRightInset - V3LayoutRightPad;
+            float safeWidth = Math.Max(64f, layoutRightLimit - safeLeft);
+
+            ComputeLayout(Math.Max(canvasHeight, 120f));
+            _headerMetrics = ComputeHeaderMetrics(safeLeft);
+            float upperUsableWidth = Math.Max(64f, safeWidth - _headerMetrics.LeftMargin - RightMargin);
+            float lowerUsableWidth = Math.Max(64f, safeWidth - _headerMetrics.ClefOnlyLeftMargin - RightMargin);
+
+            var notes = allNotes;
+            double beatOrigin = GetStaffBeatOrigin(notes, barBeats);
+            var barBeatsList = barBeats is List<double> list ? new List<double>(list) : barBeats.ToList();
+            barBeatsList = ResolveStaffBarBeats(notes, barBeatsList, beatOrigin);
+
+            double totalBeats = 0.0;
+            for (int i = 0; i < notes.Count; i++)
+            {
+                double rel = (notes[i].BeatPosition ?? 0.0) - beatOrigin;
+                totalBeats = Math.Max(totalBeats, rel + notes[i].BeatDuration);
+            }
+
+            var sortedBarBeats = barBeatsList.Select(b => b - beatOrigin).OrderBy(b => b).ToList();
+            var segments = BuildMeasureSegments(notes, sortedBarBeats, beatOrigin, totalBeats);
+            result.TotalMeasureCount = segments.Count;
+
+            if (segments.Count == 0)
+            {
+                result.UpperNotes.AddRange(notes);
+                return result;
+            }
+
+            var minWidths = new float[segments.Count];
+            for (int m = 0; m < segments.Count; m++)
+                minWidths[m] = ComputeMeasureMinWidth(notes, segments[m], beatOrigin);
+
+            int upperMeasureCount = PackMeasuresOntoStaff(
+                segments, minWidths, upperUsableWidth, startMeasureIndex: 0, isLowerStaff: false);
+
+            if (upperMeasureCount < segments.Count)
+            {
+                PackMeasuresOntoStaff(
+                    segments, minWidths, lowerUsableWidth,
+                    startMeasureIndex: upperMeasureCount, isLowerStaff: true);
+            }
+
+            var upperIndices = new HashSet<int>();
+            for (int m = 0; m < upperMeasureCount; m++)
+            {
+                foreach (int idx in segments[m].NoteIndices)
+                    upperIndices.Add(idx);
+            }
+
+            for (int i = 0; i < notes.Count; i++)
+            {
+                if (upperIndices.Contains(i))
+                    result.UpperNotes.Add(notes[i]);
+                else
+                    result.LowerNotes.Add(notes[i]);
+            }
+
+            result.UpperMeasureCount = upperMeasureCount;
+            return result;
+        }
+
+        /// <summary>
+        /// Packs consecutive whole measures onto one staff row.  Returns the number of
+        /// measures placed (may be zero when <paramref name="startMeasureIndex"/> is past the end).
+        /// </summary>
+        private int PackMeasuresOntoStaff(
+            List<MeasureSegment> segments,
+            float[] minWidths,
+            float usableWidth,
+            int startMeasureIndex,
+            bool isLowerStaff)
+        {
+            float usedWidth = 0f;
+            int placed = 0;
+
+            for (int m = startMeasureIndex; m < segments.Count; m++)
+            {
+                float measureWidth = minWidths[m];
+                float remainingStaffWidth = usableWidth - usedWidth;
+                bool mustWrap = placed > 0 && measureWidth > remainingStaffWidth + 0.5f;
+                bool wrappedFromPreviousStaff = isLowerStaff && placed == 0;
+
+#if DEBUG
+                LogMeasureLayout(m + 1, measureWidth, remainingStaffWidth, mustWrap || wrappedFromPreviousStaff);
+#endif
+                if (mustWrap)
+                    break;
+
+                usedWidth += measureWidth;
+                placed++;
+            }
+
+            return placed;
+        }
+
+#if DEBUG
+        private static void LogMeasureLayout(int measureNumber, float width, float remainingStaffWidth, bool wrapped)
+            => Utilities.DebugTestLog.Write(
+                $"[MeasureLayout] Measure={measureNumber} Width={width:F0} RemainingStaffWidth={remainingStaffWidth:F0} Wrapped={wrapped}");
+#endif
+
         // ── Ordered layout pipeline ──────────────────────────────────────────────
-        // Approximate height of the iOS/Android system home-indicator bar at the bottom of the screen.
+        // Approximate height of the iOS/Android system Practice-indicator bar at the bottom of the screen.
         private const float BottomBarReserve = 34f;
 
         /// <summary>
@@ -747,7 +875,7 @@ namespace musicmate.Drawables
         {
             if (availH <= 0f) availH = 300f;
 
-            // Reserve space for the OS home-indicator bar so notes are never hidden behind it.
+            // Reserve space for the OS Practice-indicator bar so notes are never hidden behind it.
             float usableH = availH - BottomBarReserve;
 
             // Diatonic-step range for each staff.
@@ -1618,7 +1746,7 @@ namespace musicmate.Drawables
                 return (Array.Empty<NoteLayout>(), Array.Empty<BarLayout>(), staffLeftMargin);
 
             double beatOrigin = GetStaffBeatOrigin(notes, barBeats);
-            barBeats = EnsureRegularBarBeats(notes, barBeats, beatOrigin);
+            barBeats = ResolveStaffBarBeats(notes, barBeats, beatOrigin);
 
             double totalBeats = 0.0;
             for (int i = 0; i < notes.Count; i++)
@@ -1981,8 +2109,8 @@ namespace musicmate.Drawables
                 EnforceGlobalBeatOrderSpacing(LowerNotes, lowerNoteLayouts, lowerBeatOrigin, lowerPlanInkGap, LowerBarBeats);
             }
 
-            NudgeNotesClearOfBarlines(UpperNotes, upperNoteLayouts, upperBarLayouts, upperTop, upperMid, upperBot);
-            NudgeNotesClearOfBarlines(LowerNotes, lowerNoteLayouts, lowerBarLayouts, lowerTop, lowerMid, lowerBot);
+            NudgeNotesClearOfBarlines(UpperNotes, upperNoteLayouts, upperBarLayouts, UpperBarBeats, upperBeatOrigin, upperTop, upperMid, upperBot);
+            NudgeNotesClearOfBarlines(LowerNotes, lowerNoteLayouts, lowerBarLayouts, LowerBarBeats, lowerBeatOrigin, lowerTop, lowerMid, lowerBot);
             ReconcileFinalBarLayout(upperNoteLayouts, upperBarLayouts);
             ReconcileFinalBarLayout(lowerNoteLayouts, lowerBarLayouts);
 
@@ -2019,6 +2147,9 @@ namespace musicmate.Drawables
             ReconcileFinalBarLayout(upperNoteLayouts, upperBarLayouts);
             ReconcileFinalBarLayout(lowerNoteLayouts, lowerBarLayouts);
             AlignIndependentStaffEndBars(upperBarLayouts, upperNoteLayouts, lowerBarLayouts, lowerNoteLayouts, layoutRightLimit);
+
+            FinalizeStaffBarClearance(UpperNotes, upperNoteLayouts, upperBarLayouts, UpperBarBeats, upperBeatOrigin, upperTop, upperMid, upperBot);
+            FinalizeStaffBarClearance(LowerNotes, lowerNoteLayouts, lowerBarLayouts, LowerBarBeats, lowerBeatOrigin, lowerTop, lowerMid, lowerBot);
 
             SanitizeLayoutPositions(upperNoteLayouts, upperBarLayouts);
             SanitizeLayoutPositions(lowerNoteLayouts, lowerBarLayouts);
@@ -2247,10 +2378,14 @@ namespace musicmate.Drawables
             IReadOnlyList<GeneratedNote> notes,
             NoteLayout[] noteLayouts,
             BarLayout[] barLayouts,
+            IReadOnlyList<double> barBeats,
+            double beatOrigin,
             float staffTop, float staffMid, float staffBot)
         {
             if (notes.Count == 0 || barLayouts.Length == 0)
                 return;
+
+            var sortedBarBeatsRel = barBeats.Select(b => b - beatOrigin).OrderBy(b => b).ToList();
 
             for (int i = 0; i < notes.Count; i++)
             {
@@ -2282,23 +2417,36 @@ namespace musicmate.Drawables
                 var layout = noteLayouts[i];
                 centerX = layout.X;
                 float groupLeft = NoteGroupLeftFromLayout(layout);
+                double noteBeat = (notes[i].BeatPosition ?? 0.0) - beatOrigin;
 
-                for (int b = 0; b < barLayouts.Length; b++)
+                for (int b = 0; b < barLayouts.Length - 1; b++)
                 {
+                    if (b < sortedBarBeatsRel.Count && noteBeat < sortedBarBeatsRel[b] - 1e-6)
+                        continue;
+
                     float barX = barLayouts[b].X;
-                    if (centerX > barX + 0.5f)
+                    float minGroupLeft = barX + BarLeftPadding + BarStemClearance;
+                    if (groupLeft < minGroupLeft - 0.5f)
                     {
-                        float minLeft = barX + BarLeftPadding;
-                        if (groupLeft < minLeft)
-                        {
-                            noteLayouts[i].X += minLeft - groupLeft;
-                            SyncAccidentalX(noteLayouts, i);
-                            groupLeft = NoteGroupLeftFromLayout(noteLayouts[i]);
-                        }
+                        noteLayouts[i].X += minGroupLeft - groupLeft;
+                        SyncAccidentalX(noteLayouts, i);
+                        groupLeft = NoteGroupLeftFromLayout(noteLayouts[i]);
                     }
-                    // Notes before a bar: never nudge backward (left) — that encroaches on predecessors.
                 }
             }
+        }
+
+        private void FinalizeStaffBarClearance(
+            List<GeneratedNote> notes,
+            NoteLayout[] noteLayouts,
+            BarLayout[] barLayouts,
+            IReadOnlyList<double> barBeats,
+            double beatOrigin,
+            float staffTop, float staffMid, float staffBot)
+        {
+            RefinishMeasureSpacing(notes, noteLayouts, barLayouts, barBeats, beatOrigin);
+            NudgeNotesClearOfBarlines(notes, noteLayouts, barLayouts, barBeats, beatOrigin, staffTop, staffMid, staffBot);
+            ReconcileFinalBarLayout(noteLayouts, barLayouts);
         }
 
         /// <summary>Ensures the final bar clears the last note without moving internal bar lines.</summary>
@@ -2504,6 +2652,46 @@ namespace musicmate.Drawables
         }
 
         /// <summary>
+        /// Bar lines at generator measure boundaries when available; otherwise regular meter grid.
+        /// </summary>
+        private List<double> ResolveStaffBarBeats(
+            IReadOnlyList<GeneratedNote> notes,
+            List<double> barBeats,
+            double beatOrigin)
+        {
+            if (notes.Any(n => n.MeasureIndex.HasValue))
+            {
+                var fromMeasures = BuildBarBeatsFromMeasureIndices(notes);
+                if (fromMeasures.Count > 0)
+                    return fromMeasures;
+            }
+
+            return EnsureRegularBarBeats(notes, barBeats, beatOrigin);
+        }
+
+        private static List<double> BuildBarBeatsFromMeasureIndices(IReadOnlyList<GeneratedNote> notes)
+        {
+            var bars = new List<double>();
+            if (notes.Count == 0)
+                return bars;
+
+            int prevMeasure = -1;
+            foreach (var n in notes.OrderBy(n => n.BeatPosition ?? 0.0))
+            {
+                int mi = n.MeasureIndex ?? (prevMeasure >= 0 ? prevMeasure : 0);
+                if (prevMeasure >= 0 && mi != prevMeasure && n.BeatPosition.HasValue)
+                {
+                    double bp = n.BeatPosition.Value;
+                    if (bars.Count == 0 || bp > bars[^1] + 1e-6)
+                        bars.Add(bp);
+                }
+                prevMeasure = mi;
+            }
+
+            return bars;
+        }
+
+        /// <summary>
         /// Snaps internal bar lines to a regular meter grid when the supplied beats drift
         /// (e.g. per-note measure indices). Pickup and partial final measures are kept.
         /// </summary>
@@ -2526,34 +2714,12 @@ namespace musicmate.Drawables
             if (totalBeats <= measureBeats + 1e-6)
                 return barBeats;
 
-            int expectedInternalBars = 0;
-            for (double b = measureBeats; b < totalBeats - 1e-6; b += measureBeats)
-                expectedInternalBars++;
-            var relIncoming = barBeats
-                .Select(b => b - beatOrigin)
-                .Where(b => b > 1e-6)
-                .OrderBy(b => b)
-                .ToList();
+            var fixedBeats = new List<double>();
+            for (double bar = beatOrigin + measureBeats;
+                 bar < beatOrigin + totalBeats - 1e-6;
+                 bar += measureBeats)
+                fixedBeats.Add(bar);
 
-            bool aligned = relIncoming.Count == expectedInternalBars;
-            if (aligned)
-            {
-                for (int i = 0; i < relIncoming.Count; i++)
-                {
-                    if (Math.Abs(relIncoming[i] - (i + 1) * measureBeats) > 0.05)
-                    {
-                        aligned = false;
-                        break;
-                    }
-                }
-            }
-
-            if (aligned)
-                return barBeats;
-
-            var fixedBeats = new List<double>(expectedInternalBars);
-            for (int m = 1; m <= expectedInternalBars; m++)
-                fixedBeats.Add(beatOrigin + m * measureBeats);
             return fixedBeats;
         }
 
@@ -2659,8 +2825,8 @@ namespace musicmate.Drawables
             for (int b = 0; b < internalBarCount; b++)
             {
                 float barX = barLayouts[b].X;
-                float maxTrailing = barX - BarLeftPadding;
-                float minLeading = barX + BarLeftPadding;
+                float maxTrailing = barX - BarLeftPadding - BarStemClearance;
+                float minLeading = barX + BarLeftPadding + BarStemClearance;
 
                 if (b < segments.Count && segments[b].NoteIndices.Count > 0)
                 {
@@ -3530,7 +3696,7 @@ namespace musicmate.Drawables
         }
 
         /// <summary>
-        /// Horizontal center for the Home play overlay, aligned with the upper-staff time
+        /// Horizontal center for the Practice play overlay, aligned with the upper-staff time
         /// signature (canvas coordinates).
         /// </summary>
         public bool TryGetPlayButtonCenterX(float canvasWidth, out float centerX)
@@ -3625,48 +3791,66 @@ namespace musicmate.Drawables
         private float KeySigAccidentalFontSize(bool isFlat)
             => _layout.Sls * 2.4f * KeySigAccidentalScale() * ArpeggioKeySigSizeBoost() * (isFlat ? KeySigFlatSizeBoost : 1f);
 
-        private float BodyAccidentalFontSize(bool isFlat = false)
-            => _layout.Sls * 2.4f * BodyAccidentalGlyphScale() * (isFlat ? BodyFlatSizeBoost : 1f);
+        private float BodyAccidentalFontSize(bool isFlat = false, bool isNatural = false)
+            => _layout.Sls * 2.4f * BodyAccidentalGlyphScale()
+               * (isFlat ? BodyFlatSizeBoost : 1f)
+               * (isNatural ? BodyNaturalSizeBoost : 1f);
 
         /// <summary>
-        /// Top of the body-accidental draw box so ink centers on the notehead ellipse center
-        /// (<see cref="DrawNote"/> places the head at pitch Y with height <c>NoteHeadR * 1.5</c>).
+        /// Draws a Bravura SMuFL accidental with its musical staff-line anchor (the font
+        /// y = 0 baseline in Skia, i.e. the note's staff position) placed precisely at
+        /// <paramref name="staffY"/>.  The ink's left edge starts at <paramref name="anchorX"/>.
+        /// <para>
+        /// For right-aligned body accidentals: <c>anchorX = boxRight − (m.Left + m.Width)</c>.<br/>
+        /// For slot-centred key-signature accidentals: <c>anchorX = slotCentreX − m.Width / 2</c>.
+        /// </para>
+        /// Returns false if Bravura is unavailable; caller should use a Unicode fallback.
         /// </summary>
-        private static float BodyAccidentalDrawTop(
-            float noteHeadCenterY, float glyphHeight, bool isFlat, bool isNatural)
+        private static bool TrySmuFLAccidentalAtStaffY(
+            ICanvas canvas,
+            string bravuraGlyph,
+            float anchorX,
+            float staffY,
+            float fontSize,
+            Color ink)
         {
-            // Bravura accidentals carry ink below the metrics midpoint when drawn in a top-anchored box.
-            float lift = isFlat ? 0.20f : isNatural ? 0.12f : 0.15f;
-            return noteHeadCenterY - glyphHeight * (0.5f + lift);
+            if (!SmuFLGlyphMetrics.TryMeasure(bravuraGlyph, fontSize, out var m))
+                return false;
+            // m.Top is negative (ink above baseline in Skia convention).
+            // Adding m.Top shifts the draw box so the baseline sits exactly on staffY.
+            float yTop = staffY + m.Top;
+            return SmuFLRestRaster.TryDrawGlyph(canvas, bravuraGlyph, anchorX, yTop, m.Width, m.Height, fontSize, ink);
         }
 
-        /// <summary>Draws one Bravura accidental right-aligned to <paramref name="boxRight"/>.</summary>
+        /// <summary>
+        /// Draws one Bravura body accidental right-aligned to <paramref name="boxRight"/> and
+        /// anchored vertically on <paramref name="staffY"/> (the notehead staff position).
+        /// </summary>
         private bool TryDrawBodySmuFLAccidental(
             ICanvas canvas,
-            string glyph,
+            string bravuraGlyph,
             float boxRight,
-            float noteHeadCenterY,
+            float staffY,
             Color ink,
             bool isFlat,
             bool isNatural)
         {
-            float fontSize = BodyAccidentalFontSize(isFlat);
-            if (!SmuFLGlyphMetrics.TryMeasure(glyph, fontSize, out var m))
+            float fontSize = isNatural
+                ? BodyAccidentalFontSize(isFlat: false, isNatural: true)
+                : BodyAccidentalFontSize(isFlat);
+            if (!SmuFLGlyphMetrics.TryMeasure(bravuraGlyph, fontSize, out var m))
                 return false;
-
-            float left = boxRight - (m.Left + m.Width);
-            float yTop = BodyAccidentalDrawTop(noteHeadCenterY, m.Height, isFlat, isNatural);
-
-            return SmuFLRestRaster.TryDrawGlyph(canvas, glyph, left, yTop, m.Width, m.Height, fontSize, ink)
-                || PlatformRestText.DrawAligned(canvas, glyph, fontSize, ink,
-                    left, yTop, m.Width, m.Height,
-                    HorizontalAlignment.Left, VerticalAlignment.Center);
+            float anchorX = boxRight - (m.Left + m.Width);
+            return TrySmuFLAccidentalAtStaffY(canvas, bravuraGlyph, anchorX, staffY, fontSize, ink);
         }
 
-        /// <summary>Draws one Bravura key-sig accidental centered on <paramref name="yLine"/>.</summary>
+        /// <summary>
+        /// Draws one Bravura key-signature accidental centred in the slot and anchored at
+        /// <paramref name="yLine"/> (the canonical staff-position Y for that accidental).
+        /// </summary>
         private bool DrawKeySigAccidental(
             ICanvas canvas,
-            string glyph,
+            string bravuraGlyph,
             float sigX,
             float symW,
             float yLine,
@@ -3674,18 +3858,10 @@ namespace musicmate.Drawables
             Color ink,
             bool isFlat)
         {
-            if (!SmuFLGlyphMetrics.TryMeasure(glyph, fontSize, out var m))
+            if (!SmuFLGlyphMetrics.TryMeasure(bravuraGlyph, fontSize, out var m))
                 return false;
-
-            float slotCenterX = sigX + symW * 0.5f;
-            float left = slotCenterX - (m.Left + m.Width * 0.5f);
-            float raise = isFlat ? _layout.Sls * BodyAccidentalRaise * KeySigAccidentalScale() : 0f;
-            float yTop = yLine - m.Height * (isFlat ? 0.50f : 0.46f) - raise;
-
-            return SmuFLRestRaster.TryDrawGlyph(canvas, glyph, left, yTop, m.Width, m.Height, fontSize, ink)
-                || PlatformRestText.DrawAligned(canvas, glyph, fontSize, ink,
-                    left, yTop, m.Width, m.Height,
-                    HorizontalAlignment.Left, VerticalAlignment.Top);
+            float anchorX = sigX + (symW - m.Width) * 0.5f;
+            return TrySmuFLAccidentalAtStaffY(canvas, bravuraGlyph, anchorX, yLine, fontSize, ink);
         }
 
         private static int DiatonicStepsFromB4(char letter, int octave)
@@ -3899,7 +4075,9 @@ namespace musicmate.Drawables
 
                 canvas.FontColor = ApplyAlpha(ink, fadeAlpha);
 
-                float bodyFont = BodyAccidentalFontSize(isFlat);
+                float bodyFont = isNatural
+                    ? BodyAccidentalFontSize(isFlat: false, isNatural: true)
+                    : BodyAccidentalFontSize(isFlat);
 
                 if (isFlat)
                 {
@@ -3907,7 +4085,7 @@ namespace musicmate.Drawables
                     if (!TryDrawBodySmuFLAccidental(canvas, smufl, boxRight, y, ApplyAlpha(ink, fadeAlpha), isFlat: true, isNatural: false))
                     {
                         float symH = symW * 1.1f;
-                        float yTop = BodyAccidentalDrawTop(y, symH, isFlat: true, isNatural: false);
+                        float yTop = y - symH * 0.5f;
                         canvas.FontSize = BodyAccidentalFontSize(isFlat: true);
                         canvas.DrawString(glyph, boxLeft, yTop, boxW, symH,
                             HorizontalAlignment.Right, VerticalAlignment.Center);
@@ -3915,19 +4093,28 @@ namespace musicmate.Drawables
                 }
                 else if (isNatural)
                 {
-                    float symH = symW * 1.2f;
-                    float yTop = BodyAccidentalDrawTop(y, symH, isFlat: false, isNatural: true);
-                    canvas.FontSize = bodyFont;
-                    canvas.DrawString(glyph, boxLeft, yTop, boxW, symH,
-                        HorizontalAlignment.Right, VerticalAlignment.Center);
+                    if (!TryDrawBodySmuFLAccidental(canvas, "\uE261", boxRight, y, ApplyAlpha(ink, fadeAlpha), isFlat: false, isNatural: true))
+                    {
+                        float symH = symW * 1.2f;
+                        float yTop = y - symH * 0.5f;
+                        canvas.FontSize = bodyFont;
+                        canvas.DrawString(glyph, boxLeft, yTop, boxW, symH,
+                            HorizontalAlignment.Right, VerticalAlignment.Center);
+                    }
                 }
                 else
                 {
-                    float symH = symW * 1.05f;
-                    float yTop = BodyAccidentalDrawTop(y, symH, isFlat: false, isNatural: false);
-                    canvas.FontSize = bodyFont;
-                    canvas.DrawString(glyph, boxLeft, yTop, boxW, symH,
-                        HorizontalAlignment.Right, VerticalAlignment.Center);
+                    // Sharps and double-sharps: use Bravura glyphs so positioning is
+                    // consistent with flats and naturals.
+                    string smufl = eff == Accidental.DoubleSharp ? "\uE263" : "\uE262";
+                    if (!TryDrawBodySmuFLAccidental(canvas, smufl, boxRight, y, ApplyAlpha(ink, fadeAlpha), isFlat: false, isNatural: false))
+                    {
+                        float symH = symW * 1.05f;
+                        float yTop = y - symH * 0.5f;
+                        canvas.FontSize = bodyFont;
+                        canvas.DrawString(glyph, boxLeft, yTop, boxW, symH,
+                            HorizontalAlignment.Right, VerticalAlignment.Center);
+                    }
                 }
 
                 // Key-sig reminder drawn — clear cancellation for this letter+octave in the bar.
@@ -4135,23 +4322,15 @@ namespace musicmate.Drawables
                 float yLine = KeySigLineY(letter, octave, staffMid);
 
                 canvas.SaveState();
-                if (useFlats)
+                if (!DrawKeySigAccidental(canvas, glyph, sigX, symW, yLine, fontSize, ink, useFlats))
                 {
-                    float boxH = symW * 1.1f;
-                    float top  = BodyAccidentalDrawTop(yLine, boxH, isFlat: true, isNatural: false)
-                        - _layout.Sls * KeySigFlatRaiseStaffSpace;
+                    // Unicode fallback: centre the draw box on yLine so the glyph's font
+                    // metrics centre approximately aligns with the staff position.
+                    float boxH  = symW * (useFlats ? 1.1f : 1.05f);
+                    float yTop  = yLine - boxH * 0.5f;
                     canvas.Font     = Microsoft.Maui.Graphics.Font.Default;
-                    canvas.FontSize = BodyAccidentalFontSize(isFlat: true);
-                    canvas.DrawString("♭", sigX, top, symW, boxH,
-                        HorizontalAlignment.Center, VerticalAlignment.Center);
-                }
-                else if (!useFlats)
-                {
-                    float boxH = symW * 1.05f;
-                    float top  = BodyAccidentalDrawTop(yLine, boxH, isFlat: false, isNatural: false);
-                    canvas.Font     = Microsoft.Maui.Graphics.Font.Default;
-                    canvas.FontSize = BodyAccidentalFontSize(isFlat: false);
-                    canvas.DrawString("♯", sigX, top, symW, boxH,
+                    canvas.FontSize = KeySigAccidentalFontSize(useFlats);
+                    canvas.DrawString(useFlats ? "♭" : "♯", sigX, yTop, symW, boxH,
                         HorizontalAlignment.Center, VerticalAlignment.Center);
                 }
 
@@ -4297,8 +4476,211 @@ namespace musicmate.Drawables
 
 #if DEBUG
         private static void V3Log(string message) => Utilities.Utils.Log(message);
+
+        // ── Diagnostic test runner ────────────────────────────────────────────────
+        // Called from MainPage.OnAppearing (DEBUG builds only) so the tests always
+        // run regardless of which key is currently selected.
+
+        /// <summary>
+        /// Verifies key-signature and transposition logic and writes results to logcat.
+        /// On Android: both <c>adb logcat</c> (Console.Error) and the VS Device Log
+        /// (Debug.WriteLine) receive output.  Search for <c>[KeySigTest]</c> or
+        /// <c>[TransposeTest]</c>.  Every passing line ends with <c>OK</c>.
+        /// Only compiled in Debug builds.
+        /// </summary>
+        private static int _keySignatureTestsRun;
+
+        public static void RunKeySignatureTests()
+        {
+            if (Interlocked.CompareExchange(ref _keySignatureTestsRun, 1, 0) != 0)
+                return;
+
+            Utilities.DebugTestLog.Write("[KeySigTest] OK | self-test START");
+
+            // ── Key signature count / sharp-flat type ─────────────────────────────
+            var keySigTests = new (string Key, string Scale, int Count, bool Flats, string Desc)[]
+            {
+                ("C",  "Major",         0, false, "C major – no accidentals"),
+                ("G",  "Major",         1, false, "G major – 1 sharp (F#)"),
+                ("D",  "Major",         2, false, "D major – 2 sharps (F#, C#)"),
+                ("F",  "Major",         1, true,  "F major – 1 flat (Bb)"),
+                ("Bb", "Major",         2, true,  "Bb major – 2 flats (Bb, Eb)"),
+                ("E",  "Major",         4, false, "E major – 4 sharps (F#, C#, G#, D#)"),
+                ("Ab", "Major",         4, true,  "Ab major – 4 flats (Bb, Eb, Ab, Db)"),
+                ("A",  "Natural Minor", 0, false, "A natural minor = C major sig (0 acc)"),
+                ("D",  "Natural Minor", 1, true,  "D natural minor = F major sig (1 flat)"),
+                ("E",  "Natural Minor", 1, false, "E natural minor = G major sig (1 sharp)"),
+            };
+            foreach (var t in keySigTests)
+            {
+                int  count = GetAccidentalCount(t.Key, t.Scale);
+                bool flats = KeySignatureUsesFlats(t.Key, t.Scale);
+                bool ok    = count == t.Count && (count == 0 || flats == t.Flats);
+                string result = ok ? "OK" : $"FAIL: expected count={t.Count} flats={t.Flats}, got count={count} flats={flats}";
+                Utilities.DebugTestLog.Write($"[KeySigTest] {result} | {t.Desc}");
+            }
+
+            // ── Instrument transposition: written key → concert key ────────────────
+            // TransposeOffset convention (negative = instrument sounds lower than written):
+            //   Bb clarinet = -2, Eb alto sax = -9, F horn = -7
+            // GetConcertKey() = TransposeKey(writtenKey, offset), so
+            //   TransposeKey("D", -2) should return "C"  (Bb clarinet written D → concert C)
+            var transposeTests = new (string Written, int Offset, string Expected, string Desc)[]
+            {
+                ("D", -2, "C", "Bb clarinet: written D → concert C"),
+                ("G", -2, "F", "Bb clarinet: written G → concert F"),
+                ("A", -9, "C", "Eb alto sax: written A → concert C"),
+                ("G", -7, "C", "F horn: written G → concert C"),
+            };
+            foreach (var t in transposeTests)
+            {
+                string concert = NoteSessionService.TransposeKey(t.Written, t.Offset);
+                bool ok = string.Equals(concert, t.Expected, StringComparison.OrdinalIgnoreCase);
+                string result = ok ? "OK" : $"FAIL: expected {t.Expected}, got {concert}";
+                Utilities.DebugTestLog.Write($"[TransposeTest] {result} | {t.Desc}");
+            }
+
+            // ── Key-signature staff positions (treble clef) ───────────────────────
+            // Verify that KeySigFlatPitches / KeySigSharpPitches contain the canonical
+            // treble-clef letter+octave for each accidental in BEADGCF / FCGDAEB order.
+            var flatExpected  = new[] { ('B',4),('E',5),('A',4),('D',5),('G',4),('C',5),('F',4) };
+            var sharpExpected = new[] { ('F',5),('C',5),('G',5),('D',5),('A',4),('E',5),('B',4) };
+            bool flatOk  = KeySigFlatPitches.SequenceEqual(flatExpected);
+            bool sharpOk = KeySigSharpPitches.SequenceEqual(sharpExpected);
+            Utilities.DebugTestLog.Write($"[KeySigTest] {(flatOk  ? "OK" : "FAIL: KeySigFlatPitches mismatch")} | flat staff positions (BEADGCF)");
+            Utilities.DebugTestLog.Write($"[KeySigTest] {(sharpOk ? "OK" : "FAIL: KeySigSharpPitches mismatch")} | sharp staff positions (FCGDAEB)");
+
+            Utilities.DebugTestLog.Write("[KeySigTest] OK | self-test END");
+        }
+
+        private static int _measureLayoutTestsRun;
+
+        /// <summary>
+        /// Verifies measure-based staff assignment: 8 measures × 4 quarter notes,
+        /// no measure split across staves, bar lines on measure boundaries.
+        /// </summary>
+        public static void RunMeasureLayoutTests()
+        {
+            if (Interlocked.CompareExchange(ref _measureLayoutTestsRun, 1, 0) != 0)
+                return;
+
+            Utilities.DebugTestLog.Write("[MeasureLayoutTest] OK | self-test START");
+
+            const int measureCount = 8;
+            const int notesPerMeasure = 4;
+            const double measureBeats = 4.0;
+
+            var notes = new List<GeneratedNote>();
+            int midi = 60;
+            for (int m = 0; m < measureCount; m++)
+            {
+                for (int b = 0; b < notesPerMeasure; b++)
+                {
+                    notes.Add(new GeneratedNote
+                    {
+                        MidiNumber   = midi,
+                        Letter       = 'C',
+                        Octave       = 4 + (midi - 60) / 12,
+                        SpelledName  = $"T{midi}",
+                        Duration     = NoteDuration.Quarter,
+                        MeasureIndex = m,
+                        BeatPosition = m * measureBeats + b,
+                    });
+                    midi++;
+                }
+            }
+
+            var barBeats = new List<double>();
+            for (double bar = measureBeats; bar < measureCount * measureBeats; bar += measureBeats)
+                barBeats.Add(bar);
+
+            bool notesPerMeasureOk = true;
+            for (int m = 0; m < measureCount; m++)
+            {
+                int count = notes.Count(n => (n.MeasureIndex ?? -1) == m && !n.IsRest);
+                if (count != notesPerMeasure)
+                {
+                    notesPerMeasureOk = false;
+                    Utilities.DebugTestLog.Write(
+                        $"[MeasureLayoutTest] FAIL: measure {m + 1} has {count} notes (expected {notesPerMeasure})");
+                }
+            }
+            if (notesPerMeasureOk)
+                Utilities.DebugTestLog.Write("[MeasureLayoutTest] OK | 8 measures × 4 quarter notes");
+
+            var session = new NoteSessionService { Key = "C", SelectedScale = "Major", V3TimeSignature = "4/4" };
+            var drawable = new V3StaffDrawable(session, new ThemeService(), safeArea: null);
+            var split = drawable.SplitMeasuresAcrossStaves(notes, barBeats, canvasWidth: 360f, canvasHeight: 480f);
+
+            bool singleStaffOk = true;
+            for (int m = 0; m < measureCount; m++)
+            {
+                bool onUpper = split.UpperNotes.Any(n => (n.MeasureIndex ?? -1) == m);
+                bool onLower = split.LowerNotes.Any(n => (n.MeasureIndex ?? -1) == m);
+                if (onUpper && onLower)
+                {
+                    singleStaffOk = false;
+                    Utilities.DebugTestLog.Write(
+                        $"[MeasureLayoutTest] FAIL: measure {m + 1} appears on both staves");
+                }
+                else if (!onUpper && !onLower)
+                {
+                    singleStaffOk = false;
+                    Utilities.DebugTestLog.Write(
+                        $"[MeasureLayoutTest] FAIL: measure {m + 1} missing from both staves");
+                }
+            }
+            if (singleStaffOk)
+                Utilities.DebugTestLog.Write("[MeasureLayoutTest] OK | no measure split across staves");
+
+            var upperBarBeats = new List<double>();
+            double upperOrigin = split.UpperNotes.Count > 0
+                ? split.UpperNotes.Min(n => n.BeatPosition ?? 0.0)
+                : 0.0;
+            double upperEnd = split.UpperNotes.Count > 0
+                ? split.UpperNotes.Max(n => (n.BeatPosition ?? 0.0) + n.BeatDuration)
+                : 0.0;
+            for (double bar = upperOrigin + measureBeats; bar < upperEnd - 1e-6; bar += measureBeats)
+                upperBarBeats.Add(bar);
+
+            var lowerBarBeats = new List<double>();
+            double lowerOrigin = split.LowerNotes.Count > 0
+                ? split.LowerNotes.Min(n => n.BeatPosition ?? 0.0)
+                : 0.0;
+            double lowerEnd = split.LowerNotes.Count > 0
+                ? split.LowerNotes.Max(n => (n.BeatPosition ?? 0.0) + n.BeatDuration)
+                : 0.0;
+            for (double bar = lowerOrigin + measureBeats; bar < lowerEnd - 1e-6; bar += measureBeats)
+                lowerBarBeats.Add(bar);
+
+            bool barlinesOk = true;
+            foreach (double bar in upperBarBeats)
+            {
+                if (Math.Abs(bar % measureBeats) > 1e-6 && Math.Abs(bar - upperOrigin) > 1e-6)
+                {
+                    barlinesOk = false;
+                    Utilities.DebugTestLog.Write(
+                        $"[MeasureLayoutTest] FAIL: upper bar at beat {bar:F2} is not on a measure boundary");
+                }
+            }
+            foreach (double bar in lowerBarBeats)
+            {
+                if (Math.Abs(bar % measureBeats) > 1e-6 && Math.Abs(bar - lowerOrigin) > 1e-6)
+                {
+                    barlinesOk = false;
+                    Utilities.DebugTestLog.Write(
+                        $"[MeasureLayoutTest] FAIL: lower bar at beat {bar:F2} is not on a measure boundary");
+                }
+            }
+            if (barlinesOk)
+                Utilities.DebugTestLog.Write("[MeasureLayoutTest] OK | barlines on measure boundaries");
+
+            Utilities.DebugTestLog.Write("[MeasureLayoutTest] OK | self-test END");
+        }
 #else
         private static void V3Log(string message) { }
+        public static void RunKeySignatureTests() { }
+        public static void RunMeasureLayoutTests() { }
 #endif
     }
 }

@@ -31,7 +31,7 @@
     <Grid ColumnDefinitions="*,Auto" HeightRequest="30" VerticalOptions="Center" BackgroundColor="Transparent">
       <HorizontalStackLayout Spacing="10" VerticalOptions="Center" Grid.Column="0">
         <Button Text="←"
-                Clicked="OnNavigateHomeClicked"
+                Clicked="OnNavigatePracticeClicked"
                 BackgroundColor="Transparent"
                 TextColor="White"
                 FontSize="18"

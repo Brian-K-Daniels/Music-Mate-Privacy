@@ -113,7 +113,7 @@ namespace musicmate.Services
             session.MaxMelodicIntervalSemitones = ChildLevelProgression.MaxIntervalForLevel(level);
             session.ChildMeasureBatchSize = ChildLevelProgression.MeasureBatchSizeForLevel(
                 level, ChildLevelProgression.NoteCountForLevel(level));
-            session.ApplyAutomaticInstrumentRange();
+            session.ApplyAutomaticInstrumentRange(level);
         }
 
         public static void ApplyToSession(

@@ -75,6 +75,12 @@ namespace musicmate
             var app = builder.Build();
             ServiceHelper.Initialize(app.Services); // <-- ensure service locator is initialized
 
+#if DEBUG
+            // Key-sig / transposition self-test → logcat tag "MusicMate" (cold start).
+            V3StaffDrawable.RunKeySignatureTests();
+            V3StaffDrawable.RunMeasureLayoutTests();
+#endif
+
             // Sync premium state from the store on every cold start.
             // In Debug this is a no-op (LocalStoreService.InitializeAsync does nothing).
             // In Release this connects to Google Play and refreshes the persisted flag.

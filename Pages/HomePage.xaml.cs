@@ -4,11 +4,11 @@ using musicmate.Utilities;
 namespace musicmate.Pages
 {
     /// <summary>
-    /// Simple child-friendly Home page.  Shows an instrument picker, a level
+    /// Simple child-friendly Practice page.  Shows an instrument picker, a level
     /// control (1 to 100, default 1), and a Start button.
     ///
     /// Instrument is persisted via NoteSessionService.Instrument (which writes
-    /// Preferences automatically).  Level is persisted under "ChildHome.Level".
+    /// Preferences automatically).  Level is persisted under "ChildPractice.Level".
     ///
     /// FUTURE: When DifficultyLevelMapper is implemented, call it from
     /// OnStartClicked before navigating to MainPage:
@@ -19,9 +19,9 @@ namespace musicmate.Pages
     /// MainPage (or a dedicated service) after a session completes successfully,
     /// then navigate back here with a celebratory overlay.
     /// </summary>
-    public partial class ChildHomePage : ContentPage
+    public partial class HomePage : ContentPage
     {
-        private const string PrefLevelKey = "ChildHome.Level";
+        private const string PrefLevelKey = "ChildPractice.Level";
 
         private readonly NoteSessionService _session = null!;
         private readonly IOrientationService _orientation = null!;
@@ -33,7 +33,7 @@ namespace musicmate.Pages
 
         private int _selectedInstrumentIndex = -1;
 
-        public ChildHomePage()
+        public HomePage()
         {
             try
             {
@@ -55,7 +55,7 @@ namespace musicmate.Pages
             }
             catch (Exception ex)
             {
-                Utils.Log($"[ChildHomePage] Constructor ERROR: {ex}");
+                Utils.Log($"[HomePage] Constructor ERROR: {ex}");
             }
         }
 
@@ -73,7 +73,7 @@ namespace musicmate.Pages
                 _selectedLevel = savedLevel;
                 UpdateLevelDisplay();
             }
-            Utils.Log($"[ChildHomePage] OnAppearing: savedLevel={savedLevel}, _selectedLevel={_selectedLevel}");
+            Utils.Log($"[HomePage] OnAppearing: savedLevel={savedLevel}, _selectedLevel={_selectedLevel}");
         }
 
         // Instrument selection via action sheet
@@ -91,7 +91,7 @@ namespace musicmate.Pages
             }
             catch (Exception ex)
             {
-                Utils.Log($"[ChildHomePage] OnInstrumentTapped ERROR: {ex}");
+                Utils.Log($"[HomePage] OnInstrumentTapped ERROR: {ex}");
             }
         }
 
@@ -204,15 +204,7 @@ namespace musicmate.Pages
         private async void OnStartClicked(object? sender, EventArgs e)
         {
             try
-            {
-                //  2026.05.30 1825  TEMPORARY BLOCK TO TEST LEVEL UP
-                // TEST ONLY — remove after testing
-                //Microsoft.Maui.Storage.Preferences.Default.Set("LevelUp.SessionCount", 1);
-                //Microsoft.Maui.Storage.Preferences.Default.Set("LevelUp.MinPitchPct", 1.0);
-                //Microsoft.Maui.Storage.Preferences.Default.Set("LevelUp.MinOverallPct", 1.0);
-                //Microsoft.Maui.Storage.Preferences.Default.Set("LevelUp.MinNotes", 1);
-                //Microsoft.Maui.Storage.Preferences.Default.Set("LevelUp.MinTimingPct", 1.0);
-                // END OF             TEMPORARY BLOCK
+            {               
                 var idx = _selectedInstrumentIndex;
                 if (idx >= 0)
                     _session.Instrument = _instrumentOptions[idx];
@@ -224,14 +216,14 @@ namespace musicmate.Pages
                 var difficulty = DifficultyLevelMapper.PickAndApplyToSession(
                     _selectedLevel, _session, forceClassicMode: false);
 
-                Utils.Log($"[ChildHome] Level={_selectedLevel}, " +
+                Utils.Log($"[ChildPractice] Level={_selectedLevel}, " +
                           $"Stage={difficulty.StageLabel}, Scale={difficulty.SuggestedScale}, " +
                           $"Range={difficulty.LowestNote}–{difficulty.HighestNote}, " +
                           $"Key={difficulty.ForceKey}, Notes≈{difficulty.SuggestedNoteCount}, " +
                           $"Rhythm={difficulty.V3SmallestNote} variety={difficulty.RhythmVarietyPercent}% " +
                           $"rests={difficulty.RestChancePercent}%, Sync={difficulty.V3Syncopation}");
 
-                Utils.Log($"[ChildHome] Session after apply → Level={_session.ChildLevel}, " +
+                Utils.Log($"[ChildPractice] Session after apply → Level={_session.ChildLevel}, " +
                           $"LowestNote={_session.LowestNote}, HighestNote={_session.HighestNote}, " +
                           $"Key={_session.Key}, IsRandomMode={_session.IsRandomMode}");
 
@@ -245,7 +237,7 @@ namespace musicmate.Pages
             }
             catch (Exception ex)
             {
-                Utils.Log($"[ChildHomePage] OnStartClicked ERROR: {ex}");
+                Utils.Log($"[HomePage] OnStartClicked ERROR: {ex}");
             }
         }
     }

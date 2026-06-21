@@ -94,8 +94,7 @@ namespace musicmate.Pages
                     {
                         using var stream = await FileSystem.OpenAppPackageFileAsync(name);
                         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-                        var enc = Encoding.GetEncoding(1252);
-                        using var reader = new StreamReader(stream, enc);
+                        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
                         html = await reader.ReadToEndAsync();
                         if (!string.IsNullOrWhiteSpace(html)) break;
                     }
@@ -119,8 +118,7 @@ namespace musicmate.Pages
                             {
                                 using var stream = activity.Resources.OpenRawResource(resId);
                                 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-                                var enc = Encoding.GetEncoding(1252);
-                                using var reader = new StreamReader(stream, enc);
+                                using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
                                 html = await reader.ReadToEndAsync();
                             }
                         }
@@ -487,7 +485,7 @@ namespace musicmate.Pages
             }
         }
 
-        private async void OnNavigateHomeClicked(object sender, EventArgs e)
+        private async void OnNavigatePracticeClicked(object sender, EventArgs e)
         {
             await Shell.Current.GoToAsync("//MainPage");
         }

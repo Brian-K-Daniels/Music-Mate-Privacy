@@ -9,7 +9,7 @@ namespace musicmate.Pages
 {
     /// <summary>
     /// "What to Play" page — hosts the instrument/key/scale pickers and the
-    /// Repeat / Background Color buttons that were previously on the Home page.
+    /// Repeat / Background Color buttons that were previously on the Practice page.
     /// All persistent state is owned by the shared <see cref="NoteSessionService"/>
     /// singleton so changes here are immediately reflected on every other page.
     /// </summary>
@@ -28,6 +28,7 @@ namespace musicmate.Pages
         private bool _repeatSameTune      = false;
         private bool _suppressPickerSync  = false;
         private bool _localPlayModeChange = false;
+        private bool _isPageVisible       = false;
         private List<NoteInfo>? _savedNotesToRepeat = null;
 
         private string[] _tuneTitles = Array.Empty<string>();
@@ -161,6 +162,7 @@ namespace musicmate.Pages
         protected override void OnAppearing()
         {
             base.OnAppearing();
+            _isPageVisible = true;
             SyncPickersFromSession();
             UpdateKeyPickerVisibility();
             UpdateConcertKeyLabel();
@@ -169,15 +171,21 @@ namespace musicmate.Pages
             UpdateRandomModeWarning();
         }
 
+        protected override void OnDisappearing()
+        {
+            _isPageVisible = false;
+            base.OnDisappearing();
+        }
+
         // ── Session → UI sync ────────────────────────────────────────────────────
 
         private void OnSessionPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
-            if (_localPlayModeChange) return;
+            if (_localPlayModeChange || !_isPageVisible) return;
 
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                if (_localPlayModeChange) return;
+                if (_localPlayModeChange || !_isPageVisible) return;
 
                 switch (e.PropertyName)
                 {
@@ -660,9 +668,8 @@ namespace musicmate.Pages
         {
             if (_suppressPickerSync) return;
 
-            var selectedKey = KeyPicker.SelectedItem?.ToString();
-            if (selectedKey == null) return;
-            var shortKey = selectedKey.Split(',')[0].Trim();
+            var shortKey = GetPickerKeyShortName(KeyPicker);
+            if (shortKey == null) return;
 
             if (!FreeKeys.Contains(shortKey) && !StatusService.Instance.IsPremiumUser)
             {
@@ -676,7 +683,20 @@ namespace musicmate.Pages
             }
 
             _session.Key = shortKey;
+            _session.MarkChildPracticeSettingsCustomized();
             await NavigateToPracticePageAsync();
+        }
+
+        private static string? GetPickerKeyShortName(Picker picker)
+        {
+            if (picker.SelectedIndex < 0)
+                return null;
+
+            if (picker.ItemsSource is string[] items
+                && picker.SelectedIndex < items.Length)
+                return items[picker.SelectedIndex].Split(',')[0].Trim();
+
+            return picker.SelectedItem?.ToString()?.Split(',')[0].Trim();
         }
 
         // ── Play-mode picker handlers ────────────────────────────────────────────
@@ -742,11 +762,17 @@ namespace musicmate.Pages
 
         private async void OnArpeggiosPickerChanged(object? sender, EventArgs e)
         {
-            if (_suppressPickerSync) return;
+            if (_suppressPickerSync || !_isPageVisible) return;
 
             var idx = ArpeggiosPicker.SelectedIndex;
             if (idx < 0 || idx >= _arpeggioOptions.Length) return;
             var selected = _arpeggioOptions[idx];
+
+            if (_session.Tune == "Arpeggio"
+                && selected.Pattern.Id == _session.SelectedArpeggioId
+                && selected.RootNote == _session.SelectedArpeggioRoot
+                && string.Equals(selected.DisplayLabel, _session.SelectedArpeggioDisplay, StringComparison.Ordinal))
+                return;
 
             ClearOtherPlayModePickers(ArpeggiosPicker);
             V3LayoutTestTune.SetEnabled(false);
@@ -754,8 +780,8 @@ namespace musicmate.Pages
             ApplyPlayModeSessionChange(() =>
             {
                 _session.IsRandomMode = false;
-                _session.Key = GetArpeggioKeySignature(selected);
                 _session.SelectArpeggio(selected.Pattern, selected.RootNote, selected.DisplayLabel);
+                _session.Key = GetArpeggioKeySignature(selected);
             });
             Preferences.Default.Set("SelectedTune", selected.DisplayLabel);
             UpdateKeyPickerSelection();
@@ -858,7 +884,7 @@ namespace musicmate.Pages
 
         // ── Navigation ───────────────────────────────────────────────────────────
 
-        private async void OnNavigateHomeClicked(object? sender, EventArgs e)
+        private async void OnNavigatePracticeClicked(object? sender, EventArgs e)
         {
             await Shell.Current.GoToAsync("//MainPage");
         }

@@ -231,11 +231,11 @@ public class SessionDatabase
         }
 }
 
-// ── Child-home session results ──────────────────────────────────────────────
+// ── Child-Practice session results ──────────────────────────────────────────────
 
 /// <summary>
 /// Persists <see cref="musicmate.Models.SessionResult"/> rows — one per
-/// completed child-home practice session.  Lives in its own SQLite file
+/// completed child-Practice practice session.  Lives in its own SQLite file
 /// ("session_results.db") so it does not interfere with the existing
 /// SessionDatabase or NoteDatabase tables.
 /// </summary>

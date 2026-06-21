@@ -51,8 +51,8 @@ namespace musicmate.Services
     ///          Level never exceeds 100.
     ///
     /// ── Persistence ────────────────────────────────────────────────────────
-    ///   The new level is written to Preferences under "ChildHome.Level".
-    ///   ChildHomePage reads this key in its constructor and on OnAppearing,
+    ///   The new level is written to Preferences under "ChildPractice.Level".
+    ///   HomePage reads this key in its constructor and on OnAppearing,
     ///   so the displayed level updates automatically on the next visit.
     ///
     /// ── How to test level-up quickly ───────────────────────────────────────
@@ -60,7 +60,7 @@ namespace musicmate.Services
     ///   2. Set LevelUpMinPitchPct   = 1  (almost any accuracy qualifies).
     ///   3. Set LevelUpMinOverallPct = 1
     ///   4. Set LevelUpMinNotes      = 1  (even a 1-note session qualifies).
-    ///   Complete one child-home session and confirm the banner appears.
+    ///   Complete one child-Practice session and confirm the banner appears.
     ///   Reset the constants to their defaults when done.
     /// </summary>
 public static class LevelUpService
@@ -84,7 +84,7 @@ public static class LevelUpService
     }
 
     // ── Preference keys ────────────────────────────────────────────────────
-    private const string PrefLevelKey = "ChildHome.Level";
+    private const string PrefLevelKey = "ChildPractice.Level";
     private const string PrefCountSinceUtcKey = "LevelUp.CountSinceUtc";
 
     /// <summary>Only <see cref="SessionResult"/> rows at or after this UTC time count toward ssns.</summary>
@@ -97,7 +97,7 @@ public static class LevelUpService
         }
     }
 
-    /// <summary>Resets the ssns window (Child Home start, level-up, or child-results clear).</summary>
+    /// <summary>Resets the ssns window (Child Practice start, level-up, or child-results clear).</summary>
     public static void MarkCountSinceNow()
         => Preferences.Default.Set(PrefCountSinceUtcKey, DateTime.UtcNow.Ticks);
 

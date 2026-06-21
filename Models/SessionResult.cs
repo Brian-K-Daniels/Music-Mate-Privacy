@@ -3,7 +3,7 @@ using SQLite;
 namespace musicmate.Models
 {
     /// <summary>
-    /// One row per completed child-home practice session.
+    /// One row per completed child-Practice practice session.
     /// Stored in a separate SQLite table so it does not affect the existing
     /// SessionStat / NoteDatabase tables used by the advanced practice pages.
     ///
@@ -23,7 +23,7 @@ namespace musicmate.Models
         /// <summary>Short instrument key, e.g. "C", "Bb" — matches NoteSessionService.Instrument.</summary>
         public string Instrument { get; set; } = "";
 
-        /// <summary>Child difficulty level (1–100) chosen on ChildHomePage.</summary>
+        /// <summary>Child difficulty level (1–100) chosen on HomePage.</summary>
         public int Level { get; set; }
 
         /// <summary>Total note slots in the session (correct + wrong attempts combined, deduplicated to unique notes).</summary>

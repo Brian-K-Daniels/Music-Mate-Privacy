@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             x:Class="musicmate.Pages.ChildHomePage"
+             x:Class="musicmate.Pages.HomePage"
              Shell.NavBarIsVisible="True"
              Title="Home"
              BackgroundColor="#1A6B3C">
@@ -47,7 +47,7 @@
                 </Border>
             </VerticalStackLayout>
 
-            <!-- Level control -->
+            <!-- HomePage control -->
             <VerticalStackLayout Spacing="8">
                 <Label Text="Level"
                        FontSize="18"

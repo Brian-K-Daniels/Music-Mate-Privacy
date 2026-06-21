@@ -8,7 +8,7 @@ namespace musicmate
 {
     public partial class AppShell : Shell
     {
-        public ICommand? GoHomeCommand { get; }
+        public ICommand? GoPracticeCommand { get; }
 
         public AppShell()
         {   try
@@ -16,10 +16,10 @@ namespace musicmate
                 InitializeComponent();
 
                 BindingContext = this;
-                GoHomeCommand = new Command(async () => await GoToAsync("//ChildHomePage"));
+                GoPracticeCommand = new Command(async () => await GoToAsync("//HomePage"));
 
                 // Register routes for navigation
-                Routing.RegisterRoute("ChildHomePage", typeof(Pages.ChildHomePage));
+                Routing.RegisterRoute("HomePage", typeof(Pages.HomePage));
                 Routing.RegisterRoute("WhatToPlayPage", typeof(Pages.WhatToPlayPage));
                 Routing.RegisterRoute("SettingsPage", typeof(Pages.SettingsPage));
                 Routing.RegisterRoute("StatisticsPages", typeof(Pages.StatisticsPages));

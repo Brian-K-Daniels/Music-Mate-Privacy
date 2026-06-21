@@ -27,10 +27,10 @@
   </Shell.Resources>
 
   <!-- Simple child-friendly Home page: instrument, level, and Start button -->
-  <FlyoutItem Title="Home">
+  <FlyoutItem Title="Home"> <!-- This is an item on the flyout menu that appears when you touch the hamburger-->
     <ShellContent
-        Route="ChildHomePage"
-        ContentTemplate="{DataTemplate local:ChildHomePage}" />
+        Route="HomePage"
+        ContentTemplate="{DataTemplate local:HomePage}" />
   </FlyoutItem>
 
   <FlyoutItem Title="What to Play">

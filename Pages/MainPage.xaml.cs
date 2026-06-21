@@ -39,16 +39,18 @@ namespace musicmate.Pages
         // A new GUID is assigned each time a session starts (see StartListeningAndEvaluatingAsync).
         // It is stored with every NoteAttempt so attempts can be grouped by session.
         private string _currentSessionId = string.Empty;
+        private bool _applyingArpeggioSelection;
         private readonly SemaphoreSlim _regenerateSemaphore = new SemaphoreSlim(1, 1);
-        private bool _suppressPickerSync = false;
+        private int _pickerSyncSuppressCount;
+        private bool IsPickerSyncSuppressed => _pickerSyncSuppressCount > 0;
         private string? _savedInstrumentForPlayback = null;
         private int _savedInstrumentIndexForPlayback = -1;
 
-        // V3 home bottom-row picker references (initialized after InitializeComponent)
-        private Picker _v3HomeInstrumentPicker = null!;
-        private Picker _v3HomeKeyPicker = null!;
-        private Picker _v3HomeScaleTunePicker = null!;
-        private Label _v3HomeConcertKeyLabel = null!;
+        // V3 Practice bottom-row picker references (initialized after InitializeComponent)
+        private Picker _v3PracticeInstrumentPicker = null!;
+        private Picker _v3PracticeKeyPicker = null!;
+        private Picker _v3PracticeScaleTunePicker = null!;
+        private Label _v3PracticeConcertKeyLabel = null!;
         private Border _v3StartStopButton = null!;
         private Border _v3PlayButton = null!;
         private Grid _titleMarqueeGrid = null!;
@@ -66,7 +68,7 @@ namespace musicmate.Pages
         /// <summary>Session completion was triggered after Play playback — skip result banner.</summary>
         private bool _completionFromPlayback;
 
-        // When true, the session result banner is being shown after a child-home
+        // When true, the session result banner is being shown after a child-Practice
         // session completed with AutoRepeat off.  Blocks auto-start until the user
         // leaves the page (e.g. opens Settings) or taps Start/Stop.
         private bool _holdResultForChildSession = false;
@@ -76,7 +78,7 @@ namespace musicmate.Pages
         private CancellationTokenSource? _autoStartCts;
         private CancellationTokenSource? _sessionStartCts;
         private bool _suppressSessionRegenerate;
-        private const string ChildLevelPrefKey = "ChildHome.Level";
+        private const string ChildLevelPrefKey = "ChildPractice.Level";
         private readonly Dictionary<string, ArpeggioPickerChoice> _arpeggioPickerChoices = new(StringComparer.Ordinal);
 #pragma warning restore CS0414
 
@@ -274,7 +276,17 @@ namespace musicmate.Pages
 
         private bool _isInstrumentLabelVisible = false;
         private static readonly HashSet<string> FreeScales = new() { "Major", "Harmonic Minor" };
+        private static readonly string[] RandomTunerOptions = { "Random", "Tuner", "Fixed Tune" };
         private int _lastValidScaleTuneIndex = 0;
+        private int _lastValidV3PlayItemIndex = 0;
+
+        private enum PlayModeCategory
+        {
+            Tunes,
+            Scales,
+            Arpeggios,
+            RandomTuner
+        }
         public bool IsInstrumentLabelVisible
         {
             get => _isInstrumentLabelVisible;
@@ -316,11 +328,11 @@ namespace musicmate.Pages
             {
                 InitializeComponent();
 
-                // V3 home bottom-row pickers — resolved here; populated in OnAppearing
-                _v3HomeInstrumentPicker = this.FindByName<Picker>("V3HomeInstrumentPicker")!;
-                _v3HomeKeyPicker        = this.FindByName<Picker>("V3HomeKeyPicker")!;
-                _v3HomeScaleTunePicker  = this.FindByName<Picker>("V3HomeScaleTunePicker")!;
-                _v3HomeConcertKeyLabel  = this.FindByName<Label>("V3HomeConcertKeyLabel")!;
+                // V3 Practice bottom-row pickers — resolved here; populated in OnAppearing
+                _v3PracticeInstrumentPicker = this.FindByName<Picker>("V3PracticeInstrumentPicker")!;
+                _v3PracticeKeyPicker        = this.FindByName<Picker>("V3PracticeKeyPicker")!;
+                _v3PracticeScaleTunePicker  = this.FindByName<Picker>("V3PracticeScaleTunePicker")!;
+                _v3PracticeConcertKeyLabel  = this.FindByName<Label>("V3PracticeConcertKeyLabel")!;
                 _v3StartStopButton      = this.FindByName<Border>("V3StartStopButton")!;
                 _v3PlayButton           = this.FindByName<Border>("V3PlayButton")!;
                 _titleMarqueeGrid       = this.FindByName<Grid>("TitleMarqueeGrid")!;
@@ -329,7 +341,7 @@ namespace musicmate.Pages
                 // Ensure ThemeService is available so we can deploy saved/default panel background
                 _theme_service = ServiceHelper.GetService<ThemeService>()!;
 
-                // Apply saved panel background (or default) before the Home page is shown
+                // Apply saved panel background (or default) before the Practice page is shown
                 DeploySavedPanelBackground();
 
                 // disable iOS safe area for this page (use per-edge API available on this MAUI version)
@@ -345,7 +357,7 @@ namespace musicmate.Pages
                 _audio = ServiceHelper.GetService<IAudioCaptureService>()!;
                 _player = ServiceHelper.GetService<IAudioPlaybackService>()!;
 
-                // Force V3 mode at all levels when starting from Home page
+                // Force V3 mode at all levels when starting from Practice page
                 _session.StaffDisplayMode = StaffDisplayMode.V3;
 
                 BindingContext = _session;
@@ -540,7 +552,7 @@ namespace musicmate.Pages
                         {
                             _audio.StopCapture();
                             SetButtonStates(false);
-                            // For child-home sessions keep the result banner visible;
+                            // For child-Practice sessions keep the result banner visible;
                             // block OnAppearing from auto-starting until the user acts.
                             if (_session.ChildLevel > 0)
                                 _holdResultForChildSession = true;
@@ -627,14 +639,13 @@ namespace musicmate.Pages
 
                 ScaleTunePicker.SelectedIndexChanged += OnScaleTunePickerChanged;
 
-                _v3HomeInstrumentPicker.ItemsSource = instrumentOptions;
-                _v3HomeInstrumentPicker.SelectedIndex = InstrumentPicker.SelectedIndex;
+                _v3PracticeInstrumentPicker.ItemsSource = instrumentOptions;
+                _v3PracticeInstrumentPicker.SelectedIndex = InstrumentPicker.SelectedIndex;
 
-                _v3HomeKeyPicker.ItemsSource = KeyPicker.ItemsSource;
-                _v3HomeKeyPicker.SelectedIndex = KeyPicker.SelectedIndex;
+                _v3PracticeKeyPicker.ItemsSource = KeyPicker.ItemsSource;
+                _v3PracticeKeyPicker.SelectedIndex = KeyPicker.SelectedIndex;
 
-                _v3HomeScaleTunePicker.ItemsSource = scaleTuneOptions;
-                _v3HomeScaleTunePicker.SelectedIndex = ScaleTunePicker.SelectedIndex;
+                UpdateV3PracticePlayItemPicker();
 
                 InstrumentPicker.SelectedIndexChanged += InstrumentPicker_SelectedIndexChanged;
                 KeyPicker.SelectedIndexChanged += OnKeyPickerChangedWithPrompt;
@@ -728,7 +739,9 @@ namespace musicmate.Pages
             await HideSessionResultBannerAsync(refreshMarqueeForNewLevel: true);
             _holdResultForChildSession = false;
 
-            if (_session.ChildLevel > 0)
+            if (_session.IsRandomMode)
+                _session.EnsureRandomModeGenerationSettings();
+            else if (_session.ChildLevel > 0)
                 DifficultyLevelMapper.ApplyLevelDerivedSettings(_session.ChildLevel, _session);
 
             // While showing post-autoplay results, do not overwrite the staff.
@@ -1047,6 +1060,42 @@ namespace musicmate.Pages
             return result;
         }
 
+        /// <summary>
+        /// Bar beats at generator measure boundaries when <see cref="GeneratedNote.MeasureIndex"/>
+        /// is set; otherwise falls back to a regular meter grid.
+        /// </summary>
+        private static List<double> ComputeStaffBarBeats(
+            IReadOnlyList<GeneratedNote> notes,
+            double measureBeats,
+            HashSet<double> existingBarBeats)
+        {
+            if (notes.Count > 0 && notes.Any(n => n.MeasureIndex.HasValue))
+            {
+                var fromMeasures = new List<double>();
+                int prevMeasure = -1;
+                foreach (var n in notes.OrderBy(n => n.BeatPosition ?? 0.0))
+                {
+                    int mi = n.MeasureIndex ?? (prevMeasure >= 0 ? prevMeasure : 0);
+                    if (prevMeasure >= 0 && mi != prevMeasure && n.BeatPosition.HasValue)
+                    {
+                        double bp = n.BeatPosition.Value;
+                        if (!existingBarBeats.Contains(bp)
+                            && (fromMeasures.Count == 0 || bp > fromMeasures[^1] + 1e-6))
+                        {
+                            fromMeasures.Add(bp);
+                            existingBarBeats.Add(bp);
+                        }
+                    }
+                    prevMeasure = mi;
+                }
+
+                if (fromMeasures.Count > 0)
+                    return fromMeasures;
+            }
+
+            return ComputeRegularBarBeats(notes, measureBeats, existingBarBeats);
+        }
+
         private static List<GeneratedNote> ShiftStaffBeatPositions(
             IReadOnlyList<GeneratedNote> notes,
             double beatShift)
@@ -1136,8 +1185,8 @@ namespace musicmate.Pages
                         allNotes.Where(n => (n.BeatPosition ?? 0) >= splitBeat).ToList(),
                         splitBeat);
                     double measureBeats = testTune.TimeSignature.TotalBeats;
-                    upperBarBeats = ComputeRegularBarBeats(upperFlat, measureBeats, existingUpper);
-                    lowerBarBeats = ComputeRegularBarBeats(lowerFlat, measureBeats, existingLower);
+                    upperBarBeats = ComputeStaffBarBeats(upperFlat, measureBeats, existingUpper);
+                    lowerBarBeats = ComputeStaffBarBeats(lowerFlat, measureBeats, existingLower);
 
                     _v3SeqNextMeasureIndex    = testTune.Measures.Count;
                     _v3SeqNextBeatOffset      = allNotes.Sum(n => n.BeatDuration);
@@ -1168,8 +1217,8 @@ namespace musicmate.Pages
                         allNotes.Where(n => (n.BeatPosition ?? 0) >= splitBeat).ToList(),
                         splitBeat);
                     double measureBeats = _session.CurrentTune.TimeSignature.TotalBeats;
-                    upperBarBeats = ComputeRegularBarBeats(upperFlat, measureBeats, existingUpper);
-                    lowerBarBeats = ComputeRegularBarBeats(lowerFlat, measureBeats, existingLower);
+                    upperBarBeats = ComputeStaffBarBeats(upperFlat, measureBeats, existingUpper);
+                    lowerBarBeats = ComputeStaffBarBeats(lowerFlat, measureBeats, existingLower);
 
                     _v3SeqNextMeasureIndex    = allMeasures;
                     _v3SeqNextBeatOffset      = allNotes.Sum(n => n.BeatDuration);
@@ -1248,18 +1297,14 @@ namespace musicmate.Pages
                         var genAll = BuildV3SequenceGenerator(24);
                         var allMeasures = genAll.GenerateSequence();
                         var allNotes = MusicSequenceGenerator.Flatten(allMeasures);
+                        double measureBeats = genAll.TimeSignature.TotalBeats;
+                        var allBarBeats = ComputeStaffBarBeats(allNotes, measureBeats, new HashSet<double>());
 
-                        // Find the first occurrence of the maximum MIDI in the walk
-                        // — that is the peak note where ascending turns to descending.
-                        int peakMidi = allNotes.Where(n => !n.IsRest).Max(n => n.MidiNumber);
-                        int peakIdx  = allNotes.FindIndex(n => !n.IsRest && n.MidiNumber == peakMidi);
-
-                        // Upper staff: notes up to and including the peak note.
-                        // Lower staff: notes after the peak.
-                        // Trim trailing rests from upper so the end bar lands right after the peak.
-                        int splitIdx = peakIdx >= 0 ? peakIdx + 1 : allNotes.Count / 2;
-                        upperFlat = allNotes.Take(splitIdx).ToList();
-                        lowerFlat = allNotes.Skip(splitIdx).ToList();
+                        float canvasWidth = V3StaffGraphicsView?.Width > 0 ? (float)V3StaffGraphicsView.Width : 360f;
+                        float canvasHeight = V3StaffGraphicsView?.Height > 0 ? (float)V3StaffGraphicsView.Height : 480f;
+                        var split = _v3Drawable!.SplitMeasuresAcrossStaves(allNotes, allBarBeats, canvasWidth, canvasHeight);
+                        upperFlat = split.UpperNotes;
+                        lowerFlat = split.LowerNotes;
 
                         // Drop notes once the descending walk turns back upward — that
                         // signals the start of the next cycle.  The generator intentionally
@@ -1281,32 +1326,11 @@ namespace musicmate.Pages
                         }
                         lowerFlat = lowerFlat.Take(cutIdx).ToList();
 
-                        // Re-offset lower staff beat positions to start at 0.
                         double lowerBeatShift = lowerFlat.Count > 0 ? (lowerFlat[0].BeatPosition ?? 0.0) : 0.0;
-                        if (lowerBeatShift > 0.0)
-                        {
-                            for (int i = 0; i < lowerFlat.Count; i++)
-                            {
-                                var n = lowerFlat[i];
-                                lowerFlat[i] = new GeneratedNote
-                                {
-                                    MidiNumber       = n.MidiNumber,
-                                    Letter           = n.Letter,
-                                    Octave           = n.Octave,
-                                    Accidental       = n.Accidental,
-                                    SpelledName      = n.SpelledName,
-                                    TargetFrequency  = n.TargetFrequency,
-                                    Duration         = n.Duration,
-                                    IsRest           = n.IsRest,
-                                    MeasureIndex     = n.MeasureIndex,
-                                    BeatPosition     = (n.BeatPosition ?? 0.0) - lowerBeatShift,
-                                    IsPlayedCorrectly = n.IsPlayedCorrectly
-                                };
-                            }
-                        }
+                        lowerFlat = ShiftStaffBeatPositions(lowerFlat, lowerBeatShift);
 
-                        upperBarBeats = ComputeNewBarBeats(upperFlat, existingUpper);
-                        lowerBarBeats = ComputeNewBarBeats(lowerFlat, existingLower);
+                        upperBarBeats = ComputeStaffBarBeats(upperFlat, measureBeats, existingUpper);
+                        lowerBarBeats = ComputeStaffBarBeats(lowerFlat, measureBeats, existingLower);
 
                         double upperBeats = upperFlat.Sum(n => n.BeatDuration);
                         double lowerBeats = lowerFlat.Sum(n => n.BeatDuration);
@@ -1327,7 +1351,8 @@ namespace musicmate.Pages
                         var genUpper = BuildV3SequenceGenerator(upperMc);
                         var upperMeasures = genUpper.GenerateSequence();
                         upperFlat     = MusicSequenceGenerator.Flatten(upperMeasures);
-                        upperBarBeats = ComputeNewBarBeats(upperFlat, existingUpper);
+                        double measureBeats = genUpper.TimeSignature.TotalBeats;
+                        upperBarBeats = ComputeStaffBarBeats(upperFlat, measureBeats, existingUpper);
 
                         _v3SeqNextMeasureIndex    += upperMeasures.Count;
                         _v3SeqNextBeatOffset      += upperMeasures.Count * (double)genUpper.TimeSignature.TotalBeats;
@@ -1365,7 +1390,7 @@ namespace musicmate.Pages
                                 }
                             }
 
-                            lowerBarBeats = ComputeNewBarBeats(lowerFlat, existingLower);
+                            lowerBarBeats = ComputeStaffBarBeats(lowerFlat, measureBeats, existingLower);
 
                             _v3LowerMeasureIndex    = _v3SeqNextMeasureIndex + lowerMeasures.Count;
                             _v3LowerBeatOffset      = _v3SeqNextBeatOffset + lowerMeasures.Count * (double)genLower.TimeSignature.TotalBeats;
@@ -1573,7 +1598,7 @@ namespace musicmate.Pages
                 var gen      = BuildV3SequenceGenerator(GetV3StaffMeasureCounts().upper, upperStartPitch);
                 var measures = gen.GenerateSequence();
                 var newNotes = MusicSequenceGenerator.Flatten(measures);
-                var barBeats = ComputeNewBarBeats(newNotes, new HashSet<double>());
+                var barBeats = ComputeStaffBarBeats(newNotes, gen.TimeSignature.TotalBeats, new HashSet<double>());
 
                 _v3SeqNextMeasureIndex    += measures.Count;
                 _v3SeqNextBeatOffset      += measures.Count * (double)gen.TimeSignature.TotalBeats;
@@ -1627,7 +1652,7 @@ namespace musicmate.Pages
                 var gen      = BuildV3SequenceGenerator(lowerMc, lowerStartPitch);
                 var measures = gen.GenerateSequence();
                 var newNotes = MusicSequenceGenerator.Flatten(measures);
-                var barBeats = ComputeNewBarBeats(newNotes, new HashSet<double>());
+                var barBeats = ComputeStaffBarBeats(newNotes, gen.TimeSignature.TotalBeats, new HashSet<double>());
 
                 _v3LowerMeasureIndex    += measures.Count;
                 _v3LowerBeatOffset      += measures.Count * (double)gen.TimeSignature.TotalBeats;
@@ -2440,6 +2465,10 @@ namespace musicmate.Pages
         protected async override void OnAppearing()
         {
             base.OnAppearing();
+#if DEBUG
+            Drawables.V3StaffDrawable.RunKeySignatureTests();
+            Drawables.V3StaffDrawable.RunMeasureLayoutTests();
+#endif
             bool returningToPage = !_isPageVisible;
             _isPageVisible = true;
             if (returningToPage)
@@ -2456,24 +2485,24 @@ namespace musicmate.Pages
             UpdateTunerVisibility();
             DeviceDisplay.Current.KeepScreenOn = true;
 
-            // Populate V3 home pickers here — visual tree is guaranteed ready after InitializeComponent
+            // Populate V3 Practice pickers here — visual tree is guaranteed ready after InitializeComponent
             // XAML wires the SelectedIndexChanged events; we only need to populate ItemsSource + index.
-            _v3HomeScaleTunePicker ??= this.FindByName<Picker>("V3HomeScaleTunePicker");
-            _v3HomeInstrumentPicker ??= this.FindByName<Picker>("V3HomeInstrumentPicker");
-            _v3HomeKeyPicker ??= this.FindByName<Picker>("V3HomeKeyPicker");
-            _v3HomeConcertKeyLabel ??= this.FindByName<Label>("V3HomeConcertKeyLabel");
-            if (_v3HomeScaleTunePicker != null && _v3HomeScaleTunePicker.ItemsSource == null)
+            _v3PracticeScaleTunePicker ??= this.FindByName<Picker>("V3PracticeScaleTunePicker");
+            _v3PracticeInstrumentPicker ??= this.FindByName<Picker>("V3PracticeInstrumentPicker");
+            _v3PracticeKeyPicker ??= this.FindByName<Picker>("V3PracticeKeyPicker");
+            _v3PracticeConcertKeyLabel ??= this.FindByName<Label>("V3PracticeConcertKeyLabel");
+            if (_v3PracticeScaleTunePicker != null)
                 UpdateScaleTunePicker();
-            if (_v3HomeInstrumentPicker != null && _v3HomeInstrumentPicker.ItemsSource == null)
+            if (_v3PracticeInstrumentPicker != null && _v3PracticeInstrumentPicker.ItemsSource == null)
             {
                 var instrumentOptions = NoteSessionService.InstrumentOptions.Cast<string>().ToArray();
-                _v3HomeInstrumentPicker.ItemsSource = instrumentOptions;
-                _v3HomeInstrumentPicker.SelectedIndex = InstrumentPicker.SelectedIndex;
+                _v3PracticeInstrumentPicker.ItemsSource = instrumentOptions;
+                _v3PracticeInstrumentPicker.SelectedIndex = InstrumentPicker.SelectedIndex;
             }
-            if (_v3HomeKeyPicker != null && _v3HomeKeyPicker.ItemsSource == null)
+            if (_v3PracticeKeyPicker != null && _v3PracticeKeyPicker.ItemsSource == null)
             {
-                _v3HomeKeyPicker.ItemsSource = KeyPicker.ItemsSource;
-                _v3HomeKeyPicker.SelectedIndex = KeyPicker.SelectedIndex;
+                _v3PracticeKeyPicker.ItemsSource = KeyPicker.ItemsSource;
+                _v3PracticeKeyPicker.SelectedIndex = KeyPicker.SelectedIndex;
             }
 
             UpdateChildLevelSliderDisplay();
@@ -3382,7 +3411,7 @@ async Task UpdateNoteStatsDatabaseAsync()
 
 
         /// <summary>
-        /// Saves session statistics and, for child-home sessions, a SessionResult.
+        /// Saves session statistics and, for child-Practice sessions, a SessionResult.
         /// Returns the new child level if a level-up occurred, otherwise null.
         /// </summary>
         private async Task<int?> SaveSessionStatAsync()
@@ -3453,7 +3482,7 @@ async Task UpdateNoteStatsDatabaseAsync()
             long maxBytes = (long)Preferences.Default.Get("MaxSessionDbSizeMb", 50) * 1024 * 1024;
             await _sessionDb.PruneToSizeLimitAsync(maxBytes);
 
-            // If this session was started from ChildHomePage, save a child SessionResult
+            // If this session was started from HomePage, save a child SessionResult
             // then check level-up criteria.
             Utils.Log($"[LevelUpDebug] _session.ChildLevel={_session.ChildLevel}, _sessionResultDb null?={_sessionResultDb == null}");
             if (_session.ChildLevel > 0)
@@ -3496,7 +3525,7 @@ async Task UpdateNoteStatsDatabaseAsync()
         }
 
         /// <summary>
-        /// Calculates and persists a <see cref="SessionResult"/> for child-home sessions.
+        /// Calculates and persists a <see cref="SessionResult"/> for child-Practice sessions.
         /// Called only when <see cref="NoteSessionService.ChildLevel"/> &gt; 0.
         ///
         /// Pitch accuracy:
@@ -3618,7 +3647,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                 }
 
                 // Only regenerate when the page is visible; if called while navigating in from
-                // ChildHomePage the session properties are being batch-set and OnAppearing will
+                // HomePage the session properties are being batch-set and OnAppearing will
                 // trigger the first regeneration once the page is actually on screen.
                 if (_isPageVisible && !_suppressSessionRegenerate)
                 {
@@ -3632,10 +3661,17 @@ async Task UpdateNoteStatsDatabaseAsync()
                 e.PropertyName == nameof(NoteSessionService.Instrument) ||
                 e.PropertyName == nameof(NoteSessionService.Tune) ||
                 e.PropertyName == nameof(NoteSessionService.CurrentTune) ||
-                e.PropertyName == nameof(NoteSessionService.SelectedArpeggioDisplay))
+                e.PropertyName == nameof(NoteSessionService.SelectedArpeggioDisplay) ||
+                e.PropertyName == nameof(NoteSessionService.IsRandomMode))
             {
                 UpdateConcertKeyLabel();
-                UpdateScaleTunePicker();
+                if (!_applyingArpeggioSelection)
+                {
+                    if (!_suppressSessionRegenerate)
+                        UpdateScaleTunePicker();
+                    else
+                        UpdateV3PracticePlayItemPickerCore();
+                }
                 UpdateKeyPickerVisibility();
             }
 
@@ -3667,26 +3703,42 @@ async Task UpdateNoteStatsDatabaseAsync()
             var idx = Array.IndexOf(items, _session.InstrumentDisplayName);
             if (idx >= 0 && InstrumentPicker.SelectedIndex != idx)
                 InstrumentPicker.SelectedIndex = idx;
-            if (idx >= 0 && _v3HomeInstrumentPicker?.SelectedIndex != idx)
-                _v3HomeInstrumentPicker!.SelectedIndex = idx;
+            if (idx >= 0 && _v3PracticeInstrumentPicker?.SelectedIndex != idx)
+                _v3PracticeInstrumentPicker!.SelectedIndex = idx;
             SelectedInstrumentShort = _session.InstrumentDisplayName;
+        }
+
+        private void EnterPickerSyncSuppress() => _pickerSyncSuppressCount++;
+
+        /// <summary>
+        /// Clears picker-sync suppression on the next UI frame so any
+        /// <see cref="Picker.SelectedIndexChanged"/> events queued by a programmatic
+        /// <c>ItemsSource</c>/<c>SelectedIndex</c> update are still ignored.
+        /// </summary>
+        private void ExitPickerSyncSuppress()
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                if (_pickerSyncSuppressCount > 0)
+                    _pickerSyncSuppressCount--;
+            });
         }
 
         private void UpdateKeyPickerSelection()
         {
             if (KeyPicker.ItemsSource is not string[] items) return;
             var idx = Array.IndexOf(items, _session.Key);
-            _suppressPickerSync = true;
+            EnterPickerSyncSuppress();
             try
             {
                 if (idx >= 0 && KeyPicker.SelectedIndex != idx)
                     KeyPicker.SelectedIndex = idx;
-                if (idx >= 0 && _v3HomeKeyPicker?.SelectedIndex != idx)
-                    _v3HomeKeyPicker!.SelectedIndex = idx;
+                if (idx >= 0 && _v3PracticeKeyPicker?.SelectedIndex != idx)
+                    _v3PracticeKeyPicker!.SelectedIndex = idx;
             }
             finally
             {
-                _suppressPickerSync = false;
+                ExitPickerSyncSuppress();
             }
         }
 
@@ -3696,11 +3748,26 @@ async Task UpdateNoteStatsDatabaseAsync()
                 _session.MarkChildPracticeSettingsCustomized();
         }
 
+        /// <summary>
+        /// Reads the selected key from a picker index (avoids stale <see cref="Picker.SelectedItem"/> on programmatic sync).
+        /// </summary>
+        private static string? GetPickerKeyShortName(Picker picker)
+        {
+            if (picker.SelectedIndex < 0)
+                return null;
+
+            if (picker.ItemsSource is string[] items
+                && picker.SelectedIndex < items.Length)
+                return items[picker.SelectedIndex].Split(',')[0].Trim();
+
+            return picker.SelectedItem?.ToString()?.Split(',')[0].Trim();
+        }
+
         private void UpdateConcertKeyLabel()
         {
             var text = $"(Concert {_session.GetConcertKey()})";
             ConcertKeyLabel.Text = text;
-            if (_v3HomeConcertKeyLabel != null) _v3HomeConcertKeyLabel.Text = text;
+            if (_v3PracticeConcertKeyLabel != null) _v3PracticeConcertKeyLabel.Text = text;
         }
 
         private void UpdateKeyPickerVisibility()
@@ -3712,14 +3779,14 @@ async Task UpdateNoteStatsDatabaseAsync()
             KeyBorder.IsVisible = show;
             ConcertKeyLabel.IsVisible = show;
 
-            if (_v3HomeKeyPicker != null)
+            if (_v3PracticeKeyPicker != null)
             {
-                _v3HomeKeyPicker.IsVisible = show;
-                _v3HomeKeyPicker.IsEnabled = show;
+                _v3PracticeKeyPicker.IsVisible = show;
+                _v3PracticeKeyPicker.IsEnabled = show;
             }
-            if (V3HomeKeyLabel != null) V3HomeKeyLabel.IsVisible = show;
-            if (V3HomeKeyBorder != null) V3HomeKeyBorder.IsVisible = show;
-            if (_v3HomeConcertKeyLabel != null) _v3HomeConcertKeyLabel.IsVisible = show;
+            if (V3PracticeKeyLabel != null) V3PracticeKeyLabel.IsVisible = show;
+            if (V3PracticeKeyBorder != null) V3PracticeKeyBorder.IsVisible = show;
+            if (_v3PracticeConcertKeyLabel != null) _v3PracticeConcertKeyLabel.IsVisible = show;
         }
 
         private void UpdatePickersContainerVisibility()
@@ -3786,15 +3853,19 @@ async Task UpdateNoteStatsDatabaseAsync()
             int level = _session.ChildLevel > 0 ? _session.ChildLevel : 1;
             var availability = ArpeggioCatalog.GetAvailabilityForLevel(level);
             var choices = new List<ArpeggioPickerChoice>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
 
-            foreach (var root in availability.RootOptions)
+            // Match WhatToPlayPage: list arpeggios from fixed root keys, not scale degrees
+            // of the current session key (which changes when an arpeggio is selected).
+            foreach (string rootKey in GetArpeggioRootKeys())
             {
-                int rootMidi = GetScaleDegreeMidi(_session.Key, _session.SelectedScale, root.ScaleDegree);
                 foreach (var pattern in availability.Patterns)
                 {
-                    string rootNote = ChooseArpeggioRootInRange(rootMidi);
+                    string rootNote = ChooseArpeggioRootInRange(rootKey);
                     string rootName = TrimOctave(rootNote);
                     string label = $"{rootName} {pattern.DisplayName.ToLowerInvariant()}";
+                    if (!seen.Add($"{rootNote}|{pattern.Id}"))
+                        continue;
                     if (_arpeggioPickerChoices.ContainsKey(label))
                         continue;
 
@@ -3807,13 +3878,33 @@ async Task UpdateNoteStatsDatabaseAsync()
             return choices;
         }
 
-        private string ChooseArpeggioRootInRange(int rootMidi)
+        private static IEnumerable<string> GetArpeggioRootKeys()
         {
+            yield return "C";
+            yield return "G";
+            yield return "D";
+            yield return "A";
+            yield return "E";
+            yield return "B";
+            yield return "F#";
+            yield return "C#";
+            yield return "F";
+            yield return "Bb";
+            yield return "Eb";
+            yield return "Ab";
+            yield return "Db";
+            yield return "Gb";
+            yield return "Cb";
+        }
+
+        private string ChooseArpeggioRootInRange(string rootKey)
+        {
+            const int baseOctave = 4;
+            int rootMidi = NoteSessionService.NoteNameToMidi($"{rootKey}{baseOctave}");
             int minMidi = NoteSessionService.NoteNameToMidi(_session.LowestNote);
             int maxMidi = NoteSessionService.NoteNameToMidi(_session.HighestNote);
-            bool preferFlats = KeyPrefersFlats(_session.Key);
             if (minMidi < 0 || maxMidi < minMidi)
-                return NoteSessionService.MidiToNoteName(rootMidi, preferFlats);
+                return $"{rootKey}{baseOctave}";
 
             int candidate = rootMidi;
             while (candidate < minMidi)
@@ -3821,34 +3912,9 @@ async Task UpdateNoteStatsDatabaseAsync()
             while (candidate > maxMidi)
                 candidate -= 12;
 
-            return NoteSessionService.MidiToNoteName(candidate, preferFlats);
+            int octave = baseOctave + ((candidate - rootMidi) / 12);
+            return $"{rootKey}{octave}";
         }
-
-        private static int GetScaleDegreeMidi(string key, string scale, int degree)
-        {
-            int[] intervals = scale switch
-            {
-                "Natural Minor" or "Aeolian" => new[] { 0, 2, 3, 5, 7, 8, 10 },
-                "Harmonic Minor" => new[] { 0, 2, 3, 5, 7, 8, 11 },
-                "Melodic Minor" or "Jazz Melodic Minor" => new[] { 0, 2, 3, 5, 7, 9, 11 },
-                "Dorian" => new[] { 0, 2, 3, 5, 7, 9, 10 },
-                "Phrygian" => new[] { 0, 1, 3, 5, 7, 8, 10 },
-                "Lydian" => new[] { 0, 2, 4, 6, 7, 9, 11 },
-                "Mixolydian" => new[] { 0, 2, 4, 5, 7, 9, 10 },
-                "Locrian" => new[] { 0, 1, 3, 5, 6, 8, 10 },
-                "Major Pentatonic" => new[] { 0, 2, 4, 7, 9, 12, 14 },
-                "Minor Pentatonic" => new[] { 0, 3, 5, 7, 10, 12, 15 },
-                "Blues" or "Minor Blues" => new[] { 0, 3, 5, 6, 7, 10, 12 },
-                _ => new[] { 0, 2, 4, 5, 7, 9, 11 }
-            };
-
-            int tonicMidi = NoteSessionService.NoteNameToMidi($"{key}4");
-            int idx = Math.Clamp(degree, 1, 7) - 1;
-            return tonicMidi + intervals[idx % intervals.Length];
-        }
-
-        private static bool KeyPrefersFlats(string key)
-            => key is "F" or "Bb" or "Eb" or "Ab" or "Db" or "Gb" or "Cb";
 
         private static string TrimOctave(string noteName)
             => new(noteName.TakeWhile(c => !char.IsDigit(c)).ToArray());
@@ -3899,39 +3965,199 @@ async Task UpdateNoteStatsDatabaseAsync()
         private void UpdateScaleTunePicker()
         {
             var items = BuildScaleTuneOptions();
-            ScaleTunePicker.ItemsSource = items;
-            if (_v3HomeScaleTunePicker != null)
-                _v3HomeScaleTunePicker.ItemsSource = items;
             var selection = _session.Tune == "Tuner" ? "Tuner"
                 : _session.Tune == "Practice Tune" ? (_session.CurrentTune?.Title ?? string.Empty)
                 : _session.Tune == "Arpeggio" ? _session.SelectedArpeggioDisplay
                 : _session.SelectedScale;
             var idx = Array.IndexOf(items, selection);
-            _suppressPickerSync = true;
+            if (idx < 0 && _session.Tune == "Arpeggio")
+            {
+                idx = Array.FindIndex(items, label =>
+                    _arpeggioPickerChoices.TryGetValue(label, out var choice)
+                    && choice.Pattern.Id == _session.SelectedArpeggioId
+                    && choice.RootNote == _session.SelectedArpeggioRoot);
+            }
+
+            EnterPickerSyncSuppress();
             try
             {
+                ScaleTunePicker.ItemsSource = items;
                 if (idx >= 0 && ScaleTunePicker.SelectedIndex != idx)
                     ScaleTunePicker.SelectedIndex = idx;
-                // Keep V3 home picker in sync — populate ItemsSource on first call if needed
-                if (_v3HomeScaleTunePicker != null)
+                if (idx >= 0)
+                    _lastValidScaleTuneIndex = idx;
+            }
+            finally
+            {
+                ExitPickerSyncSuppress();
+            }
+
+            UpdateV3PracticePlayItemPickerCore();
+        }
+
+        private bool IsArpeggioSelectionApplied(string label)
+            => _session.Tune == "Arpeggio"
+               && string.Equals(_session.SelectedArpeggioDisplay, label, StringComparison.Ordinal);
+
+        private async Task ApplyArpeggioSelectionAsync(ArpeggioPickerChoice arpeggioChoice, string preferenceLabel, int validIndex)
+        {
+            _applyingArpeggioSelection = true;
+            _suppressSessionRegenerate = true;
+            EnterPickerSyncSuppress();
+            try
+            {
+                // Select arpeggio before Key so PropertyChanged picker-sync handlers
+                // see the new display name, not the previous arpeggio (e.g. Ab vs Gb loop).
+                _session.SelectArpeggio(arpeggioChoice.Pattern, arpeggioChoice.RootNote, arpeggioChoice.Label);
+                _session.Key = GetArpeggioKeySignature(arpeggioChoice);
+                Preferences.Default.Set("SelectedTune", preferenceLabel);
+                IsAutoRepeatVisible = true;
+                UpdateKeyPickerSelection();
+                UpdateConcertKeyLabel();
+                UpdateKeyPickerVisibility();
+                UpdateScaleTunePickerWithoutV3Cascade();
+            }
+            finally
+            {
+                _suppressSessionRegenerate = false;
+                ExitPickerSyncSuppress();
+            }
+
+            if (validIndex >= 0)
+                _lastValidV3PlayItemIndex = validIndex;
+            _lastValidScaleTuneIndex = validIndex;
+
+            try
+            {
+                await RegenerateNotesAsync();
+            }
+            finally
+            {
+                MainThread.BeginInvokeOnMainThread(() => _applyingArpeggioSelection = false);
+            }
+        }
+
+        /// <summary>Syncs the legacy scale/tune picker without re-entering V3 picker sync.</summary>
+        private void UpdateScaleTunePickerWithoutV3Cascade()
+        {
+            var items = BuildScaleTuneOptions();
+            var selection = _session.Tune == "Tuner" ? "Tuner"
+                : _session.Tune == "Practice Tune" ? (_session.CurrentTune?.Title ?? string.Empty)
+                : _session.Tune == "Arpeggio" ? _session.SelectedArpeggioDisplay
+                : _session.SelectedScale;
+            var idx = Array.IndexOf(items, selection);
+            if (idx < 0 && _session.Tune == "Arpeggio")
+            {
+                idx = Array.FindIndex(items, label =>
+                    _arpeggioPickerChoices.TryGetValue(label, out var choice)
+                    && choice.Pattern.Id == _session.SelectedArpeggioId
+                    && choice.RootNote == _session.SelectedArpeggioRoot);
+            }
+
+            EnterPickerSyncSuppress();
+            try
+            {
+                ScaleTunePicker.ItemsSource = items;
+                if (idx >= 0 && ScaleTunePicker.SelectedIndex != idx)
+                    ScaleTunePicker.SelectedIndex = idx;
+                if (idx >= 0)
+                    _lastValidScaleTuneIndex = idx;
+            }
+            finally
+            {
+                ExitPickerSyncSuppress();
+            }
+
+            UpdateV3PracticePlayItemPickerCore();
+        }
+
+        private PlayModeCategory GetActivePlayModeCategory()
+        {
+            if (V3LayoutTestTune.IsEnabled || _session.Tune == "Tuner" || _session.IsRandomMode)
+                return PlayModeCategory.RandomTuner;
+            if (_session.Tune == "Practice Tune")
+                return PlayModeCategory.Tunes;
+            if (_session.Tune == "Arpeggio")
+                return PlayModeCategory.Arpeggios;
+            return PlayModeCategory.Scales;
+        }
+
+        private string[] BuildV3PracticePlayItemOptions(PlayModeCategory category)
+            => category switch
+            {
+                PlayModeCategory.Tunes =>
+                    musicmate.Models.TuneLibrary.All.Select(t => t.Title).ToArray(),
+                PlayModeCategory.Scales =>
+                    NoteSessionService.AvailableScales.ToArray(),
+                PlayModeCategory.Arpeggios =>
+                    BuildArpeggioPickerChoices().Select(choice => choice.Label).ToArray(),
+                _ => RandomTunerOptions
+            };
+
+        private string GetV3PracticePlayItemSelection(PlayModeCategory category)
+            => category switch
+            {
+                PlayModeCategory.Tunes => _session.CurrentTune?.Title ?? string.Empty,
+                PlayModeCategory.Scales => _session.SelectedScale,
+                PlayModeCategory.Arpeggios => _session.SelectedArpeggioDisplay,
+                PlayModeCategory.RandomTuner => V3LayoutTestTune.IsEnabled ? "Fixed Tune"
+                    : _session.Tune == "Tuner" ? "Tuner"
+                    : "Random",
+                _ => string.Empty
+            };
+
+        private int FindV3PracticePlayItemIndex(string[] items, PlayModeCategory category, string selection)
+        {
+            var idx = Array.IndexOf(items, selection);
+            if (idx >= 0 || category != PlayModeCategory.Arpeggios)
+                return idx;
+
+            idx = Array.FindIndex(items, label =>
+                _arpeggioPickerChoices.TryGetValue(label, out var choice)
+                && choice.Pattern.Id == _session.SelectedArpeggioId
+                && choice.RootNote == _session.SelectedArpeggioRoot);
+
+            if (idx >= 0)
+                return idx;
+
+            return Array.FindIndex(items, label =>
+                _arpeggioPickerChoices.TryGetValue(label, out var choice)
+                && choice.Label == _session.SelectedArpeggioDisplay);
+        }
+
+        private void UpdateV3PracticePlayItemPickerCore()
+        {
+            if (_v3PracticeScaleTunePicker == null)
+                return;
+
+            var category = GetActivePlayModeCategory();
+            var items = BuildV3PracticePlayItemOptions(category);
+            var selection = GetV3PracticePlayItemSelection(category);
+            var idx = FindV3PracticePlayItemIndex(items, category, selection);
+
+            EnterPickerSyncSuppress();
+            try
+            {
+                _v3PracticeScaleTunePicker.ItemsSource = items;
+                if (idx >= 0)
                 {
-                    if (_v3HomeScaleTunePicker.ItemsSource is string[] v3Items)
-                    {
-                        var v3Idx = Array.IndexOf(v3Items, selection);
-                        if (v3Idx >= 0 && _v3HomeScaleTunePicker.SelectedIndex != v3Idx)
-                            _v3HomeScaleTunePicker.SelectedIndex = v3Idx;
-                    }
+                    if (_v3PracticeScaleTunePicker.SelectedIndex != idx)
+                        _v3PracticeScaleTunePicker.SelectedIndex = idx;
+                    _lastValidV3PlayItemIndex = idx;
                 }
             }
             finally
             {
-                _suppressPickerSync = false;
+                ExitPickerSyncSuppress();
             }
         }
 
-        private void V3HomeInstrumentPicker_SelectedIndexChanged(object? sender, EventArgs e)
+        private void UpdateV3PracticePlayItemPicker()
+            => UpdateV3PracticePlayItemPickerCore();
+
+        private void V3PracticeInstrumentPicker_SelectedIndexChanged(object? sender, EventArgs e)
         {
-            var idx = _v3HomeInstrumentPicker.SelectedIndex;
+            var idx = _v3PracticeInstrumentPicker.SelectedIndex;
             if (idx < 0) return;
             var fullInstrument = NoteSessionService.InstrumentOptions[idx];
             _session.Instrument = fullInstrument;
@@ -3940,48 +4166,160 @@ async Task UpdateNoteStatsDatabaseAsync()
             SelectedInstrumentShort = _session.InstrumentDisplayName;
         }
 
-        private async void V3HomeKeyPicker_SelectedIndexChanged(object? sender, EventArgs e)
+        private async void V3PracticeKeyPicker_SelectedIndexChanged(object? sender, EventArgs e)
         {
-            if (_suppressPickerSync) return;
-            var selectedKey = _v3HomeKeyPicker.SelectedItem?.ToString();
-            if (selectedKey == null) return;
-            var shortKey = selectedKey.Split(',')[0].Trim();
+            if (IsPickerSyncSuppressed) return;
+            var shortKey = GetPickerKeyShortName(_v3PracticeKeyPicker);
+            if (shortKey == null) return;
             if (IsPremiumKey(shortKey) && !StatusService.Instance.IsPremiumUser)
             {
                 var purchased = await PremiumPromptHelper.ShowAsync(this,
-                    onDecline: () => _v3HomeKeyPicker.SelectedIndex = _lastFreeKeyIndex);
+                    onDecline: () => _v3PracticeKeyPicker.SelectedIndex = _lastFreeKeyIndex);
                 if (!purchased) return;
             }
-            else { _lastFreeKeyIndex = _v3HomeKeyPicker.SelectedIndex; }
+            else { _lastFreeKeyIndex = _v3PracticeKeyPicker.SelectedIndex; }
             _session.Key = shortKey;
             MarkChildKeyScaleOverrideIfNeeded();
-            if (KeyPicker.SelectedIndex != _v3HomeKeyPicker.SelectedIndex)
-                KeyPicker.SelectedIndex = _v3HomeKeyPicker.SelectedIndex;
+            EnterPickerSyncSuppress();
+            try
+            {
+                if (KeyPicker.SelectedIndex != _v3PracticeKeyPicker.SelectedIndex)
+                    KeyPicker.SelectedIndex = _v3PracticeKeyPicker.SelectedIndex;
+            }
+            finally { ExitPickerSyncSuppress(); }
             UpdateConcertKeyLabel();
+            _v3Drawable?.InvalidateLayoutCache();
+            if (_session.StaffDisplayMode == StaffDisplayMode.V3 && _isPageVisible && !_suppressSessionRegenerate)
+                await RegenerateNotesAsync();
         }
 
-        private void V3HomeScaleTunePickerChanged(object? sender, EventArgs e)
+        private void V3PracticeScaleTunePickerChanged(object? sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine($"[PickerDBG] V3HomeScaleTunePickerChanged fired. suppress={_suppressPickerSync} idx={_v3HomeScaleTunePicker.SelectedIndex} item='{_v3HomeScaleTunePicker.SelectedItem}'");
-            if (_suppressPickerSync) return;
-            var v3Items = _v3HomeScaleTunePicker.ItemsSource as string[];
-            var v3Idx = _v3HomeScaleTunePicker.SelectedIndex;
-            System.Diagnostics.Debug.WriteLine($"[PickerDBG] v3Items null={v3Items==null} v3Idx={v3Idx} len={v3Items?.Length}");
-            if (v3Items == null || v3Idx < 0 || v3Idx >= v3Items.Length) return;
-            // Sync the hidden ScaleTunePicker index silently (it is not visible in V3 mode,
-            // so its SelectedIndexChanged event is unreliable — always handle directly here).
-            _suppressPickerSync = true;
-            try { ScaleTunePicker.SelectedIndex = v3Idx; }
-            finally { _suppressPickerSync = false; }
-            // Always delegate to the main handler, passing _v3HomeScaleTunePicker as sender
-            // so the correct item is read by index from the visible picker.
-            OnScaleTunePickerChanged(_v3HomeScaleTunePicker, e);
+            if (IsPickerSyncSuppressed) return;
+            OnV3PracticePlayItemPickerChanged();
+        }
+
+        private async void OnV3PracticePlayItemPickerChanged()
+        {
+            if (_applyingArpeggioSelection) return;
+
+            var items = _v3PracticeScaleTunePicker.ItemsSource as string[];
+            var idx = _v3PracticeScaleTunePicker.SelectedIndex;
+            if (items == null || idx < 0 || idx >= items.Length) return;
+
+            var selected = items[idx];
+            switch (GetActivePlayModeCategory())
+            {
+                case PlayModeCategory.Tunes:
+                    await ApplyV3TuneSelectionAsync(selected, idx);
+                    break;
+                case PlayModeCategory.Scales:
+                    await ApplyV3ScaleSelectionAsync(selected, idx);
+                    break;
+                case PlayModeCategory.Arpeggios:
+                    await ApplyV3ArpeggioSelectionAsync(selected, idx);
+                    break;
+                case PlayModeCategory.RandomTuner:
+                    await ApplyV3RandomTunerSelectionAsync(selected, idx);
+                    break;
+            }
+        }
+
+        private async Task ApplyV3TuneSelectionAsync(string selected, int idx)
+        {
+            var practiceTune = musicmate.Models.TuneLibrary.All.FirstOrDefault(t => t.Title == selected);
+            if (practiceTune == null) return;
+
+            _lastValidV3PlayItemIndex = idx;
+            V3LayoutTestTune.SetEnabled(false);
+            _session.IsRandomMode = false;
+            _session.SelectPracticeTune(practiceTune);
+            Preferences.Default.Set("SelectedTune", selected);
+            IsAutoRepeatVisible = true;
+            UpdateKeyPickerVisibility();
+            await RegenerateNotesAsync();
+        }
+
+        private async Task ApplyV3ScaleSelectionAsync(string selected, int idx)
+        {
+            if (!FreeScales.Contains(selected) && !StatusService.Instance.IsPremiumUser)
+            {
+                var purchased = await PremiumPromptHelper.ShowAsync(this,
+                    onDecline: () => _v3PracticeScaleTunePicker.SelectedIndex = _lastValidV3PlayItemIndex);
+                if (!purchased)
+                    return;
+            }
+
+            _lastValidV3PlayItemIndex = idx;
+            V3LayoutTestTune.SetEnabled(false);
+            _session.IsRandomMode = false;
+            _session.Tune = "Selected Scale";
+            _session.SelectedScale = selected;
+            MarkChildKeyScaleOverrideIfNeeded();
+            Preferences.Default.Set("SelectedTune", "Selected Scale");
+            IsAutoRepeatVisible = true;
+            UpdateKeyPickerVisibility();
+            await RegenerateNotesAsync();
+        }
+
+        private async Task ApplyV3ArpeggioSelectionAsync(string selected, int idx)
+        {
+            if (!_arpeggioPickerChoices.TryGetValue(selected, out var arpeggioChoice))
+                return;
+
+            if (IsArpeggioSelectionApplied(selected))
+                return;
+
+            _lastValidV3PlayItemIndex = idx;
+            V3LayoutTestTune.SetEnabled(false);
+            _session.IsRandomMode = false;
+            await ApplyArpeggioSelectionAsync(arpeggioChoice, selected, idx);
+        }
+
+        private async Task ApplyV3RandomTunerSelectionAsync(string selected, int idx)
+        {
+            _lastValidV3PlayItemIndex = idx;
+
+            if (selected == "Tuner")
+            {
+                V3LayoutTestTune.SetEnabled(false);
+                _session.Tune = "Tuner";
+                _session.IsRandomMode = false;
+                Preferences.Default.Set("SelectedTune", "Tuner");
+                IsAutoRepeatVisible = false;
+                UpdateKeyPickerVisibility();
+                return;
+            }
+
+            if (selected == "Random")
+            {
+                V3LayoutTestTune.SetEnabled(false);
+                _session.Tune = "Selected Scale";
+                _session.IsRandomMode = true;
+                Preferences.Default.Set("SelectedTune", "Random");
+                IsAutoRepeatVisible = true;
+                UpdateKeyPickerVisibility();
+                await RegenerateNotesAsync();
+                return;
+            }
+
+            if (selected == "Fixed Tune")
+            {
+                V3LayoutTestTune.SetEnabled(true);
+                _session.IsRandomMode = false;
+                if (_session.Tune == "Tuner")
+                    _session.Tune = "Selected Scale";
+                Preferences.Default.Set("SelectedTune", "Fixed Tune");
+                IsAutoRepeatVisible = true;
+                UpdateKeyPickerVisibility();
+                await RegenerateNotesAsync();
+            }
         }
 
         private async void OnScaleTunePickerChanged(object? sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine($"[PickerDBG] OnScaleTunePickerChanged fired. suppress={_suppressPickerSync} sender={sender?.GetType().Name}");
-            if (_suppressPickerSync) return;
+            System.Diagnostics.Debug.WriteLine($"[PickerDBG] OnScaleTunePickerChanged fired. suppress={IsPickerSyncSuppressed} sender={sender?.GetType().Name}");
+            if (IsPickerSyncSuppressed) return;
             var sourcePicker = (sender as Picker) ?? ScaleTunePicker;
             var items = sourcePicker.ItemsSource as string[];
             var idx = sourcePicker.SelectedIndex;
@@ -4006,15 +4344,13 @@ async Task UpdateNoteStatsDatabaseAsync()
 
             if (_arpeggioPickerChoices.TryGetValue(selected, out var arpeggioChoice))
             {
+                if (IsArpeggioSelectionApplied(selected))
+                    return;
+
                 _lastValidScaleTuneIndex = sourcePicker.SelectedIndex;
-                _session.Key = GetArpeggioKeySignature(arpeggioChoice);
-                _session.SelectArpeggio(arpeggioChoice.Pattern, arpeggioChoice.RootNote, arpeggioChoice.Label);
-                Preferences.Default.Set("SelectedTune", selected);
-                IsAutoRepeatVisible = true;
-                UpdateKeyPickerSelection();
-                UpdateConcertKeyLabel();
-                UpdateKeyPickerVisibility();
-                await RegenerateNotesAsync();
+                V3LayoutTestTune.SetEnabled(false);
+                _session.IsRandomMode = false;
+                await ApplyArpeggioSelectionAsync(arpeggioChoice, selected, sourcePicker.SelectedIndex);
                 return;
             }
 
@@ -4073,12 +4409,10 @@ async Task UpdateNoteStatsDatabaseAsync()
 
         async void OnKeyPickerChangedWithPrompt(object? sender, EventArgs e)
         {
-            if (_suppressPickerSync) return;
-            var selectedKey = KeyPicker.SelectedItem?.ToString();
-            if (selectedKey == null)
+            if (IsPickerSyncSuppressed) return;
+            var shortKey = GetPickerKeyShortName(KeyPicker);
+            if (shortKey == null)
                 return;
-
-            var shortKey = selectedKey.Split(',')[0].Trim();
 
             if (IsPremiumKey(shortKey) && !StatusService.Instance.IsPremiumUser)
             {

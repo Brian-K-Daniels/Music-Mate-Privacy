@@ -16,7 +16,7 @@ namespace musicmate.Services
         private static readonly HashSet<string> SupportedScales =
             new(NoteSessionService.AvailableScales, StringComparer.Ordinal);
 
-        /// <summary>Human-readable band label for Child Home.</summary>
+        /// <summary>Human-readable band label for Child Practice.</summary>
         public static string GetStageLabel(int level)
         {
             level = Math.Clamp(level, 1, 100);

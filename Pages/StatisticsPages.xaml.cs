@@ -207,7 +207,7 @@ namespace musicmate.Pages
 #endif
         }
 
-        private async void OnNavigateHomeClicked(object sender, EventArgs e)
+        private async void OnNavigatePracticeClicked(object sender, EventArgs e)
         {
             await Shell.Current.GoToAsync("//MainPage");
         }
