@@ -6,12 +6,12 @@ namespace musicmate.Drawables
 {
     public class StaffDrawable : IDrawable
     {
-        private float                           correctionFactor = 1.3f;  //  2026.04.04 1131  1.5f too big;
-        private const float                     flatSizeBoost = 1.5f;  //  2026.04.05 0916  1.25f;
-        private readonly NoteSessionService     _session;
-        private readonly ThemeService           _theme_service;
+        private float correctionFactor = 1.3f;  //  2026.04.04 1131  1.5f too big;
+        private const float flatSizeBoost = 1.5f;  //  2026.04.05 0916  1.25f;
+        private readonly NoteSessionService _session;
+        private readonly ThemeService _theme_service;
         // Cached computed height for the staff band (measured outside of Draw)
-        private float                           _computedStaffHeight = 220f;
+        private float _computedStaffHeight = 220f;
 
 
         public StaffDrawable(NoteSessionService session, ThemeService themeService)
@@ -135,7 +135,7 @@ namespace musicmate.Drawables
                     if (!int.TryParse(sR[^1].ToString(), out var octaveR)) continue;
                     int stepsR = StaffStepsFromB4(letterR, octaveR);
                     if (stepsR < 0) maxStepsAbove = Math.Max(maxStepsAbove, -stepsR);
-                    else            maxStepsBelow = Math.Max(maxStepsBelow, stepsR);
+                    else maxStepsBelow = Math.Max(maxStepsBelow, stepsR);
                 }
             }
 
@@ -285,7 +285,7 @@ namespace musicmate.Drawables
                     // Bar lines: thin vertical lines spanning the full staff height
                     canvas.SaveState();
                     canvas.StrokeColor = contrastColor;
-                    canvas.StrokeSize  = Math.Max(1f, headW * 0.08f);
+                    canvas.StrokeSize = Math.Max(1f, headW * 0.08f);
                     foreach (var barX in _session.MeasureBarXPositions)
                     {
                         var scaledBarX = leftMargin + (barX - minSrcX) * scale;
@@ -295,11 +295,11 @@ namespace musicmate.Drawables
                     if (_session.NotesToDraw.Count > 0 || _session.RestXPositions.Count > 0)
                     {
                         var lastX = leftMargin + (maxSrcX - minSrcX) * scale + headW * 1.5f;
-                        var thin  = Math.Max(1f, headW * 0.08f);
+                        var thin = Math.Max(1f, headW * 0.08f);
                         var thick = thin * 3f;
-                        canvas.StrokeSize  = thin;
+                        canvas.StrokeSize = thin;
                         canvas.DrawLine(lastX, staffCoreTop, lastX, staffCoreTop + 4f * staffSpacing);
-                        canvas.StrokeSize  = thick;
+                        canvas.StrokeSize = thick;
                         canvas.DrawLine(lastX + thin * 2f, staffCoreTop, lastX + thin * 2f, staffCoreTop + 4f * staffSpacing);
                     }
                     canvas.RestoreState();
@@ -401,7 +401,7 @@ namespace musicmate.Drawables
                     if (!int.TryParse(sR[^1].ToString(), out var octaveR)) continue;
                     int stepsR = StaffStepsFromB4(letterR, octaveR);
                     if (stepsR < 0) maxStepsAbove = Math.Max(maxStepsAbove, -stepsR);
-                    else            maxStepsBelow = Math.Max(maxStepsBelow, stepsR);
+                    else maxStepsBelow = Math.Max(maxStepsBelow, stepsR);
                 }
             }
 
@@ -442,7 +442,7 @@ namespace musicmate.Drawables
             // DEBUG: Log all the calculations
             System.Diagnostics.Debug.WriteLine($"[ComputeRequiredHeight] staffCoreTop={staffCoreTop:F1}, staffCoreBottom={staffCoreBottom:F1}");
             System.Diagnostics.Debug.WriteLine($"[ComputeRequiredHeight] lowestNoteY={lowestNoteY:F1}, feedbackRowY={feedbackRowY:F1}, feedbackBottom={feedbackBottom:F1}");
-           // System.Diagnostics.Debug.WriteLine($"[ComputeRequiredHeight] totalHeight={totalHeight:F1}, bottomMargin={bottomMargin:F1}");
+            // System.Diagnostics.Debug.WriteLine($"[ComputeRequiredHeight] totalHeight={totalHeight:F1}, bottomMargin={bottomMargin:F1}");
 
             // Cache and return the computed height with aggressive negative margin
             _computedStaffHeight = totalHeight;
@@ -469,17 +469,17 @@ namespace musicmate.Drawables
             var middleLineY = top + spacing * 2f;
 
             var sharpNotes = new[] { "F#5", "C#5", "G#5", "D#5", "A#4", "E#5", "B#4" };
-            var flatNotes  = new[] { "Bb4", "Eb5", "Ab4", "Db5", "Gb4", "Cb5", "Fb4" };
+            var flatNotes = new[] { "Bb4", "Eb5", "Ab4", "Db5", "Gb4", "Cb5", "Fb4" };
             var notes = count > 0 ? sharpNotes : flatNotes;
             bool isFlat = count < 0;
 
             // Size: adjust flats upward in glyph size to visually match sharps
             var glyphSize = symbolWidth * correctionFactor * (isFlat ? flatSizeBoost : 1.0f);
 
-            canvas.FontColor   = strokeColor;
-            canvas.FillColor   = fillColor;
+            canvas.FontColor = strokeColor;
+            canvas.FillColor = fillColor;
             canvas.StrokeColor = strokeColor;
-            canvas.FontSize    = glyphSize;
+            canvas.FontSize = glyphSize;
 
             for (int i = 0; i < abs && i < notes.Length; i++)
             {
@@ -579,7 +579,7 @@ namespace musicmate.Drawables
             canvas.StrokeColor = strokeColor;
 
             var dur = note.Duration;
-            bool isOpen  = dur == NoteDuration.Half || dur == NoteDuration.Whole;
+            bool isOpen = dur == NoteDuration.Half || dur == NoteDuration.Whole;
             bool hasStem = dur != NoteDuration.Whole;
             bool hasFlag = dur == NoteDuration.Eighth;
 
@@ -605,13 +605,13 @@ namespace musicmate.Drawables
             {
                 if (stemUp)
                 {
-                    stemX    = xLeft + headW;
+                    stemX = xLeft + headW;
                     stemTipY = noteY - stemLength;
                     canvas.DrawLine(stemX, noteY, stemX, stemTipY);
                 }
                 else
                 {
-                    stemX    = xLeft;
+                    stemX = xLeft;
                     stemTipY = noteY + stemLength;
                     canvas.DrawLine(stemX, noteY, stemX, stemTipY);
                 }
@@ -917,15 +917,15 @@ namespace musicmate.Drawables
                 var fill = Colors.DarkRed.WithAlpha(0.80f);
                 if (_session.PlaybackHighlightIndex.HasValue && _session.PlaybackHighlightIndex.Value == i)
                 {
-                    fill = Colors.Lime.WithAlpha(0.95f);
+                    fill = _theme_service.CurrentNoteHighlightColor;//Lime.WithAlpha(0.95f);
                 }
                 else
                 {
                     // Existing logic: If all correct, mark all green; otherwise, only first contiguous group
                     fill = allCorrect
-                        ? Colors.Lime.WithAlpha(0.95f)
+                        ? _theme_service.CurrentNoteHighlightColor
                         : (stillContiguous && fb.IsCorrect)
-                            ? Colors.Lime.WithAlpha(0.95f)
+                            ? _theme_service.CurrentNoteHighlightColor
                             : Colors.DarkRed.WithAlpha(0.80f);
                 }
 
@@ -957,7 +957,7 @@ namespace musicmate.Drawables
         /// (no platform text measurement) so it is safe to call from non-UI threads and
         /// does not invoke platform font subsystems.
         /// </summary>
-       
+
 
         /// <summary>
         /// Returns the number of sharps (positive) or flats (negative) for the key signature
@@ -1043,10 +1043,21 @@ namespace musicmate.Drawables
                 // The parent major key's accidental count = this key's major count + modalOffset.
                 int majorCount = key switch
                 {
-                    "C" => 0,  "G" => 1,  "D" => 2,  "A" => 3,  "E" => 4,  "B" => 5,
-                    "F#" => 6, "C#" => 7,
-                    "F" => -1, "Bb" => -2, "Eb" => -3, "Ab" => -4, "Db" => -5,
-                    "Gb" => -6, "Cb" => -7,
+                    "C" => 0,
+                    "G" => 1,
+                    "D" => 2,
+                    "A" => 3,
+                    "E" => 4,
+                    "B" => 5,
+                    "F#" => 6,
+                    "C#" => 7,
+                    "F" => -1,
+                    "Bb" => -2,
+                    "Eb" => -3,
+                    "Ab" => -4,
+                    "Db" => -5,
+                    "Gb" => -6,
+                    "Cb" => -7,
                     _ => 0
                 };
                 // Clamp to valid range [-7, 7]
@@ -1074,7 +1085,7 @@ namespace musicmate.Drawables
                 _ => 0
             };
         }
-        private  void DrawKeySignatureOld(ICanvas canvas, float top, float spacing, string key, float startX, float symbolWidth, float symbolSpacing,
+        private void DrawKeySignatureOld(ICanvas canvas, float top, float spacing, string key, float startX, float symbolWidth, float symbolSpacing,
             float headW, int countOverride, Color fillColor, Color strokeColor)
         {
             // Historical alias kept for compatibility — delegate to the maintained implementation.
@@ -1164,10 +1175,10 @@ namespace musicmate.Drawables
 
             // The rest spans from line 2 to line 4 (two staff spaces in the middle).
             // staffTop + spacing = line 2;  staffTop + 3*spacing = line 4
-            var top    = staffTop + spacing;
+            var top = staffTop + spacing;
             var bottom = staffTop + 3f * spacing;
-            var h      = bottom - top;         // = 2 * spacing
-            var w      = h * 0.45f;            // proportional width
+            var h = bottom - top;         // = 2 * spacing
+            var w = h * 0.45f;            // proportional width
 
             // Classic quarter-rest zigzag: 4 points
             //   A (top-right)  → B (middle-left)  → C (just below middle, right)  → D (bottom-left)

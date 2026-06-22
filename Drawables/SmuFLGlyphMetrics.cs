@@ -21,8 +21,8 @@ namespace musicmate.Drawables
 
             using var font = new SKFont(SmuFLFont.SkiaTypeface, fontSize)
             {
-                Edging    = SKFontEdging.Antialias,
-                Subpixel  = true
+                Edging = SKFontEdging.Antialias,
+                Subpixel = true
             };
 
             font.MeasureText(glyph, out var bounds);
@@ -31,9 +31,9 @@ namespace musicmate.Drawables
 
             layout = new Layout
             {
-                Left   = bounds.Left,
-                Top    = bounds.Top,
-                Width  = bounds.Width,
+                Left = bounds.Left,
+                Top = bounds.Top,
+                Width = bounds.Width,
                 Height = bounds.Height
             };
             return true;

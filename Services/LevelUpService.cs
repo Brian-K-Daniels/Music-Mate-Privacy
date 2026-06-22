@@ -63,94 +63,94 @@ namespace musicmate.Services
     ///   Complete one child-Practice session and confirm the banner appears.
     ///   Reset the constants to their defaults when done.
     /// </summary>
-public static class LevelUpService
-{
-    // ── Default values for LevelUp criteria (used by AdvancePage and reset) ──
-    public const int DefaultSessionCount = 3; // Rolling window size for advancement
-    public const double DefaultMinPitchAccuracyPercent = 70.0;  //  2026.06.06 1759  85.0;
-    public const double DefaultMinTimingAccuracyPercent = 15.0;  //  2026.06.06 1800  75.0;
-    public const double DefaultMinOverallAccuracyPercent = 35.0;  //  2026.06.06 1801  .0;
-    public const int DefaultMinNotesPerSession = 4;
-    public const double DefaultMinOverallAccuracyFloor = 8.0;  //  2026.06.06 1801  60.0; // Minimum floor for any session in group
-
-    /// <summary>Restores level-up criteria preferences to <see cref="DefaultSessionCount"/> and related defaults.</summary>
-    public static void ResetCriteriaToDefaults()
+    public static class LevelUpService
     {
-        Preferences.Default.Set("LevelUp.SessionCount", DefaultSessionCount);
-        Preferences.Default.Set("LevelUp.MinPitchPct", DefaultMinPitchAccuracyPercent);
-        Preferences.Default.Set("LevelUp.MinTimingPct", DefaultMinTimingAccuracyPercent);
-        Preferences.Default.Set("LevelUp.MinOverallPct", DefaultMinOverallAccuracyPercent);
-        Preferences.Default.Set("LevelUp.MinNotes", DefaultMinNotesPerSession);
-    }
+        // ── Default values for LevelUp criteria (used by AdvancePage and reset) ──
+        public const int DefaultSessionCount = 3; // Rolling window size for advancement
+        public const double DefaultMinPitchAccuracyPercent = 70.0;  //  2026.06.06 1759  85.0;
+        public const double DefaultMinTimingAccuracyPercent = 15.0;  //  2026.06.06 1800  75.0;
+        public const double DefaultMinOverallAccuracyPercent = 35.0;  //  2026.06.06 1801  .0;
+        public const int DefaultMinNotesPerSession = 4;
+        public const double DefaultMinOverallAccuracyFloor = 8.0;  //  2026.06.06 1801  60.0; // Minimum floor for any session in group
 
-    // ── Preference keys ────────────────────────────────────────────────────
-    private const string PrefLevelKey = "ChildPractice.Level";
-    private const string PrefCountSinceUtcKey = "LevelUp.CountSinceUtc";
-
-    /// <summary>Only <see cref="SessionResult"/> rows at or after this UTC time count toward ssns.</summary>
-    public static DateTime CountSinceUtc
-    {
-        get
+        /// <summary>Restores level-up criteria preferences to <see cref="DefaultSessionCount"/> and related defaults.</summary>
+        public static void ResetCriteriaToDefaults()
         {
-            long ticks = Preferences.Default.Get(PrefCountSinceUtcKey, 0L);
-            return ticks > 0 ? new DateTime(ticks, DateTimeKind.Utc) : DateTime.MinValue;
+            Preferences.Default.Set("LevelUp.SessionCount", DefaultSessionCount);
+            Preferences.Default.Set("LevelUp.MinPitchPct", DefaultMinPitchAccuracyPercent);
+            Preferences.Default.Set("LevelUp.MinTimingPct", DefaultMinTimingAccuracyPercent);
+            Preferences.Default.Set("LevelUp.MinOverallPct", DefaultMinOverallAccuracyPercent);
+            Preferences.Default.Set("LevelUp.MinNotes", DefaultMinNotesPerSession);
         }
-    }
 
-    /// <summary>Resets the ssns window (Child Practice start, level-up, or child-results clear).</summary>
-    public static void MarkCountSinceNow()
-        => Preferences.Default.Set(PrefCountSinceUtcKey, DateTime.UtcNow.Ticks);
+        // ── Preference keys ────────────────────────────────────────────────────
+        private const string PrefLevelKey = "ChildPractice.Level";
+        private const string PrefCountSinceUtcKey = "LevelUp.CountSinceUtc";
 
-    // ── Threshold constants ────────────────────────────────────────────────
-    // Adjust here to change level-up sensitivity; nowhere else.
+        /// <summary>Only <see cref="SessionResult"/> rows at or after this UTC time count toward ssns.</summary>
+        public static DateTime CountSinceUtc
+        {
+            get
+            {
+                long ticks = Preferences.Default.Get(PrefCountSinceUtcKey, 0L);
+                return ticks > 0 ? new DateTime(ticks, DateTimeKind.Utc) : DateTime.MinValue;
+            }
+        }
 
-    /// <summary>
-    /// Number of consecutive qualifying sessions that must all meet the
-    /// accuracy thresholds before a level-up is awarded.  Default = 3.
-    /// </summary>
-    public static int SessionCount
-        => Preferences.Default.Get("LevelUp.SessionCount", DefaultSessionCount);
+        /// <summary>Resets the ssns window (Child Practice start, level-up, or child-results clear).</summary>
+        public static void MarkCountSinceNow()
+            => Preferences.Default.Set(PrefCountSinceUtcKey, DateTime.UtcNow.Ticks);
 
-    /// <summary>
-    /// Minimum pitch accuracy (%) required in every qualifying session.
-    /// Default = 85.
-    /// </summary>
-    public static double MinPitchAccuracyPercent
-        => Preferences.Default.Get("LevelUp.MinPitchPct", DefaultMinPitchAccuracyPercent);
+        // ── Threshold constants ────────────────────────────────────────────────
+        // Adjust here to change level-up sensitivity; nowhere else.
 
-    /// <summary>
-    /// Minimum timing accuracy (%) required when timing data is available.
-    /// Timing is measured using least-squares onset fitting: notes with
-    /// smaller deviations from the fitted beat timeline score higher.
-    /// Default = 75.
-    /// </summary>
-    public static double MinTimingAccuracyPercent
-        => Preferences.Default.Get("LevelUp.MinTimingPct", DefaultMinTimingAccuracyPercent);
+        /// <summary>
+        /// Number of consecutive qualifying sessions that must all meet the
+        /// accuracy thresholds before a level-up is awarded.  Default = 3.
+        /// </summary>
+        public static int SessionCount
+            => Preferences.Default.Get("LevelUp.SessionCount", DefaultSessionCount);
 
-    /// <summary>
-    /// Minimum overall accuracy (%) required in every qualifying session.
-    /// Currently overall == pitch accuracy; will blend timing once it is
-    /// calibrated.  Default = 80.
-    /// </summary>
-    public static double MinOverallAccuracyPercent
-        => Preferences.Default.Get("LevelUp.MinOverallPct", DefaultMinOverallAccuracyPercent);
+        /// <summary>
+        /// Minimum pitch accuracy (%) required in every qualifying session.
+        /// Default = 85.
+        /// </summary>
+        public static double MinPitchAccuracyPercent
+            => Preferences.Default.Get("LevelUp.MinPitchPct", DefaultMinPitchAccuracyPercent);
 
-    /// <summary>
-    /// Minimum number of non-rest note slots a session must contain to be
-    /// counted as a qualifying session.  Very short sessions are excluded
-    /// because their accuracy percentages are statistically unreliable.
-    /// Default = 4.
-    /// </summary>
-    public static int MinNotesPerSession
-        => Preferences.Default.Get("LevelUp.MinNotes", DefaultMinNotesPerSession);
+        /// <summary>
+        /// Minimum timing accuracy (%) required when timing data is available.
+        /// Timing is measured using least-squares onset fitting: notes with
+        /// smaller deviations from the fitted beat timeline score higher.
+        /// Default = 75.
+        /// </summary>
+        public static double MinTimingAccuracyPercent
+            => Preferences.Default.Get("LevelUp.MinTimingPct", DefaultMinTimingAccuracyPercent);
 
-    /// <summary>
-    /// Minimum overall accuracy (%) required for any session in the rolling group (floor).
-    /// No session can be below this value, even if the rolling average is acceptable.
-    /// Default = 60.
-    /// </summary>
-    public static double MinOverallAccuracyFloor
-        => Preferences.Default.Get("LevelUp.MinOverallAccuracyFloor", DefaultMinOverallAccuracyFloor);
+        /// <summary>
+        /// Minimum overall accuracy (%) required in every qualifying session.
+        /// Currently overall == pitch accuracy; will blend timing once it is
+        /// calibrated.  Default = 80.
+        /// </summary>
+        public static double MinOverallAccuracyPercent
+            => Preferences.Default.Get("LevelUp.MinOverallPct", DefaultMinOverallAccuracyPercent);
+
+        /// <summary>
+        /// Minimum number of non-rest note slots a session must contain to be
+        /// counted as a qualifying session.  Very short sessions are excluded
+        /// because their accuracy percentages are statistically unreliable.
+        /// Default = 4.
+        /// </summary>
+        public static int MinNotesPerSession
+            => Preferences.Default.Get("LevelUp.MinNotes", DefaultMinNotesPerSession);
+
+        /// <summary>
+        /// Minimum overall accuracy (%) required for any session in the rolling group (floor).
+        /// No session can be below this value, even if the rolling average is acceptable.
+        /// Default = 60.
+        /// </summary>
+        public static double MinOverallAccuracyFloor
+            => Preferences.Default.Get("LevelUp.MinOverallAccuracyFloor", DefaultMinOverallAccuracyFloor);
 
         // ── Entry point ────────────────────────────────────────────────────────
 

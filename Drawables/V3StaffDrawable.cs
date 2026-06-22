@@ -93,17 +93,17 @@ namespace musicmate.Drawables
 
         // ── Fixed horizontal constants ─────────────────────────────────────────
         private const float ScrollPxPerBeat = 42f;   // reduced from 48 for better fit
-        private const float RightMargin     = 36f;
+        private const float RightMargin = 36f;
 
         // V3 uniform spacing constants
-        private const float ItemSpacing      = 46f;   // fixed horizontal spacing per item (reduced from 52)
-        private const float AccidentalWidth  = 40f;   // extra width reserved when a note has an accidental
-        private const float BarLeftPadding      = 16f;   // minimum space from bar line to notehead/stem
-        private const float BarStemClearance    = 8f;    // extra gap from bar to stem-ward edge of notehead
-        private const float MinStemBarGap       = 6f;    // minimum px between stem column and a bar line
+        private const float ItemSpacing = 46f;   // fixed horizontal spacing per item (reduced from 52)
+        private const float AccidentalWidth = 40f;   // extra width reserved when a note has an accidental
+        private const float BarLeftPadding = 16f;   // minimum space from bar line to notehead/stem
+        private const float BarStemClearance = 8f;    // extra gap from bar to stem-ward edge of notehead
+        private const float MinStemBarGap = 6f;    // minimum px between stem column and a bar line
         private const float MeasureStartExtraPad = 6f;   // added when a note starts exactly on a bar beat
-        private const float StaffStartExtraPad   = 4f;   // first note in staff after time signature
-        private const float BarRightPadding  = 20f;   // minimum space from last note to final bar line
+        private const float StaffStartExtraPad = 4f;   // first note in staff after time signature
+        private const float BarRightPadding = 20f;   // minimum space from last note to final bar line
 
         /// <summary>Padding before the layout right limit (dp).</summary>
         private const float V3LayoutRightPad = 2f;
@@ -120,19 +120,19 @@ namespace musicmate.Drawables
         private StaffHeaderMetrics _headerMetrics;
 
         private const float AccidentalRightGap = 0.5f;
-        private const float DoubleBarExtraWidth  = 4f;
+        private const float DoubleBarExtraWidth = 4f;
 
         // Notehead ellipse is drawn with height = NoteHeadR * NoteHeadHeightFactor.
-        private const float NoteHeadHeightFactor     = 1.5f;
+        private const float NoteHeadHeightFactor = 1.5f;
         private const float BeginnerNoteHeadSpaceRatio = 0.9f; // target: 90% of staff-space height
-        private const float CompactNoteHeadRRatio    = 0.32f;
+        private const float CompactNoteHeadRRatio = 0.32f;
         /// <summary>Child levels 31+: modest notehead enlargement without beginner-scale collision risk.</summary>
-        private const float MidLevelNoteHeadRRatio   = 0.41f;
+        private const float MidLevelNoteHeadRRatio = 0.41f;
         /// <summary>Horizontal gap between key signature and time signature (px).</summary>
-        private const float KeySigTimeSigGap         = 1f;
-        private const float CompactStemLenRatio      = 2.15f;
-        private const float CompactAccidentalRefPx   = 26f;
-        private const float CompactRestScale         = 0.72f;
+        private const float KeySigTimeSigGap = 1f;
+        private const float CompactStemLenRatio = 2.15f;
+        private const float CompactAccidentalRefPx = 26f;
+        private const float CompactRestScale = 0.72f;
 
         /// <summary>Child levels 1–30 use enlarged notation scaled from staff-space height.</summary>
         private bool UseBeginnerNotationScale =>
@@ -384,7 +384,7 @@ namespace musicmate.Drawables
             /// <summary>1.0 at compact size; &gt;1 when level ≤30 enlarges notation.</summary>
             public float GlyphScale;
             public float UpperTop, UpperMid, UpperBot;
-            public float LowerTop,  LowerMid,  LowerBot;
+            public float LowerTop, LowerMid, LowerBot;
             public float TotalHeight;
         }
         private V3Layout _layout;
@@ -737,7 +737,7 @@ namespace musicmate.Drawables
         public V3StaffDrawable(NoteSessionService session, ThemeService theme, ISafeAreaService? safeArea = null)
         {
             _session = session;
-            _theme   = theme;
+            _theme = theme;
             _safeArea = safeArea;
         }
 
@@ -902,9 +902,9 @@ namespace musicmate.Drawables
             // and the bottom of the lower staff so noteheads are never clipped.
             const int breathing = 3;
             int eA1 = Math.Max(0, -4 - minS1) + breathing;
-            int eB1 = Math.Max(0,  maxS1 - 4) + breathing;
+            int eB1 = Math.Max(0, maxS1 - 4) + breathing;
             int eA2 = Math.Max(0, -4 - minS2) + breathing;
-            int eB2 = Math.Max(0,  maxS2 - 4) + breathing;
+            int eB2 = Math.Max(0, maxS2 - 4) + breathing;
 
             // The MusicBpm quarter-note marking lives above the upper staff; reserve enough
             // room for its tangential stem so it does not clip at the top of the canvas.
@@ -926,7 +926,7 @@ namespace musicmate.Drawables
                     ? sls * MidLevelNoteHeadRRatio
                     : compactNoteHeadR;
             float glyphScale = noteHeadR / compactNoteHeadR;
-            float stemLen    = UseBeginnerNotationScale
+            float stemLen = UseBeginnerNotationScale
                 ? 3.5f * sls
                 : sls * CompactStemLenRatio * glyphScale;
 
@@ -942,22 +942,22 @@ namespace musicmate.Drawables
 
             // Distribute unused space equally above the top and below the bottom (and the
             // middle gap between the staffs already receives eB1+eA2 half-spaces of padding).
-            float slack  = Math.Max(0f, usableH - contentH);
+            float slack = Math.Max(0f, usableH - contentH);
             float vOffset = slack / 2f;
 
             _layout = new V3Layout
             {
-                Sls         = sls,
-                HS          = hs,
-                NoteHeadR   = noteHeadR,
-                StemLen     = stemLen,
-                GlyphScale  = glyphScale,
-                UpperTop    = upperTop + vOffset,
-                UpperMid    = upperMid + vOffset,
-                UpperBot    = upperBot + vOffset,
-                LowerTop    = lowerTop + vOffset,
-                LowerMid    = lowerMid + vOffset,
-                LowerBot    = lowerBot + vOffset,
+                Sls = sls,
+                HS = hs,
+                NoteHeadR = noteHeadR,
+                StemLen = stemLen,
+                GlyphScale = glyphScale,
+                UpperTop = upperTop + vOffset,
+                UpperMid = upperMid + vOffset,
+                UpperBot = upperBot + vOffset,
+                LowerTop = lowerTop + vOffset,
+                LowerMid = lowerMid + vOffset,
+                LowerBot = lowerBot + vOffset,
                 TotalHeight = contentH + vOffset
             };
         }
@@ -1919,7 +1919,7 @@ namespace musicmate.Drawables
         // ── IDrawable ─────────────────────────────────────────────────────────────
         public void Draw(ICanvas canvas, RectF dirtyRect)
         {
-            var bg  = _theme.PanelBackgroundColor;
+            var bg = _theme.PanelBackgroundColor;
             var ink = _theme.ContrastingTextColor;
 
             canvas.FillColor = bg;
@@ -1949,7 +1949,7 @@ namespace musicmate.Drawables
             if (UpperNotes.Count == 0 && LowerNotes.Count == 0)
             {
                 canvas.FontColor = ink;
-                canvas.FontSize  = 14;
+                canvas.FontSize = 14;
                 canvas.DrawString("V3 Mode — no notes generated yet",
                     dirtyRect.X + 8, dirtyRect.Y + dirtyRect.Height / 2f,
                     HorizontalAlignment.Left);
@@ -2227,7 +2227,7 @@ namespace musicmate.Drawables
         private static void DrawV3ErrorMessage(ICanvas canvas, RectF dirtyRect, Color ink, Exception ex)
         {
             canvas.FontColor = ink;
-            canvas.FontSize  = 12;
+            canvas.FontSize = 12;
             var detail = ex;
             while (detail.InnerException != null)
                 detail = detail.InnerException;
@@ -2899,7 +2899,7 @@ namespace musicmate.Drawables
         {
             float halfStroke = StemStrokeHalfWidth;
             float outerRight = noteX + NoteHeadOuterR;
-            float outerLeft  = noteX - NoteHeadOuterR;
+            float outerLeft = noteX - NoteHeadOuterR;
             float stemX = stemUp ? outerRight - halfStroke : outerLeft + halfStroke;
             return (stemX, noteY);
         }
@@ -2983,27 +2983,7 @@ namespace musicmate.Drawables
         /// ── Per-staff rendering ───────────────────────────────────────────────────
         /// Draws a single staff using pre-computed horizontal layout.
         /// All X positions are read from noteLayouts and barLayouts arrays.
-        /// </summary>
-        private void DrawStaff(
-            ICanvas canvas, RectF dirtyRect, Color ink,
-            float staffTop, float staffMid, float staffBot,
-            List<GeneratedNote> notes, V3NoteState[] states,
-            NoteLayout[] noteLayouts, BarLayout[] barLayouts,
-            IReadOnlyList<double> barBeats, double beatOrigin,
-            float alpha,
-            bool isActive, int currentIdx,
-            float safeLeft, float safeRight, float layoutRightLimit,
-            float staffLeftMargin,
-            bool drawKeyAndTimeSig = true)
-        {
-            DrawStaffStaticChrome(canvas, ink, staffTop, staffMid, staffBot,
-                noteLayouts, barLayouts, safeLeft, safeRight, layoutRightLimit, staffLeftMargin,
-                drawKeyAndTimeSig);
-            DrawStaffDynamic(canvas, dirtyRect, ink, staffTop, staffMid, staffBot,
-                notes, states, noteLayouts, barLayouts, barBeats, beatOrigin,
-                alpha, isActive, currentIdx, safeLeft, safeRight, layoutRightLimit, staffLeftMargin);
-        }
-
+        /// </summary>        
         private void DrawStaffStaticChrome(
             ICanvas canvas, Color ink,
             float staffTop, float staffMid, float staffBot,
@@ -3048,7 +3028,7 @@ namespace musicmate.Drawables
             staffLineEndX = Math.Max(staffLineEndX, safeLeft + staffLeftMargin);
 
             canvas.StrokeColor = ink;
-            canvas.StrokeSize  = 1.5f;
+            canvas.StrokeSize = 1.5f;
             for (int i = 0; i < 5; i++)
             {
                 float y = staffTop + i * _layout.Sls;
@@ -3084,7 +3064,7 @@ namespace musicmate.Drawables
         {
             canvas.SaveState();
             canvas.FontColor = ink;
-            canvas.FontSize  = _layout.Sls * 5f;
+            canvas.FontSize = _layout.Sls * 5f;
             float clefH = staffBot - staffTop + _layout.Sls * 3.2f;
             canvas.DrawString("𝄞", _headerMetrics.ClefX, staffTop, _headerMetrics.ClefWidth, clefH,
                 HorizontalAlignment.Left, VerticalAlignment.Top);
@@ -3406,7 +3386,7 @@ namespace musicmate.Drawables
             }
 
             float minStemPx = MinBeamedStemStaffSpaces * _layout.Sls;
-            float maxTilt   = _layout.Sls * 1.5f;
+            float maxTilt = _layout.Sls * 1.5f;
             var result = new Dictionary<int, float>();
 
             foreach (var gkv in byGroup)
@@ -3474,7 +3454,7 @@ namespace musicmate.Drawables
         {
             // ~0.38 sls thick; center-to-center spacing ~0.72 sls keeps a clear gap between double beams.
             float beamThick = Math.Max(3f, _layout.Sls * 0.38f);
-            float beamGap   = Math.Max(2f, _layout.Sls * 0.34f);
+            float beamGap = Math.Max(2f, _layout.Sls * 0.34f);
 
             // Build per-group stem tip lists
             var groupTips = new Dictionary<int, List<(int noteIdx, float x, float y, Color color, NoteDuration dur)>>();
@@ -3749,7 +3729,7 @@ namespace musicmate.Drawables
             float clefOnlyRightRel = clefPad + clefWidth;
             float clefOnlyLeftMargin = clefOnlyRightRel + _layout.NoteHeadR + _layout.NoteHeadR;
 
-            string key   = _session.Key;
+            string key = _session.Key;
             string scale = ActiveKeySignatureScale();
             bool suppressKeySig = _session.Tune == "Tuner"
                 || _session.Tune == "Practice Tune"
@@ -3766,14 +3746,14 @@ namespace musicmate.Drawables
 
             return new StaffHeaderMetrics
             {
-                ClefX               = clefX,
-                ClefWidth           = clefWidth,
-                KeySigStartX        = keySigStartX,
-                KeySigEndX          = keySigEndX,
-                TimeSigX            = timeSigX,
-                TimeSigRightRel     = timeSigRightRel,
-                LeftMargin          = leftMargin,
-                ClefOnlyLeftMargin  = clefOnlyLeftMargin
+                ClefX = clefX,
+                ClefWidth = clefWidth,
+                KeySigStartX = keySigStartX,
+                KeySigEndX = keySigEndX,
+                TimeSigX = timeSigX,
+                TimeSigRightRel = timeSigRightRel,
+                LeftMargin = leftMargin,
+                ClefOnlyLeftMargin = clefOnlyLeftMargin
             };
         }
 
@@ -3868,10 +3848,16 @@ namespace musicmate.Drawables
         {
             int noteVal = letter switch
             {
-                'C' => 0, 'D' => 1, 'E' => 2, 'F' => 3,
-                'G' => 4, 'A' => 5, 'B' => 6, _ => 0
+                'C' => 0,
+                'D' => 1,
+                'E' => 2,
+                'F' => 3,
+                'G' => 4,
+                'A' => 5,
+                'B' => 6,
+                _ => 0
             };
-            int b4Val   = 6 + 4 * 7;
+            int b4Val = 6 + 4 * 7;
             int thisVal = noteVal + octave * 7;
             return b4Val - thisVal;
         }
@@ -3883,9 +3869,9 @@ namespace musicmate.Drawables
 
         private static Color GetNoteColor(V3NoteState state, Color ink, byte fadeAlpha) => state switch
         {
-            V3NoteState.Current => ApplyAlpha(Colors.Yellow,             fadeAlpha),  //  2026.06.13 1552  Color.FromArgb("#007BFF"), fadeAlpha),
+            V3NoteState.Current => ApplyAlpha(Colors.Yellow, fadeAlpha),  //  2026.06.13 1552  Color.FromArgb("#007BFF"), fadeAlpha),
             V3NoteState.Correct => ApplyAlpha(Color.FromArgb("#22AA44"), fadeAlpha),
-            V3NoteState.Wrong   => ApplyAlpha(Color.FromArgb("#CC2222"), fadeAlpha),
+            V3NoteState.Wrong => ApplyAlpha(Color.FromArgb("#CC2222"), fadeAlpha),
             _ => ApplyAlpha(Colors.Black, (byte)(fadeAlpha * 0.85f))
         };
 
@@ -3919,7 +3905,7 @@ namespace musicmate.Drawables
 
                 float stroke = 2f * _layout.GlyphScale;
                 canvas.StrokeColor = noteColor;
-                canvas.StrokeSize  = stroke;
+                canvas.StrokeSize = stroke;
 
                 bool filled = duration != NoteDuration.Whole && duration != NoteDuration.Half;
                 float drawR = NoteHeadDrawR(filled);
@@ -3958,7 +3944,7 @@ namespace musicmate.Drawables
                         ? stemY - _layout.StemLen
                         : stemY + _layout.StemLen);
                     canvas.StrokeColor = noteColor;
-                    canvas.StrokeSize  = stroke;
+                    canvas.StrokeSize = stroke;
                     canvas.DrawLine(stemX, stemY, stemX, stemEnd);
 
                     stemTipX = stemX;
@@ -3987,16 +3973,16 @@ namespace musicmate.Drawables
                 float r = _layout.NoteHeadR;
                 if (state == V3NoteState.Current)
                 {
-                    canvas.FillColor   = ApplyAlpha(Color.FromArgb("#007BFF"), (byte)(fadeAlpha * 0.19f));
+                    canvas.FillColor = ApplyAlpha(Color.FromArgb("#007BFF"), (byte)(fadeAlpha * 0.19f));
                     canvas.StrokeColor = ApplyAlpha(Color.FromArgb("#007BFF"), fadeAlpha);
-                    canvas.StrokeSize  = 1.5f;
+                    canvas.StrokeSize = 1.5f;
                     canvas.FillRoundedRectangle(x - r * 2f, staffMid - r * 3f, r * 4f, r * 6f, 4f);
                 }
 
                 Color rc = state switch
                 {
-                    V3NoteState.Correct => ApplyAlpha(Colors.Green,   fadeAlpha),
-                    V3NoteState.Wrong   => ApplyAlpha(Colors.DarkRed, fadeAlpha),
+                    V3NoteState.Correct => ApplyAlpha(Colors.Green, fadeAlpha),
+                    V3NoteState.Wrong => ApplyAlpha(Colors.DarkRed, fadeAlpha),
                     V3NoteState.Current => ApplyAlpha(Color.FromArgb("#007BFF"), fadeAlpha),
                     _ => ApplyAlpha(ink, fadeAlpha)
                 };
@@ -4013,12 +3999,12 @@ namespace musicmate.Drawables
             canvas.SaveState();
             try
             {
-                float staffMid  = staffTop + _layout.Sls * 2f;
-                float ny        = NoteY(note, staffTop, staffMid);
-                float ledgerHW  = _layout.NoteHeadR * 2.2f;
+                float staffMid = staffTop + _layout.Sls * 2f;
+                float ny = NoteY(note, staffTop, staffMid);
+                float ledgerHW = _layout.NoteHeadR * 2.2f;
 
                 canvas.StrokeColor = ApplyAlpha(ink, fadeAlpha);
-                canvas.StrokeSize  = 1.5f * _layout.GlyphScale;
+                canvas.StrokeSize = 1.5f * _layout.GlyphScale;
 
                 if (ny < staffTop - 2f)
                 {
@@ -4053,11 +4039,11 @@ namespace musicmate.Drawables
             {
                 string glyph = eff switch
                 {
-                    Accidental.Sharp       => "♯",
-                    Accidental.Flat        => "♭",
-                    Accidental.Natural     => "♮",
+                    Accidental.Sharp => "♯",
+                    Accidental.Flat => "♭",
+                    Accidental.Natural => "♮",
                     Accidental.DoubleSharp => "𝄪",
-                    Accidental.DoubleFlat  => "𝄫",
+                    Accidental.DoubleFlat => "𝄫",
                     _ => ""
                 };
                 if (string.IsNullOrEmpty(glyph)) return;
@@ -4203,8 +4189,8 @@ namespace musicmate.Drawables
             string name = note.SpelledName;
             if (name.Contains("##")) return Accidental.DoubleSharp;
             if (name.Contains("bb")) return Accidental.DoubleFlat;
-            if (name.Contains('#'))  return Accidental.Sharp;
-            if (name.Contains('b'))  return Accidental.Flat;
+            if (name.Contains('#')) return Accidental.Sharp;
+            if (name.Contains('b')) return Accidental.Flat;
             return Accidental.None;
         }
 
@@ -4214,18 +4200,18 @@ namespace musicmate.Drawables
 
         private static int AlterationSemitones(Accidental acc) => acc switch
         {
-            Accidental.Sharp       => 1,
-            Accidental.Flat        => -1,
+            Accidental.Sharp => 1,
+            Accidental.Flat => -1,
             Accidental.DoubleSharp => 2,
-            Accidental.DoubleFlat  => -2,
-            _                      => 0
+            Accidental.DoubleFlat => -2,
+            _ => 0
         };
 
         private static bool NoteMatchesAlteration(
             GeneratedNote note, (char Letter, int Octave) pitchKey, Accidental prior)
         {
             int naturalMidi = NoteSessionService.NoteNameToMidi($"{pitchKey.Letter}{pitchKey.Octave}");
-            int expected    = naturalMidi + AlterationSemitones(prior);
+            int expected = naturalMidi + AlterationSemitones(prior);
             return note.MidiNumber == expected;
         }
 
@@ -4265,8 +4251,8 @@ namespace musicmate.Drawables
             return new LayoutAccidentalInfo
             {
                 HasAccidental = hasAcc,
-                IsFlat        = hasAcc && IsFlatBodyAccidental(eff),
-                IsNatural     = hasAcc && IsNaturalBodyAccidental(eff),
+                IsFlat = hasAcc && IsFlatBodyAccidental(eff),
+                IsNatural = hasAcc && IsNaturalBodyAccidental(eff),
             };
         }
 
@@ -4277,7 +4263,7 @@ namespace musicmate.Drawables
             try
             {
                 canvas.FontColor = ApplyAlpha(ink, fadeAlpha);
-                canvas.FontSize  = 11;
+                canvas.FontSize = 11;
                 float labelY = ny > (staffTop + staffBot) / 2f
                     ? ny + _layout.NoteHeadR + 5f
                     : ny - _layout.NoteHeadR - 15f;
@@ -4294,8 +4280,8 @@ namespace musicmate.Drawables
 
         private float DrawKeySignature(ICanvas canvas, float staffTop, float staffMid, Color ink)
         {
-            float symW     = KeySigGlyphWidth();
-            float symSlot  = KeySigSymbolSlot();
+            float symW = KeySigGlyphWidth();
+            float symSlot = KeySigSymbolSlot();
 
             if (_session.Tune == "Tuner"
                 || _session.Tune == "Practice Tune"
@@ -4309,8 +4295,8 @@ namespace musicmate.Drawables
             V3Log($"[V3] KeySig key={_session.Key} scale={_session.SelectedScale} count={accCount}");
 
             bool useFlats = KeySignatureUsesFlats(_session.Key, ActiveKeySignatureScale());
-            string glyph  = useFlats ? "\uE260" : "\uE262";
-            float fontSize  = KeySigAccidentalFontSize(useFlats);
+            string glyph = useFlats ? "\uE260" : "\uE262";
+            float fontSize = KeySigAccidentalFontSize(useFlats);
             var pitches = useFlats ? KeySigFlatPitches : KeySigSharpPitches;
 
             canvas.SaveState();
@@ -4326,9 +4312,9 @@ namespace musicmate.Drawables
                 {
                     // Unicode fallback: centre the draw box on yLine so the glyph's font
                     // metrics centre approximately aligns with the staff position.
-                    float boxH  = symW * (useFlats ? 1.1f : 1.05f);
-                    float yTop  = yLine - boxH * 0.5f;
-                    canvas.Font     = Microsoft.Maui.Graphics.Font.Default;
+                    float boxH = symW * (useFlats ? 1.1f : 1.05f);
+                    float yTop = yLine - boxH * 0.5f;
+                    canvas.Font = Microsoft.Maui.Graphics.Font.Default;
                     canvas.FontSize = KeySigAccidentalFontSize(useFlats);
                     canvas.DrawString(useFlats ? "♭" : "♯", sigX, yTop, symW, boxH,
                         HorizontalAlignment.Center, VerticalAlignment.Center);
@@ -4356,14 +4342,14 @@ namespace musicmate.Drawables
 
                 float tsFontSize = Math.Max(10f, _layout.Sls * 1.83f);  // 22 at sls=12
                 canvas.FontColor = ink;
-                canvas.FontSize  = tsFontSize;
-                canvas.Font      = Microsoft.Maui.Graphics.Font.DefaultBold;
+                canvas.FontSize = tsFontSize;
+                canvas.Font = Microsoft.Maui.Graphics.Font.DefaultBold;
 
-                float halfH   = _layout.Sls * 2f;
-                float topY    = staffTop + (halfH - tsFontSize) * 0.5f;
+                float halfH = _layout.Sls * 2f;
+                float topY = staffTop + (halfH - tsFontSize) * 0.5f;
                 float bottomY = staffMid + (halfH - tsFontSize) * 0.5f;
 
-                canvas.DrawString(parts[0], tsX, topY,    boxW, tsFontSize, HorizontalAlignment.Center, VerticalAlignment.Top);
+                canvas.DrawString(parts[0], tsX, topY, boxW, tsFontSize, HorizontalAlignment.Center, VerticalAlignment.Top);
                 canvas.DrawString(parts[1], tsX, bottomY, boxW, tsFontSize, HorizontalAlignment.Center, VerticalAlignment.Top);
                 canvas.Font = Microsoft.Maui.Graphics.Font.Default;
             }
@@ -4382,18 +4368,41 @@ namespace musicmate.Drawables
             };
             return majorKey switch
             {
-                "C"  => 0,
-                "G"  => 1, "D"  => 2, "A"  => 3, "E"  => 4, "B"  => 5, "F#" => 6, "C#" => 7,
-                "F"  => 1, "Bb" => 2, "Eb" => 3, "Ab" => 4, "Db" => 5, "Gb" => 6, "Cb" => 7,
+                "C" => 0,
+                "G" => 1,
+                "D" => 2,
+                "A" => 3,
+                "E" => 4,
+                "B" => 5,
+                "F#" => 6,
+                "C#" => 7,
+                "F" => 1,
+                "Bb" => 2,
+                "Eb" => 3,
+                "Ab" => 4,
+                "Db" => 5,
+                "Gb" => 6,
+                "Cb" => 7,
                 _ => 0
             };
         }
 
         private static string RelativeMajorOf(string minorKey) => minorKey switch
         {
-            "A" => "C", "E" => "G", "B" => "D", "F#" => "A", "C#" => "E",
-            "G#" => "B", "D#" => "F#", "D" => "F", "G" => "Bb", "C" => "Eb",
-            "F" => "Ab", "Bb" => "Db", "Eb" => "Gb", _ => minorKey
+            "A" => "C",
+            "E" => "G",
+            "B" => "D",
+            "F#" => "A",
+            "C#" => "E",
+            "G#" => "B",
+            "D#" => "F#",
+            "D" => "F",
+            "G" => "Bb",
+            "C" => "Eb",
+            "F" => "Ab",
+            "Bb" => "Db",
+            "Eb" => "Gb",
+            _ => minorKey
         };
 
         private static bool IsKeyFlat(string key)
@@ -4416,7 +4425,7 @@ namespace musicmate.Drawables
             if (accCount == 0) return null;
 
             bool useFlats = KeySignatureUsesFlats(_session.Key, ActiveKeySignatureScale());
-            char[] flatLetters  = { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
+            char[] flatLetters = { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
             char[] sharpLetters = { 'F', 'C', 'G', 'D', 'A', 'E', 'B' };
             char[] letters = useFlats ? flatLetters : sharpLetters;
             for (int i = 0; i < Math.Min(accCount, letters.Length); i++)
@@ -4443,7 +4452,7 @@ namespace musicmate.Drawables
                 : accidental == Accidental.Sharp;
             if (!typeMatch) return false;
 
-            char[] flatLetters  = { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
+            char[] flatLetters = { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
             char[] sharpLetters = { 'F', 'C', 'G', 'D', 'A', 'E', 'B' };
             char[] letters = useFlats ? flatLetters : sharpLetters;
             for (int i = 0; i < Math.Min(accCount, letters.Length); i++)
@@ -4466,7 +4475,7 @@ namespace musicmate.Drawables
             if (accCount == 0) return false;
 
             bool useFlats = KeySignatureUsesFlats(key, scale);
-            char[] flatLetters  = { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
+            char[] flatLetters = { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
             char[] sharpLetters = { 'F', 'C', 'G', 'D', 'A', 'E', 'B' };
             char[] letters = useFlats ? flatLetters : sharpLetters;
             for (int i = 0; i < Math.Min(accCount, letters.Length); i++)
@@ -4478,7 +4487,7 @@ namespace musicmate.Drawables
         private static void V3Log(string message) => Utilities.Utils.Log(message);
 
         // ── Diagnostic test runner ────────────────────────────────────────────────
-        // Called from MainPage.OnAppearing (DEBUG builds only) so the tests always
+        // Called from MusicPage.OnAppearing (DEBUG builds only) so the tests always
         // run regardless of which key is currently selected.
 
         /// <summary>
@@ -4513,9 +4522,9 @@ namespace musicmate.Drawables
             };
             foreach (var t in keySigTests)
             {
-                int  count = GetAccidentalCount(t.Key, t.Scale);
+                int count = GetAccidentalCount(t.Key, t.Scale);
                 bool flats = KeySignatureUsesFlats(t.Key, t.Scale);
-                bool ok    = count == t.Count && (count == 0 || flats == t.Flats);
+                bool ok = count == t.Count && (count == 0 || flats == t.Flats);
                 string result = ok ? "OK" : $"FAIL: expected count={t.Count} flats={t.Flats}, got count={count} flats={flats}";
                 Utilities.DebugTestLog.Write($"[KeySigTest] {result} | {t.Desc}");
             }
@@ -4543,11 +4552,11 @@ namespace musicmate.Drawables
             // ── Key-signature staff positions (treble clef) ───────────────────────
             // Verify that KeySigFlatPitches / KeySigSharpPitches contain the canonical
             // treble-clef letter+octave for each accidental in BEADGCF / FCGDAEB order.
-            var flatExpected  = new[] { ('B',4),('E',5),('A',4),('D',5),('G',4),('C',5),('F',4) };
-            var sharpExpected = new[] { ('F',5),('C',5),('G',5),('D',5),('A',4),('E',5),('B',4) };
-            bool flatOk  = KeySigFlatPitches.SequenceEqual(flatExpected);
+            var flatExpected = new[] { ('B', 4), ('E', 5), ('A', 4), ('D', 5), ('G', 4), ('C', 5), ('F', 4) };
+            var sharpExpected = new[] { ('F', 5), ('C', 5), ('G', 5), ('D', 5), ('A', 4), ('E', 5), ('B', 4) };
+            bool flatOk = KeySigFlatPitches.SequenceEqual(flatExpected);
             bool sharpOk = KeySigSharpPitches.SequenceEqual(sharpExpected);
-            Utilities.DebugTestLog.Write($"[KeySigTest] {(flatOk  ? "OK" : "FAIL: KeySigFlatPitches mismatch")} | flat staff positions (BEADGCF)");
+            Utilities.DebugTestLog.Write($"[KeySigTest] {(flatOk ? "OK" : "FAIL: KeySigFlatPitches mismatch")} | flat staff positions (BEADGCF)");
             Utilities.DebugTestLog.Write($"[KeySigTest] {(sharpOk ? "OK" : "FAIL: KeySigSharpPitches mismatch")} | sharp staff positions (FCGDAEB)");
 
             Utilities.DebugTestLog.Write("[KeySigTest] OK | self-test END");
@@ -4578,11 +4587,11 @@ namespace musicmate.Drawables
                 {
                     notes.Add(new GeneratedNote
                     {
-                        MidiNumber   = midi,
-                        Letter       = 'C',
-                        Octave       = 4 + (midi - 60) / 12,
-                        SpelledName  = $"T{midi}",
-                        Duration     = NoteDuration.Quarter,
+                        MidiNumber = midi,
+                        Letter = 'C',
+                        Octave = 4 + (midi - 60) / 12,
+                        SpelledName = $"T{midi}",
+                        Duration = NoteDuration.Quarter,
                         MeasureIndex = m,
                         BeatPosition = m * measureBeats + b,
                     });

@@ -13,7 +13,7 @@ public class SessionStat
     [PrimaryKey, AutoIncrement]
     public int Id { get; set; }
     public string Key { get; set; } = "";
-    
+
     public string Tune { get; set; } = "";
     public string Instrument { get; set; } = "";  // NEW: Instrument column
     public DateTime Dt { get; set; }      // Date and time
@@ -75,7 +75,7 @@ public class SessionStat
     public string RandDisplay => Rand ? "Y" : "N";
     public string KeyAndScale => $"{Key} {Sc}";
     [Ignore]
-    public Microsoft.Maui.Graphics.Color ContrastingTextColor { get; set; }= Microsoft.Maui.Graphics.Colors.Red;
+    public Microsoft.Maui.Graphics.Color ContrastingTextColor { get; set; } = Microsoft.Maui.Graphics.Colors.Red;
 }
 
 public class SessionDatabase
@@ -198,37 +198,37 @@ public class SessionDatabase
 #endif
     }
 
-        /// <summary>
-        /// Deletes the oldest SessionStat rows by date until the DB file is under
-        /// <paramref name="maxBytes"/>. Does nothing if already within limit.
-        /// </summary>
-        public async Task PruneToSizeLimitAsync(long maxBytes)
+    /// <summary>
+    /// Deletes the oldest SessionStat rows by date until the DB file is under
+    /// <paramref name="maxBytes"/>. Does nothing if already within limit.
+    /// </summary>
+    public async Task PruneToSizeLimitAsync(long maxBytes)
+    {
+        try
         {
-            try
+            var fileInfo = new FileInfo(_dbPath);
+            if (!fileInfo.Exists || fileInfo.Length <= maxBytes)
+                return;
+
+            while (true)
             {
-                var fileInfo = new FileInfo(_dbPath);
-                if (!fileInfo.Exists || fileInfo.Length <= maxBytes)
-                    return;
+                fileInfo.Refresh();
+                if (fileInfo.Length <= maxBytes) break;
 
-                while (true)
-                {
-                    fileInfo.Refresh();
-                    if (fileInfo.Length <= maxBytes) break;
+                var oldest = await _db.Table<SessionStat>()
+                    .OrderBy(s => s.Dt)
+                    .FirstOrDefaultAsync();
 
-                    var oldest = await _db.Table<SessionStat>()
-                        .OrderBy(s => s.Dt)
-                        .FirstOrDefaultAsync();
+                if (oldest == null) break;
 
-                    if (oldest == null) break;
-
-                    await _db.DeleteAsync(oldest);
-                }
-            }
-            catch (Exception ex)
-            {
-                Utils.Log($"[SessionDatabase.PruneToSizeLimitAsync] {ex.Message}");
+                await _db.DeleteAsync(oldest);
             }
         }
+        catch (Exception ex)
+        {
+            Utils.Log($"[SessionDatabase.PruneToSizeLimitAsync] {ex.Message}");
+        }
+    }
 }
 
 // ── Child-Practice session results ──────────────────────────────────────────────

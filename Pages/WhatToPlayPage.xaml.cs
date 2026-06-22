@@ -15,21 +15,18 @@ namespace musicmate.Pages
     /// </summary>
     public partial class WhatToPlayPage : ContentPage, INotifyPropertyChanged
     {
-        private readonly NoteSessionService  _session = null!;
-        private readonly ThemeService        _theme = null!;
+        private readonly NoteSessionService _session = null!;
+        private readonly ThemeService _theme = null!;
         private readonly IOrientationService _orientation = null!;
 
-        private static readonly HashSet<string> FreeKeys   = new() { "C", "F", "Bb", "G", "D" };
+        private static readonly HashSet<string> FreeKeys = new() { "C", "F", "Bb", "G", "D" };
         private static readonly HashSet<string> FreeScales = new() { "Major", "Harmonic Minor" };
 
-        private int  _lastFreeKeyIndex    = 0;
-        private int  _lastValidScaleIndex = 0;
-        private bool _autoRepeat          = false;
-        private bool _repeatSameTune      = false;
-        private bool _suppressPickerSync  = false;
+        private int _lastFreeKeyIndex = 0;
+        private int _lastValidScaleIndex = 0;
+        private bool _suppressPickerSync = false;
         private bool _localPlayModeChange = false;
-        private bool _isPageVisible       = false;
-        private List<NoteInfo>? _savedNotesToRepeat = null;
+        private bool _isPageVisible = false;
 
         private string[] _tuneTitles = Array.Empty<string>();
         private string[] _scaleOptions = Array.Empty<string>();
@@ -95,8 +92,8 @@ namespace musicmate.Pages
             {
                 InitializeComponent();
 
-                _session     = ServiceHelper.GetService<NoteSessionService>()!;
-                _theme       = ServiceHelper.GetService<ThemeService>()!;
+                _session = ServiceHelper.GetService<NoteSessionService>()!;
+                _theme = ServiceHelper.GetService<ThemeService>()!;
                 _orientation = ServiceHelper.GetService<IOrientationService>()!;
 
                 BindingContext = _session;
@@ -251,16 +248,16 @@ namespace musicmate.Pages
 
         private void InitializePlayModePickers()
         {
-            _tuneTitles   = TuneLibrary.All.Select(t => t.Title).ToArray();
+            _tuneTitles = TuneLibrary.All.Select(t => t.Title).ToArray();
             _scaleOptions = NoteSessionService.AvailableScales.ToArray();
 
-            TunesPicker.ItemsSource        = _tuneTitles;
-            ScalesPicker.ItemsSource       = _scaleOptions;
+            TunesPicker.ItemsSource = _tuneTitles;
+            ScalesPicker.ItemsSource = _scaleOptions;
             RefreshArpeggioPickerOptions();
-            RandomTunerPicker.ItemsSource  = RandomTunerOptions;
+            RandomTunerPicker.ItemsSource = RandomTunerOptions;
 
-            TunesPicker.SelectedIndexChanged       += OnTunesPickerChanged;
-            ScalesPicker.SelectedIndexChanged      += OnScalesPickerChanged;
+            TunesPicker.SelectedIndexChanged += OnTunesPickerChanged;
+            ScalesPicker.SelectedIndexChanged += OnScalesPickerChanged;
             RandomTunerPicker.SelectedIndexChanged += OnRandomTunerPickerChanged;
         }
 
@@ -504,9 +501,9 @@ namespace musicmate.Pages
 
         private void ClearInactivePlayModePickerSelections(Picker? activePicker)
         {
-            if (activePicker != TunesPicker)       ClearPicker(TunesPicker);
-            if (activePicker != ScalesPicker)      ClearPicker(ScalesPicker);
-            if (activePicker != ArpeggiosPicker)   ClearPicker(ArpeggiosPicker);
+            if (activePicker != TunesPicker) ClearPicker(TunesPicker);
+            if (activePicker != ScalesPicker) ClearPicker(ScalesPicker);
+            if (activePicker != ArpeggiosPicker) ClearPicker(ArpeggiosPicker);
             if (activePicker != RandomTunerPicker) ClearPicker(RandomTunerPicker);
         }
 
@@ -542,9 +539,9 @@ namespace musicmate.Pages
             _suppressPickerSync = true;
             try
             {
-                if (activePicker != TunesPicker)       ClearPicker(TunesPicker);
-                if (activePicker != ScalesPicker)      ClearPicker(ScalesPicker);
-                if (activePicker != ArpeggiosPicker)   ClearPicker(ArpeggiosPicker);
+                if (activePicker != TunesPicker) ClearPicker(TunesPicker);
+                if (activePicker != ScalesPicker) ClearPicker(ScalesPicker);
+                if (activePicker != ArpeggiosPicker) ClearPicker(ArpeggiosPicker);
                 if (activePicker != RandomTunerPicker) ClearPicker(RandomTunerPicker);
             }
             finally
@@ -593,36 +590,36 @@ namespace musicmate.Pages
         private void UpdateKeyPickerVisibility()
         {
             var show = _session.Tune != "Tuner" && _session.Tune != "Arpeggio";
-            KeyPicker.IsVisible       = show;
-            KeyPicker.IsEnabled       = show;
-            KeyLabel.IsVisible        = show;
-            KeyBorder.IsVisible       = show;
+            KeyPicker.IsVisible = show;
+            KeyPicker.IsEnabled = show;
+            KeyLabel.IsVisible = show;
+            KeyBorder.IsVisible = show;
             ConcertKeyLabel.IsVisible = show;
         }
 
         private void UpdateRepeatButtonsVisibility()
         {
             var isRandom = _session.IsRandomMode;
-            var isTuner  = _session.Tune == "Tuner";
+            var isTuner = _session.Tune == "Tuner";
             IsRandomRepeatButtonsVisible = !isTuner && isRandom;
-            IsScaleRepeatButtonVisible   = !isTuner && !isRandom;
+            IsScaleRepeatButtonVisible = !isTuner && !isRandom;
         }
 
         private void UpdateRepeatButtonColors()
         {
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                AutoRepeatNewButton.BackgroundColor  = _autoRepeat && !_repeatSameTune
+                AutoRepeatNewButton.BackgroundColor = _session.AutoRepeat && !_session.RepeatSameTune
                     ? Color.FromArgb("#008000") : Color.FromArgb("#8B4513");
-                AutoRepeatSameButton.BackgroundColor = _autoRepeat && _repeatSameTune
+                AutoRepeatSameButton.BackgroundColor = _session.AutoRepeat && _session.RepeatSameTune
                     ? Color.FromArgb("#008000") : Color.FromArgb("#8B4513");
-                AutoRepeatScaleButton.BackgroundColor = _autoRepeat
+                AutoRepeatScaleButton.BackgroundColor = _session.AutoRepeat
                     ? Color.FromArgb("#008000") : Color.FromArgb("#8B4513");
             });
         }
 
         private static Task NavigateToPracticePageAsync()
-            => Shell.Current.GoToAsync("//MainPage");
+            => Shell.Current.GoToAsync("//MusicPage");
 
         // ── Instrument picker handlers ───────────────────────────────────────────
 
@@ -630,10 +627,10 @@ namespace musicmate.Pages
         {
             if (InstrumentPicker.SelectedItem is string s)
             {
-                _session.Instrument       = s;
-                SelectedInstrumentShort   = _session.InstrumentDisplayName;
+                _session.Instrument = s;
+                SelectedInstrumentShort = _session.InstrumentDisplayName;
                 IsInstrumentPickerVisible = false;
-                IsInstrumentLabelVisible  = true;
+                IsInstrumentLabelVisible = true;
                 InstrumentPicker.Unfocus();
             }
         }
@@ -641,7 +638,7 @@ namespace musicmate.Pages
         private void InstrumentPicker_Unfocused(object? sender, EventArgs e)
         {
             IsInstrumentPickerVisible = false;
-            IsInstrumentLabelVisible  = true;
+            IsInstrumentLabelVisible = true;
         }
 
         private async void OnInstrumentLabelTapped(object? sender, EventArgs e)
@@ -650,7 +647,7 @@ namespace musicmate.Pages
             {
                 await MainThread.InvokeOnMainThreadAsync(async () =>
                 {
-                    IsInstrumentLabelVisible  = false;
+                    IsInstrumentLabelVisible = false;
                     IsInstrumentPickerVisible = true;
                     await Task.Delay(80);
                     InstrumentPicker.Focus();
@@ -749,8 +746,8 @@ namespace musicmate.Pages
             _lastValidScaleIndex = idx;
             ApplyPlayModeSessionChange(() =>
             {
-                _session.IsRandomMode  = false;
-                _session.Tune          = "Selected Scale";
+                _session.IsRandomMode = false;
+                _session.Tune = "Selected Scale";
                 _session.SelectedScale = selected;
             });
             Preferences.Default.Set("SelectedTune", selected);
@@ -845,39 +842,37 @@ namespace musicmate.Pages
 
         private void OnAutoRepeatScaleClicked(object? sender, EventArgs e)
         {
-            _autoRepeat     = !_autoRepeat;
-            _repeatSameTune = false;
+            _session.AutoRepeat = !_session.AutoRepeat;
+            _session.RepeatSameTune = false;
             UpdateRepeatButtonColors();
         }
 
         private void OnAutoRepeatNewClicked(object? sender, EventArgs e)
         {
-            if (_autoRepeat && !_repeatSameTune)
+            if (_session.AutoRepeat && !_session.RepeatSameTune)
             {
-                _autoRepeat     = false;
-                _repeatSameTune = false;
+                _session.AutoRepeat = false;
+                _session.RepeatSameTune = false;
             }
             else
             {
-                _autoRepeat     = true;
-                _repeatSameTune = false;
+                _session.AutoRepeat = true;
+                _session.RepeatSameTune = false;
             }
             UpdateRepeatButtonColors();
         }
 
         private void OnAutoRepeatSameClicked(object? sender, EventArgs e)
         {
-            if (_autoRepeat && _repeatSameTune)
+            if (_session.AutoRepeat && _session.RepeatSameTune)
             {
-                _autoRepeat     = false;
-                _repeatSameTune = false;
+                _session.AutoRepeat = false;
+                _session.RepeatSameTune = false;
             }
             else
             {
-                _autoRepeat     = true;
-                _repeatSameTune = true;
-                if (_session.NotesToDraw != null)
-                    _savedNotesToRepeat = new List<NoteInfo>(_session.NotesToDraw);
+                _session.AutoRepeat = true;
+                _session.RepeatSameTune = true;
             }
             UpdateRepeatButtonColors();
         }
@@ -886,7 +881,7 @@ namespace musicmate.Pages
 
         private async void OnNavigatePracticeClicked(object? sender, EventArgs e)
         {
-            await Shell.Current.GoToAsync("//MainPage");
+            await Shell.Current.GoToAsync("//MusicPage");
         }
 
         // ── Background Color handler ─────────────────────────────────────────────

@@ -75,7 +75,7 @@ namespace musicmate.Pages
 
         private async void OnNavigatePracticeClicked(object sender, EventArgs e)
         {
-            await Shell.Current.GoToAsync("//MainPage");
+            await Shell.Current.GoToAsync("//MusicPage");
         }
 
         // ── Reset to defaults ─────────────────────────────────────────────────
@@ -95,7 +95,7 @@ namespace musicmate.Pages
             var notes = _viewModel.WhiteKeyNoteNames?.ToList();
             if (notes != null)
             {
-                _lastFreeLowestIndex  = notes.IndexOf(SettingsPageViewModel.DefaultLowestNote);
+                _lastFreeLowestIndex = notes.IndexOf(SettingsPageViewModel.DefaultLowestNote);
                 _lastFreeHighestIndex = notes.IndexOf(SettingsPageViewModel.DefaultHighestNote);
             }
         }

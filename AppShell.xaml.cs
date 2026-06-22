@@ -11,7 +11,8 @@ namespace musicmate
         public ICommand? GoPracticeCommand { get; }
 
         public AppShell()
-        {   try
+        {
+            try
             {
                 InitializeComponent();
 
@@ -29,6 +30,6 @@ namespace musicmate
             {
                 Utils.Log($"Error initializing AppShell: {ex.Message}");
             }
-        }       
+        }
     }
 }

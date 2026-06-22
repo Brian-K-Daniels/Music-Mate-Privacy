@@ -11,11 +11,11 @@ namespace musicmate.Utilities
         public static void Log(object ob)
         {
             string message = "void";
-            if(ob is string)
+            if (ob is string)
             {
                 message = (string)ob;
             }
-            else if ( ob is List<double> dblList )
+            else if (ob is List<double> dblList)
             {
                 message = string.Join(", ", dblList);
             }

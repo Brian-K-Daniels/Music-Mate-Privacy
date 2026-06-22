@@ -3,9 +3,9 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:services="clr-namespace:musicmate.Services"
              xmlns:controls="clr-namespace:musicmate.Controls"
-             x:Class="musicmate.Pages.MainPage"
+             x:Class="musicmate.Pages.MusicPage"
              x:DataType="services:NoteSessionService"
-             x:Name="mainPage"
+             x:Name="musicPage"
              Shell.NavBarIsVisible="True"
              Padding="0"
              BackgroundColor="#F7F7F7">
@@ -19,7 +19,7 @@
             WidthRequest="38"
             HeightRequest="32"
             VerticalOptions="Center"
-            IsVisible="{Binding Source={x:Reference mainPage}, Path=IsV3Mode}">
+            IsVisible="{Binding Source={x:Reference musicPage}, Path=IsV3Mode}">
         <Border x:Name="V3StartStopButton"
                 StrokeThickness="0"
                 BackgroundColor="#008000"
@@ -35,7 +35,7 @@
           </Border.GestureRecognizers>
         </Border>
       </Grid>
-      <Label Text="Practice "
+      <Label Text="  Music "
              TextColor="White"
              FontAttributes="Bold"
              FontSize="18"
@@ -129,14 +129,14 @@
                         HorizontalOptions="Fill"
                         IsEnabled="True"
                         InputTransparent="False"
-                        IsVisible="{Binding Source={x:Reference mainPage}, Path=IsInstrumentPickerVisible}" />
+                        IsVisible="{Binding Source={x:Reference musicPage}, Path=IsInstrumentPickerVisible}" />
                 <Border BackgroundColor="White" Stroke="#8B4513" StrokeThickness="2"
                         StrokeShape="RoundRectangle 8"
                         Padding="8,2" HeightRequest="28"
                         VerticalOptions="Center" HorizontalOptions="Fill"
-                        IsVisible="{Binding Source={x:Reference mainPage}, Path=IsInstrumentLabelVisible}">
+                        IsVisible="{Binding Source={x:Reference musicPage}, Path=IsInstrumentLabelVisible}">
                   <Label x:Name="InstrumentPickerOverlay"
-                         Text="{Binding SelectedInstrumentShort, Source={x:Reference mainPage}}"
+                         Text="{Binding SelectedInstrumentShort, Source={x:Reference musicPage}}"
                          VerticalOptions="Center"
                          HorizontalOptions="Fill"
                          Padding="10,0"
@@ -292,7 +292,7 @@
                   StrokeThickness="1"
                   StrokeShape="RoundRectangle 8"
                   HorizontalOptions="Fill"
-                  IsVisible="{Binding Source={x:Reference mainPage}, Path=IsChildLevelSliderVisible}">
+                  IsVisible="{Binding Source={x:Reference musicPage}, Path=IsChildLevelSliderVisible}">
             <Grid ColumnDefinitions="*,*,*,Auto,*,*,*"
                   ColumnSpacing="4"
                   HeightRequest="40"
@@ -416,7 +416,7 @@
                 Margin="12,8,12,8"
                 ColumnSpacing="8"
                 HorizontalOptions="Fill"
-                IsVisible="{Binding Source={x:Reference mainPage}, Path=IsBottomButtonRowVisible}">
+                IsVisible="{Binding Source={x:Reference musicPage}, Path=IsBottomButtonRowVisible}">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="64" />   <!-- Play -->
               <ColumnDefinition Width="64" />   <!-- Start/Stop -->
@@ -441,7 +441,7 @@
                     Padding="8,2"
                     HorizontalOptions="Fill"
                     VerticalOptions="Fill"
-                    IsVisible="{Binding Source={x:Reference mainPage}, Path=IsPlayEvaluateButtonVisible}"
+                    IsVisible="{Binding Source={x:Reference musicPage}, Path=IsPlayEvaluateButtonVisible}"
                     Clicked="OnPlayEvaluateClicked" />
 
             <!-- Start/Stop (non-V3 modes only) -->
@@ -459,7 +459,7 @@
                     Padding="0"
                     HorizontalOptions="Fill"
                     VerticalOptions="Fill"
-                    IsVisible="{Binding Source={x:Reference mainPage}, Path=IsNotV3Mode}"
+                    IsVisible="{Binding Source={x:Reference musicPage}, Path=IsNotV3Mode}"
                     Clicked="OnStartStopToggleClicked" />
 
             <!-- Scale mode: single "Repeat" spans cols 2-3 -->
@@ -472,7 +472,7 @@
                     HorizontalOptions="Fill"
                     VerticalOptions="Fill"
                     Clicked="OnAutoRepeatScaleClicked"
-                    IsVisible="{Binding Source={x:Reference mainPage}, Path=IsScaleRepeatButtonVisible}" />
+                    IsVisible="{Binding Source={x:Reference musicPage}, Path=IsScaleRepeatButtonVisible}" />
 
             <!-- Random mode: Repeat New (col 2) -->
             <Button x:Name="AutoRepeatNewButton"
@@ -483,7 +483,7 @@
                     HorizontalOptions="Fill"
                     VerticalOptions="Fill"
                     Clicked="OnAutoRepeatNewClicked"
-                    IsVisible="{Binding Source={x:Reference mainPage}, Path=IsRandomRepeatButtonsVisible}" />
+                    IsVisible="{Binding Source={x:Reference musicPage}, Path=IsRandomRepeatButtonsVisible}" />
 
             <!-- Random mode: Repeat Same (col 3) -->
             <Button x:Name="AutoRepeatSameButton"
@@ -494,7 +494,7 @@
                     HorizontalOptions="Fill"
                     VerticalOptions="Fill"
                     Clicked="OnAutoRepeatSameClicked"
-                    IsVisible="{Binding Source={x:Reference mainPage}, Path=IsRandomRepeatButtonsVisible}" />
+                    IsVisible="{Binding Source={x:Reference musicPage}, Path=IsRandomRepeatButtonsVisible}" />
 
             <!-- Background Color (col 4) -->
             <Button Grid.Column="4"
@@ -504,7 +504,7 @@
                     MinimumWidthRequest="140"
                     HorizontalOptions="Fill"
                     VerticalOptions="Fill"
-                    IsVisible="{Binding Source={x:Reference mainPage}, Path=IsNotV3Mode}"
+                    IsVisible="{Binding Source={x:Reference musicPage}, Path=IsNotV3Mode}"
                     Clicked="OnColorButtonClicked" />
 
             <!-- V3 mode: compact pickers fill the bottom row (play is on the staff) -->
@@ -514,7 +514,7 @@
                   ColumnSpacing="2"
                   VerticalOptions="Center"
                   HorizontalOptions="Fill"
-                  IsVisible="{Binding Source={x:Reference mainPage}, Path=IsV3BottomPickersVisible}">
+                  IsVisible="{Binding Source={x:Reference musicPage}, Path=IsV3BottomPickersVisible}">
               <Label Grid.Column="0" Text="Inst." FontSize="10" TextColor="#333333" VerticalOptions="Center" Margin="2,0,0,0"/>
               <Border Grid.Column="1" Style="{StaticResource CompactBrownBox}">
                 <Picker x:Name="V3PracticeInstrumentPicker"
@@ -558,7 +558,7 @@
             HorizontalOptions="Start"
             VerticalOptions="Start"
             ZIndex="10"
-            IsVisible="{Binding Source={x:Reference mainPage}, Path=IsV3PlayButtonVisible}">
+            IsVisible="{Binding Source={x:Reference musicPage}, Path=IsV3PlayButtonVisible}">
       <Border.StrokeShape>
         <RoundRectangle CornerRadius="2" />
       </Border.StrokeShape>

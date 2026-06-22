@@ -129,10 +129,10 @@ namespace musicmate.Services
 
         // ── Display mode ─────────────────────────────────────────────────────────
         private const string PrefStaffDisplayModeKey = "musicmate.StaffDisplayMode";
-        private const string PrefV3TimeSignatureKey  = "musicmate.V3TimeSignature";
-        private const string PrefV3SmallestNoteKey   = "musicmate.V3SmallestNote";
-        private const string PrefV3RhythmModeKey     = "musicmate.V3RhythmMode";
-        private const string PrefV3SyncopationKey    = "musicmate.V3Syncopation";
+        private const string PrefV3TimeSignatureKey = "musicmate.V3TimeSignature";
+        private const string PrefV3SmallestNoteKey = "musicmate.V3SmallestNote";
+        private const string PrefV3RhythmModeKey = "musicmate.V3RhythmMode";
+        private const string PrefV3SyncopationKey = "musicmate.V3Syncopation";
         private const string PrefV3NoteNameDisplayKey = "musicmate.V3NoteNameDisplay";
 
         private StaffDisplayMode _staffDisplayMode = LoadStaffDisplayMode();
@@ -179,9 +179,9 @@ namespace musicmate.Services
         public static string[] StaffDisplayModeOptions { get; } = { "V3 Two-Staff" };
 
         private string _v3TimeSignature = Preferences.Get(PrefV3TimeSignatureKey, "4/4");
-        private string _v3SmallestNote  = Preferences.Get(PrefV3SmallestNoteKey, "Quarter");
-        private string _v3RhythmMode    = Preferences.Get(PrefV3RhythmModeKey, "Simple");
-        private string _v3Syncopation   = Preferences.Get(PrefV3SyncopationKey, "None");
+        private string _v3SmallestNote = Preferences.Get(PrefV3SmallestNoteKey, "Quarter");
+        private string _v3RhythmMode = Preferences.Get(PrefV3RhythmModeKey, "Simple");
+        private string _v3Syncopation = Preferences.Get(PrefV3SyncopationKey, "None");
         private string _v3NoteNameDisplay = Preferences.Get(PrefV3NoteNameDisplayKey, "Current only");
 
         /// <summary>
@@ -320,7 +320,7 @@ namespace musicmate.Services
             }
         }
 
-        /// <summary>Child-Practice measure batch size; 0 = use MainPage default.</summary>
+        /// <summary>Child-Practice measure batch size; 0 = use MusicPage default.</summary>
         public int ChildMeasureBatchSize { get; set; }
 
         /// <summary>Explicit rhythm variety (0–100); -1 = derive from <see cref="V3RhythmMode"/>.</summary>
@@ -334,9 +334,9 @@ namespace musicmate.Services
                 .Where(name => !name.Contains('#') && !name.Contains('b'))
                 .ToArray();
 
-        
+
         public event Func<Task>? SessionCompletedAsync;
-  
+
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -361,6 +361,8 @@ namespace musicmate.Services
         private const string PrefPitchMethodKey = "musicmate.PitchMethod";
         private const string PrefToleranceKey = "musicmate.Tolerance";
         private const string PrefAutoStartKey = "musicmate.AutoStart";
+        private const string PrefAutoRepeatKey = "musicmate.AutoRepeat";
+        private const string PrefRepeatSameTuneKey = "musicmate.RepeatSameTune";
         private const string PrefAccidentalPercentKey = "musicmate.AccidentalPercent";
         private const string PrefCorrectThresholdKey = "musicmate.CorrectThreshold";
         private const string PrefPitchOffsetCentsKey = "musicmate.PitchOffsetCents";
@@ -376,6 +378,8 @@ namespace musicmate.Services
         // Backing fields with persisted defaults
         private int _audioBufferSize = Preferences.Get(PrefAudioBufferSizeKey, 1024);
         private bool _autoStart = Preferences.Get(PrefAutoStartKey, true);
+        private bool _autoRepeat = Preferences.Get(PrefAutoRepeatKey, false);
+        private bool _repeatSameTune = Preferences.Get(PrefRepeatSameTuneKey, false);
         private int _pitchWindowSize = Preferences.Get(PrefPitchWindowSizeKey, 4096);
         private string _highestNote = Preferences.Get("musicmate.HighestNote", "C6") ?? "C6";
         private string _lowestNote = Preferences.Get("musicmate.LowestNote", "E3") ?? "E3";
@@ -858,7 +862,7 @@ namespace musicmate.Services
                 }
             }
         }
-       
+
 
         public int CorrectThreshold
         {
@@ -1342,7 +1346,37 @@ namespace musicmate.Services
                 }
                 _autoStart = value;
                 Preferences.Set(PrefAutoStartKey, value);
-                OnPropertyChanged(nameof(AutoStart)); 
+                OnPropertyChanged(nameof(AutoStart));
+            }
+        }
+
+        public bool AutoRepeat
+        {
+            get => _autoRepeat;
+            set
+            {
+                if (_autoRepeat == value)
+                {
+                    return;
+                }
+                _autoRepeat = value;
+                Preferences.Set(PrefAutoRepeatKey, value);
+                OnPropertyChanged(nameof(AutoRepeat));
+            }
+        }
+
+        public bool RepeatSameTune
+        {
+            get => _repeatSameTune;
+            set
+            {
+                if (_repeatSameTune == value)
+                {
+                    return;
+                }
+                _repeatSameTune = value;
+                Preferences.Set(PrefRepeatSameTuneKey, value);
+                OnPropertyChanged(nameof(RepeatSameTune));
             }
         }
 
@@ -1438,7 +1472,7 @@ namespace musicmate.Services
         private double _rhythmGatePriorDurationMs;
         private double _lastRestViolationLogMs = double.NegativeInfinity;
 
-        private enum AccidentalPreference    { Auto, Sharps, Flats }
+        private enum AccidentalPreference { Auto, Sharps, Flats }
         public static readonly string[] AvailableScales = new[]
         {
             "Major",  "Harmonic Minor", "Melodic Minor", "Natural Minor", "Dorian", "Phrygian",
@@ -2092,7 +2126,7 @@ namespace musicmate.Services
                     return true;
                 }
                 return false;
-            } 
+            }
             if (result.correct)
             {
                 // Timing: record onset time and expected beat position
@@ -2673,11 +2707,11 @@ namespace musicmate.Services
                             var noteIdx = NotesToDraw.Count;
                             NotesToDraw.Add(new NoteInfo
                             {
-                                Midi       = adjustedMidi,
-                                Name       = displayName,
+                                Midi = adjustedMidi,
+                                Name = displayName,
                                 TargetFreq = freq,
-                                X          = slotX,
-                                Duration   = mn.Duration
+                                X = slotX,
+                                Duration = mn.Duration
                             });
                             FeedbackViewModels.Add(new FeedbackItem(noteIdx, 0, 0, false));
                         }
@@ -2762,18 +2796,18 @@ namespace musicmate.Services
             {
                 // Get all enharmonic MIDI numbers for the target note
                 var enharmonicMidis = GetEnharmonicMidis(target.Midi);
-               // enharmonicMatch = enharmonicMidis.Contains(detMidiWritten);
-                 enharmonicMatch = enharmonicMidis.Any(m => Mod12(m) == detPcWritten);  //  2026.03.06 1745  
+                // enharmonicMatch = enharmonicMidis.Contains(detMidiWritten);
+                enharmonicMatch = enharmonicMidis.Any(m => Mod12(m) == detPcWritten);  //  2026.03.06 1745  
             }
 
-           // Utils.Log($"Evaluate: freq={freq:F2}, detMidi={detMidi}, detMidiWritten={detMidiWritten}, detPcWritten={detPcWritten}, targetMidi={target.Midi}, expectedPc={expectedPc}, correctPc={correctPc}, enharmonicMatch={enharmonicMatch}");
+            // Utils.Log($"Evaluate: freq={freq:F2}, detMidi={detMidi}, detMidiWritten={detMidiWritten}, detPcWritten={detPcWritten}, targetMidi={target.Midi}, expectedPc={expectedPc}, correctPc={correctPc}, enharmonicMatch={enharmonicMatch}");
 
             // For cents, always use the concert pitch of the detected MIDI (not written MIDI)
             var nearestMidi = detMidi;
             var nearestFreq = MidiToFreq(nearestMidi);
             var cents = (int)Math.Round(1200 * Math.Log(freq / nearestFreq, 2));
             var withinTolerance = Math.Abs(cents) <= Tolerance;
-           // Utils.Log($"Evaluate: nearestMidi={nearestMidi}, nearestFreq={nearestFreq:F2}, cents={cents}, withinTolerance={withinTolerance}");
+            // Utils.Log($"Evaluate: nearestMidi={nearestMidi}, nearestFreq={nearestFreq:F2}, cents={cents}, withinTolerance={withinTolerance}");
 
             // Consider a detection correct only if pitch-class matches (or is enharmonic)
             // AND the cents deviation is within the configured tolerance.
@@ -2827,8 +2861,8 @@ namespace musicmate.Services
         }
         public static int NoteNameToMidi(string note)
         {
-            if(note != null)
-            { 
+            if (note != null)
+            {
                 var name = note.Trim();
                 var octave = int.Parse(name[^1].ToString());
                 var baseName = name[..^1];
@@ -2977,7 +3011,7 @@ namespace musicmate.Services
         }
         private static string[] BuildHarmonicMajorSpelled(string tonic, string key)
         {
-           var (flats, sharps) = GetAccidentalSetsForScale(key, "Harmonic Major");
+            var (flats, sharps) = GetAccidentalSetsForScale(key, "Harmonic Major");
             var pref = GetPreferenceForScale(key, "Harmonic Major");
             return BuildLetterAwareScale(tonic, HarmonicMajorUp, Array.Empty<int>(), pref, pref, flats, sharps);
         }
@@ -2989,19 +3023,19 @@ namespace musicmate.Services
         }
         private static string[] BuildDoubleHarmonicSpelled(string tonic, string key)
         {
-           var (flats, sharps) = GetAccidentalSetsForScale(key, "Double Harmonic");
+            var (flats, sharps) = GetAccidentalSetsForScale(key, "Double Harmonic");
             var pref = GetPreferenceForScale(key, "Double Harmonic");
             return BuildLetterAwareScale(tonic, DoubleHarmonicUp, Array.Empty<int>(), pref, pref, flats, sharps);
         }
         private static string[] BuildNeapolitanMinorSpelled(string tonic, string key)
         {
             var (flats, sharps) = GetAccidentalSetsForScale(key, "Neapolitan Minor");
-             var pref = GetPreferenceForScale(key, "Neapolitan Minor");
+            var pref = GetPreferenceForScale(key, "Neapolitan Minor");
             return BuildLetterAwareScale(tonic, NeapolitanMinorUp, Array.Empty<int>(), pref, pref, flats, sharps);
         }
         private static string[] BuildNeapolitanMajorSpelled(string tonic, string key)
         {
-             var (flats, sharps) = GetAccidentalSetsForScale(key, "Neapolitan Major");
+            var (flats, sharps) = GetAccidentalSetsForScale(key, "Neapolitan Major");
             var pref = GetPreferenceForScale(key, "Neapolitan Major");
             return BuildLetterAwareScale(tonic, NeapolitanMajorUp, Array.Empty<int>(), pref, pref, flats, sharps);
         }
@@ -3094,7 +3128,7 @@ namespace musicmate.Services
             if (selectedScale == "Chromatic")
             {
                 var descChr = up.Take(up.Length - 1).Reverse().ToArray();
-                var ascending  = up.Select(d => GetNoteName(startMidi + d, AccidentalPreference.Sharps));
+                var ascending = up.Select(d => GetNoteName(startMidi + d, AccidentalPreference.Sharps));
                 var descending = descChr.Select(d => GetNoteName(startMidi + d, AccidentalPreference.Flats));
                 return ascending.Concat(descending).ToArray();
             }
@@ -3281,8 +3315,8 @@ namespace musicmate.Services
         }
 
         private bool _sessionCompleted = true;
-        public bool SessionCompleted 
-        { 
+        public bool SessionCompleted
+        {
             get => _sessionCompleted;
             set
             {
@@ -3307,8 +3341,14 @@ namespace musicmate.Services
         /// <summary>Returns the natural (no-accidental) pitch-class 0–11 for a letter A–G.</summary>
         public static int NaturalPcForLetter(char letter) => letter switch
         {
-            'C' => 0, 'D' => 2, 'E' => 4, 'F' => 5,
-            'G' => 7, 'A' => 9, 'B' => 11, _ => 0
+            'C' => 0,
+            'D' => 2,
+            'E' => 4,
+            'F' => 5,
+            'G' => 7,
+            'A' => 9,
+            'B' => 11,
+            _ => 0
         };
 
         /// <summary>
@@ -3318,21 +3358,21 @@ namespace musicmate.Services
         /// </summary>
         public static string SpellNote(char letter, int targetMidi)
         {
-            var naturalPC  = NaturalPcForLetter(letter);
+            var naturalPC = NaturalPcForLetter(letter);
             var letterOctave = (targetMidi - naturalPC) / 12;
-            var naturalMidi  = (letterOctave + 1) * 12 + naturalPC;
+            var naturalMidi = (letterOctave + 1) * 12 + naturalPC;
             var diff = targetMidi - naturalMidi;
 
             // Correct for octave boundary: natural is in an adjacent octave
-            if      (diff >  6) { diff -= 12; letterOctave++; }
+            if (diff > 6) { diff -= 12; letterOctave++; }
             else if (diff < -6) { diff += 12; letterOctave--; }
 
             return diff switch
             {
-                 0 => $"{letter}{letterOctave}",
-                 1 => $"{letter}#{letterOctave}",
+                0 => $"{letter}{letterOctave}",
+                1 => $"{letter}#{letterOctave}",
                 -1 => $"{letter}b{letterOctave}",
-                 2 => $"{letter}##{letterOctave}",
+                2 => $"{letter}##{letterOctave}",
                 -2 => $"{letter}bb{letterOctave}",
                 _ => throw new InvalidOperationException(
                 $"Cannot spell MIDI {targetMidi} as letter {letter} within double accidental range.")
@@ -3350,11 +3390,11 @@ namespace musicmate.Services
         /// </summary>
         private static string[] SpellSequential(
             char tonicLetter,
-            int  tonicMidi,
+            int tonicMidi,
             int[] up,
             int[]? letterOffsets)
         {
-            var tonicIdx    = Array.IndexOf(Letters, tonicLetter);
+            var tonicIdx = Array.IndexOf(Letters, tonicLetter);
             var degreeCount = up.Length - 1; // unique degrees, not counting the octave repeat
 
             // Spell ascending (including the octave note at the end)
@@ -3436,7 +3476,7 @@ namespace musicmate.Services
             {
                 "#" => midi + 1,
                 "b" => midi - 1,
-                _   => midi
+                _ => midi
             };
         }
 
@@ -3461,7 +3501,7 @@ namespace musicmate.Services
             {
                 "#" => $"{letter}#{octave}",
                 "b" => $"{letter}b{octave}",
-                _   => raw
+                _ => raw
             };
         }
 
@@ -3499,7 +3539,7 @@ namespace musicmate.Services
             {
                 Accidental acc = raw.Contains("##") ? Accidental.DoubleSharp
                     : raw.Contains("bb") ? Accidental.DoubleFlat
-                    : raw.Contains('#')  ? Accidental.Sharp
+                    : raw.Contains('#') ? Accidental.Sharp
                     : Accidental.Flat;
                 return (acc, raw);
             }
@@ -3530,8 +3570,19 @@ namespace musicmate.Services
 
         public static string RelativeMajorForKeySignature(string minorKey) => minorKey switch
         {
-            "A" => "C", "E" => "G", "B" => "D", "F#" => "A", "C#" => "E", "G#" => "B", "D#" => "F#",
-            "D" => "F", "G" => "Bb", "C" => "Eb", "F" => "Ab", "Bb" => "Db", "Eb" => "Gb",
+            "A" => "C",
+            "E" => "G",
+            "B" => "D",
+            "F#" => "A",
+            "C#" => "E",
+            "G#" => "B",
+            "D#" => "F#",
+            "D" => "F",
+            "G" => "Bb",
+            "C" => "Eb",
+            "F" => "Ab",
+            "Bb" => "Db",
+            "Eb" => "Gb",
             _ => minorKey
         };
 
@@ -3567,18 +3618,29 @@ namespace musicmate.Services
         /// <summary>Returns the number of sharps (positive) or flats (negative) for a major key.</summary>
         private static int GetAccidentalCountForKey(string key) => key switch
         {
-            "C"  =>  0, "G"  =>  1, "D"  =>  2, "A"  =>  3, "E"  =>  4, "B"  =>  5,
-            "F#" =>  6, "C#" =>  7,
-            "F"  => -1, "Bb" => -2, "Eb" => -3, "Ab" => -4, "Db" => -5,
-            "Gb" => -6, "Cb" => -7,
-            _    =>  0
+            "C" => 0,
+            "G" => 1,
+            "D" => 2,
+            "A" => 3,
+            "E" => 4,
+            "B" => 5,
+            "F#" => 6,
+            "C#" => 7,
+            "F" => -1,
+            "Bb" => -2,
+            "Eb" => -3,
+            "Ab" => -4,
+            "Db" => -5,
+            "Gb" => -6,
+            "Cb" => -7,
+            _ => 0
         };
 
         private static string? GetSignatureAccidentalForLetter(char letter, int signatureCount)
         {
             if (signatureCount == 0) return null;
             var sharpsOrder = new[] { 'F', 'C', 'G', 'D', 'A', 'E', 'B' };
-            var flatsOrder  = new[] { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
+            var flatsOrder = new[] { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
             if (signatureCount > 0)
                 return sharpsOrder.Take(signatureCount).Contains(letter) ? "#" : null;
             return flatsOrder.Take(Math.Abs(signatureCount)).Contains(letter) ? "b" : null;

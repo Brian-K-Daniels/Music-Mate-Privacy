@@ -56,14 +56,14 @@ namespace musicmate.Services
             var range = NoteRangeForLevel(level);
             return new ChildLevelDifficultyProfile
             {
-                Level             = level,
-                ScalePool         = ScalePoolForLevel(level),
-                KeyPool           = KeyPoolForLevel(level),
-                LowestNote        = range.Lo,
-                HighestNote       = range.Hi,
+                Level = level,
+                ScalePool = ScalePoolForLevel(level),
+                KeyPool = KeyPoolForLevel(level),
+                LowestNote = range.Lo,
+                HighestNote = range.Hi,
                 AccidentalPercent = AccidentalPercentForLevel(level),
-                StageLabel        = GetStageLabel(level),
-                MainFocus         = GetMainFocus(level),
+                StageLabel = GetStageLabel(level),
+                MainFocus = GetMainFocus(level),
             };
         }
 
@@ -72,7 +72,7 @@ namespace musicmate.Services
             ChildLevelDifficultyProfile profile, Random? rng = null)
         {
             var scale = WeightedChoice.Pick(profile.ScalePool, o => o.Weight, rng).Scale;
-            var key   = WeightedChoice.Pick(profile.KeyPool, o => o.Weight, rng).Key;
+            var key = WeightedChoice.Pick(profile.KeyPool, o => o.Weight, rng).Key;
             return (scale, key);
         }
 
@@ -288,7 +288,7 @@ namespace musicmate.Services
         {
             level = Math.Clamp(level, 1, 100);
             int band = (level - 1) / 10;
-            int pos  = (level - 1) % 10;
+            int pos = (level - 1) % 10;
             double t = pos / 9.0;
             return band switch
             {

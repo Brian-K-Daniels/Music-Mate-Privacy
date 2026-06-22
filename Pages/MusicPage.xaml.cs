@@ -11,12 +11,12 @@ using Microsoft.Maui.Graphics;
 using SkiaSharp;
 using System.ComponentModel;
 using System.Diagnostics;
-  //  2026.06.12 1516  Just so I can do a commit before using the long prompt for sustained notes and rests.
+//  2026.06.12 1516  Just so I can do a commit before using the long prompt for sustained notes and rests.
 namespace musicmate.Pages
 {
-    public partial class MainPage : ContentPage
+    public partial class MusicPage : ContentPage
     {
-       
+
         private readonly NoteSessionService _session = null!;
         private readonly IAudioCaptureService _audio = null!;
         private readonly IAudioPlaybackService _player = null!;
@@ -127,35 +127,19 @@ namespace musicmate.Pages
         private static readonly HashSet<string> FreeKeys = new() { "C", "F", "Bb", "G", "D" };
         private int _lastFreeKeyIndex = 0;
         //private int _lastFreeScaleIndex = 0;
-        private bool _autoRepeat = false;
-        private bool _repeatSameTune = false;
         private List<NoteInfo>? _savedNotesToRepeat = null;
 
         public string? Tune => _session?.Tune;
         public bool AutoRepeat
         {
-            get => _autoRepeat;
-            set
-            {
-                if (_autoRepeat != value)
-                {
-                    _autoRepeat = value;
-                    UpdateAutoRepeatButtons();
-                }
-            }
+            get => _session.AutoRepeat;
+            set => _session.AutoRepeat = value;
         }
 
         public bool RepeatSameTune
         {
-            get => _repeatSameTune;
-            set
-            {
-                if (_repeatSameTune != value)
-                {
-                    _repeatSameTune = value;
-                    UpdateAutoRepeatButtons();
-                }
-            }
+            get => _session.RepeatSameTune;
+            set => _session.RepeatSameTune = value;
         }
 
         private void UpdateAutoRepeatButtons()
@@ -164,19 +148,19 @@ namespace musicmate.Pages
             {
                 if (AutoRepeatNewButton != null)
                 {
-                    AutoRepeatNewButton.BackgroundColor = _autoRepeat && !_repeatSameTune
+                    AutoRepeatNewButton.BackgroundColor = _session.AutoRepeat && !_session.RepeatSameTune
                         ? Color.FromArgb("#008000")  // green  = repeat new on
                         : Color.FromArgb("#8B4513"); // brown = repeat off
                 }
                 if (AutoRepeatSameButton != null)
                 {
-                    AutoRepeatSameButton.BackgroundColor = _autoRepeat && _repeatSameTune
+                    AutoRepeatSameButton.BackgroundColor = _session.AutoRepeat && _session.RepeatSameTune
                         ? Color.FromArgb("#008000")  // green  = repeat same on
                         : Color.FromArgb("#8B4513"); // brown = repeat off
                 }
                 if (AutoRepeatScaleButton != null)
                 {
-                    AutoRepeatScaleButton.BackgroundColor = _autoRepeat
+                    AutoRepeatScaleButton.BackgroundColor = _session.AutoRepeat
                         ? Color.FromArgb("#008000")  // green  = repeat on
                         : Color.FromArgb("#8B4513"); // brown = repeat off
                 }
@@ -313,7 +297,7 @@ namespace musicmate.Pages
             IsInstrumentLabelVisible = true;
         }
 
-        
+
 
         private void AutoRepeatToggleButtonClicked(object sender, EventArgs e)
         {
@@ -321,8 +305,8 @@ namespace musicmate.Pages
             AutoRepeat = !AutoRepeat;
         }
 
-        
-        public MainPage()
+
+        public MusicPage()
         {
             try
             {
@@ -330,12 +314,12 @@ namespace musicmate.Pages
 
                 // V3 Practice bottom-row pickers — resolved here; populated in OnAppearing
                 _v3PracticeInstrumentPicker = this.FindByName<Picker>("V3PracticeInstrumentPicker")!;
-                _v3PracticeKeyPicker        = this.FindByName<Picker>("V3PracticeKeyPicker")!;
-                _v3PracticeScaleTunePicker  = this.FindByName<Picker>("V3PracticeScaleTunePicker")!;
-                _v3PracticeConcertKeyLabel  = this.FindByName<Label>("V3PracticeConcertKeyLabel")!;
-                _v3StartStopButton      = this.FindByName<Border>("V3StartStopButton")!;
-                _v3PlayButton           = this.FindByName<Border>("V3PlayButton")!;
-                _titleMarqueeGrid       = this.FindByName<Grid>("TitleMarqueeGrid")!;
+                _v3PracticeKeyPicker = this.FindByName<Picker>("V3PracticeKeyPicker")!;
+                _v3PracticeScaleTunePicker = this.FindByName<Picker>("V3PracticeScaleTunePicker")!;
+                _v3PracticeConcertKeyLabel = this.FindByName<Label>("V3PracticeConcertKeyLabel")!;
+                _v3StartStopButton = this.FindByName<Border>("V3StartStopButton")!;
+                _v3PlayButton = this.FindByName<Border>("V3PlayButton")!;
+                _titleMarqueeGrid = this.FindByName<Grid>("TitleMarqueeGrid")!;
                 UpdateV3StartStopButtonVisual(false);
 
                 // Ensure ThemeService is available so we can deploy saved/default panel background
@@ -373,17 +357,17 @@ namespace musicmate.Pages
                             // final status visible and wait for the user to tap Start.
                             if (AutoRepeat)
                             {
-                                Debug.WriteLine("[MainPage] MaxBlocksReached after session completed: full restart (AutoRepeat on).");
+                                Debug.WriteLine("[MusicPage] MaxBlocksReached after session completed: full restart (AutoRepeat on).");
                                 await StartListeningAndEvaluatingAsync();
                             }
                             else
                             {
-                                Debug.WriteLine("[MainPage] MaxBlocksReached after session completed: AutoRepeat off, not restarting.");
+                                Debug.WriteLine("[MusicPage] MaxBlocksReached after session completed: AutoRepeat off, not restarting.");
                             }
                         }
                         else
                         {
-                            Debug.WriteLine("[MainPage] MaxBlocksReached mid-session: restarting capture only.");
+                            Debug.WriteLine("[MusicPage] MaxBlocksReached mid-session: restarting capture only.");
                             await RestartAudioCaptureAsync();
                         }
                     });
@@ -477,7 +461,7 @@ namespace musicmate.Pages
 
                         await UpdateNoteStatsDatabaseAsync();
 
-                        string shortInstrumentForMarquee = _session.InstrumentDisplayName;
+                        string instrumentKeyForMarquee = _session.InstrumentKey;
                         int levelBeforeSave = _session.ChildLevel;
                         var countSinceBeforeSave = Services.LevelUpService.CountSinceUtc;
 
@@ -521,14 +505,14 @@ namespace musicmate.Pages
                             {
                                 // Keep the completed-level marquee while the congratulatory banner is visible.
                                 _deferNewLevelMarqueeUntilBannerDismissed = true;
-                                _pendingInstrumentForMarquee = shortInstrumentForMarquee;
+                                _pendingInstrumentForMarquee = instrumentKeyForMarquee;
                                 await BuildAndPublishSessionEndMarqueeAsync(
-                                    levelBeforeSave, shortInstrumentForMarquee, countSinceBeforeSave);
+                                    levelBeforeSave, instrumentKeyForMarquee, countSinceBeforeSave);
                             }
                             else
                             {
                                 await BuildAndPublishSessionEndMarqueeAsync(
-                                    _session.ChildLevel, shortInstrumentForMarquee, Services.LevelUpService.CountSinceUtc);
+                                    _session.ChildLevel, instrumentKeyForMarquee, Services.LevelUpService.CountSinceUtc);
                             }
                         }
                         catch (Exception ex)
@@ -655,7 +639,7 @@ namespace musicmate.Pages
             }
             catch (Exception ex)
             {
-                Utils.Log($"[MainPage Constructor] ERROR: {ex}");
+                Utils.Log($"[MusicPage Constructor] ERROR: {ex}");
             }
         }
 
@@ -735,60 +719,60 @@ namespace musicmate.Pages
             await _regenerateSemaphore.WaitAsync();
             try
             {
-            // Hide any previous session result banner when new notes are generated.
-            await HideSessionResultBannerAsync(refreshMarqueeForNewLevel: true);
-            _holdResultForChildSession = false;
+                // Hide any previous session result banner when new notes are generated.
+                await HideSessionResultBannerAsync(refreshMarqueeForNewLevel: true);
+                _holdResultForChildSession = false;
 
-            if (_session.IsRandomMode)
-                _session.EnsureRandomModeGenerationSettings();
-            else if (_session.ChildLevel > 0)
-                DifficultyLevelMapper.ApplyLevelDerivedSettings(_session.ChildLevel, _session);
+                if (_session.IsRandomMode)
+                    _session.EnsureRandomModeGenerationSettings();
+                else if (_session.ChildLevel > 0)
+                    DifficultyLevelMapper.ApplyLevelDerivedSettings(_session.ChildLevel, _session);
 
-            // While showing post-autoplay results, do not overwrite the staff.
-            if (_freezeStaff)
-                return;
+                // While showing post-autoplay results, do not overwrite the staff.
+                if (_freezeStaff)
+                    return;
 
-            _v3GenerationSeed = unchecked(_v3GenerationSeed + 1);
+                _v3GenerationSeed = unchecked(_v3GenerationSeed + 1);
 
-            float width = 360f;
-            if (_session.StaffDisplayMode == StaffDisplayMode.V3 && V3StaffGraphicsView?.Width > 0)
-                width = (float)V3StaffGraphicsView.Width;
-            else if (StaffGraphicsView.Width > 0)
-                width = (float)StaffGraphicsView.Width;
-            await _session.GenerateNotesAsync(width);
+                float width = 360f;
+                if (_session.StaffDisplayMode == StaffDisplayMode.V3 && V3StaffGraphicsView?.Width > 0)
+                    width = (float)V3StaffGraphicsView.Width;
+                else if (StaffGraphicsView.Width > 0)
+                    width = (float)StaffGraphicsView.Width;
+                await _session.GenerateNotesAsync(width);
 
 #if DEBUG
-            if (_session.IsRandomMode)
-            {
-                var names = string.Join(", ", _session.NotesToDraw.Select(n => n.Name));
-                Debug.WriteLine($"[Random] Generated {_session.NotesToDraw.Count} notes: {names}");
-            }
+                if (_session.IsRandomMode)
+                {
+                    var names = string.Join(", ", _session.NotesToDraw.Select(n => n.Name));
+                    Debug.WriteLine($"[Random] Generated {_session.NotesToDraw.Count} notes: {names}");
+                }
 #endif
 
-            UpdateTunerVisibility();
+                UpdateTunerVisibility();
 
-            if (_session.Tune != "Tuner" && _session.StaffDisplayMode == StaffDisplayMode.V3)
-            {
-                // Show V3 border first so the GraphicsView gets a layout width before we draw.
-                StaffBorder.IsVisible   = false;
-                V3StaffBorder.IsVisible = true;
+                if (_session.Tune != "Tuner" && _session.StaffDisplayMode == StaffDisplayMode.V3)
+                {
+                    // Show V3 border first so the GraphicsView gets a layout width before we draw.
+                    StaffBorder.IsVisible = false;
+                    V3StaffBorder.IsVisible = true;
 
-                // Wait up to 500 ms for the view to get a measured width.
-                var sw2 = System.Diagnostics.Stopwatch.StartNew();
-                while (V3StaffGraphicsView.Width <= 0 && sw2.ElapsedMilliseconds < 500)
-                    await Task.Delay(20);
+                    // Wait up to 500 ms for the view to get a measured width.
+                    var sw2 = System.Diagnostics.Stopwatch.StartNew();
+                    while (V3StaffGraphicsView?.Width <= 0 && sw2.ElapsedMilliseconds < 500)
+                        await Task.Delay(20);
 
-                await UpdateV3DisplayAsync();
-                if (_session.Tune == "Arpeggio")
-                    StatusService.Instance.StatusMessage = GetCurrentPlayItemName();
-            }
-            else if (_session.Tune != "Tuner")
-            {
-                StaffBorder.IsVisible = true;
-                V3StaffBorder.IsVisible = false;
-                StaffGraphicsView.Invalidate();
-                UpdateStaffHeight();
-            }
+                    await UpdateV3DisplayAsync();
+                    if (_session.Tune == "Arpeggio")
+                        StatusService.Instance.StatusMessage = GetCurrentPlayItemName();
+                }
+                else if (_session.Tune != "Tuner")
+                {
+                    StaffBorder.IsVisible = true;
+                    V3StaffBorder.IsVisible = false;
+                    StaffGraphicsView.Invalidate();
+                    UpdateStaffHeight();
+                }
             }
             finally
             {
@@ -841,9 +825,9 @@ namespace musicmate.Pages
         }
 
         // Generator offsets: updated every time we append more measures.
-        private int    _v3SeqNextMeasureIndex    = 0;
-        private double _v3SeqNextBeatOffset      = 0.0;
-        private int    _v3SeqNextGlobalNoteIndex = 0;
+        private int _v3SeqNextMeasureIndex = 0;
+        private double _v3SeqNextBeatOffset = 0.0;
+        private int _v3SeqNextGlobalNoteIndex = 0;
 
         /// <summary>Cached excluded MIDI set rebuilt whenever a new sequence starts.</summary>
         private HashSet<int> _v3ExcludedMidis = new();
@@ -870,7 +854,7 @@ namespace musicmate.Pages
             {
                 "3/4" => TimeSignature.ThreeFour,
                 "2/4" => TimeSignature.TwoFour,
-                _     => TimeSignature.FourFour
+                _ => TimeSignature.FourFour
             };
 
             // Selected-scale practice (Major, etc. from What to Play) is a straight
@@ -885,35 +869,35 @@ namespace musicmate.Pages
 
             var gen = new MusicSequenceGenerator
             {
-                Key                  = _session.Key,
-                Scale                = _session.SelectedScale,
-                LowestNote           = _session.LowestNote,
-                HighestNote          = _session.HighestNote,
-                TimeSignature        = timeSig,
-                MeasureCount         = measureCount,
+                Key = _session.Key,
+                Scale = _session.SelectedScale,
+                LowestNote = _session.LowestNote,
+                HighestNote = _session.HighestNote,
+                TimeSignature = timeSig,
+                MeasureCount = measureCount,
                 RhythmVarietyPercent = rhythmVariety,
-                SmallestDuration     = simpleSelectedScale
+                SmallestDuration = simpleSelectedScale
                     ? NoteDuration.Quarter
                     : _session.V3SmallestNote switch
-                {
-                    "Sixteenth" => NoteDuration.Sixteenth,
-                    "Eighth"    => NoteDuration.Eighth,
-                    _           => NoteDuration.Quarter
-                },
-                StartMeasureIndex    = _v3SeqNextMeasureIndex,
-                StartBeatOffset      = _v3SeqNextBeatOffset,
+                    {
+                        "Sixteenth" => NoteDuration.Sixteenth,
+                        "Eighth" => NoteDuration.Eighth,
+                        _ => NoteDuration.Quarter
+                    },
+                StartMeasureIndex = _v3SeqNextMeasureIndex,
+                StartBeatOffset = _v3SeqNextBeatOffset,
                 StartGlobalNoteIndex = _v3SeqNextGlobalNoteIndex,
-                StartPrevPitch       = startPrevPitch,
-                ExcludedMidiNumbers  = _v3ExcludedMidis,
-                UseScaleOrder        = !_session.IsRandomMode,
-                ScaleWalkOffset      = _v3SeqNextGlobalNoteIndex,
-                AccidentalPercent    = _session.IsRandomMode ? _session.AccidentalPercent : 0,
+                StartPrevPitch = startPrevPitch,
+                ExcludedMidiNumbers = _v3ExcludedMidis,
+                UseScaleOrder = !_session.IsRandomMode,
+                ScaleWalkOffset = _v3SeqNextGlobalNoteIndex,
+                AccidentalPercent = _session.IsRandomMode ? _session.AccidentalPercent : 0,
                 MaxMelodicIntervalSemitones = _session.IsRandomMode ? _session.MaxMelodicIntervalSemitones : 0,
-                SyncopationLevel         = simpleSelectedScale
+                SyncopationLevel = simpleSelectedScale
                     ? SyncopationLevel.None
                     : SyncopationLevelHelper.Parse(_session.V3Syncopation),
-                RestChancePercent        = simpleSelectedScale ? 0 : _session.V3RestChancePercent,
-                RandomSeed               = Environment.TickCount
+                RestChancePercent = simpleSelectedScale ? 0 : _session.V3RestChancePercent,
+                RandomSeed = Environment.TickCount
                                            ^ _v3GenerationSeed
                                            ^ (_session.ChildLevel * 7919)
             };
@@ -944,9 +928,9 @@ namespace musicmate.Pages
                     }
                     else
                     {
-                        var raw    = mn.SpelledName.Trim();
+                        var raw = mn.SpelledName.Trim();
                         char letter = char.ToUpperInvariant(raw[0]);
-                        int octave  = 4;
+                        int octave = 4;
                         for (int i = raw.Length - 1; i >= 0; i--)
                         {
                             if (char.IsDigit(raw[i]))
@@ -958,9 +942,9 @@ namespace musicmate.Pages
                             }
                         }
                         Accidental acc = Accidental.None;
-                        if (raw.Contains("##"))      acc = Accidental.DoubleSharp;
+                        if (raw.Contains("##")) acc = Accidental.DoubleSharp;
                         else if (raw.Contains("bb")) acc = Accidental.DoubleFlat;
-                        else if (raw.Contains('#'))  acc = Accidental.Sharp;
+                        else if (raw.Contains('#')) acc = Accidental.Sharp;
                         else if (raw.Length > 1 && raw[1] == 'b') acc = Accidental.Flat;
 
                         // Apply the key signature: if the note has no explicit accidental,
@@ -972,16 +956,16 @@ namespace musicmate.Pages
 
                         gn = new GeneratedNote
                         {
-                            MidiNumber      = adjustedMidi,
-                            Letter          = letter,
-                            Octave          = octave,
-                            Accidental      = acc,
-                            SpelledName     = displayName,
+                            MidiNumber = adjustedMidi,
+                            Letter = letter,
+                            Octave = octave,
+                            Accidental = acc,
+                            SpelledName = displayName,
                             TargetFrequency = 440.0 * Math.Pow(2.0, (adjustedMidi - 69) / 12.0),
-                            Duration        = mn.Duration,
-                            IsRest          = false,
-                            MeasureIndex    = measureIndex,
-                            BeatPosition    = beatCursor,
+                            Duration = mn.Duration,
+                            IsRest = false,
+                            MeasureIndex = measureIndex,
+                            BeatPosition = beatCursor,
                         };
                     }
                     result.Add(gn);
@@ -1108,19 +1092,19 @@ namespace musicmate.Pages
             {
                 shifted.Add(new GeneratedNote
                 {
-                    MidiNumber        = n.MidiNumber,
-                    Letter            = n.Letter,
-                    Octave            = n.Octave,
-                    Accidental        = n.Accidental,
-                    SpelledName       = n.SpelledName,
-                    TargetFrequency   = n.TargetFrequency,
-                    Duration          = n.Duration,
-                    IsRest            = n.IsRest,
-                    MeasureIndex      = n.MeasureIndex,
-                    BeatPosition      = (n.BeatPosition ?? 0.0) - beatShift,
+                    MidiNumber = n.MidiNumber,
+                    Letter = n.Letter,
+                    Octave = n.Octave,
+                    Accidental = n.Accidental,
+                    SpelledName = n.SpelledName,
+                    TargetFrequency = n.TargetFrequency,
+                    Duration = n.Duration,
+                    IsRest = n.IsRest,
+                    MeasureIndex = n.MeasureIndex,
+                    BeatPosition = (n.BeatPosition ?? 0.0) - beatShift,
                     IsPlayedCorrectly = n.IsPlayedCorrectly,
-                    CentsDeviation    = n.CentsDeviation,
-                    RenderX           = n.RenderX,
+                    CentsDeviation = n.CentsDeviation,
+                    RenderX = n.RenderX,
                 });
             }
             return shifted;
@@ -1135,9 +1119,9 @@ namespace musicmate.Pages
         private int _v3GenerationSeed;
 
         // Offsets for appending the lower staff content.
-        private int    _v3LowerMeasureIndex    = 0;
-        private double _v3LowerBeatOffset      = 0.0;
-        private int    _v3LowerGlobalNoteIndex = 0;
+        private int _v3LowerMeasureIndex = 0;
+        private double _v3LowerBeatOffset = 0.0;
+        private int _v3LowerGlobalNoteIndex = 0;
 
         /// <summary>
         /// Pitched-note count on the upper staff when <see cref="NoteSessionService.NotesToDraw"/>
@@ -1156,15 +1140,15 @@ namespace musicmate.Pages
             try
             {
                 // Reset queue offsets.
-                _v3SeqNextMeasureIndex    = 0;
-                _v3SeqNextBeatOffset      = 0.0;
+                _v3SeqNextMeasureIndex = 0;
+                _v3SeqNextBeatOffset = 0.0;
                 _v3SeqNextGlobalNoteIndex = 0;
                 _v3SessionUpperPitchCount = 0;
 
                 List<GeneratedNote> upperFlat;
-                List<double>        upperBarBeats;
+                List<double> upperBarBeats;
                 List<GeneratedNote> lowerFlat;
-                List<double>        lowerBarBeats;
+                List<double> lowerBarBeats;
                 var existingUpper = new HashSet<double>();
                 var existingLower = new HashSet<double>();
 
@@ -1180,19 +1164,19 @@ namespace musicmate.Pages
                         foreach (var mn in testTune.Measures[m].Notes)
                             splitBeat += mn.Duration.ToBeatValue();
 
-                    upperFlat     = allNotes.Where(n => (n.BeatPosition ?? 0) < splitBeat).ToList();
-                    lowerFlat     = ShiftStaffBeatPositions(
+                    upperFlat = allNotes.Where(n => (n.BeatPosition ?? 0) < splitBeat).ToList();
+                    lowerFlat = ShiftStaffBeatPositions(
                         allNotes.Where(n => (n.BeatPosition ?? 0) >= splitBeat).ToList(),
                         splitBeat);
                     double measureBeats = testTune.TimeSignature.TotalBeats;
                     upperBarBeats = ComputeStaffBarBeats(upperFlat, measureBeats, existingUpper);
                     lowerBarBeats = ComputeStaffBarBeats(lowerFlat, measureBeats, existingLower);
 
-                    _v3SeqNextMeasureIndex    = testTune.Measures.Count;
-                    _v3SeqNextBeatOffset      = allNotes.Sum(n => n.BeatDuration);
+                    _v3SeqNextMeasureIndex = testTune.Measures.Count;
+                    _v3SeqNextBeatOffset = allNotes.Sum(n => n.BeatDuration);
                     _v3SeqNextGlobalNoteIndex = allNotes.Count(n => !n.IsRest);
-                    _v3LowerMeasureIndex    = _v3SeqNextMeasureIndex;
-                    _v3LowerBeatOffset      = _v3SeqNextBeatOffset;
+                    _v3LowerMeasureIndex = _v3SeqNextMeasureIndex;
+                    _v3LowerBeatOffset = _v3SeqNextBeatOffset;
                     _v3LowerGlobalNoteIndex = _v3SeqNextGlobalNoteIndex;
                     if (_v3Drawable != null) _v3Drawable.UpperHasEndBar = false;
 
@@ -1212,20 +1196,20 @@ namespace musicmate.Pages
                         foreach (var mn in _session.CurrentTune.Measures[m].Notes)
                             splitBeat += mn.Duration.ToBeatValue();
 
-                    upperFlat     = allNotes.Where(n => (n.BeatPosition ?? 0) < splitBeat).ToList();
-                    lowerFlat     = ShiftStaffBeatPositions(
+                    upperFlat = allNotes.Where(n => (n.BeatPosition ?? 0) < splitBeat).ToList();
+                    lowerFlat = ShiftStaffBeatPositions(
                         allNotes.Where(n => (n.BeatPosition ?? 0) >= splitBeat).ToList(),
                         splitBeat);
                     double measureBeats = _session.CurrentTune.TimeSignature.TotalBeats;
                     upperBarBeats = ComputeStaffBarBeats(upperFlat, measureBeats, existingUpper);
                     lowerBarBeats = ComputeStaffBarBeats(lowerFlat, measureBeats, existingLower);
 
-                    _v3SeqNextMeasureIndex    = allMeasures;
-                    _v3SeqNextBeatOffset      = allNotes.Sum(n => n.BeatDuration);
+                    _v3SeqNextMeasureIndex = allMeasures;
+                    _v3SeqNextBeatOffset = allNotes.Sum(n => n.BeatDuration);
                     _v3SeqNextGlobalNoteIndex = allNotes.Count(n => !n.IsRest);
 
-                    _v3LowerMeasureIndex    = _v3SeqNextMeasureIndex;
-                    _v3LowerBeatOffset      = _v3SeqNextBeatOffset;
+                    _v3LowerMeasureIndex = _v3SeqNextMeasureIndex;
+                    _v3LowerBeatOffset = _v3SeqNextBeatOffset;
                     _v3LowerGlobalNoteIndex = _v3SeqNextGlobalNoteIndex;
                     if (_v3Drawable != null) _v3Drawable.UpperHasEndBar = false;
                 }
@@ -1290,7 +1274,7 @@ namespace musicmate.Pages
                         {
                             "3/4" => TimeSignature.ThreeFour,
                             "2/4" => TimeSignature.TwoFour,
-                            _     => TimeSignature.FourFour
+                            _ => TimeSignature.FourFour
                         };
                         // A safe upper bound: even a chromatic 3-octave range (37 pitches) needs
                         // at most (2*37−2)=72 quarter notes = 18 bars of 4/4.  Cap at 24 to be safe.
@@ -1334,14 +1318,14 @@ namespace musicmate.Pages
 
                         double upperBeats = upperFlat.Sum(n => n.BeatDuration);
                         double lowerBeats = lowerFlat.Sum(n => n.BeatDuration);
-                        int upperPitches  = upperFlat.Count(n => !n.IsRest);
-                        int lowerPitches  = lowerFlat.Count(n => !n.IsRest);
+                        int upperPitches = upperFlat.Count(n => !n.IsRest);
+                        int lowerPitches = lowerFlat.Count(n => !n.IsRest);
 
-                        _v3SeqNextMeasureIndex    = allMeasures.Count;
-                        _v3SeqNextBeatOffset      = upperBeats + lowerBeats;
+                        _v3SeqNextMeasureIndex = allMeasures.Count;
+                        _v3SeqNextBeatOffset = upperBeats + lowerBeats;
                         _v3SeqNextGlobalNoteIndex = upperPitches + lowerPitches;
-                        _v3LowerMeasureIndex    = _v3SeqNextMeasureIndex;
-                        _v3LowerBeatOffset      = _v3SeqNextBeatOffset;
+                        _v3LowerMeasureIndex = _v3SeqNextMeasureIndex;
+                        _v3LowerBeatOffset = _v3SeqNextBeatOffset;
                         _v3LowerGlobalNoteIndex = _v3SeqNextGlobalNoteIndex;
                     }
                     else
@@ -1350,12 +1334,12 @@ namespace musicmate.Pages
                         var (upperMc, lowerMc) = GetV3StaffMeasureCounts();
                         var genUpper = BuildV3SequenceGenerator(upperMc);
                         var upperMeasures = genUpper.GenerateSequence();
-                        upperFlat     = MusicSequenceGenerator.Flatten(upperMeasures);
+                        upperFlat = MusicSequenceGenerator.Flatten(upperMeasures);
                         double measureBeats = genUpper.TimeSignature.TotalBeats;
                         upperBarBeats = ComputeStaffBarBeats(upperFlat, measureBeats, existingUpper);
 
-                        _v3SeqNextMeasureIndex    += upperMeasures.Count;
-                        _v3SeqNextBeatOffset      += upperMeasures.Count * (double)genUpper.TimeSignature.TotalBeats;
+                        _v3SeqNextMeasureIndex += upperMeasures.Count;
+                        _v3SeqNextBeatOffset += upperMeasures.Count * (double)genUpper.TimeSignature.TotalBeats;
                         _v3SeqNextGlobalNoteIndex += upperFlat.Count(n => !n.IsRest);
 
                         double lowerBeatShift = 0.0;
@@ -1364,7 +1348,7 @@ namespace musicmate.Pages
                             int lowerStartPitch = MusicSequenceGenerator.LastPitchedMidi(upperFlat);
                             var genLower = BuildV3SequenceGenerator(lowerMc, lowerStartPitch);
                             var lowerMeasures = genLower.GenerateSequence();
-                            lowerFlat     = MusicSequenceGenerator.Flatten(lowerMeasures);
+                            lowerFlat = MusicSequenceGenerator.Flatten(lowerMeasures);
 
                             // Re-offset lower staff beat positions to start at 0 (independent staff)
                             lowerBeatShift = lowerFlat.Count > 0 ? (lowerFlat[0].BeatPosition ?? 0.0) : 0.0;
@@ -1375,16 +1359,16 @@ namespace musicmate.Pages
                                     var n = lowerFlat[i];
                                     lowerFlat[i] = new GeneratedNote
                                     {
-                                        MidiNumber       = n.MidiNumber,
-                                        Letter           = n.Letter,
-                                        Octave           = n.Octave,
-                                        Accidental       = n.Accidental,
-                                        SpelledName      = n.SpelledName,
-                                        TargetFrequency  = n.TargetFrequency,
-                                        Duration         = n.Duration,
-                                        IsRest           = n.IsRest,
-                                        MeasureIndex     = n.MeasureIndex,
-                                        BeatPosition     = (n.BeatPosition ?? 0.0) - lowerBeatShift,
+                                        MidiNumber = n.MidiNumber,
+                                        Letter = n.Letter,
+                                        Octave = n.Octave,
+                                        Accidental = n.Accidental,
+                                        SpelledName = n.SpelledName,
+                                        TargetFrequency = n.TargetFrequency,
+                                        Duration = n.Duration,
+                                        IsRest = n.IsRest,
+                                        MeasureIndex = n.MeasureIndex,
+                                        BeatPosition = (n.BeatPosition ?? 0.0) - lowerBeatShift,
                                         IsPlayedCorrectly = n.IsPlayedCorrectly
                                     };
                                 }
@@ -1392,20 +1376,20 @@ namespace musicmate.Pages
 
                             lowerBarBeats = ComputeStaffBarBeats(lowerFlat, measureBeats, existingLower);
 
-                            _v3LowerMeasureIndex    = _v3SeqNextMeasureIndex + lowerMeasures.Count;
-                            _v3LowerBeatOffset      = _v3SeqNextBeatOffset + lowerMeasures.Count * (double)genLower.TimeSignature.TotalBeats;
+                            _v3LowerMeasureIndex = _v3SeqNextMeasureIndex + lowerMeasures.Count;
+                            _v3LowerBeatOffset = _v3SeqNextBeatOffset + lowerMeasures.Count * (double)genLower.TimeSignature.TotalBeats;
                             _v3LowerGlobalNoteIndex = _v3SeqNextGlobalNoteIndex + lowerFlat.Count(n => !n.IsRest);
 
-                            _v3SeqNextMeasureIndex    = _v3LowerMeasureIndex;
-                            _v3SeqNextBeatOffset      = _v3LowerBeatOffset;
+                            _v3SeqNextMeasureIndex = _v3LowerMeasureIndex;
+                            _v3SeqNextBeatOffset = _v3LowerBeatOffset;
                             _v3SeqNextGlobalNoteIndex = _v3LowerGlobalNoteIndex;
                         }
                         else
                         {
-                            lowerFlat     = new List<GeneratedNote>();
+                            lowerFlat = new List<GeneratedNote>();
                             lowerBarBeats = new List<double>();
-                            _v3LowerMeasureIndex    = _v3SeqNextMeasureIndex;
-                            _v3LowerBeatOffset      = _v3SeqNextBeatOffset;
+                            _v3LowerMeasureIndex = _v3SeqNextMeasureIndex;
+                            _v3LowerBeatOffset = _v3SeqNextBeatOffset;
                             _v3LowerGlobalNoteIndex = _v3SeqNextGlobalNoteIndex;
                         }
 
@@ -1438,17 +1422,17 @@ namespace musicmate.Pages
                 var v3Drawable = _v3Drawable;
                 if (v3Drawable == null) return;
 
-                v3Drawable.UpperNotes      = upperFlat;
-                v3Drawable.LowerNotes      = lowerFlat;
-                v3Drawable.UpperBarBeats   = upperBarBeats;
-                v3Drawable.LowerBarBeats   = lowerBarBeats;
+                v3Drawable.UpperNotes = upperFlat;
+                v3Drawable.LowerNotes = lowerFlat;
+                v3Drawable.UpperBarBeats = upperBarBeats;
+                v3Drawable.LowerBarBeats = lowerBarBeats;
                 v3Drawable.InvalidateLayoutCache();
                 v3Drawable.UpperNoteStates = new V3NoteState[upperFlat.Count];
                 v3Drawable.LowerNoteStates = new V3NoteState[lowerFlat.Count];
-                v3Drawable.IsUpperActive   = true;
+                v3Drawable.IsUpperActive = true;
                 v3Drawable.ActiveNoteIndex = 0;
-                v3Drawable.UpperAlpha      = 1f;
-                v3Drawable.LowerAlpha      = 1f;
+                v3Drawable.UpperAlpha = 1f;
+                v3Drawable.LowerAlpha = 1f;
 
                 // Mark first non-rest note on upper staff as Current.
                 for (int i = 0; i < upperFlat.Count; i++)
@@ -1474,14 +1458,14 @@ namespace musicmate.Pages
                     var slot = rhythmSlots[pitchIdx++];
                     _session.NotesToDraw.Add(new NoteInfo
                     {
-                        Midi                   = gn.MidiNumber,
-                        Name                   = NoteSessionService.ResolveWrittenNoteName(
+                        Midi = gn.MidiNumber,
+                        Name = NoteSessionService.ResolveWrittenNoteName(
                             gn.SpelledName, gn.MidiNumber, gn.Letter, gn.Octave, _session.Key, _session.SelectedScale),
-                        TargetFreq             = gn.TargetFrequency,
-                        X                      = 0f,
-                        Duration               = gn.Duration,
-                        StartBeat              = slot.StartBeat,
-                        DurationBeats          = slot.DurationBeats,
+                        TargetFreq = gn.TargetFrequency,
+                        X = 0f,
+                        Duration = gn.Duration,
+                        StartBeat = slot.StartBeat,
+                        DurationBeats = slot.DurationBeats,
                         GateBeatsAfterPrevious = slot.GateBeatsAfterPrevious,
                     });
                     _session.FeedbackViewModels.Add(new FeedbackItem(sessionIdx++, 0, 0, false));
@@ -1494,7 +1478,7 @@ namespace musicmate.Pages
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
                     ApplyV3Height();
-                    V3StaffGraphicsView.Invalidate();
+                    V3StaffGraphicsView?.Invalidate();
                 });
             }
             catch (Exception ex)
@@ -1522,7 +1506,7 @@ namespace musicmate.Pages
             if (_v3Drawable == null) return;
 
             int upperPitchCount = _v3SessionUpperPitchCount;
-            int currentSession  = _session.CurrentNoteIndex;
+            int currentSession = _session.CurrentNoteIndex;
 
             bool isUpperActive = currentSession < upperPitchCount;
 
@@ -1589,107 +1573,9 @@ namespace musicmate.Pages
         /// Generates new notes for the upper V3 staff while the player is on the lower staff,
         /// then fades in the new upper staff content.
         /// </summary>
-        private async Task RefreshV3UpperStaffAsync()
-        {
-            if (_v3Drawable == null || _session.Tune == "Practice Tune" || _session.Tune == "Arpeggio" || V3LayoutTestTune.IsEnabled) return;
-            try
-            {
-                int upperStartPitch = MusicSequenceGenerator.LastPitchedMidi(_v3Drawable?.LowerNotes);
-                var gen      = BuildV3SequenceGenerator(GetV3StaffMeasureCounts().upper, upperStartPitch);
-                var measures = gen.GenerateSequence();
-                var newNotes = MusicSequenceGenerator.Flatten(measures);
-                var barBeats = ComputeStaffBarBeats(newNotes, gen.TimeSignature.TotalBeats, new HashSet<double>());
 
-                _v3SeqNextMeasureIndex    += measures.Count;
-                _v3SeqNextBeatOffset      += measures.Count * (double)gen.TimeSignature.TotalBeats;
-                _v3SeqNextGlobalNoteIndex += newNotes.Count(n => !n.IsRest);
 
-                await MainThread.InvokeOnMainThreadAsync(() =>
-                {
-                    _v3Drawable.UpperNotes      = newNotes;
-                    _v3Drawable.UpperBarBeats   = barBeats;
-                    _v3Drawable.UpperNoteStates = new V3NoteState[newNotes.Count];
-                    _v3Drawable.UpperAlpha      = 0f;
-                    ApplyV3Height();
-                });
-                var sw = System.Diagnostics.Stopwatch.StartNew();
-                const double fadeDuration = 300.0;
-                while (sw.ElapsedMilliseconds < fadeDuration)
-                {
-                    float alpha = (float)(sw.ElapsedMilliseconds / fadeDuration);
-                    await MainThread.InvokeOnMainThreadAsync(() =>
-                    {
-                        _v3Drawable.UpperAlpha = alpha;
-                        V3StaffGraphicsView.Invalidate();
-                    });
-                    await Task.Delay(16);
-                }
-                await MainThread.InvokeOnMainThreadAsync(() =>
-                {
-                    _v3Drawable.UpperAlpha = 1f;
-                    V3StaffGraphicsView.Invalidate();
-                });
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[V3] RefreshV3UpperStaffAsync ERROR: {ex}");
-            }
-        }
 
-        /// <summary>
-        /// Generates new notes for the lower V3 staff while the player is on the upper staff,
-        /// then fades in the new lower staff content.  Called when play starts on upper staff
-        /// after a lower-staff refresh cycle.
-        /// </summary>
-        private async Task RefreshV3LowerStaffAsync()
-        {
-            if (_v3Drawable == null || _session.Tune == "Practice Tune" || _session.Tune == "Arpeggio" || V3LayoutTestTune.IsEnabled) return;
-            int lowerMc = GetV3StaffMeasureCounts().lower;
-            if (lowerMc <= 0) return;
-            try
-            {
-                int lowerStartPitch = MusicSequenceGenerator.LastPitchedMidi(_v3Drawable?.UpperNotes);
-                var gen      = BuildV3SequenceGenerator(lowerMc, lowerStartPitch);
-                var measures = gen.GenerateSequence();
-                var newNotes = MusicSequenceGenerator.Flatten(measures);
-                var barBeats = ComputeStaffBarBeats(newNotes, gen.TimeSignature.TotalBeats, new HashSet<double>());
-
-                _v3LowerMeasureIndex    += measures.Count;
-                _v3LowerBeatOffset      += measures.Count * (double)gen.TimeSignature.TotalBeats;
-                _v3LowerGlobalNoteIndex += newNotes.Count(n => !n.IsRest);
-
-                await MainThread.InvokeOnMainThreadAsync(() =>
-                {
-                    _v3Drawable.LowerNotes      = newNotes;
-                    _v3Drawable.LowerBarBeats   = barBeats;
-                    _v3Drawable.LowerNoteStates = new V3NoteState[newNotes.Count];
-                    _v3Drawable.LowerAlpha      = 0f;
-                    ApplyV3Height();
-                });
-
-                var sw = System.Diagnostics.Stopwatch.StartNew();
-                const double fadeDuration = 300.0;
-                while (sw.ElapsedMilliseconds < fadeDuration)
-                {
-                    float alpha = (float)(sw.ElapsedMilliseconds / fadeDuration);
-                    await MainThread.InvokeOnMainThreadAsync(() =>
-                    {
-                        _v3Drawable.LowerAlpha = alpha;
-                        V3StaffGraphicsView.Invalidate();
-                    });
-                    await Task.Delay(16);
-                }
-                await MainThread.InvokeOnMainThreadAsync(() =>
-                {
-                    _v3Drawable.LowerAlpha = 1f;
-                    V3StaffGraphicsView.Invalidate();
-                });
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[V3] RefreshV3LowerStaffAsync ERROR: {ex}");
-            }
-        }
 
         private void UpdateStaffHeight()
         {
@@ -1739,10 +1625,10 @@ namespace musicmate.Pages
             }
             catch { /* keep default */ }
 
-            _v3Drawable.AvailableHeight      = availH;
-            var h   = _v3Drawable.ComputeRequiredHeight();
+            _v3Drawable?.AvailableHeight = availH;
+            var h = _v3Drawable?.ComputeRequiredHeight() ?? 0;
             V3StaffGraphicsView.HeightRequest = h;
-            V3StaffBorder.HeightRequest       = h;
+            V3StaffBorder.HeightRequest = h;
             UpdateV3PlayButtonPosition();
         }
 
@@ -2334,7 +2220,7 @@ namespace musicmate.Pages
         {
             if (_session.ChildLevel <= 0)
                 return;
-            if (preserveRepeatSameTune && _repeatSameTune && _savedNotesToRepeat?.Count > 0)
+            if (preserveRepeatSameTune && _session.RepeatSameTune && _savedNotesToRepeat?.Count > 0)
                 return;
 
             DifficultyLevelMapper.PickAndApplyToSession(
@@ -2347,14 +2233,14 @@ namespace musicmate.Pages
 
         private async Task BuildAndPublishSessionEndMarqueeAsync(
             int progressLevel,
-            string shortInstrument,
+            string instrumentKey,
             DateTime countSince)
         {
             if (_sessionResultDb == null)
                 return;
 
             await _sessionResultDb.InitializeAsync();
-            var rows = await _sessionResultDb.GetByLevelAndInstrumentAsync(progressLevel, shortInstrument);
+            var rows = await _sessionResultDb.GetByLevelAndInstrumentAsync(progressLevel, instrumentKey);
             var qualifying = rows
                 .Where(r => r.DateTime >= countSince)
                 .Where(r => r.TotalNotes >= Services.LevelUpService.MinNotesPerSession)
@@ -2395,14 +2281,14 @@ namespace musicmate.Pages
                 return;
 
             _deferNewLevelMarqueeUntilBannerDismissed = false;
-            string instrument = _pendingInstrumentForMarquee
-                ?? _session.InstrumentDisplayName;
+            string instrumentKey = _pendingInstrumentForMarquee
+                ?? _session.InstrumentKey;
             _pendingInstrumentForMarquee = null;
 
-            if (_session.ChildLevel > 0 && !string.IsNullOrEmpty(instrument))
+            if (_session.ChildLevel > 0 && !string.IsNullOrEmpty(instrumentKey))
             {
                 await BuildAndPublishSessionEndMarqueeAsync(
-                    _session.ChildLevel, instrument, Services.LevelUpService.CountSinceUtc);
+                    _session.ChildLevel, instrumentKey, Services.LevelUpService.CountSinceUtc);
             }
             else if (!string.IsNullOrEmpty(_sessionEndMarqueeMessage))
             {
@@ -2482,6 +2368,7 @@ namespace musicmate.Pages
 
             Debug.WriteLine($"[DEBUG] OnAppearing: IsAutoRepeatVisible={IsAutoRepeatVisible}, Tune={_session.Tune}");
             IsAutoRepeatVisible = _session.Tune != "Tuner";
+            UpdateAutoRepeatButtons();
             UpdateTunerVisibility();
             DeviceDisplay.Current.KeepScreenOn = true;
 
@@ -2789,7 +2676,7 @@ namespace musicmate.Pages
                             || detectedNoteInfo.EnharmonicNames.Contains(expectedName)
                             || expectedInfo.EnharmonicNames.Contains(detectedNote);
 
-                        
+
 
                         // Only clear noise-accumulated wrongs when the FIRST correct note
                         // is detected — keeps the "clean start" behaviour without blocking
@@ -2828,7 +2715,7 @@ namespace musicmate.Pages
                     TimingDiagnostics.Flush();
                 });
             }
-        }       
+        }
 
         /// <summary>
         /// Restarts only the audio capture stream without resetting session state,
@@ -2860,9 +2747,9 @@ namespace musicmate.Pages
             }
         }
 
-        
 
-async Task UpdateNoteStatsDatabaseAsync()
+
+        async Task UpdateNoteStatsDatabaseAsync()
         {
             // Respect the user's collection preference
             if (!Preferences.Default.Get("CollectNoteStats", true)) return;
@@ -2941,7 +2828,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                 Debug.WriteLine($"[Stats] UpdateNoteStatsDatabaseAsync error: {ex.Message}");
             }
 
-            }
+        }
         // Replace duplicate method implementations with these single canonical versions.
 
         /// <summary>
@@ -3050,9 +2937,15 @@ async Task UpdateNoteStatsDatabaseAsync()
 
                 PickChildSessionSettingsIfNeeded(preserveRepeatSameTune: !forceNewNotes);
 
+                if (_session.RepeatSameTune && _savedNotesToRepeat == null
+                    && _session.NotesToDraw?.Count > 0)
+                {
+                    _savedNotesToRepeat = new List<NoteInfo>(_session.NotesToDraw);
+                }
+
                 // Handle note generation based on repeat mode
                 if (!forceNewNotes
-                    && _repeatSameTune && _savedNotesToRepeat != null && _savedNotesToRepeat.Count > 0)
+                    && _session.RepeatSameTune && _savedNotesToRepeat != null && _savedNotesToRepeat.Count > 0)
                 {
                     // Filter out notes that are now mastered before restoring
                     var notesToRestore = _savedNotesToRepeat.ToList();
@@ -3129,20 +3022,20 @@ async Task UpdateNoteStatsDatabaseAsync()
                     }
 
                     try { _audio.StopCapture(); } catch { }
-                    var expectedNotes = _session.NotesToDraw
+                    var expectedNotes = _session?.NotesToDraw
                         .Take(5)
                         .Select(n => n.Name)
                         .ToArray();
                     var sessionLog =
-                        $"[Start] Instrument={_session.Instrument}, " +
-                        $"transpose={_session.InstrumentTransposeOffset}, " +
-                        $"Key={_session.Key}, Scale={_session.SelectedScale}, " +
-                        $"Notes=[{string.Join(", ", expectedNotes)}]";
+                        $"[Start] Instrument={_session?.Instrument}, " +
+                        $"transpose={_session?.InstrumentTransposeOffset}, " +
+                        $"Key={_session?.Key}, Scale={_session?.SelectedScale}, " +
+                        $"Notes=[{string.Join(", ", expectedNotes ?? Array.Empty<string>())}]";
                     Debug.WriteLine(sessionLog);
                     Utils.Log(sessionLog);
                     Debug.WriteLine("[Start] Starting audio capture...");
                     _audio.StartCapture(OnAudioBlock);
-                    _session.StartListeningClock();
+                    _session?.StartListeningClock();
                     Debug.WriteLine("[Start] Audio capture started");
                 }
                 else
@@ -3154,7 +3047,7 @@ async Task UpdateNoteStatsDatabaseAsync()
                 {
                     ct.ThrowIfCancellationRequested();
 
-                    if (_session.NotesToDraw.Count == 0)
+                    if (_session?.NotesToDraw.Count == 0)
                     {
                         _isPlaying = false;
                         SetPlayButtonPlaying(false);
@@ -3594,25 +3487,25 @@ async Task UpdateNoteStatsDatabaseAsync()
 
                 var result = new Models.SessionResult
                 {
-                    DateTime               = DateTime.UtcNow,
-                    Instrument             = _session.InstrumentKey,
-                    Level                  = _session.ChildLevel,
-                    TotalNotes             = totalNotes,
-                    CorrectPitchCount      = (int)correctCount,
-                    WrongPitchCount        = (int)wrongCount,
-                    PitchAccuracyPercent   = pitchAccuracyPercent,
+                    DateTime = DateTime.UtcNow,
+                    Instrument = _session.InstrumentKey,
+                    Level = _session.ChildLevel,
+                    TotalNotes = totalNotes,
+                    CorrectPitchCount = (int)correctCount,
+                    WrongPitchCount = (int)wrongCount,
+                    PitchAccuracyPercent = pitchAccuracyPercent,
                     AveragePitchErrorCents = avgCents,
-                    TimingAccuracyPercent  = timingAccuracyPercent,
-                    DetectedBpm            = detectedBpm,
+                    TimingAccuracyPercent = timingAccuracyPercent,
+                    DetectedBpm = detectedBpm,
                     OverallAccuracyPercent = overallAccuracy,
-                    PitchRightCount        = pitchRight,
-                    PitchWrongCount        = pitchWrong,
-                    TimingRightCount       = timingRight,
-                    TimingWrongCount       = timingWrong,
-                    OverallRightCount      = overallRight,
-                    OverallWrongCount      = overallWrong,
-                    RestRightCount         = restRight,
-                    RestWrongCount         = restWrong,
+                    PitchRightCount = pitchRight,
+                    PitchWrongCount = pitchWrong,
+                    TimingRightCount = timingRight,
+                    TimingWrongCount = timingWrong,
+                    OverallRightCount = overallRight,
+                    OverallWrongCount = overallWrong,
+                    RestRightCount = restRight,
+                    RestWrongCount = restWrong,
                 };
 
                 await _sessionResultDb.InsertAsync(result);
@@ -3687,6 +3580,12 @@ async Task UpdateNoteStatsDatabaseAsync()
                 UpdateRepeatButtonsVisibility();
                 if (!_suppressSessionRegenerate)
                     await RegenerateNotesAsync();
+            }
+
+            if (e.PropertyName == nameof(NoteSessionService.AutoRepeat)
+                || e.PropertyName == nameof(NoteSessionService.RepeatSameTune))
+            {
+                UpdateAutoRepeatButtons();
             }
 
             if (e.PropertyName == nameof(NoteSessionService.MusicBpm)
@@ -3801,7 +3700,7 @@ async Task UpdateNoteStatsDatabaseAsync()
             var isTuner = _session.Tune == "Tuner";
 
             // V3-only: hide legacy Classic staff panel; show V3 or tuner UI.
-            StaffBorder.IsVisible   = false;
+            StaffBorder.IsVisible = false;
             V3StaffBorder.IsVisible = !isTuner;
 
             TunerGrid.IsVisible = isTuner;
@@ -4323,7 +4222,7 @@ async Task UpdateNoteStatsDatabaseAsync()
             var sourcePicker = (sender as Picker) ?? ScaleTunePicker;
             var items = sourcePicker.ItemsSource as string[];
             var idx = sourcePicker.SelectedIndex;
-            System.Diagnostics.Debug.WriteLine($"[PickerDBG] sourcePicker={sourcePicker.GetType().Name} idx={idx} items null={items==null} len={items?.Length}");
+            System.Diagnostics.Debug.WriteLine($"[PickerDBG] sourcePicker={sourcePicker.GetType().Name} idx={idx} items null={items == null} len={items?.Length}");
             if (items == null || idx < 0 || idx >= items.Length) return;
             var selected = items[idx];
             System.Diagnostics.Debug.WriteLine($"[PickerDBG] selected='{selected}'");
@@ -4382,7 +4281,7 @@ async Task UpdateNoteStatsDatabaseAsync()
             UpdateKeyPickerVisibility();
             await RegenerateNotesAsync();
         }
-        
+
 
         private async void OnSettingsChanged(object? sender, EventArgs e)
         {
@@ -4481,7 +4380,7 @@ async Task UpdateNoteStatsDatabaseAsync()
 
         private void OnAutoRepeatNewClicked(object? sender, EventArgs e)
         {
-            if (_autoRepeat && !_repeatSameTune)
+            if (_session.AutoRepeat && !_session.RepeatSameTune)
             {
                 // Turn off auto-repeat new
                 AutoRepeat = false;
@@ -4497,7 +4396,7 @@ async Task UpdateNoteStatsDatabaseAsync()
 
         private void OnAutoRepeatSameClicked(object? sender, EventArgs e)
         {
-            if (_autoRepeat && _repeatSameTune)
+            if (_session.AutoRepeat && _session.RepeatSameTune)
             {
                 // Turn off auto-repeat same
                 AutoRepeat = false;

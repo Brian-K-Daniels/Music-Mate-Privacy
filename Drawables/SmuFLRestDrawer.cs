@@ -10,12 +10,12 @@ namespace musicmate.Drawables
     {
         private static string Glyph(NoteDuration duration) => duration switch
         {
-            NoteDuration.Whole      => "\uE4E3",
-            NoteDuration.Half       => "\uE4E4",
-            NoteDuration.Quarter    => "\uE4E5",
-            NoteDuration.Eighth     => "\uE4E6",
-            NoteDuration.Sixteenth  => "\uE4E7",
-            _                       => "\uE4E7"
+            NoteDuration.Whole => "\uE4E3",
+            NoteDuration.Half => "\uE4E4",
+            NoteDuration.Quarter => "\uE4E5",
+            NoteDuration.Eighth => "\uE4E6",
+            NoteDuration.Sixteenth => "\uE4E7",
+            _ => "\uE4E7"
         };
 
         internal static void Draw(
@@ -63,8 +63,8 @@ namespace musicmate.Drawables
             Color color)
         {
             canvas.StrokeColor = color;
-            canvas.FillColor   = color;
-            canvas.StrokeSize  = 1.5f;
+            canvas.FillColor = color;
+            canvas.StrokeSize = 1.5f;
             float r = sls * 0.5f;
 
             switch (duration)
@@ -76,7 +76,7 @@ namespace musicmate.Drawables
                     canvas.FillRectangle(centerX - r * 1.3f, staffMid, r * 2.6f, r * 0.5f);
                     break;
                 case NoteDuration.Quarter:
-                    canvas.DrawLine(centerX,      staffMid - sls * 0.7f, centerX + r * 0.5f, staffMid - sls * 0.4f);
+                    canvas.DrawLine(centerX, staffMid - sls * 0.7f, centerX + r * 0.5f, staffMid - sls * 0.4f);
                     canvas.DrawLine(centerX + r * 0.5f, staffMid - sls * 0.4f, centerX - r * 0.5f, staffMid);
                     canvas.DrawLine(centerX - r * 0.5f, staffMid, centerX + r * 0.5f, staffMid + sls * 0.4f);
                     canvas.DrawLine(centerX + r * 0.5f, staffMid + sls * 0.4f, centerX, staffMid + sls * 0.7f);
@@ -106,37 +106,37 @@ namespace musicmate.Drawables
             out float fontSize)
         {
             width = sls * 4.4f;
-            left  = centerX - width * 0.5f;
+            left = centerX - width * 0.5f;
 
             switch (duration)
             {
                 case NoteDuration.Whole:
-                    height   = sls * 2.4f;
-                    top      = staffTop + 2.6f * sls;
+                    height = sls * 2.4f;
+                    top = staffTop + 2.6f * sls;
                     fontSize = sls * 3.4f;
                     break;
 
                 case NoteDuration.Half:
-                    height   = sls * 2.4f;
-                    top      = staffMid - height * 0.55f;
+                    height = sls * 2.4f;
+                    top = staffMid - height * 0.55f;
                     fontSize = sls * 3.4f;
                     break;
 
                 case NoteDuration.Quarter:
-                    height   = sls * 5f;
-                    top      = staffMid - height * 0.5f;
+                    height = sls * 5f;
+                    top = staffMid - height * 0.5f;
                     fontSize = sls * 4.4f;
                     break;
 
                 case NoteDuration.Eighth:
-                    height   = sls * 4.6f;
-                    top      = staffMid - height * 0.52f;
+                    height = sls * 4.6f;
+                    top = staffMid - height * 0.52f;
                     fontSize = sls * 4.1f;
                     break;
 
                 default:
-                    height   = sls * 4.6f;
-                    top      = staffMid - height * 0.5f;
+                    height = sls * 4.6f;
+                    top = staffMid - height * 0.5f;
                     fontSize = sls * 4.1f;
                     break;
             }

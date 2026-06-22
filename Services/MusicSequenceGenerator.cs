@@ -240,9 +240,9 @@ namespace musicmate.Services
                 if (UseScaleOrder && (scaleQueue == null || scaleQueue.Count == 0))
                     break;
 
-                var measure        = new Measure(TimeSignature);
+                var measure = new Measure(TimeSignature);
                 double localCursor = 0.0;
-                int absoluteMi     = StartMeasureIndex + mi;
+                int absoluteMi = StartMeasureIndex + mi;
 
                 while (measure.BeatsRemaining > 1e-9)
                 {
@@ -505,7 +505,7 @@ namespace musicmate.Services
             return role switch
             {
                 PhraseRole.B => motifB[measureInPhrase],
-                _            => motifA[measureInPhrase],
+                _ => motifA[measureInPhrase],
             };
         }
 
@@ -564,7 +564,7 @@ namespace musicmate.Services
         {
             double oldBeats = measure[slotIdx].Duration.ToBeatValue();
             double newBeats = replacement.ToBeatValue();
-            double delta    = newBeats - oldBeats;
+            double delta = newBeats - oldBeats;
             if (measure.Sum(s => s.Duration.ToBeatValue()) + delta > measureBeats + 1e-9)
                 return false;
 
@@ -678,11 +678,15 @@ namespace musicmate.Services
                     octaveEnd--;
 
                 // If both searches landed on the same tonic the user's range holds less than
-                // one complete octave.  Step the lower bound back one octave so we always
-                // display a full tonic-to-tonic span (e.g. Bb3→Bb4 when LowestNote=C4,
-                // or G3→G4 when LowestNote=A3).
+                // one complete octave. Extend upward first (C4→C5) so beginner scales stay
+                // in the middle register; only step down when the upper octave does not fit.
                 if (octaveStart == octaveEnd)
-                    octaveStart -= 12;
+                {
+                    if (octaveEnd + 12 <= maxMidi)
+                        octaveEnd += 12;
+                    else if (octaveStart - 12 >= minMidi)
+                        octaveStart -= 12;
+                }
 
                 // Use the tonic-bounded range only when at least one complete octave fits.
                 if (octaveStart < octaveEnd)
@@ -736,7 +740,7 @@ namespace musicmate.Services
 
             if (ExcludedMidiNumbers.Count == 0)
             {
-                System.Diagnostics.Debug.WriteLine($"[V3Pool] AccPct={AccidentalPercent} diatonic={fullPool.Count(m => { int p=((m%12)+12)%12; return scalePcs.Contains(p); })} chromatic={fullPool.Count(m => { int p=((m%12)+12)%12; return !scalePcs.Contains(p); })} total={fullPool.Count}");
+                System.Diagnostics.Debug.WriteLine($"[V3Pool] AccPct={AccidentalPercent} diatonic={fullPool.Count(m => { int p = ((m % 12) + 12) % 12; return scalePcs.Contains(p); })} chromatic={fullPool.Count(m => { int p = ((m % 12) + 12) % 12; return !scalePcs.Contains(p); })} total={fullPool.Count}");
                 return fullPool;
             }
 
@@ -764,14 +768,14 @@ namespace musicmate.Services
                 // Only include durations that are >= SmallestDuration (beat-value check).
                 double smallestBeats = SmallestDuration.ToBeatValue();
 
-                int halfW      = RhythmVarietyPercent / 2;          // max 50
-                int eighthW    = RhythmVarietyPercent * 3 / 10;     // max 30
+                int halfW = RhythmVarietyPercent / 2;          // max 50
+                int eighthW = RhythmVarietyPercent * 3 / 10;     // max 30
                 int sixteenthW = RhythmVarietyPercent / 5;          // max 20
 
-                if (halfW   > 0 && NoteDuration.Half.ToBeatValue()      >= smallestBeats)
-                    weights[NoteDuration.Half]      = halfW;
-                if (eighthW > 0 && NoteDuration.Eighth.ToBeatValue()    >= smallestBeats)
-                    weights[NoteDuration.Eighth]    = eighthW;
+                if (halfW > 0 && NoteDuration.Half.ToBeatValue() >= smallestBeats)
+                    weights[NoteDuration.Half] = halfW;
+                if (eighthW > 0 && NoteDuration.Eighth.ToBeatValue() >= smallestBeats)
+                    weights[NoteDuration.Eighth] = eighthW;
                 if (sixteenthW > 0 && NoteDuration.Sixteenth.ToBeatValue() >= smallestBeats)
                     weights[NoteDuration.Sixteenth] = sixteenthW;
             }
@@ -808,8 +812,8 @@ namespace musicmate.Services
             }
 
             int total = fitting.Sum(kv => kv.Value);
-            int pick  = rng.Next(total);
-            int acc   = 0;
+            int pick = rng.Next(total);
+            int acc = 0;
             foreach (var (dur, w) in fitting)
             {
                 acc += w;
@@ -930,14 +934,14 @@ namespace musicmate.Services
         /// </summary>
         private List<(bool IsRest, NoteDuration Duration)[]> BuildSyncopationMotifs()
         {
-            bool allowEighth    = SmallestDuration.ToBeatValue() <= NoteDuration.Eighth.ToBeatValue();
+            bool allowEighth = SmallestDuration.ToBeatValue() <= NoteDuration.Eighth.ToBeatValue();
             bool allowSixteenth = SmallestDuration.ToBeatValue() <= NoteDuration.Sixteenth.ToBeatValue();
             if (!allowEighth)
                 return new List<(bool, NoteDuration)[]>();
 
             var motifs = new List<(bool IsRest, NoteDuration Duration)[]>();
-            var eighth    = NoteDuration.Eighth;
-            var quarter   = NoteDuration.Quarter;
+            var eighth = NoteDuration.Eighth;
+            var quarter = NoteDuration.Quarter;
             var sixteenth = NoteDuration.Sixteenth;
 
             if (SyncopationLevel == SyncopationLevel.Simple)
@@ -1035,15 +1039,15 @@ namespace musicmate.Services
                 // Scale degrees (diatonic steps) get extra boost.
                 int baseWeight = semitones switch
                 {
-                    1 or 2  => 100,  // half-step or whole-step: very common
-                    3 or 4  => 50,   // minor/major third: common skip      (was 60)
-                    5       => 25,   // perfect fourth: occasional skip     (was 40)
-                    7       => 12,   // perfect fifth: rare leap            (was 35)
-                    6       => 8,    // tritone: very rare                  (was 20)
-                    8 or 9  => 4,    // minor/major sixth: very rare leap   (was 15)
+                    1 or 2 => 100,  // half-step or whole-step: very common
+                    3 or 4 => 50,   // minor/major third: common skip      (was 60)
+                    5 => 25,   // perfect fourth: occasional skip     (was 40)
+                    7 => 12,   // perfect fifth: rare leap            (was 35)
+                    6 => 8,    // tritone: very rare                  (was 20)
+                    8 or 9 => 4,    // minor/major sixth: very rare leap   (was 15)
                     10 or 11 => 2,   // minor/major seventh: almost never   (was 8)
-                    12      => 1,    // octave: almost never                (was 5)
-                    _       => 1
+                    12 => 1,    // octave: almost never                (was 5)
+                    _ => 1
                 };
 
                 // ── Scale-degree boost ────────────────────────────────────────────
@@ -1135,11 +1139,11 @@ namespace musicmate.Services
             {
                 spelledName = NoteSessionService.MidiToNoteName(midi, preferFlats);
             }
-            double freq        = MidiToFreq(midi);
+            double freq = MidiToFreq(midi);
 
             // Parse letter, accidental, octave from the spelled name.
             char letter = char.ToUpperInvariant(spelledName[0]);
-            int  octave = int.TryParse(spelledName[^1].ToString(), out var o) ? o : 4;
+            int octave = int.TryParse(spelledName[^1].ToString(), out var o) ? o : 4;
 
             var (accidental, finalSpelledName) = NoteSessionService.ResolveAccidentalAndSpelling(
                 spelledName, midi, letter, octave, Key, Scale);
@@ -1147,16 +1151,16 @@ namespace musicmate.Services
 
             return new GeneratedNote
             {
-                MidiNumber       = midi,
-                Letter           = letter,
-                Octave           = octave,
-                Accidental       = accidental,
-                SpelledName      = spelledName,
-                TargetFrequency  = freq,
-                Duration         = dur,
-                IsRest           = false,
-                MeasureIndex     = measureIndex,
-                BeatPosition     = beatPos,
+                MidiNumber = midi,
+                Letter = letter,
+                Octave = octave,
+                Accidental = accidental,
+                SpelledName = spelledName,
+                TargetFrequency = freq,
+                Duration = dur,
+                IsRest = false,
+                MeasureIndex = measureIndex,
+                BeatPosition = beatPos,
                 IsPlayedCorrectly = false
             };
         }
@@ -1172,29 +1176,29 @@ namespace musicmate.Services
             // Semitone intervals from tonic for common scales.
             int[] intervals = scale switch
             {
-                "Major" or "Ionian"       => new[] { 0, 2, 4, 5, 7, 9, 11 },
+                "Major" or "Ionian" => new[] { 0, 2, 4, 5, 7, 9, 11 },
                 "Natural Minor" or
-                "Aeolian"                 => new[] { 0, 2, 3, 5, 7, 8, 10 },
-                "Harmonic Minor"          => new[] { 0, 2, 3, 5, 7, 8, 11 },
+                "Aeolian" => new[] { 0, 2, 3, 5, 7, 8, 10 },
+                "Harmonic Minor" => new[] { 0, 2, 3, 5, 7, 8, 11 },
                 "Melodic Minor" or
-                "Jazz Melodic Minor"      => new[] { 0, 2, 3, 5, 7, 9, 11 },
-                "Dorian"                  => new[] { 0, 2, 3, 5, 7, 9, 10 },
-                "Phrygian"                => new[] { 0, 1, 3, 5, 7, 8, 10 },
-                "Lydian"                  => new[] { 0, 2, 4, 6, 7, 9, 11 },
-                "Mixolydian"              => new[] { 0, 2, 4, 5, 7, 9, 10 },
-                "Locrian"                 => new[] { 0, 1, 3, 5, 6, 8, 10 },
-                "Major Pentatonic"        => new[] { 0, 2, 4, 7, 9 },
-                "Minor Pentatonic"        => new[] { 0, 3, 5, 7, 10 },
-                "Blues" or "Minor Blues"  => new[] { 0, 3, 5, 6, 7, 10 },
-                "Major Blues"             => new[] { 0, 2, 3, 4, 7, 9 },
-                "Chromatic"               => new[] { 0,1,2,3,4,5,6,7,8,9,10,11 },
-                "Lydian Dominant"         => new[] { 0, 2, 4, 6, 7, 9, 10 },
-                "Harmonic Major"          => new[] { 0, 2, 4, 5, 7, 8, 11 },
-                "Phrygian Dominant"       => new[] { 0, 1, 4, 5, 7, 8, 10 },
-                "Hungarian Minor"         => new[] { 0, 2, 3, 6, 7, 8, 11 },
-                "Double Harmonic"         => new[] { 0, 1, 4, 5, 7, 8, 11 },
-                "Bebop"                   => new[] { 0, 2, 4, 5, 7, 9, 10, 11 },
-                _                         => new[] { 0, 2, 4, 5, 7, 9, 11 }  // default to Major
+                "Jazz Melodic Minor" => new[] { 0, 2, 3, 5, 7, 9, 11 },
+                "Dorian" => new[] { 0, 2, 3, 5, 7, 9, 10 },
+                "Phrygian" => new[] { 0, 1, 3, 5, 7, 8, 10 },
+                "Lydian" => new[] { 0, 2, 4, 6, 7, 9, 11 },
+                "Mixolydian" => new[] { 0, 2, 4, 5, 7, 9, 10 },
+                "Locrian" => new[] { 0, 1, 3, 5, 6, 8, 10 },
+                "Major Pentatonic" => new[] { 0, 2, 4, 7, 9 },
+                "Minor Pentatonic" => new[] { 0, 3, 5, 7, 10 },
+                "Blues" or "Minor Blues" => new[] { 0, 3, 5, 6, 7, 10 },
+                "Major Blues" => new[] { 0, 2, 3, 4, 7, 9 },
+                "Chromatic" => new[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 },
+                "Lydian Dominant" => new[] { 0, 2, 4, 6, 7, 9, 10 },
+                "Harmonic Major" => new[] { 0, 2, 4, 5, 7, 8, 11 },
+                "Phrygian Dominant" => new[] { 0, 1, 4, 5, 7, 8, 10 },
+                "Hungarian Minor" => new[] { 0, 2, 3, 6, 7, 8, 11 },
+                "Double Harmonic" => new[] { 0, 1, 4, 5, 7, 8, 11 },
+                "Bebop" => new[] { 0, 2, 4, 5, 7, 9, 10, 11 },
+                _ => new[] { 0, 2, 4, 5, 7, 9, 11 }  // default to Major
             };
 
             int tonicPc = ((NoteSessionService.NoteNameToMidi($"{key}4") % 12) + 12) % 12;
@@ -1214,19 +1218,19 @@ namespace musicmate.Services
         /// </summary>
         private static int[]? GetScaleDegreeIntervals(string scale) => scale switch
         {
-            "Major" or "Ionian"                               => new[] { 0, 2, 4, 5, 7, 9, 11 },
-            "Natural Minor" or "Aeolian"                      => new[] { 0, 2, 3, 5, 7, 8, 10 },
-            "Harmonic Minor"                                  => new[] { 0, 2, 3, 5, 7, 8, 11 },
-            "Melodic Minor" or "Jazz Melodic Minor"           => new[] { 0, 2, 3, 5, 7, 9, 11 },
-            "Dorian"                                          => new[] { 0, 2, 3, 5, 7, 9, 10 },
-            "Phrygian"                                        => new[] { 0, 1, 3, 5, 7, 8, 10 },
-            "Lydian"                                          => new[] { 0, 2, 4, 6, 7, 9, 11 },
-            "Mixolydian"                                      => new[] { 0, 2, 4, 5, 7, 9, 10 },
-            "Locrian"                                         => new[] { 0, 1, 3, 5, 6, 8, 10 },
-            "Harmonic Major"                                  => new[] { 0, 2, 4, 5, 7, 8, 11 },
-            "Phrygian Dominant"                               => new[] { 0, 1, 4, 5, 7, 8, 10 },
-            "Double Harmonic"                                 => new[] { 0, 1, 4, 5, 7, 8, 11 },
-            _                                                 => null
+            "Major" or "Ionian" => new[] { 0, 2, 4, 5, 7, 9, 11 },
+            "Natural Minor" or "Aeolian" => new[] { 0, 2, 3, 5, 7, 8, 10 },
+            "Harmonic Minor" => new[] { 0, 2, 3, 5, 7, 8, 11 },
+            "Melodic Minor" or "Jazz Melodic Minor" => new[] { 0, 2, 3, 5, 7, 9, 11 },
+            "Dorian" => new[] { 0, 2, 3, 5, 7, 9, 10 },
+            "Phrygian" => new[] { 0, 1, 3, 5, 7, 8, 10 },
+            "Lydian" => new[] { 0, 2, 4, 6, 7, 9, 11 },
+            "Mixolydian" => new[] { 0, 2, 4, 5, 7, 9, 10 },
+            "Locrian" => new[] { 0, 1, 3, 5, 6, 8, 10 },
+            "Harmonic Major" => new[] { 0, 2, 4, 5, 7, 8, 11 },
+            "Phrygian Dominant" => new[] { 0, 1, 4, 5, 7, 8, 10 },
+            "Double Harmonic" => new[] { 0, 1, 4, 5, 7, 8, 11 },
+            _ => null
         };
 
         /// <summary>Circle-of-fifths accidental count — mirrors the drawable's logic.</summary>

@@ -24,58 +24,58 @@ public class PremiumPopup : Popup
         _onDecline = onDecline;
         CanBeDismissedByTappingOutsideOfPopup = false;
 
-        var info       = DeviceDisplay.Current.MainDisplayInfo;
+        var info = DeviceDisplay.Current.MainDisplayInfo;
         double density = info.Density > 0 ? info.Density : 1;
         double screenW = info.Width / density;
-        double popupW  = Math.Min(screenW * 0.82, 480);
+        double popupW = Math.Min(screenW * 0.82, 480);
         const double popupH = 280;   // raised to give button rows room for descenders
 
         var titleLabel = new Label
         {
-            Text              = "⭐ Premium Feature",
-            FontAttributes    = FontAttributes.Bold,
-            FontSize          = 14,
-            TextColor         = Colors.White,
+            Text = "⭐ Premium Feature",
+            FontAttributes = FontAttributes.Bold,
+            FontSize = 14,
+            TextColor = Colors.White,
             HorizontalOptions = LayoutOptions.Center,
-            VerticalOptions   = LayoutOptions.Center
+            VerticalOptions = LayoutOptions.Center
         };
 
         var subtitleLabel = new Label
         {
-            Text                    = "Premium users only",
-            FontSize                = 12,
-            TextColor               = Color.FromArgb("#CCCCCC"),
-            HorizontalOptions       = LayoutOptions.Center,
+            Text = "Premium users only",
+            FontSize = 12,
+            TextColor = Color.FromArgb("#CCCCCC"),
+            HorizontalOptions = LayoutOptions.Center,
             HorizontalTextAlignment = TextAlignment.Center,
-            VerticalOptions         = LayoutOptions.Center
+            VerticalOptions = LayoutOptions.Center
         };
 
         var buyButton = new Button
         {
-            Text              = "Buy Premium",
-            BackgroundColor   = Color.FromArgb("#8B4513"),
-            TextColor         = Colors.White,
-            CornerRadius      = 6,
-            FontAttributes    = FontAttributes.Bold,
-            FontSize          = 13,
-            Padding           = new Thickness(10, 10),  // vertical padding keeps descenders clear
+            Text = "Buy Premium",
+            BackgroundColor = Color.FromArgb("#8B4513"),
+            TextColor = Colors.White,
+            CornerRadius = 6,
+            FontAttributes = FontAttributes.Bold,
+            FontSize = 13,
+            Padding = new Thickness(10, 10),  // vertical padding keeps descenders clear
             HorizontalOptions = LayoutOptions.Fill,
-            VerticalOptions   = LayoutOptions.Fill
+            VerticalOptions = LayoutOptions.Fill
         };
         buyButton.Clicked += OnBuyPremiumClicked;
 
         var declineButton = new Button
         {
-            Text              = "No thanks, continue free",
-            BackgroundColor   = Color.FromArgb("#01000000"),
-            TextColor         = Color.FromArgb("#AAAAAA"),
-            BorderColor       = Color.FromArgb("#888888"),
-            BorderWidth       = 1,
-            CornerRadius      = 6,
-            FontSize          = 12,
-            Padding           = new Thickness(10, 10),  // vertical padding keeps descenders clear
+            Text = "No thanks, continue free",
+            BackgroundColor = Color.FromArgb("#01000000"),
+            TextColor = Color.FromArgb("#AAAAAA"),
+            BorderColor = Color.FromArgb("#888888"),
+            BorderWidth = 1,
+            CornerRadius = 6,
+            FontSize = 12,
+            Padding = new Thickness(10, 10),  // vertical padding keeps descenders clear
             HorizontalOptions = LayoutOptions.Fill,
-            VerticalOptions   = LayoutOptions.Fill
+            VerticalOptions = LayoutOptions.Fill
         };
         declineButton.Clicked += OnDeclineClicked;
 
@@ -100,9 +100,9 @@ public class PremiumPopup : Popup
             }
         };
 
-        grid.Add(titleLabel,    column: 0, row: 1);
+        grid.Add(titleLabel, column: 0, row: 1);
         grid.Add(subtitleLabel, column: 0, row: 3);
-        grid.Add(buyButton,     column: 0, row: 5);
+        grid.Add(buyButton, column: 0, row: 5);
         grid.Add(declineButton, column: 0, row: 7);
 
 #if DEBUG
@@ -110,16 +110,16 @@ public class PremiumPopup : Popup
         // can test the flow repeatedly without uninstalling.
         var restoreButton = new Button
         {
-            Text              = "🔄 Restore Purchases (debug)",
-            BackgroundColor   = Color.FromArgb("#01000000"),
-            TextColor         = Color.FromArgb("#888888"),
-            BorderColor       = Color.FromArgb("#555555"),
-            BorderWidth       = 1,
-            CornerRadius      = 6,
-            FontSize          = 11,
-            Padding           = new Thickness(10, 6),
+            Text = "🔄 Restore Purchases (debug)",
+            BackgroundColor = Color.FromArgb("#01000000"),
+            TextColor = Color.FromArgb("#888888"),
+            BorderColor = Color.FromArgb("#555555"),
+            BorderWidth = 1,
+            CornerRadius = 6,
+            FontSize = 11,
+            Padding = new Thickness(10, 6),
             HorizontalOptions = LayoutOptions.Fill,
-            VerticalOptions   = LayoutOptions.Fill
+            VerticalOptions = LayoutOptions.Fill
         };
         restoreButton.Clicked += OnRestoreClicked;
         grid.Add(restoreButton, column: 0, row: 9);
@@ -130,17 +130,17 @@ public class PremiumPopup : Popup
         Content = new Border
         {
             BackgroundColor = Color.FromArgb("#1E1E1E"),
-            Stroke          = Color.FromArgb("#8B4513"),
+            Stroke = Color.FromArgb("#8B4513"),
             StrokeThickness = 2,
-            StrokeShape     = new RoundRectangle { CornerRadius = new CornerRadius(10) },
-            Padding         = new Thickness(20, 14),
-            WidthRequest    = popupW,
+            StrokeShape = new RoundRectangle { CornerRadius = new CornerRadius(10) },
+            Padding = new Thickness(20, 14),
+            WidthRequest = popupW,
 #if DEBUG
-            HeightRequest   = debugPopupH,
+            HeightRequest = debugPopupH,
 #else
             HeightRequest   = popupH,
 #endif
-            Content         = grid
+            Content = grid
         };
     }
 

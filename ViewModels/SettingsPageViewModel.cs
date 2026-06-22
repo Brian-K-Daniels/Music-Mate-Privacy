@@ -25,20 +25,20 @@ namespace musicmate.ViewModels
                 return "C";
             }
         }
-        public const string DefaultKey               = "C";
-        public const string DefaultTune             = "Major";
-        public const string DefaultLowestNote       = "C4";
-        public const string DefaultHighestNote      = "F5";
-        public const int    DefaultPlaybackBpm      = NoteSessionService.DefaultPlaybackBpm;
-        public const int    DefaultMusicBpm         = NoteSessionService.DefaultMusicBpm;
-        public const int    DefaultAccidentalPct    = 30;
-        public const int    DefaultCorrectThreshold = 95;
-        public const int    DefaultMinCorrectCount  = 6;
-        public const int    DefaultOmitMsAvg        = 400;
-        public const bool   DefaultAutoStart        = false;
-        public const bool   DefaultCollectNote      = true;
-        public const bool   DefaultCollectSession   = true;
-        public const int    DefaultMaxSessionDbMb   = 50;
+        public const string DefaultKey = "C";
+        public const string DefaultTune = "Major";
+        public const string DefaultLowestNote = "C4";
+        public const string DefaultHighestNote = "F5";
+        public const int DefaultPlaybackBpm = NoteSessionService.DefaultPlaybackBpm;
+        public const int DefaultMusicBpm = NoteSessionService.DefaultMusicBpm;
+        public const int DefaultAccidentalPct = 30;
+        public const int DefaultCorrectThreshold = 95;
+        public const int DefaultMinCorrectCount = 6;
+        public const int DefaultOmitMsAvg = 400;
+        public const bool DefaultAutoStart = false;
+        public const bool DefaultCollectNote = true;
+        public const bool DefaultCollectSession = true;
+        public const int DefaultMaxSessionDbMb = 50;
 
         private Color _panelBackgroundColor = Color.FromArgb(Preferences.Get("musicmate.PanelBackgroundColor", Colors.White.ToHex()));
         private readonly NoteSessionService? _session;
@@ -189,7 +189,7 @@ namespace musicmate.ViewModels
             get => _session?.SelectedScale ?? _selectedScale;
             set
             {
-                if (( _session?.SelectedScale ?? _selectedScale) == value || string.IsNullOrWhiteSpace(value)) return;
+                if ((_session?.SelectedScale ?? _selectedScale) == value || string.IsNullOrWhiteSpace(value)) return;
                 if (_session != null)
                 {
                     _session.SelectedScale = value;
@@ -490,9 +490,9 @@ namespace musicmate.ViewModels
         }
 
         public List<string> V3TimeSignatureOptions { get; } = new() { "4/4", "3/4", "2/4" };
-        public List<string> V3SmallestNoteOptions  { get; } = new() { "Quarter", "Eighth", "Sixteenth" };
-        public List<string> V3RhythmModeOptions    { get; } = new() { "Simple", "Mixed" };
-        public List<string> V3SyncopationOptions   { get; } = new() { "None", "Simple", "Full" };
+        public List<string> V3SmallestNoteOptions { get; } = new() { "Quarter", "Eighth", "Sixteenth" };
+        public List<string> V3RhythmModeOptions { get; } = new() { "Simple", "Mixed" };
+        public List<string> V3SyncopationOptions { get; } = new() { "None", "Simple", "Full" };
         public List<string> V3NoteNameDisplayOptions { get; } = new() { "Current only", "All notes", "Off" };
 
         private string _v3TimeSignature = Preferences.Get("musicmate.V3TimeSignature", "4/4");
@@ -606,7 +606,7 @@ namespace musicmate.ViewModels
         }
 
         // ── Statistics Collection ─────────────────────────────────────────────
-        const string KeyCollectNote    = "CollectNoteStats";
+        const string KeyCollectNote = "CollectNoteStats";
         const string KeyCollectSession = "CollectSessionStats";
         const string KeyMaxSessionDbMb = "MaxSessionDbSizeMb";
 
@@ -727,18 +727,18 @@ namespace musicmate.ViewModels
         /// <summary>Resets all settings to their factory defaults.</summary>
         public void ResetToDefaults()
         {
-            PlaybackBpm         = DefaultPlaybackBpm;
-            MusicBpm            = DefaultMusicBpm;
-            AccidentalPercent   = DefaultAccidentalPct;
-            CorrectThreshold    = DefaultCorrectThreshold;
-            MinCorrectCount     = DefaultMinCorrectCount;
-            OmitMsAvgThreshold  = DefaultOmitMsAvg;
-            AutoStart           = DefaultAutoStart;
-            MasteredMethod      = "% Correct";
-            StreakCrit          = 3;
-            CollectNoteStats    = DefaultCollectNote;
+            PlaybackBpm = DefaultPlaybackBpm;
+            MusicBpm = DefaultMusicBpm;
+            AccidentalPercent = DefaultAccidentalPct;
+            CorrectThreshold = DefaultCorrectThreshold;
+            MinCorrectCount = DefaultMinCorrectCount;
+            OmitMsAvgThreshold = DefaultOmitMsAvg;
+            AutoStart = DefaultAutoStart;
+            MasteredMethod = "% Correct";
+            StreakCrit = 3;
+            CollectNoteStats = DefaultCollectNote;
             CollectSessionStats = DefaultCollectSession;
-            MaxSessionDbSizeMb  = DefaultMaxSessionDbMb;
+            MaxSessionDbSizeMb = DefaultMaxSessionDbMb;
             // Musical defaults: reset scale/tune, instrument and key via session
             SelectedScale = DefaultTune;
             if (_session != null)
@@ -769,7 +769,7 @@ namespace musicmate.ViewModels
         private static string MidiToNoteName(int midi, bool preferSharps)
         {
             string[] namesSharps = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-            string[] namesFlats  = { "C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B" };
+            string[] namesFlats = { "C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B" };
             int octave = (midi / 12) - 1;
             int pc = midi % 12;
             string name = preferSharps ? namesSharps[pc] : namesFlats[pc];

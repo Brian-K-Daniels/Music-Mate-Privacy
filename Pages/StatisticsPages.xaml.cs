@@ -209,7 +209,7 @@ namespace musicmate.Pages
 
         private async void OnNavigatePracticeClicked(object sender, EventArgs e)
         {
-            await Shell.Current.GoToAsync("//MainPage");
+            await Shell.Current.GoToAsync("//MusicPage");
         }
     }
 }

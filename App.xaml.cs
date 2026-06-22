@@ -20,43 +20,43 @@ namespace musicmate
 
             // Initialize premium status at app startup
             InitializePremiumStatus();
-        // Deploy saved panel background color early so pages bind to ThemeService with the right color
-        DeploySavedPanelBackground();
+            // Deploy saved panel background color early so pages bind to ThemeService with the right color
+            DeploySavedPanelBackground();
         }
 
-    private void DeploySavedPanelBackground()
-    {
-        try
+        private void DeploySavedPanelBackground()
         {
-            var theme = Services.ServiceHelper.GetService<Services.ThemeService>();
-            if (theme == null)
-                return;
-
-            var savedColorHex = Microsoft.Maui.Storage.Preferences.Default.Get<string?>("StaffPanelColor", null);
-            if (!string.IsNullOrEmpty(savedColorHex))
-            {
-                var savedColor = Microsoft.Maui.Graphics.Color.FromArgb(savedColorHex);
-                theme.PanelBackgroundColor = savedColor;
-                return;
-            }
-
-            // No saved color: instantiate a ColorPickerDialog to get its defaults (non-visual use)
             try
             {
-                var dialog = new musicmate.Controls.ColorPickerDialog();
-                dialog.ResetToDefaults();
-                var preview = dialog.PreviewColor;
-                theme.PanelBackgroundColor = preview;
-                Microsoft.Maui.Storage.Preferences.Default.Set("StaffPanelColor", preview.ToHex());
+                var theme = Services.ServiceHelper.GetService<Services.ThemeService>();
+                if (theme == null)
+                    return;
+
+                var savedColorHex = Microsoft.Maui.Storage.Preferences.Default.Get<string?>("StaffPanelColor", null);
+                if (!string.IsNullOrEmpty(savedColorHex))
+                {
+                    var savedColor = Microsoft.Maui.Graphics.Color.FromArgb(savedColorHex);
+                    theme.PanelBackgroundColor = savedColor;
+                    return;
+                }
+
+                // No saved color: instantiate a ColorPickerDialog to get its defaults (non-visual use)
+                try
+                {
+                    var dialog = new musicmate.Controls.ColorPickerDialog();
+                    dialog.ResetToDefaults();
+                    var preview = dialog.PreviewColor;
+                    theme.PanelBackgroundColor = preview;
+                    Microsoft.Maui.Storage.Preferences.Default.Set("StaffPanelColor", preview.ToHex());
+                }
+                catch
+                {
+                    // Fallback to white if any error occurs
+                    theme.PanelBackgroundColor = Microsoft.Maui.Graphics.Colors.White;
+                }
             }
-            catch
-            {
-                // Fallback to white if any error occurs
-                theme.PanelBackgroundColor = Microsoft.Maui.Graphics.Colors.White;
-            }
+            catch { }
         }
-        catch { }
-    }
 
         private async void InitializePremiumStatus()
         {

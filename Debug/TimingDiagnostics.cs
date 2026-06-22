@@ -73,27 +73,27 @@ public static class TimingDiagnostics
             switch (entry.Kind)
             {
                 case PendingKind.TimingWrong:
-                {
-                    var p = entry.TimingWrong;
-                    Debug.WriteLine(
-                        $"[TimingWrong] expected={p.ExpectedName} duration={p.DurationName} " +
-                        $"expectedBeat={p.ExpectedBeat:F2} expectedMs={p.ExpectedMs:F0} " +
-                        $"actual={p.ActualName} actualMs={p.ActualMs:F0} " +
-                        $"errorMs={p.ErrorMs:F0} toleranceMs={p.ToleranceMs:F0} " +
-                        $"pitchCorrect={p.PitchCorrect} timingCorrect={p.TimingCorrect} " +
-                        $"overallCorrect={p.OverallCorrect} reason={p.Reason}");
-                    break;
-                }
+                    {
+                        var p = entry.TimingWrong;
+                        Debug.WriteLine(
+                            $"[TimingWrong] expected={p.ExpectedName} duration={p.DurationName} " +
+                            $"expectedBeat={p.ExpectedBeat:F2} expectedMs={p.ExpectedMs:F0} " +
+                            $"actual={p.ActualName} actualMs={p.ActualMs:F0} " +
+                            $"errorMs={p.ErrorMs:F0} toleranceMs={p.ToleranceMs:F0} " +
+                            $"pitchCorrect={p.PitchCorrect} timingCorrect={p.TimingCorrect} " +
+                            $"overallCorrect={p.OverallCorrect} reason={p.Reason}");
+                        break;
+                    }
                 case PendingKind.RestTimingWrong:
-                {
-                    var p = entry.RestTimingWrong;
-                    Debug.WriteLine(
-                        $"[RestTimingWrong] expected=REST duration={p.RestDurationName} " +
-                        $"expectedBeat={p.RestStartBeat:F2} expectedMs={p.RestStartMs:F0} " +
-                        $"actual={p.ActualName} actualMs={p.ActualMs:F0} " +
-                        $"reason={p.Reason}");
-                    break;
-                }
+                    {
+                        var p = entry.RestTimingWrong;
+                        Debug.WriteLine(
+                            $"[RestTimingWrong] expected=REST duration={p.RestDurationName} " +
+                            $"expectedBeat={p.RestStartBeat:F2} expectedMs={p.RestStartMs:F0} " +
+                            $"actual={p.ActualName} actualMs={p.ActualMs:F0} " +
+                            $"reason={p.Reason}");
+                        break;
+                    }
             }
         }
     }

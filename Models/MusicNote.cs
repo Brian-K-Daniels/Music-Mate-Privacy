@@ -24,10 +24,10 @@ namespace musicmate.Models
             if (!isRest && string.IsNullOrWhiteSpace(spelledName))
                 throw new ArgumentException("SpelledName must not be empty.", nameof(spelledName));
 
-            MidiNumber  = midiNumber;
+            MidiNumber = midiNumber;
             SpelledName = spelledName;
-            Duration    = duration;
-            IsRest      = isRest;
+            Duration = duration;
+            IsRest = isRest;
         }
 
         /// <summary>When true this note slot is a rest — no pitch, just duration.</summary>

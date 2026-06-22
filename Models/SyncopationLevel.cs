@@ -20,15 +20,15 @@ namespace musicmate.Models
         public static SyncopationLevel Parse(string? value) => value switch
         {
             "Simple" => SyncopationLevel.Simple,
-            "Full"   => SyncopationLevel.Full,
-            _        => SyncopationLevel.None
+            "Full" => SyncopationLevel.Full,
+            _ => SyncopationLevel.None
         };
 
         public static string ToDisplayString(SyncopationLevel level) => level switch
         {
             SyncopationLevel.Simple => "Simple",
-            SyncopationLevel.Full   => "Full",
-            _                       => "None"
+            SyncopationLevel.Full => "Full",
+            _ => "None"
         };
     }
 }

@@ -30,7 +30,7 @@ namespace musicmate.Models
             if (string.IsNullOrWhiteSpace(title))
                 throw new ArgumentException("Title must not be empty.", nameof(title));
 
-            Title         = title;
+            Title = title;
             TimeSignature = timeSignature ?? TimeSignature.FourFour;
         }
 

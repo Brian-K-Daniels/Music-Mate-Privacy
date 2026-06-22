@@ -4,19 +4,19 @@ using musicmate.Utilities;
 namespace musicmate.Pages
 {
     /// <summary>
-    /// Simple child-friendly Practice page.  Shows an instrument picker, a level
+    /// Simple child-friendly Home page.  Shows an instrument picker, a level
     /// control (1 to 100, default 1), and a Start button.
     ///
     /// Instrument is persisted via NoteSessionService.Instrument (which writes
     /// Preferences automatically).  Level is persisted under "ChildPractice.Level".
     ///
     /// FUTURE: When DifficultyLevelMapper is implemented, call it from
-    /// OnStartClicked before navigating to MainPage:
+    /// OnStartClicked before navigating to MusicPage:
     ///     var p = DifficultyLevelMapper.GetSessionParameters(_selectedLevel);
     ///     _session.ApplyDifficultyParameters(p);
     ///
     /// FUTURE: Level-up / congratulations logic should be triggered from
-    /// MainPage (or a dedicated service) after a session completes successfully,
+    /// MusicPage (or a dedicated service) after a session completes successfully,
     /// then navigate back here with a celebratory overlay.
     /// </summary>
     public partial class HomePage : ContentPage
@@ -39,7 +39,7 @@ namespace musicmate.Pages
             {
                 InitializeComponent();
 
-                _session     = ServiceHelper.GetService<NoteSessionService>()!;
+                _session = ServiceHelper.GetService<NoteSessionService>()!;
                 _orientation = ServiceHelper.GetService<IOrientationService>()!;
 
                 // Restore saved instrument selection
@@ -65,7 +65,7 @@ namespace musicmate.Pages
             _orientation?.AllowAutorotate();
 
             // Refresh the level from preferences in case LevelUpService advanced it
-            // while the user was on MainPage.  The Preferences write happens in
+            // while the user was on MusicPage.  The Preferences write happens in
             // LevelUpService before this page becomes visible, so the value is stable.
             var savedLevel = Math.Clamp(Preferences.Default.Get(PrefLevelKey, 1), 1, 100);
             if (savedLevel != _selectedLevel)
@@ -108,7 +108,7 @@ namespace musicmate.Pages
         // Level controls — single tap changes by 1; holding repeats automatically.
         // Initial delay before repeat begins; interval while held.
         private const int LevelRepeatInitialDelayMs = 450;
-        private const int LevelRepeatIntervalMs      = 90;
+        private const int LevelRepeatIntervalMs = 90;
         private CancellationTokenSource? _levelRepeatCts;
 
         private void OnLevelDown(object? sender, EventArgs e)
@@ -196,7 +196,7 @@ namespace musicmate.Pages
                 $"{DifficultyLevelMapper.GetStageLabel(_selectedLevel)} — {DifficultyLevelMapper.GetMainFocus(_selectedLevel)}";
 
             LevelDownButton.IsEnabled = _selectedLevel > 1;
-            LevelUpButton.IsEnabled   = _selectedLevel < 100;
+            LevelUpButton.IsEnabled = _selectedLevel < 100;
         }
 
         // Start button
@@ -204,7 +204,7 @@ namespace musicmate.Pages
         private async void OnStartClicked(object? sender, EventArgs e)
         {
             try
-            {               
+            {
                 var idx = _selectedInstrumentIndex;
                 if (idx >= 0)
                     _session.Instrument = _instrumentOptions[idx];
@@ -230,10 +230,10 @@ namespace musicmate.Pages
                 LevelUpService.MarkCountSinceNow();
 
                 // FUTURE: level-up / congratulations logic will be triggered from
-                //   MainPage after a session completes successfully, then navigate
+                //   MusicPage after a session completes successfully, then navigate
                 //   back here with a celebratory overlay.
 
-                await Shell.Current.GoToAsync("//MainPage");
+                await Shell.Current.GoToAsync("//MusicPage");
             }
             catch (Exception ex)
             {

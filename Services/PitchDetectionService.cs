@@ -170,15 +170,15 @@ namespace musicmate.Services
                         if (subLag >= maxLag) break;
                         // Search for a local peak near subLag (±2 samples)
                         int searchStart = Math.Max(minLag + 1, subLag - 2);
-                        int searchEnd   = Math.Min(nsdfLen - 2, subLag + 2);
-                        int peakAt  = -1;
+                        int searchEnd = Math.Min(nsdfLen - 2, subLag + 2);
+                        int peakAt = -1;
                         double peakVal = double.MinValue;
                         for (int t = searchStart; t <= searchEnd; t++)
                         {
                             if (nsdf[t] > peakVal)
                             {
                                 peakVal = nsdf[t];
-                                peakAt  = t;
+                                peakAt = t;
                             }
                         }
                         // Accept the sub-harmonic lag as the true fundamental if its NSDF

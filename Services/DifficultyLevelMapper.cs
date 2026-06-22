@@ -123,7 +123,7 @@ namespace musicmate.Services
             bool applyKeyAndScale = true,
             bool applyPracticeSettings = true)
         {
-            // V3-only: child levels and MainPage always use the two-staff display.
+            // V3-only: child levels and MusicPage always use the two-staff display.
             session.StaffDisplayMode = StaffDisplayMode.V3;
 
             if (applyKeyAndScale)
@@ -137,17 +137,17 @@ namespace musicmate.Services
             }
 
             session.MaxMelodicIntervalSemitones = settings.MaxMelodicIntervalSemitones;
-            session.ChildMeasureBatchSize       = settings.MeasureBatchSize;
+            session.ChildMeasureBatchSize = settings.MeasureBatchSize;
             session.ApplyAutomaticInstrumentRange();
 
             if (applyPracticeSettings)
             {
-                session.AccidentalPercent        = settings.AccidentalPercent;
-                session.V3SmallestNote           = settings.V3SmallestNote;
-                session.V3RhythmMode             = settings.V3RhythmMode;
-                session.V3Syncopation            = settings.V3Syncopation;
-                session.V3RhythmVarietyPercent   = settings.RhythmVarietyPercent;
-                session.V3RestChancePercent      = settings.RestChancePercent;
+                session.AccidentalPercent = settings.AccidentalPercent;
+                session.V3SmallestNote = settings.V3SmallestNote;
+                session.V3RhythmMode = settings.V3RhythmMode;
+                session.V3Syncopation = settings.V3Syncopation;
+                session.V3RhythmVarietyPercent = settings.RhythmVarietyPercent;
+                session.V3RestChancePercent = settings.RestChancePercent;
             }
 
             if (applyKeyAndScale && applyPracticeSettings)
@@ -158,27 +158,27 @@ namespace musicmate.Services
             int level, ChildLevelDifficultyProfile profile, string scale, string key)
         {
             var noteCount = ChildLevelProgression.NoteCountForLevel(level);
-            int variety   = ChildLevelProgression.RhythmVarietyPercentForLevel(level);
+            int variety = ChildLevelProgression.RhythmVarietyPercentForLevel(level);
 
             return new PracticeDifficultySettings
             {
-                AccidentalPercent           = profile.AccidentalPercent,
-                LowestNote                  = profile.LowestNote,
-                HighestNote                 = profile.HighestNote,
-                V3SmallestNote              = ChildLevelProgression.SmallestNoteForLevel(level),
-                V3RhythmMode                = variety > 0 ? "Mixed" : "Simple",
-                V3Syncopation               = ChildLevelProgression.SyncopationForLevel(level),
-                UseRandomMode               = true,
-                ForceKey                    = key,
-                SuggestedKey                = key,
-                SuggestedScale              = scale,
-                SuggestedNoteCount          = noteCount,
+                AccidentalPercent = profile.AccidentalPercent,
+                LowestNote = profile.LowestNote,
+                HighestNote = profile.HighestNote,
+                V3SmallestNote = ChildLevelProgression.SmallestNoteForLevel(level),
+                V3RhythmMode = variety > 0 ? "Mixed" : "Simple",
+                V3Syncopation = ChildLevelProgression.SyncopationForLevel(level),
+                UseRandomMode = true,
+                ForceKey = key,
+                SuggestedKey = key,
+                SuggestedScale = scale,
+                SuggestedNoteCount = noteCount,
                 MaxMelodicIntervalSemitones = ChildLevelProgression.MaxIntervalForLevel(level),
-                RhythmVarietyPercent        = variety,
-                RestChancePercent           = ChildLevelProgression.RestChancePercentForLevel(level),
-                MeasureBatchSize            = ChildLevelProgression.MeasureBatchSizeForLevel(level, noteCount),
-                StageLabel                  = profile.StageLabel,
-                MainFocus                   = profile.MainFocus,
+                RhythmVarietyPercent = variety,
+                RestChancePercent = ChildLevelProgression.RestChancePercentForLevel(level),
+                MeasureBatchSize = ChildLevelProgression.MeasureBatchSizeForLevel(level, noteCount),
+                StageLabel = profile.StageLabel,
+                MainFocus = profile.MainFocus,
             };
         }
     }

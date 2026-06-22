@@ -39,10 +39,10 @@
         ContentTemplate="{DataTemplate local:WhatToPlayPage}" />
   </FlyoutItem>
 
-  <FlyoutItem Title="Practice">
+  <FlyoutItem Title="Music">
     <ShellContent
-        Route="MainPage"
-        ContentTemplate="{DataTemplate local:MainPage}" />
+        Route="MusicPage"
+        ContentTemplate="{DataTemplate local:MusicPage}" />
   </FlyoutItem>
 
   <FlyoutItem Title="Settings" >

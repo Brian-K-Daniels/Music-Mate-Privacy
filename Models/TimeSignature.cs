@@ -17,13 +17,13 @@ namespace musicmate.Models
         public NoteDuration BeatUnit { get; }
 
         /// <summary>4/4 time — the default for most practice tunes.</summary>
-        public static readonly TimeSignature FourFour  = new(4, NoteDuration.Quarter);
+        public static readonly TimeSignature FourFour = new(4, NoteDuration.Quarter);
 
         /// <summary>3/4 time — waltz, minuet.</summary>
         public static readonly TimeSignature ThreeFour = new(3, NoteDuration.Quarter);
 
         /// <summary>2/4 time — march, polka.</summary>
-        public static readonly TimeSignature TwoFour   = new(2, NoteDuration.Quarter);
+        public static readonly TimeSignature TwoFour = new(2, NoteDuration.Quarter);
 
         /// <summary>
         /// Total beat capacity of one measure, expressed as quarter-note beats.
@@ -46,7 +46,7 @@ namespace musicmate.Models
             other is not null && Beats == other.Beats && BeatUnit == other.BeatUnit;
 
         public override bool Equals(object? obj) => Equals(obj as TimeSignature);
-        public override int  GetHashCode()        => HashCode.Combine(Beats, BeatUnit);
-        public override string ToString()         => $"{Beats}/{(int)(4.0 / BeatUnit.ToBeatValue())}";
+        public override int GetHashCode() => HashCode.Combine(Beats, BeatUnit);
+        public override string ToString() => $"{Beats}/{(int)(4.0 / BeatUnit.ToBeatValue())}";
     }
 }

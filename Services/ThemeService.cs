@@ -5,6 +5,9 @@ namespace musicmate.Services
 {
     public class ThemeService : INotifyPropertyChanged
     {
+        public Color CurrentNoteHighlightColor => Colors.Yellow.WithAlpha(0.95f);
+        public Color CorrectNoteColor => Colors.LightGreen.WithAlpha(0.95f);
+        public Color WrongNoteColor => Colors.LightPink.WithAlpha(0.95f);
         private Color _panelBackgroundColor = Colors.White;
         public Color PanelBackgroundColor
         {

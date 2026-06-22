@@ -103,11 +103,11 @@ namespace musicmate.Models
         public static GeneratedNote Rest(NoteDuration duration, int? measureIndex = null, double? beatPosition = null)
             => new()
             {
-                IsRest        = true,
-                Duration      = duration,
-                SpelledName   = "rest",
-                MeasureIndex  = measureIndex,
-                BeatPosition  = beatPosition,
+                IsRest = true,
+                Duration = duration,
+                SpelledName = "rest",
+                MeasureIndex = measureIndex,
+                BeatPosition = beatPosition,
                 IsPlayedCorrectly = true   // rests require no player action
             };
 

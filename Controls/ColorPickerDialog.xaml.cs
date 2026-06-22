@@ -171,7 +171,7 @@ namespace musicmate.Controls
 
         // You must implement this method in your ColorPicker control or expose X/Y properties
         private void MoveSelectedPoint(int dx, int dy)
-        {  
+        {
             const double m = 0.005;
             double dxd = m * dx;
             double dyd = m * dy;
@@ -179,7 +179,7 @@ namespace musicmate.Controls
             ColorPicker.PointerRingPositionYUnits += dyd;
             double x = ColorPicker.PointerRingPositionXUnits;
             double y = ColorPicker.PointerRingPositionYUnits;
-           // Utils.Log($"Moving by {dxd}, {dyd} to {x:000.0} {y:000.0}");
+            // Utils.Log($"Moving by {dxd}, {dyd} to {x:000.0} {y:000.0}");
         }
     }
 }

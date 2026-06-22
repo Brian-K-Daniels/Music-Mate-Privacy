@@ -23,12 +23,12 @@ namespace musicmate.Models
         /// </summary>
         public static double ToBeatValue(this NoteDuration duration) => duration switch
         {
-            NoteDuration.Whole      => 4.0,
-            NoteDuration.Half       => 2.0,
-            NoteDuration.Quarter    => 1.0,
-            NoteDuration.Eighth     => 0.5,
-            NoteDuration.Sixteenth  => 0.25,
-            _                       => 1.0
+            NoteDuration.Whole => 4.0,
+            NoteDuration.Half => 2.0,
+            NoteDuration.Quarter => 1.0,
+            NoteDuration.Eighth => 0.5,
+            NoteDuration.Sixteenth => 0.25,
+            _ => 1.0
         };
     }
 }

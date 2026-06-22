@@ -5,7 +5,7 @@ using musicmate.Utilities;
 using System.Windows.Input;
 
 namespace musicmate.ViewModels
-{  
+{
     public class NoteStatisticsViewModel : INotifyPropertyChanged
     {
         private readonly NoteDatabase _noteDatabase;
@@ -143,7 +143,7 @@ namespace musicmate.ViewModels
             {
                 IsLoading = false;
             }
-        }        
+        }
 
         private string _selectedDatabase = Preferences.Get("musicmate.SelectedStatsDb", "Note");
 

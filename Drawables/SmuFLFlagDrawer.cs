@@ -8,7 +8,7 @@ namespace musicmate.Drawables
     /// </summary>
     internal static class SmuFLFlagDrawer
     {
-        private const string Flag8thUp   = "\uE240";
+        private const string Flag8thUp = "\uE240";
         private const string Flag8thDown = "\uE241";
 
         /// <summary>Two eighth-style flags spaced along the stem (isolated sixteenth notes).</summary>
@@ -56,7 +56,7 @@ namespace musicmate.Drawables
                 if (SmuFLGlyphMetrics.TryMeasure(glyph, fontSize, out var m))
                 {
                     float left = stemX + m.Left;
-                    float top  = stemTipY + m.Top;
+                    float top = stemTipY + m.Top;
                     if (PlatformRestText.DrawAligned(canvas, glyph, fontSize, color,
                             left, top, m.Width, m.Height,
                             HorizontalAlignment.Left, VerticalAlignment.Top))
@@ -82,7 +82,7 @@ namespace musicmate.Drawables
             float flagW = sls * 1.55f;
             float flagH = sls * 1.15f;
             canvas.StrokeColor = color;
-            canvas.StrokeSize  = Math.Max(1.5f, sls * 0.14f);
+            canvas.StrokeSize = Math.Max(1.5f, sls * 0.14f);
 
             if (stemUp)
             {

@@ -11,8 +11,8 @@ namespace musicmate.Platforms.Android
     /// </summary>
     public class GooglePlayStoreService : Java.Lang.Object, IStoreService, IPurchasesUpdatedListener
     {
-        private const string PremiumKey       = "IsPremium";
-        private const string PremiumProductId  = "music_mate_premium";
+        private const string PremiumKey = "IsPremium";
+        private const string PremiumProductId = "music_mate_premium";
 
         private BillingClient? _billingClient;
         private TaskCompletionSource<bool>? _purchaseTcs;
@@ -145,7 +145,7 @@ namespace musicmate.Platforms.Android
             var tcs = new TaskCompletionSource<bool>();
             _billingClient!.StartConnection(new BillingStateListener(
                 result => tcs.TrySetResult(result.ResponseCode == 0),
-                ()     => tcs.TrySetResult(false)));
+                () => tcs.TrySetResult(false)));
             return tcs.Task;
         }
 

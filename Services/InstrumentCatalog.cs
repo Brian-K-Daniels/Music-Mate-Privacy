@@ -161,15 +161,18 @@ namespace musicmate.Services
 
         public static IReadOnlyList<int> BuildAvailableMidiSet(InstrumentProfile profile, int level)
         {
-            level = Math.Clamp(level <= 0 ? 100 : level, 1, 100);
+            if (level <= 0)
+                level = 100;
+            level = Math.Clamp(level, 1, 100);
+
             int practicalLow = NoteSessionService.NoteNameToMidi(profile.PracticalLowestNote);
             int practicalHigh = NoteSessionService.NoteNameToMidi(profile.PracticalHighestNote);
             if (practicalLow < 0 || practicalHigh <= practicalLow)
                 return Array.Empty<int>();
 
-            var (spanLow, spanHigh) = GetLevelWindow(profile, level);
-            int low = Math.Max(practicalLow, spanLow);
-            int high = Math.Min(practicalHigh, spanHigh);
+            var (levelLo, levelHi) = ChildLevelProgression.NoteRangeForLevel(level);
+            int low = Math.Max(practicalLow, NoteSessionService.NoteNameToMidi(levelLo));
+            int high = Math.Min(practicalHigh, NoteSessionService.NoteNameToMidi(levelHi));
             if (high < low)
             {
                 low = practicalLow;
@@ -181,6 +184,9 @@ namespace musicmate.Services
 
         public static (string Lowest, string Highest) GetAutomaticRange(InstrumentProfile profile, int level)
         {
+            if (level <= 0)
+                return (profile.PracticalLowestNote, profile.PracticalHighestNote);
+
             var notes = BuildAvailableMidiSet(profile, level);
             if (notes.Count == 0)
                 return (profile.PracticalLowestNote, profile.PracticalHighestNote);
@@ -189,31 +195,6 @@ namespace musicmate.Services
                 NoteSessionService.MidiToNoteName(notes.Min(), PreferFlats(profile.InstrumentKey)),
                 NoteSessionService.MidiToNoteName(notes.Max(), PreferFlats(profile.InstrumentKey)));
         }
-
-        private static (int Low, int High) GetLevelWindow(InstrumentProfile profile, int level)
-        {
-            var anchor = NoteSessionService.NoteNameToMidi(AnchorFor(profile));
-            int halfSpan = level switch
-            {
-                <= 5 => 3,
-                <= 20 => 6,
-                <= 35 => 9,
-                <= 50 => 14,
-                <= 75 => 20,
-                _ => 48
-            };
-
-            return (anchor - halfSpan, anchor + halfSpan);
-        }
-
-        private static string AnchorFor(InstrumentProfile profile)
-            => profile.Id switch
-            {
-                "glockenspiel" => "C6",
-                "piccolo" => "D5",
-                "double-bass" => "E3",
-                _ => "C4"
-            };
 
         private static bool PreferFlats(string key)
             => key.Contains('b') || key is "F" or "Bb" or "Eb" or "Ab" or "Db" or "Gb" or "Cb";

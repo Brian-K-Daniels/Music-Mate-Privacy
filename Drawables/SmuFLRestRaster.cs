@@ -14,10 +14,10 @@ namespace musicmate.Drawables
 
         private static readonly Dictionary<NoteDuration, string> Glyphs = new()
         {
-            [NoteDuration.Whole]     = "\uE4E3",
-            [NoteDuration.Half]      = "\uE4E4",
-            [NoteDuration.Quarter]   = "\uE4E5",
-            [NoteDuration.Eighth]    = "\uE4E6",
+            [NoteDuration.Whole] = "\uE4E3",
+            [NoteDuration.Half] = "\uE4E4",
+            [NoteDuration.Quarter] = "\uE4E5",
+            [NoteDuration.Eighth] = "\uE4E6",
             [NoteDuration.Sixteenth] = "\uE4E7",
         };
 
@@ -123,12 +123,12 @@ namespace musicmate.Drawables
             {
                 using var font = new SKFont(SmuFLFont.SkiaTypeface, fontSize)
                 {
-                    Edging   = SKFontEdging.Antialias,
+                    Edging = SKFontEdging.Antialias,
                     Subpixel = true
                 };
                 using var paint = new SKPaint
                 {
-                    Color       = ToSkColor(color),
+                    Color = ToSkColor(color),
                     IsAntialias = true
                 };
 

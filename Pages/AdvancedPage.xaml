@@ -57,7 +57,10 @@
   <ScrollView>
     <VerticalStackLayout x:Name="AdvancedMainLayout" Spacing="16" HorizontalOptions="Fill" Padding="16, 8">
       <!-- Practice composition % -->
-      <Frame BorderColor="#8B4513" CornerRadius="10" Padding="12" Margin="0,0,0,0" BackgroundColor="#F8F8FF">
+      <Border Stroke="#8B4513" Padding="12" Margin="0,0,0,0" BackgroundColor="#F8F8FF">
+        <Border.StrokeShape>
+          <RoundRectangle CornerRadius="10"/>
+        </Border.StrokeShape>
         <VerticalStackLayout Spacing="10">
           <Label Text="Practice composition %" FontAttributes="Bold" FontSize="16" TextColor="#8B4513"/>
 
@@ -94,11 +97,14 @@
             <Label Grid.Row="3" Grid.Column="2" Text="{Binding PcArpeggiosDraft}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
           </Grid>
         </VerticalStackLayout>
-      </Frame>
+      </Border>
 
-      <!-- LevelUp Criteria Section -->
-      <Frame BorderColor="#8B4513" CornerRadius="10" Padding="12" Margin="0,16,0,0" BackgroundColor="#FFF8F0">
-        <VerticalStackLayout Spacing="10">
+             <!-- LevelUp Criteria Section -->
+      <Border Stroke="#8B4513" Padding="12" Margin="0,16,0,0" BackgroundColor="#FFF8F0">
+          <Border.StrokeShape>
+            <RoundRectangle CornerRadius="10"/>
+          </Border.StrokeShape>
+          <VerticalStackLayout Spacing="10">
           <Label Text="Level Advancement Criteria" FontAttributes="Bold" FontSize="16" TextColor="#8B4513"/>
 
           <Grid ColumnDefinitions="160,*,60,80" RowSpacing="8" >
@@ -137,10 +143,10 @@
             <Label Grid.Row="4" Grid.Column="3" Text="{Binding CurrentSessionNotesCount}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
           </Grid>
         </VerticalStackLayout>
-      </Frame>
-
+      </Border>
       <!-- Advanced Settings Section -->
-      <Frame BorderColor="#8B4513" CornerRadius="10" Padding="12" Margin="0,16,0,0" BackgroundColor="#F8F8FF">
+      <Border Stroke="#8B4513" Padding="12" Margin="0,16,0,0" BackgroundColor="#F8F8FF">
+        <Border.StrokeShape> <RoundRectangle CornerRadius="10"/></Border.StrokeShape>
         <VerticalStackLayout Spacing="10">
           <Label Text="Advanced Audio &amp; Pitch Settings" FontAttributes="Bold" FontSize="16" TextColor="#8B4513"/>
 
@@ -168,7 +174,7 @@
             <Label Grid.Row="3" Grid.Column="2" Text="{Binding PitchOffsetCents, StringFormat='{0:F1}'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
           </Grid>
         </VerticalStackLayout>
-      </Frame>
+      </Border>
     </VerticalStackLayout>
   </ScrollView>
 </ContentPage>

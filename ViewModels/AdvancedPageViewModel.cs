@@ -25,7 +25,7 @@ namespace musicmate.ViewModels
         public int CurrentSessionCount => 1; // Placeholder: set to 1, or expose actual session count if tracked
         private readonly ThemeService _themeService;
         private readonly NoteSessionService _session;
-        
+
         public AdvancedPageViewModel(ThemeService themeService, NoteSessionService session)
         {
             _themeService = themeService;

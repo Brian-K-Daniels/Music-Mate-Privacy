@@ -12,7 +12,7 @@ namespace musicmate
     {
         protected override void OnCreate(Bundle? savedInstanceState)
         {
-            if(Window != null)      
+            if (Window != null)
             {
                 base.OnCreate(savedInstanceState);
                 Window.AddFlags(WindowManagerFlags.Fullscreen);
