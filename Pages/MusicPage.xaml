@@ -18,9 +18,8 @@
       <Grid Grid.Column="0"
             WidthRequest="38"
             HeightRequest="32"
-            VerticalOptions="Center"
-            IsVisible="{Binding Source={x:Reference musicPage}, Path=IsV3Mode}">
-        <Border x:Name="V3StartStopButton"
+            VerticalOptions="Center">
+        <Border x:Name="TitleStartStopButton"
                 StrokeThickness="0"
                 BackgroundColor="#008000"
                 HeightRequest="32"
@@ -50,12 +49,12 @@
              VerticalOptions="Center"
              HorizontalOptions="Start"
              Grid.Column="2"/>
-      <Image Source="logo.png"
-             HeightRequest="32"
-             WidthRequest="32"
-             VerticalOptions="Center"
-             HorizontalOptions="End"
-             Grid.Column="3" />
+      <Border Style="{StaticResource TitleLogoBorder}"
+              VerticalOptions="Center"
+              HorizontalOptions="End"
+              Grid.Column="3">
+        <Image Source="logo.png" Aspect="AspectFill" />
+      </Border>
     </Grid>
   </Shell.TitleView>
 
@@ -191,6 +190,15 @@
 
           </Grid>
 
+          <Label x:Name="EffectiveScaleLabel"
+                 Text="{Binding Source={x:Reference musicPage}, Path=EffectiveScaleLabelText}"
+                 IsVisible="{Binding Source={x:Reference musicPage}, Path=IsEffectiveScaleLabelVisible}"
+                 FontSize="13"
+                 FontAttributes="Bold"
+                 TextColor="#8B4513"
+                 Margin="8,2,8,0"
+                 HorizontalOptions="Start" />
+
           </VerticalStackLayout>
 
           <!-- Session result banner: shown after a session completes, hidden while playing -->
@@ -217,22 +225,7 @@
 
             <!-- Staff panel and Tuner panel fill the full column -->
             <Grid Grid.Column="0" VerticalOptions="Fill">
-              <!-- Selected Scale / Random mode (v1) -->
               <Border x:Name="StaffBorder"
-                      Stroke="Green"
-                      StrokeShape="RoundRectangle 8"
-                      BackgroundColor="{Binding PanelBackgroundColor}"
-                      Padding="0"
-                      IsVisible="False"
-                      VerticalOptions="Start">
-                <GraphicsView x:Name="StaffGraphicsView"
-                              BackgroundColor="{Binding PanelBackgroundColor}"
-                              Margin="0"
-                              VerticalOptions="Start"/>
-              </Border>
-
-              <!-- V3 two-staff display (shown when StaffDisplayMode is V3) -->
-              <Border x:Name="V3StaffBorder"
                       Stroke="MediumPurple"
                       StrokeThickness="2"
                       StrokeShape="RoundRectangle 8"
@@ -241,7 +234,7 @@
                       IsVisible="True"
                       HorizontalOptions="Fill"
                       VerticalOptions="Start">
-                <GraphicsView x:Name="V3StaffGraphicsView"
+                <GraphicsView x:Name="StaffGraphicsView"
                               HeightRequest="240"
                               BackgroundColor="{Binding PanelBackgroundColor}"
                               HorizontalOptions="Fill"
@@ -410,57 +403,19 @@
             </Grid>
           </Border>
 
-          <!-- Bottom row: Play | Stop/Start | Repeat/RepeatNew/RepeatSame | Background Color
-               Equal column widths fill the full page width with matching end margins. -->
+          <!-- Bottom row: Repeat buttons + practice pickers -->
           <Grid x:Name="BottomButtonRow"
                 Margin="12,8,12,8"
                 ColumnSpacing="8"
                 HorizontalOptions="Fill"
                 IsVisible="{Binding Source={x:Reference musicPage}, Path=IsBottomButtonRowVisible}">
             <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="64" />   <!-- Play -->
-              <ColumnDefinition Width="64" />   <!-- Start/Stop -->
-              <ColumnDefinition Width="*" />    <!-- Repeat / Repeat New -->
-              <ColumnDefinition Width="*" />    <!-- (Repeat Same — hidden in Scale mode) -->
-              <ColumnDefinition Width="Auto" /> <!-- Background Color — sizes to text -->
+              <ColumnDefinition Width="64" />
+              <ColumnDefinition Width="64" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-
-            <!-- Play (non-V3 modes; V3 uses V3PlayButton overlay under marquee start/stop) -->
-            <Button x:Name="PlayEvaluateButton"
-                    Grid.Column="0"
-                    Text="Play"
-                    FontSize="12"
-                    FontAttributes="Bold"
-                    TextColor="White"
-                    BackgroundColor="#2E8B57"
-                    BorderColor="#1F5C3A"
-                    BorderWidth="1"
-                    CornerRadius="6"
-                    HeightRequest="36"
-                    MinimumHeightRequest="36"
-                    Padding="8,2"
-                    HorizontalOptions="Fill"
-                    VerticalOptions="Fill"
-                    IsVisible="{Binding Source={x:Reference musicPage}, Path=IsPlayEvaluateButtonVisible}"
-                    Clicked="OnPlayEvaluateClicked" />
-
-            <!-- Start/Stop (non-V3 modes only) -->
-            <Button x:Name="StartStopButton"
-                    Grid.Column="1"
-                    Text="●"
-                    FontSize="26"
-                    TextColor="#008000"
-                    BackgroundColor="#F7F7F7"
-                    BorderColor="#F7F7F7"
-                    BorderWidth="1"
-                    CornerRadius="8"
-                    HeightRequest="44"
-                    MinimumHeightRequest="44"
-                    Padding="0"
-                    HorizontalOptions="Fill"
-                    VerticalOptions="Fill"
-                    IsVisible="{Binding Source={x:Reference musicPage}, Path=IsNotV3Mode}"
-                    Clicked="OnStartStopToggleClicked" />
 
             <!-- Scale mode: single "Repeat" spans cols 2-3 -->
             <Button x:Name="AutoRepeatScaleButton"
@@ -474,72 +429,38 @@
                     Clicked="OnAutoRepeatScaleClicked"
                     IsVisible="{Binding Source={x:Reference musicPage}, Path=IsScaleRepeatButtonVisible}" />
 
-            <!-- Random mode: Repeat New (col 2) -->
-            <Button x:Name="AutoRepeatNewButton"
-                    Grid.Column="2"
-                    Text="Repeat New"
-                    Style="{StaticResource CompactBrownButton}"
-                    HeightRequest="44"
-                    HorizontalOptions="Fill"
-                    VerticalOptions="Fill"
-                    Clicked="OnAutoRepeatNewClicked"
-                    IsVisible="{Binding Source={x:Reference musicPage}, Path=IsRandomRepeatButtonsVisible}" />
-
-            <!-- Random mode: Repeat Same (col 3) -->
-            <Button x:Name="AutoRepeatSameButton"
-                    Grid.Column="3"
-                    Text="Repeat Same"
-                    Style="{StaticResource CompactBrownButton}"
-                    HeightRequest="44"
-                    HorizontalOptions="Fill"
-                    VerticalOptions="Fill"
-                    Clicked="OnAutoRepeatSameClicked"
-                    IsVisible="{Binding Source={x:Reference musicPage}, Path=IsRandomRepeatButtonsVisible}" />
-
-            <!-- Background Color (col 4) -->
-            <Button Grid.Column="4"
-                    Text="Background Color"
-                    Style="{StaticResource CompactBrownButton}"
-                    HeightRequest="44"
-                    MinimumWidthRequest="140"
-                    HorizontalOptions="Fill"
-                    VerticalOptions="Fill"
-                    IsVisible="{Binding Source={x:Reference musicPage}, Path=IsNotV3Mode}"
-                    Clicked="OnColorButtonClicked" />
-
-            <!-- V3 mode: compact pickers fill the bottom row (play is on the staff) -->
-            <Grid x:Name="V3BottomPickersLayout"
+            <Grid x:Name="BottomPickersLayout"
                   Grid.Column="0" Grid.ColumnSpan="5"
                   ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*"
                   ColumnSpacing="2"
                   VerticalOptions="Center"
                   HorizontalOptions="Fill"
-                  IsVisible="{Binding Source={x:Reference musicPage}, Path=IsV3BottomPickersVisible}">
+                  IsVisible="{Binding Source={x:Reference musicPage}, Path=IsBottomPickersVisible}">
               <Label Grid.Column="0" Text="Inst." FontSize="10" TextColor="#333333" VerticalOptions="Center" Margin="2,0,0,0"/>
               <Border Grid.Column="1" Style="{StaticResource CompactBrownBox}">
-                <Picker x:Name="V3PracticeInstrumentPicker"
+                <Picker x:Name="PracticeInstrumentPicker"
                         WidthRequest="70" HeightRequest="28" FontSize="10"
                         TextColor="#000000" BackgroundColor="White"
                         VerticalOptions="Fill" HorizontalOptions="Fill"
-                        SelectedIndexChanged="V3PracticeInstrumentPicker_SelectedIndexChanged" />
+                        SelectedIndexChanged="PracticeInstrumentPicker_SelectedIndexChanged" />
               </Border>
-              <Label x:Name="V3PracticeKeyLabel" Grid.Column="2" Text="Key" FontSize="10" TextColor="#333333" VerticalOptions="Center"/>
-              <Border x:Name="V3PracticeKeyBorder" Grid.Column="3" Style="{StaticResource CompactBrownBox}">
-                <Picker x:Name="V3PracticeKeyPicker"
+              <Label x:Name="PracticeKeyLabel" Grid.Column="2" Text="Key" FontSize="10" TextColor="#333333" VerticalOptions="Center"/>
+              <Border x:Name="PracticeKeyBorder" Grid.Column="3" Style="{StaticResource CompactBrownBox}">
+                <Picker x:Name="PracticeKeyPicker"
                         WidthRequest="50" HeightRequest="28" FontSize="10"
                         TextColor="#000000" BackgroundColor="White"
                         VerticalOptions="Fill" HorizontalOptions="Fill"
-                        SelectedIndexChanged="V3PracticeKeyPicker_SelectedIndexChanged" />
+                        SelectedIndexChanged="PracticeKeyPicker_SelectedIndexChanged" />
               </Border>
-              <Label x:Name="V3PracticeConcertKeyLabel" Grid.Column="4" FontSize="10" TextColor="#333333" VerticalOptions="Center"/>
+              <Label x:Name="PracticeConcertKeyLabel" Grid.Column="4" FontSize="10" TextColor="#333333" VerticalOptions="Center"/>
               <Border Grid.Column="5"
                       Style="{StaticResource CompactBrownBox}"
                       HorizontalOptions="Fill">
-                <Picker x:Name="V3PracticeScaleTunePicker"
+                <Picker x:Name="PracticeScaleTunePicker"
                         HeightRequest="28" FontSize="10"
                         TextColor="#000000" BackgroundColor="White"
                         VerticalOptions="Fill" HorizontalOptions="Fill"
-                        SelectedIndexChanged="V3PracticeScaleTunePickerChanged" />
+                        SelectedIndexChanged="PracticeScaleTunePickerChanged" />
               </Border>
             </Grid>
 
@@ -549,8 +470,8 @@
       </VerticalStackLayout>
     </ScrollView>
 
-    <!-- V3 play: compact overlay under marquee start/stop; label content sized in code -->
-    <Border x:Name="V3PlayButton"
+    <!-- Play overlay under marquee start/stop; label content sized in code -->
+    <Border x:Name="TitlePlayButton"
             BackgroundColor="#2E8B57"
             Stroke="#1F5C3A"
             StrokeThickness="1"
@@ -558,7 +479,7 @@
             HorizontalOptions="Start"
             VerticalOptions="Start"
             ZIndex="10"
-            IsVisible="{Binding Source={x:Reference musicPage}, Path=IsV3PlayButtonVisible}">
+            IsVisible="{Binding Source={x:Reference musicPage}, Path=IsTitlePlayButtonVisible}">
       <Border.StrokeShape>
         <RoundRectangle CornerRadius="2" />
       </Border.StrokeShape>

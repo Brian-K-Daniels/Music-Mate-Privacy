@@ -50,6 +50,7 @@ namespace musicmate
             builder.Services.AddSingleton<IOrientationService, OrientationService>();
             builder.Services.AddSingleton<StatusService>();
             builder.Services.AddSingleton<ThemeService>();
+            builder.Services.AddSingleton<SettingsResetService>();
 
 #if ANDROID
             builder.Services.AddSingleton<ISafeAreaService, musicmate.Platforms.Android.SafeAreaService>();
@@ -78,8 +79,8 @@ namespace musicmate
 
 #if DEBUG
             // Key-sig / transposition self-test → logcat tag "MusicMate" (cold start).
-            V3StaffDrawable.RunKeySignatureTests();
-            V3StaffDrawable.RunMeasureLayoutTests();
+            StaffDrawable.RunKeySignatureTests();
+            StaffDrawable.RunMeasureLayoutTests();
 #endif
 
             // Sync premium state from the store on every cold start.

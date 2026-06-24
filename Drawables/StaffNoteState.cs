@@ -1,7 +1,7 @@
 namespace musicmate.Drawables
 {
-    /// <summary>Visual state of a single note slot in the V3 staff display.</summary>
-    public enum V3NoteState
+    /// <summary>Visual state of a single note slot in the two-staff display.</summary>
+    public enum StaffNoteState
     {
         /// <summary>Not yet reached — neutral notehead colour.</summary>
         Pending,

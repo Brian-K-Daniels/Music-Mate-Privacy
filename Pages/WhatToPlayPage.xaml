@@ -34,10 +34,12 @@
                Margin="8,0,0,0"
                VerticalOptions="Center" />
       </HorizontalStackLayout>
-      <Image Source="logo.png"
-             HeightRequest="32" WidthRequest="32"
-             VerticalOptions="Center" HorizontalOptions="End"
-             Grid.Column="1" />
+      <Border Style="{StaticResource TitleLogoBorder}"
+              VerticalOptions="Center"
+              HorizontalOptions="End"
+              Grid.Column="1">
+        <Image Source="logo.png" Aspect="AspectFill" />
+      </Border>
     </Grid>
   </Shell.TitleView>
 

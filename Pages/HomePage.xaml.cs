@@ -214,14 +214,14 @@ namespace musicmate.Pages
                 // DifficultyLevelMapper translates level 1–100 into concrete session
                 // parameters (BPM, note range, rhythm complexity, accidental %).
                 var difficulty = DifficultyLevelMapper.PickAndApplyToSession(
-                    _selectedLevel, _session, forceClassicMode: false);
+                    _selectedLevel, _session);
 
                 Utils.Log($"[ChildPractice] Level={_selectedLevel}, " +
                           $"Stage={difficulty.StageLabel}, Scale={difficulty.SuggestedScale}, " +
                           $"Range={difficulty.LowestNote}–{difficulty.HighestNote}, " +
                           $"Key={difficulty.ForceKey}, Notes≈{difficulty.SuggestedNoteCount}, " +
-                          $"Rhythm={difficulty.V3SmallestNote} variety={difficulty.RhythmVarietyPercent}% " +
-                          $"rests={difficulty.RestChancePercent}%, Sync={difficulty.V3Syncopation}");
+                          $"Rhythm={difficulty.SmallestRhythmNote} variety={difficulty.RhythmVarietyPercent}% " +
+                          $"rests={difficulty.RestChancePercent}%, Sync={difficulty.SyncopationSetting}");
 
                 Utils.Log($"[ChildPractice] Session after apply → Level={_session.ChildLevel}, " +
                           $"LowestNote={_session.LowestNote}, HighestNote={_session.HighestNote}, " +

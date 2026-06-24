@@ -78,28 +78,6 @@ namespace musicmate.Pages
             await Shell.Current.GoToAsync("//MusicPage");
         }
 
-        // ── Reset to defaults ─────────────────────────────────────────────────
-
-        private async void OnResetSettingsClicked(object? sender, EventArgs e)
-        {
-            bool confirmed = await DisplayAlertAsync(
-                "Reset Settings",
-                "Reset all settings to factory defaults? This includes advanced audio, level-up criteria, and practice options.",
-                "Reset", "Cancel");
-
-            if (!confirmed) return;
-
-            _viewModel.ResetToDefaults();
-
-            // Re-sync note range pickers to the reset free-range indices
-            var notes = _viewModel.WhiteKeyNoteNames?.ToList();
-            if (notes != null)
-            {
-                _lastFreeLowestIndex = notes.IndexOf(SettingsPageViewModel.DefaultLowestNote);
-                _lastFreeHighestIndex = notes.IndexOf(SettingsPageViewModel.DefaultHighestNote);
-            }
-        }
-
         // ── Accidental % slider ───────────────────────────────────────────────
 
         private async void OnAccidentalPercentDragCompleted(object? sender, EventArgs e)

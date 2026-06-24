@@ -8,7 +8,7 @@
     x:Name="AppShellInstance"
     Title="MusicMate"
     FlyoutBehavior="Flyout"
-    FlyoutWidth="240"
+    FlyoutWidth="300"
     Shell.BackgroundColor="Transparent"
     Shell.FlyoutBackgroundColor="#1A1A1A"
     Shell.TitleColor="White"
@@ -26,48 +26,77 @@
     </Style>
   </Shell.Resources>
 
-  <!-- Simple child-friendly Home page: instrument, level, and Start button -->
-  <FlyoutItem Title="Home"> <!-- This is an item on the flyout menu that appears when you touch the hamburger-->
+  <Shell.ItemTemplate>
+    <DataTemplate>
+      <Grid
+                HeightRequest="48"
+                Padding="12,0,0,0"
+                ColumnDefinitions="40,*">
+
+        <Image
+                    Source="{Binding FlyoutIcon}"
+                    HeightRequest="24"
+                    WidthRequest="24"
+                    VerticalOptions="Center" />
+
+        <Label
+                    Grid.Column="1"
+                    Text="{Binding Title}"
+                    FontSize="16"
+                    TextColor="BlanchedAlmond"
+                    VerticalTextAlignment="Center" />
+      </Grid>
+    </DataTemplate>
+  </Shell.ItemTemplate>
+
+  <!-- Home is first so the app starts here without any navigation flash. -->
+  <FlyoutItem Title="Home" Route="Home">
     <ShellContent
+        Title="Home"
         Route="HomePage"
         ContentTemplate="{DataTemplate local:HomePage}" />
   </FlyoutItem>
 
-  <FlyoutItem Title="What to Play">
+  <FlyoutItem Title="About" Route="About">
+    <ShellContent
+       Route="AboutPage"
+       ContentTemplate="{DataTemplate local:AboutPage}" />
+  </FlyoutItem>
+
+  <FlyoutItem Title="Item to Play" Route="WhatToPlay">
     <ShellContent
         Route="WhatToPlayPage"
         ContentTemplate="{DataTemplate local:WhatToPlayPage}" />
   </FlyoutItem>
 
-  <FlyoutItem Title="Music">
+  <FlyoutItem Title="Music" Route="Music">
     <ShellContent
         Route="MusicPage"
         ContentTemplate="{DataTemplate local:MusicPage}" />
   </FlyoutItem>
 
-  <FlyoutItem Title="Settings" >
+  <FlyoutItem Title="Settings" Route="Settings">
     <ShellContent
         Route="SettingsPage"
         ContentTemplate="{DataTemplate local:SettingsPage}" />
   </FlyoutItem>
 
-  <FlyoutItem Title="Statistics" >
+  <FlyoutItem Title="Settings Advanced" Route="SettingsAdvanced">
+    <ShellContent
+      Route="AdvancedPage"
+      ContentTemplate="{DataTemplate local:AdvancedPage}" />
+  </FlyoutItem>
+
+  <FlyoutItem Title="Settings Reset Options" Route="SettingsReset">
+    <ShellContent
+      Route="ResetOptionsPage"
+      ContentTemplate="{DataTemplate local:ResetOptionsPage}" />
+  </FlyoutItem>
+
+  <FlyoutItem Title="Statistics" Route="Statistics">
     <ShellContent
         Route="StatisticsPages"
         ContentTemplate="{DataTemplate local:StatisticsPages}" />
   </FlyoutItem>
-
-  <FlyoutItem Title="Advanced">
-    <ShellContent
-        Route="AdvancedPage"
-        ContentTemplate="{DataTemplate local:AdvancedPage}" />
-  </FlyoutItem>
-
-  <FlyoutItem Title="About" >
-    <ShellContent
-        Route="AboutPage"
-        ContentTemplate="{DataTemplate local:AboutPage}" />
-  </FlyoutItem>
-
 
 </Shell>

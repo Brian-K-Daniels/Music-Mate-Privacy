@@ -1,7 +1,7 @@
 using musicmate.Models;
 using musicmate.Services;
 using musicmate.Utilities;
-using musicmate.V3LayoutDebug;
+using musicmate.LayoutDebug;
 using System.ComponentModel;
 using System.Diagnostics;
 
@@ -441,7 +441,7 @@ namespace musicmate.Pages
                 Picker? activePicker = GetActivePlayModePicker();
                 ClearInactivePlayModePickerSelections(activePicker);
 
-                if (V3LayoutTestTune.IsEnabled)
+                if (LayoutTestTune.IsEnabled)
                 {
                     SetPickerSelection(RandomTunerPicker, "Fixed Tune", RandomTunerOptions);
                 }
@@ -482,7 +482,7 @@ namespace musicmate.Pages
 
         private Picker? GetActivePlayModePicker()
         {
-            if (V3LayoutTestTune.IsEnabled || _session.Tune == "Tuner" || _session.IsRandomMode)
+            if (LayoutTestTune.IsEnabled || _session.Tune == "Tuner" || _session.IsRandomMode)
                 return RandomTunerPicker;
             if (_session.Tune == "Practice Tune")
                 return TunesPicker;
@@ -710,7 +710,7 @@ namespace musicmate.Pages
             if (practiceTune == null) return;
 
             ClearOtherPlayModePickers(TunesPicker);
-            V3LayoutTestTune.SetEnabled(false);
+            LayoutTestTune.SetEnabled(false);
 
             ApplyPlayModeSessionChange(() =>
             {
@@ -741,7 +741,7 @@ namespace musicmate.Pages
             }
 
             ClearOtherPlayModePickers(ScalesPicker);
-            V3LayoutTestTune.SetEnabled(false);
+            LayoutTestTune.SetEnabled(false);
 
             _lastValidScaleIndex = idx;
             ApplyPlayModeSessionChange(() =>
@@ -772,7 +772,7 @@ namespace musicmate.Pages
                 return;
 
             ClearOtherPlayModePickers(ArpeggiosPicker);
-            V3LayoutTestTune.SetEnabled(false);
+            LayoutTestTune.SetEnabled(false);
 
             ApplyPlayModeSessionChange(() =>
             {
@@ -801,7 +801,7 @@ namespace musicmate.Pages
 
             if (selected == "Tuner")
             {
-                V3LayoutTestTune.SetEnabled(false);
+                LayoutTestTune.SetEnabled(false);
                 ApplyPlayModeSessionChange(() =>
                 {
                     _session.Tune = "Tuner";
@@ -811,7 +811,7 @@ namespace musicmate.Pages
             }
             else if (selected == "Random")
             {
-                V3LayoutTestTune.SetEnabled(false);
+                LayoutTestTune.SetEnabled(false);
                 ApplyPlayModeSessionChange(() =>
                 {
                     _session.Tune = "Selected Scale";
@@ -821,7 +821,7 @@ namespace musicmate.Pages
             }
             else if (selected == "Fixed Tune")
             {
-                V3LayoutTestTune.SetEnabled(true);
+                LayoutTestTune.SetEnabled(true);
                 ApplyPlayModeSessionChange(() =>
                 {
                     _session.IsRandomMode = false;

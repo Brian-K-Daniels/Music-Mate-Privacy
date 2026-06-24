@@ -79,6 +79,58 @@ namespace musicmate.Services
         public static (string Scale, string Key) PickScaleAndKey(int level, Random? rng = null)
             => PickScaleAndKey(GetProfile(level), rng);
 
+        /// <summary>Scale names allowed at this child level.</summary>
+        public static IReadOnlySet<string> GetAllowedScales(int level)
+        {
+            var profile = GetProfile(level);
+            return profile.ScalePool
+                .Select(o => o.Scale)
+                .ToHashSet(StringComparer.Ordinal);
+        }
+
+        /// <summary>Key names allowed at this child level.</summary>
+        public static IReadOnlySet<string> GetAllowedKeys(int level)
+        {
+            var profile = GetProfile(level);
+            return profile.KeyPool
+                .Select(o => o.Key)
+                .ToHashSet(StringComparer.Ordinal);
+        }
+
+        /// <summary>Highest-weight scale in the level pool (typically Major).</summary>
+        public static string GetDefaultScale(int level)
+            => GetProfile(level).ScalePool.MaxBy(o => o.Weight).Scale;
+
+        /// <summary>Highest-weight key in the level pool (typically C).</summary>
+        public static string GetDefaultKey(int level)
+            => GetProfile(level).KeyPool.MaxBy(o => o.Weight).Key;
+
+        /// <summary>Keeps <paramref name="currentScale"/> when allowed; otherwise returns the level default.</summary>
+        public static string ValidateScaleForLevel(int level, string? currentScale)
+        {
+            var allowed = GetAllowedScales(level);
+            if (!string.IsNullOrWhiteSpace(currentScale) && allowed.Contains(currentScale))
+                return currentScale;
+            return GetDefaultScale(level);
+        }
+
+        /// <summary>Keeps <paramref name="currentKey"/> when allowed; otherwise returns the level default.</summary>
+        public static string ValidateKeyForLevel(int level, string? currentKey)
+        {
+            var allowed = GetAllowedKeys(level);
+            if (!string.IsNullOrWhiteSpace(currentKey) && allowed.Contains(currentKey))
+                return currentKey;
+            return GetDefaultKey(level);
+        }
+
+        /// <summary>True when the level pool contains more than one distinct scale.</summary>
+        public static bool LevelHasMultipleScales(int level)
+            => GetAllowedScales(level).Count > 1;
+
+        /// <summary>Weighted random scale pick for one generated tune.</summary>
+        public static string PickScaleFromPool(int level, Random rng)
+            => WeightedChoice.Pick(GetProfile(level).ScalePool, o => o.Weight, rng).Scale;
+
         /// <summary>
         /// Human-readable report of weighted pools and fixed settings for inspection.
         /// </summary>

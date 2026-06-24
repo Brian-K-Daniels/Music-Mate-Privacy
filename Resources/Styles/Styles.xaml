@@ -407,4 +407,31 @@
         <Setter Property="SelectedTabColor" Value="{AppThemeBinding Light={StaticResource Gray950}, Dark={StaticResource Gray200}}" />
     </Style>
 
+    <!-- Circular gold frame for logo.png (masks the square white PNG background). -->
+    <Style x:Key="TitleLogoBorder" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="{StaticResource LogoGold}" />
+        <Setter Property="WidthRequest" Value="32" />
+        <Setter Property="HeightRequest" Value="32" />
+        <Setter Property="StrokeThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="StrokeShape">
+            <Setter.Value>
+                <RoundRectangle CornerRadius="16" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="LargeLogoBorder" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="{StaticResource LogoGold}" />
+        <Setter Property="WidthRequest" Value="80" />
+        <Setter Property="HeightRequest" Value="80" />
+        <Setter Property="StrokeThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="StrokeShape">
+            <Setter.Value>
+                <RoundRectangle CornerRadius="40" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
 </ResourceDictionary>

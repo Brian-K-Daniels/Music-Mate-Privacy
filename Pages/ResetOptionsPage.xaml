@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="musicmate.Pages.ResetOptionsPage"
+             Title="Settings Reset Options"
+             Shell.NavBarIsVisible="True"
+             BackgroundColor="{Binding PanelBackgroundColor}">
+
+  <ContentPage.Resources>
+    <Style TargetType="Label">
+      <Setter Property="TextColor" Value="{Binding ContrastingTextColor}" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+    <Style TargetType="Button">
+      <Setter Property="TextColor" Value="White" />
+      <Setter Property="BackgroundColor" Value="#8B4513" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="FontAttributes" Value="Bold" />
+      <Setter Property="Padding" Value="12,8" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Margin" Value="0,6" />
+    </Style>
+  </ContentPage.Resources>
+
+  <Shell.TitleView>
+    <Grid ColumnDefinitions="*,Auto" HeightRequest="30" VerticalOptions="Center">
+      <HorizontalStackLayout Spacing="10" VerticalOptions="Center" Grid.Column="0">
+        <Button Text="←"
+                Clicked="OnNavigatePracticeClicked"
+                BackgroundColor="Transparent"
+                TextColor="White"
+                FontSize="18"
+                Padding="12,0"
+                WidthRequest="56" />
+        <Label Text="Settings Reset Options"
+               TextColor="White"
+               FontAttributes="Bold"
+               FontSize="18"
+               VerticalOptions="Center" />
+      </HorizontalStackLayout>
+      <Border Style="{StaticResource TitleLogoBorder}"
+              VerticalOptions="Center"
+              HorizontalOptions="End"
+              Grid.Column="1">
+        <Image Source="logo.png" Aspect="AspectFill" />
+      </Border>
+    </Grid>
+  </Shell.TitleView>
+
+  <ScrollView>
+    <VerticalStackLayout Padding="16,8" Spacing="8">
+      <Label Text="Use these options to restore factory settings or manage your own custom default profile."
+             FontSize="13"
+             LineBreakMode="WordWrap" />
+
+      <BoxView HeightRequest="1" Color="#8B4513" Margin="0,6,0,6" />
+
+      <Button x:Name="FactoryResetButton"
+              Text="Reset to Factory Defaults"
+              BackgroundColor="Orange"
+              Clicked="OnFactoryResetClicked" />
+
+      <Button x:Name="SaveCustomDefaultsButton"
+              Text="Set Current Settings to Custom Defaults"
+              Clicked="OnSaveCustomDefaultsClicked" />
+
+      <Button x:Name="RestoreCustomDefaultsButton"
+              Text="Reset Settings to Custom Defaults"
+              Clicked="OnRestoreCustomDefaultsClicked" />
+    </VerticalStackLayout>
+  </ScrollView>
+</ContentPage>

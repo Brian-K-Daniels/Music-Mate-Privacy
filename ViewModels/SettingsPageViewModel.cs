@@ -31,7 +31,9 @@ namespace musicmate.ViewModels
         public const string DefaultHighestNote = "F5";
         public const int DefaultPlaybackBpm = NoteSessionService.DefaultPlaybackBpm;
         public const int DefaultMusicBpm = NoteSessionService.DefaultMusicBpm;
-        public const int DefaultAccidentalPct = 30;
+        // Aligned with NoteSessionService Preferences default (0) so factory reset
+        // and a fresh install produce the same initial accidental percentage.
+        public const int DefaultAccidentalPct = 0;
         public const int DefaultCorrectThreshold = 95;
         public const int DefaultMinCorrectCount = 6;
         public const int DefaultOmitMsAvg = 400;
@@ -63,7 +65,7 @@ namespace musicmate.ViewModels
                 return;
 
             if (rhythmModeChanged)
-                _session.V3RhythmVarietyPercent = -1;
+                _session.RhythmVarietyPercent = -1;
 
             _session.MarkChildPracticeSettingsCustomized();
         }
@@ -111,18 +113,16 @@ namespace musicmate.ViewModels
                     OnPropertyChanged(nameof(StreakCrit));
                     OnPropertyChanged(nameof(OmitSliderValue));
                     break;
-                case nameof(NoteSessionService.V3TimeSignature):
-                    OnPropertyChanged(nameof(V3TimeSignature)); break;
-                case nameof(NoteSessionService.V3SmallestNote):
-                    OnPropertyChanged(nameof(V3SmallestNote)); break;
-                case nameof(NoteSessionService.V3RhythmMode):
-                    OnPropertyChanged(nameof(V3RhythmMode)); break;
-                case nameof(NoteSessionService.V3Syncopation):
-                    OnPropertyChanged(nameof(V3Syncopation)); break;
-                case nameof(NoteSessionService.V3NoteNameDisplay):
-                    OnPropertyChanged(nameof(V3NoteNameDisplay)); break;
-                case nameof(NoteSessionService.StaffDisplayMode):
-                    OnPropertyChanged(nameof(StaffDisplayModeDisplay)); break;
+                case nameof(NoteSessionService.MeterTimeSignature):
+                    OnPropertyChanged(nameof(MeterTimeSignature)); break;
+                case nameof(NoteSessionService.SmallestRhythmNote):
+                    OnPropertyChanged(nameof(SmallestRhythmNote)); break;
+                case nameof(NoteSessionService.RhythmMode):
+                    OnPropertyChanged(nameof(RhythmMode)); break;
+                case nameof(NoteSessionService.SyncopationSetting):
+                    OnPropertyChanged(nameof(SyncopationSetting)); break;
+                case nameof(NoteSessionService.NoteNameDisplay):
+                    OnPropertyChanged(nameof(NoteNameDisplay)); break;
                 case nameof(NoteSessionService.WhiteKeyNoteNames):
                     OnPropertyChanged(nameof(WhiteKeyNoteNames)); break;
                 case nameof(NoteSessionService.AvailableScalesForBinding):
@@ -471,136 +471,120 @@ namespace musicmate.ViewModels
             }
         }
 
-        // ── Music Mate V3 Rhythm Settings ─────────────────────────────────────────
+        // ── Rhythm Settings ─────────────────────────────────────────────────────
 
-        public string[] StaffDisplayModeOptions => NoteSessionService.StaffDisplayModeOptions;
+        public List<string> MeterTimeSignatureOptions { get; } = new() { "4/4", "3/4", "2/4" };
+        public List<string> SmallestRhythmNoteOptions { get; } = new() { "Quarter", "Eighth", "Sixteenth" };
+        public List<string> RhythmModeOptions { get; } = new() { "Simple", "Mixed" };
+        public List<string> SyncopationSettingOptions { get; } = new() { "None", "Simple", "Full" };
+        public List<string> NoteNameDisplayOptions { get; } = new() { "Current only", "All notes", "Off" };
 
-        public string StaffDisplayModeDisplay
+        private string _meterTimeSignature = Preferences.Get("musicmate.V3TimeSignature", "4/4");
+        public string MeterTimeSignature
         {
-            get => _session?.StaffDisplayModeDisplay ?? "Classic";
+            get => _session?.MeterTimeSignature ?? _meterTimeSignature;
             set
             {
-                if ((_session?.StaffDisplayModeDisplay ?? "Classic") == value) return;
+                if ((_session?.MeterTimeSignature ?? _meterTimeSignature) == value) return;
                 if (_session != null)
                 {
-                    _session.StaffDisplayModeDisplay = value;
-                    OnPropertyChanged(nameof(StaffDisplayModeDisplay));
-                }
-            }
-        }
-
-        public List<string> V3TimeSignatureOptions { get; } = new() { "4/4", "3/4", "2/4" };
-        public List<string> V3SmallestNoteOptions { get; } = new() { "Quarter", "Eighth", "Sixteenth" };
-        public List<string> V3RhythmModeOptions { get; } = new() { "Simple", "Mixed" };
-        public List<string> V3SyncopationOptions { get; } = new() { "None", "Simple", "Full" };
-        public List<string> V3NoteNameDisplayOptions { get; } = new() { "Current only", "All notes", "Off" };
-
-        private string _v3TimeSignature = Preferences.Get("musicmate.V3TimeSignature", "4/4");
-        public string V3TimeSignature
-        {
-            get => _session?.V3TimeSignature ?? _v3TimeSignature;
-            set
-            {
-                if ((_session?.V3TimeSignature ?? _v3TimeSignature) == value) return;
-                if (_session != null)
-                {
-                    _session.V3TimeSignature = value;
+                    _session.MeterTimeSignature = value;
                     MarkChildPracticeOverrideIfNeeded();
-                    OnPropertyChanged(nameof(V3TimeSignature));
+                    OnPropertyChanged(nameof(MeterTimeSignature));
                 }
                 else
                 {
-                    _v3TimeSignature = value;
+                    _meterTimeSignature = value;
                     Preferences.Set("musicmate.V3TimeSignature", value);
-                    OnPropertyChanged(nameof(V3TimeSignature));
+                    OnPropertyChanged(nameof(MeterTimeSignature));
                 }
             }
         }
 
-        private string _v3SmallestNote = Preferences.Get("musicmate.V3SmallestNote", "Quarter");
-        public string V3SmallestNote
+        private string _smallestRhythmNote = Preferences.Get("musicmate.V3SmallestNote", "Quarter");
+        public string SmallestRhythmNote
         {
-            get => _session?.V3SmallestNote ?? _v3SmallestNote;
+            get => _session?.SmallestRhythmNote ?? _smallestRhythmNote;
             set
             {
-                if ((_session?.V3SmallestNote ?? _v3SmallestNote) == value) return;
+                if ((_session?.SmallestRhythmNote ?? _smallestRhythmNote) == value) return;
                 if (_session != null)
                 {
-                    _session.V3SmallestNote = value;
+                    _session.SmallestRhythmNote = value;
                     MarkChildPracticeOverrideIfNeeded();
-                    OnPropertyChanged(nameof(V3SmallestNote));
+                    OnPropertyChanged(nameof(SmallestRhythmNote));
                 }
                 else
                 {
-                    _v3SmallestNote = value;
+                    _smallestRhythmNote = value;
                     Preferences.Set("musicmate.V3SmallestNote", value);
-                    OnPropertyChanged(nameof(V3SmallestNote));
+                    OnPropertyChanged(nameof(SmallestRhythmNote));
                 }
             }
         }
 
-        private string _v3RhythmMode = Preferences.Get("musicmate.V3RhythmMode", "Simple");
-        public string V3RhythmMode
+        private string _rhythmMode = Preferences.Get("musicmate.V3RhythmMode", "Simple");
+        public string RhythmMode
         {
-            get => _session?.V3RhythmMode ?? _v3RhythmMode;
+            get => _session?.RhythmMode ?? _rhythmMode;
             set
             {
-                if ((_session?.V3RhythmMode ?? _v3RhythmMode) == value) return;
+                if ((_session?.RhythmMode ?? _rhythmMode) == value) return;
                 if (_session != null)
                 {
-                    _session.V3RhythmMode = value;
+                    _session.RhythmMode = value;
                     MarkChildPracticeOverrideIfNeeded(rhythmModeChanged: true);
-                    OnPropertyChanged(nameof(V3RhythmMode));
+                    OnPropertyChanged(nameof(RhythmMode));
                 }
                 else
                 {
-                    _v3RhythmMode = value;
+                    _rhythmMode = value;
                     Preferences.Set("musicmate.V3RhythmMode", value);
-                    OnPropertyChanged(nameof(V3RhythmMode));
+                    OnPropertyChanged(nameof(RhythmMode));
                 }
             }
         }
 
-        private string _v3Syncopation = Preferences.Get("musicmate.V3Syncopation", "None");
-        public string V3Syncopation
+        private string _syncopationSetting = Preferences.Get("musicmate.V3Syncopation", "None");
+        public string SyncopationSetting
         {
-            get => _session?.V3Syncopation ?? _v3Syncopation;
+            get => _session?.SyncopationSetting ?? _syncopationSetting;
             set
             {
-                if ((_session?.V3Syncopation ?? _v3Syncopation) == value) return;
+                if ((_session?.SyncopationSetting ?? _syncopationSetting) == value) return;
                 if (_session != null)
                 {
-                    _session.V3Syncopation = value;
+                    _session.SyncopationSetting = value;
                     MarkChildPracticeOverrideIfNeeded();
-                    OnPropertyChanged(nameof(V3Syncopation));
+                    OnPropertyChanged(nameof(SyncopationSetting));
                 }
                 else
                 {
-                    _v3Syncopation = value;
+                    _syncopationSetting = value;
                     Preferences.Set("musicmate.V3Syncopation", value);
-                    OnPropertyChanged(nameof(V3Syncopation));
+                    OnPropertyChanged(nameof(SyncopationSetting));
                 }
             }
         }
 
-        private string _v3NoteNameDisplay = Preferences.Get("musicmate.V3NoteNameDisplay", "Current only");
-        public string V3NoteNameDisplay
+        private string _noteNameDisplay = Preferences.Get("musicmate.V3NoteNameDisplay", "Current only");
+        public string NoteNameDisplay
         {
-            get => _session?.V3NoteNameDisplay ?? _v3NoteNameDisplay;
+            get => _session?.NoteNameDisplay ?? _noteNameDisplay;
             set
             {
-                if ((_session?.V3NoteNameDisplay ?? _v3NoteNameDisplay) == value) return;
+                if ((_session?.NoteNameDisplay ?? _noteNameDisplay) == value) return;
                 if (_session != null)
                 {
-                    _session.V3NoteNameDisplay = value;
+                    _session.NoteNameDisplay = value;
                     MarkChildPracticeOverrideIfNeeded();
-                    OnPropertyChanged(nameof(V3NoteNameDisplay));
+                    OnPropertyChanged(nameof(NoteNameDisplay));
                 }
                 else
                 {
-                    _v3NoteNameDisplay = value;
+                    _noteNameDisplay = value;
                     Preferences.Set("musicmate.V3NoteNameDisplay", value);
-                    OnPropertyChanged(nameof(V3NoteNameDisplay));
+                    OnPropertyChanged(nameof(NoteNameDisplay));
                 }
             }
         }
@@ -727,6 +711,14 @@ namespace musicmate.ViewModels
         /// <summary>Resets all settings to their factory defaults.</summary>
         public void ResetToDefaults()
         {
+            var resetService = ServiceHelper.GetService<SettingsResetService>();
+            if (resetService != null)
+            {
+                resetService.ResetToFactoryDefaults();
+                return;
+            }
+
+            // Fallback when service locator is unavailable (e.g. design-time).
             PlaybackBpm = DefaultPlaybackBpm;
             MusicBpm = DefaultMusicBpm;
             AccidentalPercent = DefaultAccidentalPct;
@@ -739,28 +731,16 @@ namespace musicmate.ViewModels
             CollectNoteStats = DefaultCollectNote;
             CollectSessionStats = DefaultCollectSession;
             MaxSessionDbSizeMb = DefaultMaxSessionDbMb;
-            // Musical defaults: reset scale/tune, instrument and key via session
-            SelectedScale = DefaultTune;
+            SelectedScale = DefaultTune;  // DefaultTune = "Major" is correct for SelectedScale
             if (_session != null)
             {
                 _session.Instrument = DefaultInstrument;
                 _session.Key = DefaultKey;
-                _session.Tune = DefaultTune;
+                // [ResetOptionsTest] Tune must be a mode name ("Selected Scale"), not a scale name.
+                _session.Tune = "Selected Scale";
                 _session.ApplyAutomaticInstrumentRange();
                 _session.ResetAdvancedDetectionDefaults();
                 _session.ResetPracticeCompositionDefaults();
-            }
-            else
-            {
-                Preferences.Set("musicmate.Instrument", DefaultInstrument);
-                Preferences.Set("musicmate.Key", DefaultKey);
-                Preferences.Set("musicmate.Tune", DefaultTune);
-                Preferences.Set("musicmate.Tolerance", NoteSessionService.DefaultTolerance);
-                Preferences.Set("musicmate.PitchOffsetCents", NoteSessionService.DefaultPitchOffsetCents);
-                Preferences.Set("musicmate.PcTunes", NoteSessionService.DefaultPcTunes);
-                Preferences.Set("musicmate.PcRandom", NoteSessionService.DefaultPcRandom);
-                Preferences.Set("musicmate.PcScales", NoteSessionService.DefaultPcScales);
-                Preferences.Set("musicmate.PcArpeggios", NoteSessionService.DefaultPcArpeggios);
             }
             LevelUpService.ResetCriteriaToDefaults();
         }

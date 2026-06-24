@@ -12,7 +12,9 @@
 
             <!-- Logo + title -->
             <VerticalStackLayout Spacing="4" HorizontalOptions="Center">
-                <Image Source="logo.png" HeightRequest="80" WidthRequest="80" HorizontalOptions="Center" />
+                <Border Style="{StaticResource LargeLogoBorder}" HorizontalOptions="Center">
+                    <Image Source="logo.png" Aspect="AspectFill" />
+                </Border>
                 <Label Text="Music Mate"
                        FontSize="36"
                        FontAttributes="Bold"

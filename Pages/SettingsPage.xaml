@@ -43,10 +43,12 @@
                FontSize="18"
                VerticalOptions="Center" />
       </HorizontalStackLayout>
-      <Image Source="logo.png"
-             HeightRequest="32" WidthRequest="32"
-             VerticalOptions="Center" HorizontalOptions="End"
-             Grid.Column="1" />
+      <Border Style="{StaticResource TitleLogoBorder}"
+              VerticalOptions="Center"
+              HorizontalOptions="End"
+              Grid.Column="1">
+        <Image Source="logo.png" Aspect="AspectFill" />
+      </Border>
     </Grid>
   </Shell.TitleView>
 
@@ -211,57 +213,49 @@
                HorizontalTextAlignment="End" />
       </Grid>
 
-      <!-- ── Rhythm / V3 staff settings ────────────────────────────────────── -->
+      <!-- ── Rhythm settings ────────────────────────────────────── -->
       <BoxView HeightRequest="1" Color="#8B4513" Margin="0,4,0,2" />
       <Label Text="Rhythm Settings" FontAttributes="Bold" FontSize="13" />
 
       <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
         <Label Grid.Column="0" Text="Time signature" />
         <Picker Grid.Column="1"
-                ItemsSource="{Binding V3TimeSignatureOptions}"
-                SelectedItem="{Binding V3TimeSignature, Mode=TwoWay}"
+                ItemsSource="{Binding MeterTimeSignatureOptions}"
+                SelectedItem="{Binding MeterTimeSignature, Mode=TwoWay}"
                 TextColor="Black" BackgroundColor="White" FontSize="12" />
       </Grid>
 
       <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
         <Label Grid.Column="0" Text="Smallest note" />
         <Picker Grid.Column="1"
-                ItemsSource="{Binding V3SmallestNoteOptions}"
-                SelectedItem="{Binding V3SmallestNote, Mode=TwoWay}"
+                ItemsSource="{Binding SmallestRhythmNoteOptions}"
+                SelectedItem="{Binding SmallestRhythmNote, Mode=TwoWay}"
                 TextColor="Black" BackgroundColor="White" FontSize="12" />
       </Grid>
 
       <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
         <Label Grid.Column="0" Text="Rhythm mode" />
         <Picker Grid.Column="1"
-                ItemsSource="{Binding V3RhythmModeOptions}"
-                SelectedItem="{Binding V3RhythmMode, Mode=TwoWay}"
+                ItemsSource="{Binding RhythmModeOptions}"
+                SelectedItem="{Binding RhythmMode, Mode=TwoWay}"
                 TextColor="Black" BackgroundColor="White" FontSize="12" />
       </Grid>
 
       <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
         <Label Grid.Column="0" Text="Syncopation" />
         <Picker Grid.Column="1"
-                ItemsSource="{Binding V3SyncopationOptions}"
-                SelectedItem="{Binding V3Syncopation, Mode=TwoWay}"
+                ItemsSource="{Binding SyncopationSettingOptions}"
+                SelectedItem="{Binding SyncopationSetting, Mode=TwoWay}"
                 TextColor="Black" BackgroundColor="White" FontSize="12" />
       </Grid>
 
       <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
         <Label Grid.Column="0" Text="Show note names" />
         <Picker Grid.Column="1"
-                ItemsSource="{Binding V3NoteNameDisplayOptions}"
-                SelectedItem="{Binding V3NoteNameDisplay, Mode=TwoWay}"
+                ItemsSource="{Binding NoteNameDisplayOptions}"
+                SelectedItem="{Binding NoteNameDisplay, Mode=TwoWay}"
                 TextColor="Black" BackgroundColor="White" FontSize="12" />
       </Grid>
-
-      <!-- ── Reset to defaults ────────────────────────────────────────── -->
-      <BoxView HeightRequest="1" Color="#8B4513" Margin="0,6,0,2" />
-      <Button Text="Reset to defaults"
-              BackgroundColor="Orange"
-              TextColor="White"
-              HorizontalOptions="Center"
-              Clicked="OnResetSettingsClicked" />
 
     </VerticalStackLayout>
   </ScrollView>

@@ -11,19 +11,6 @@ using musicmate.Utilities;
 
 namespace musicmate.Services
 {
-    /// <summary>
-    /// Controls which staff renderer is active on the Practice / V3 Practice page.
-    /// </summary>
-    public enum StaffDisplayMode
-    {
-        /// <summary>Original single-note staff (StaffDrawable).</summary>
-        Classic,
-        /// <summary>Legacy value kept for preference parse compatibility.</summary>
-        V2,
-        /// <summary>V3 two-staff display (V3StaffDrawable).</summary>
-        V3
-    }
-
     public record FeedbackItem(int Index, int WrongAttempts, int CentsDeviation, bool IsCorrect)
     {
         public string CentsText => $"{CentsDeviation:+0;-0;0}";
@@ -41,19 +28,15 @@ namespace musicmate.Services
         public bool IsRest { get; set; }
         /// <summary>Rhythmic duration for practice-tune notes. Null in random/scale/tuner modes.</summary>
         public NoteDuration? Duration { get; set; }
-
-        /// <summary>Absolute beat where this pitched note begins (V3 rhythm gate).</summary>
+        /// <summary>Absolute beat where this pitched note begins (rhythm gate).</summary>
         public double StartBeat { get; set; }
-
-        /// <summary>Written duration in beats (V3 rhythm gate).</summary>
+        /// <summary>Written duration in beats (rhythm gate).</summary>
         public double DurationBeats { get; set; }
-
         /// <summary>
         /// Beats from previous pitched note's start to this note's start
         /// (= prior note duration + intervening rests). Zero for the first pitched note.
         /// </summary>
         public double GateBeatsAfterPrevious { get; set; }
-
         // Returns all enharmonic names for this note (including itself)
         public IEnumerable<string> EnharmonicNames
         {
@@ -86,7 +69,6 @@ namespace musicmate.Services
     {
         private static readonly HashSet<string> FreeScales = new() { "Major", "Harmonic Minor" };
         private static readonly HashSet<string> FreeKeys = new() { "C", "F", "Bb", "G", "D" };
-
         public NoteSessionService()
         {
             Instrument = _instrument;
@@ -98,7 +80,6 @@ namespace musicmate.Services
                     RevertToFreeDefaults();
             };
         }
-
         private void RevertToFreeDefaults()
         {
             if (!FreeScales.Contains(SelectedScale))
@@ -108,10 +89,7 @@ namespace musicmate.Services
 
             ApplyAutomaticInstrumentRange();
         }
-
-        public int SampleRate { get; set; } = 44100;
-        public int BufferSize { get; set; } = 4096;
-
+        public int SampleRate { get; set; } = 44100;        public int BufferSize { get; set; } = 4096;
         // Add this property to NoteSessionService (near other public properties)  //  2026.04.07 1216  
         private int? _playbackHighlightIndex = null;
         public int? PlaybackHighlightIndex
@@ -127,163 +105,112 @@ namespace musicmate.Services
             }
         }
 
-        // ── Display mode ─────────────────────────────────────────────────────────
-        private const string PrefStaffDisplayModeKey = "musicmate.StaffDisplayMode";
-        private const string PrefV3TimeSignatureKey = "musicmate.V3TimeSignature";
-        private const string PrefV3SmallestNoteKey = "musicmate.V3SmallestNote";
-        private const string PrefV3RhythmModeKey = "musicmate.V3RhythmMode";
-        private const string PrefV3SyncopationKey = "musicmate.V3Syncopation";
-        private const string PrefV3NoteNameDisplayKey = "musicmate.V3NoteNameDisplay";
-
-        private StaffDisplayMode _staffDisplayMode = LoadStaffDisplayMode();
-
-        private static StaffDisplayMode LoadStaffDisplayMode()
-        {
-            StaffDisplayMode mode = StaffDisplayMode.V3;
-            if (Preferences.ContainsKey(PrefStaffDisplayModeKey))
-            {
-                var saved = Preferences.Get(PrefStaffDisplayModeKey, nameof(StaffDisplayMode.V3));
-                if (Enum.TryParse<StaffDisplayMode>(saved, out var parsed))
-                    mode = parsed;
-            }
-
-            if (mode != StaffDisplayMode.V3)
-                mode = StaffDisplayMode.V3;
-
-            Preferences.Set(PrefStaffDisplayModeKey, mode.ToString());
-            return mode;
-        }
-
-        /// <summary>Active staff display mode (app practice uses V3 only).</summary>
-        public StaffDisplayMode StaffDisplayMode
-        {
-            get => _staffDisplayMode;
-            set
-            {
-                value = StaffDisplayMode.V3;
-                if (_staffDisplayMode == value) return;
-                _staffDisplayMode = value;
-                Preferences.Set(PrefStaffDisplayModeKey, value.ToString());
-                OnPropertyChanged(nameof(StaffDisplayMode));
-                OnPropertyChanged(nameof(StaffDisplayModeDisplay));
-            }
-        }
-
-        /// <summary>Human-readable label (V3-only; kept for binding compatibility).</summary>
-        public string StaffDisplayModeDisplay
-        {
-            get => "V3 Two-Staff";
-            set => StaffDisplayMode = StaffDisplayMode.V3;
-        }
-
-        public static string[] StaffDisplayModeOptions { get; } = { "V3 Two-Staff" };
-
-        private string _v3TimeSignature = Preferences.Get(PrefV3TimeSignatureKey, "4/4");
-        private string _v3SmallestNote = Preferences.Get(PrefV3SmallestNoteKey, "Quarter");
-        private string _v3RhythmMode = Preferences.Get(PrefV3RhythmModeKey, "Simple");
-        private string _v3Syncopation = Preferences.Get(PrefV3SyncopationKey, "None");
-        private string _v3NoteNameDisplay = Preferences.Get(PrefV3NoteNameDisplayKey, "Current only");
+        // ── Rhythm / staff generation settings ─────────────────────────────────
+        private const string PrefMeterTimeSignatureKey = "musicmate.V3TimeSignature";
+        private const string PrefSmallestRhythmNoteKey = "musicmate.V3SmallestNote";
+        private const string PrefRhythmModeKey = "musicmate.V3RhythmMode";
+        private const string PrefSyncopationSettingKey = "musicmate.V3Syncopation";
+        private const string PrefNoteNameDisplayKey = "musicmate.V3NoteNameDisplay";
+        private string _meterTimeSignature = Preferences.Get(PrefMeterTimeSignatureKey, "4/4");
+        private string _smallestRhythmNote = Preferences.Get(PrefSmallestRhythmNoteKey, "Quarter");
+        private string _rhythmMode = Preferences.Get(PrefRhythmModeKey, "Simple");
+        private string _syncopationSetting = Preferences.Get(PrefSyncopationSettingKey, "None");
+        private string _noteNameDisplay = Preferences.Get(PrefNoteNameDisplayKey, "Current only");
 
         /// <summary>
-        /// Time signature for V3 rhythm generation.
+        /// Time signature for rhythm generation.
         /// Persisted value is the display string: "4/4", "3/4", or "2/4".
         /// </summary>
-        public string V3TimeSignature
+        public string MeterTimeSignature
         {
-            get => _v3TimeSignature;
+            get => _meterTimeSignature;
             set
             {
-                if (_v3TimeSignature == value) return;
-                _v3TimeSignature = value;
-                Preferences.Set(PrefV3TimeSignatureKey, value);
-                OnPropertyChanged(nameof(V3TimeSignature));
+                if (_meterTimeSignature == value) return;
+                _meterTimeSignature = value;
+                Preferences.Set(PrefMeterTimeSignatureKey, value);
+                OnPropertyChanged(nameof(MeterTimeSignature));
             }
         }
-
         /// <summary>
         /// Time signature drawn on the staff.  Built-in practice tunes use their own
-        /// meter; generated sequences use <see cref="V3TimeSignature"/>.
+        /// meter; generated sequences use <see cref="MeterTimeSignature"/>.
         /// </summary>
         public string GetDisplayTimeSignature()
         {
             if (Tune == "Practice Tune" && CurrentTune != null)
                 return CurrentTune.TimeSignature.ToString();
-            return V3TimeSignature ?? "4/4";
+            return MeterTimeSignature ?? "4/4";
         }
-
         /// <summary>Quarter-note beats per measure for layout validation.</summary>
         public double GetDisplayMeasureBeats()
         {
             if (Tune == "Practice Tune" && CurrentTune != null)
                 return CurrentTune.TimeSignature.TotalBeats;
 
-            var parts = (V3TimeSignature ?? "4/4").Split('/');
+            var parts = (MeterTimeSignature ?? "4/4").Split('/');
             return parts.Length == 2 && int.TryParse(parts[0], out int beats) ? beats : 4.0;
         }
-
         /// <summary>
-        /// Smallest note value allowed in V3 rhythm generation.
+        /// Smallest note value allowed in rhythm generation.
         /// Persisted value is the display string: "Quarter", "Eighth", or "Sixteenth".
         /// </summary>
-        public string V3SmallestNote
+        public string SmallestRhythmNote
         {
-            get => _v3SmallestNote;
+            get => _smallestRhythmNote;
             set
             {
-                if (_v3SmallestNote == value) return;
-                _v3SmallestNote = value;
-                Preferences.Set(PrefV3SmallestNoteKey, value);
-                OnPropertyChanged(nameof(V3SmallestNote));
+                if (_smallestRhythmNote == value) return;
+                _smallestRhythmNote = value;
+                Preferences.Set(PrefSmallestRhythmNoteKey, value);
+                OnPropertyChanged(nameof(SmallestRhythmNote));
             }
         }
-
         /// <summary>
-        /// Rhythm variety mode for V3 generation.
+        /// Rhythm variety mode for generation.
         /// "Simple" uses only quarter notes (and half/whole occasionally).
-        /// "Mixed" allows the full range of durations up to <see cref="V3SmallestNote"/>.
+        /// "Mixed" allows the full range of durations up to <see cref="SmallestRhythmNote"/>.
         /// </summary>
-        public string V3RhythmMode
+        public string RhythmMode
         {
-            get => _v3RhythmMode;
+            get => _rhythmMode;
             set
             {
-                if (_v3RhythmMode == value) return;
-                _v3RhythmMode = value;
-                Preferences.Set(PrefV3RhythmModeKey, value);
-                OnPropertyChanged(nameof(V3RhythmMode));
+                if (_rhythmMode == value) return;
+                _rhythmMode = value;
+                Preferences.Set(PrefRhythmModeKey, value);
+                OnPropertyChanged(nameof(RhythmMode));
             }
         }
-
         /// <summary>
-        /// Syncopation level for V3 rhythm generation.
+        /// Syncopation level for rhythm generation.
         /// "None" = on-beat sequential fill; "Simple" = mild off-beat accents;
         /// "Full" = stronger syncopated motifs.
         /// </summary>
-        public string V3Syncopation
+        public string SyncopationSetting
         {
-            get => _v3Syncopation;
+            get => _syncopationSetting;
             set
             {
-                if (_v3Syncopation == value) return;
-                _v3Syncopation = value;
-                Preferences.Set(PrefV3SyncopationKey, value);
-                OnPropertyChanged(nameof(V3Syncopation));
+                if (_syncopationSetting == value) return;
+                _syncopationSetting = value;
+                Preferences.Set(PrefSyncopationSettingKey, value);
+                OnPropertyChanged(nameof(SyncopationSetting));
             }
         }
-
         /// <summary>
-        /// Controls when note names are shown above/below noteheads in the V3 staff.
+        /// Controls when note names are shown above/below noteheads on the staff.
         /// Values: "Current only", "All notes", "Off".
         /// </summary>
-        public string V3NoteNameDisplay
+        public string NoteNameDisplay
         {
-            get => _v3NoteNameDisplay;
+            get => _noteNameDisplay;
             set
             {
-                if (_v3NoteNameDisplay == value) return;
-                _v3NoteNameDisplay = value;
-                Preferences.Set(PrefV3NoteNameDisplayKey, value);
-                OnPropertyChanged(nameof(V3NoteNameDisplay));
+                if (_noteNameDisplay == value) return;
+                _noteNameDisplay = value;
+                Preferences.Set(PrefNoteNameDisplayKey, value);
+                OnPropertyChanged(nameof(NoteNameDisplay));
             }
         }
         public int AccidentalPercent
@@ -299,7 +226,6 @@ namespace musicmate.Services
                 }
             }
         }
-
         /// <summary>
         /// Maximum melodic interval in semitones allowed between consecutive notes.
         /// Set by <see cref="DifficultyLevelMapper.ApplyToSession"/> to enforce
@@ -322,24 +248,17 @@ namespace musicmate.Services
 
         /// <summary>Child-Practice measure batch size; 0 = use MusicPage default.</summary>
         public int ChildMeasureBatchSize { get; set; }
-
-        /// <summary>Explicit rhythm variety (0–100); -1 = derive from <see cref="V3RhythmMode"/>.</summary>
-        public int V3RhythmVarietyPercent { get; set; } = -1;
-
+        /// <summary>Explicit rhythm variety (0–100); -1 = derive from <see cref="RhythmMode"/>.</summary>
+        public int RhythmVarietyPercent { get; set; } = -1;
         /// <summary>Per-slot rest chance (0–100); -1 = legacy rest logic in generator.</summary>
-        public int V3RestChancePercent { get; set; } = -1;
+        public int PracticeRestChancePercent { get; set; } = -1;
         public string[] WhiteKeyNoteNames { get; } =
             Enumerable.Range(21, 88) // MIDI 21 (A0) to 108 (C8)
                 .Select(midi => MidiToNoteName(midi, false))
                 .Where(name => !name.Contains('#') && !name.Contains('b'))
                 .ToArray();
-
-
         public event Func<Task>? SessionCompletedAsync;
-
-
         public event PropertyChangedEventHandler? PropertyChanged;
-
         protected void OnPropertyChanged(string propertyName)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
@@ -387,9 +306,7 @@ namespace musicmate.Services
         private int _maxFrequency = Preferences.Get(PrefMaxFrequencyKey, 8000);
         private int _smoothingWindowSize = Preferences.Get(PrefSmoothingWindowSizeKey, 3);
         private double _pitchConfidenceThreshold = Preferences.Get(PrefPitchConfidenceThresholdKey, 0.5);
-
         private string _randomSelectedNotesDisplay = string.Empty;
-
         public int AudioBufferSize
         {
             get => _audioBufferSize;
@@ -417,7 +334,6 @@ namespace musicmate.Services
                 }
             }
         }
-
         public int MinFrequency
         {
             get => _minFrequency;
@@ -431,7 +347,6 @@ namespace musicmate.Services
                 }
             }
         }
-
         public int MaxFrequency
         {
             get => _maxFrequency;
@@ -445,7 +360,6 @@ namespace musicmate.Services
                 }
             }
         }
-
         public int SmoothingWindowSize
         {
             get => _smoothingWindowSize;
@@ -459,7 +373,6 @@ namespace musicmate.Services
                 }
             }
         }
-
         public double PitchConfidenceThreshold
         {
             get => _pitchConfidenceThreshold;
@@ -473,7 +386,6 @@ namespace musicmate.Services
                 }
             }
         }
-
         private string _instrument = Preferences.Get(PrefInstrumentKey, "Bb");
         private string _key = Preferences.Get(PrefKeySignatureKey, "C");
         private string _selectedScale = Preferences.Get(PrefSelectedScaleKey, "Major");
@@ -500,7 +412,6 @@ namespace musicmate.Services
         private int _correctThreshold = Preferences.Get(PrefCorrectThresholdKey, 50);
         private double _pitchOffsetCents = Preferences.Get(PrefPitchOffsetCentsKey, DefaultPitchOffsetCents);
         public const double DefaultPitchOffsetCents = 0.0;
-
         public double PitchOffsetCents
         {
             get => _pitchOffsetCents;
@@ -514,7 +425,6 @@ namespace musicmate.Services
                 }
             }
         }
-
         /// <summary>
         /// Milliseconds to debounce wrong-count increments. Exposed for binding in Advanced settings.
         /// Persisted to preferences key <see cref="PrefWrongDebounceMsKey"/>.
@@ -562,7 +472,6 @@ namespace musicmate.Services
                 }
             }
         }
-
         public int StreakCrit
         {
             get => _streakCrit;
@@ -577,14 +486,11 @@ namespace musicmate.Services
                 }
             }
         }
-
         // Per-session streak tracking: written name → current consecutive correct count
         private readonly Dictionary<string, int> _sessionStreaks = new();
-
         /// <summary>True when timing accuracy affects overall correctness and mastery.</summary>
         public bool IsTimingActiveForMastery()
             => MasteryEvaluator.TimingAffectsMastery(ChildLevel);
-
         /// <summary>
         /// When timing is not active for the current level, overall follows pitch only.
         /// When timing is active, both pitch and timing must pass.
@@ -596,21 +502,7 @@ namespace musicmate.Services
             if (!IsTimingActiveForMastery())
                 return true;
             return timingCorrect == true;
-        }
-
-        public void RecordRandomSessionNoteResult(string writtenName, bool correct)
-        {
-            // Legacy callers pass overall result only; map to pitch+timing when indistinguishable.
-            RecordAttemptOutcome(new NoteAttemptOutcome
-            {
-                ExpectedWrittenNoteName = writtenName,
-                PitchCorrect = correct,
-                TimingCorrect = correct ? true : null,
-                OverallCorrect = correct,
-                WrongReason = correct ? string.Empty : "WrongPitch",
-            });
-        }
-
+        }      
         public void RecordAttemptOutcome(in NoteAttemptOutcome outcome)
         {
             _sessionAttemptOutcomes.Add(outcome);
@@ -667,20 +559,14 @@ namespace musicmate.Services
 
             _sessionNoteStats[writtenName] = agg;
         }
-
         public Dictionary<string, SessionNoteAggregate> GetAndClearSessionNoteStats()
         {
             var copy = new Dictionary<string, SessionNoteAggregate>(_sessionNoteStats);
             _sessionNoteStats.Clear();
             return copy;
         }
-
         public IReadOnlyList<NoteAttemptOutcome> GetSessionAttemptOutcomes()
             => _sessionAttemptOutcomes;
-
-        public (int RestCorrect, int RestWrong) GetSessionRestCounts()
-            => (_sessionRestCorrect, _sessionRestWrong);
-
         public (int PitchRight, int PitchWrong, int TimingRight, int TimingWrong,
             int OverallRight, int OverallWrong, int RestRight, int RestWrong) GetSessionSummaryCounts()
         {
@@ -699,33 +585,16 @@ namespace musicmate.Services
             return (pitchRight, pitchWrong, timingRight, timingWrong,
                 overallRight, overallWrong, _sessionRestCorrect, _sessionRestWrong);
         }
-
         public void ClearSessionAttemptOutcomes()
         {
             _sessionAttemptOutcomes.Clear();
             _sessionRestCorrect = 0;
             _sessionRestWrong = 0;
-        }
-
-        [Obsolete("Use GetAndClearSessionNoteStats")]
-        public Dictionary<string, (int Correct, int Wrong, double TotalMs, int MsCount)> GetAndClearRandomSessionNoteStats()
-        {
-            var result = new Dictionary<string, (int, int, double, int)>();
-            foreach (var (name, agg) in GetAndClearSessionNoteStats())
-            {
-                result[name] = (agg.OverallCorrect, agg.OverallWrong, agg.TotalMs, agg.MsCount);
-            }
-            return result;
-        }
-
-        public Dictionary<string, SessionNoteAggregate> GetAndClearRandomSessionNoteStatsEx()
-            => GetAndClearSessionNoteStats();
-
+        }        
         public Dictionary<string, int> GetSessionStreaks()
         {
             return new Dictionary<string, int>(_sessionStreaks);
         }
-
         /// <summary>
         /// Returns the set of written-pitch MIDI numbers that the player has mastered,
         /// using the same criteria as v1 Random mode mastery filtering.
@@ -824,7 +693,6 @@ namespace musicmate.Services
             var scale = BuildScaleSequence(key, selectedScale);
             return scale.Select(n => new string(n.TakeWhile(c => !char.IsDigit(c)).ToArray())).Distinct().ToArray();
         }
-
         public string LowestNote
         {
             get => string.IsNullOrWhiteSpace(_lowestNote) ? "E3" : _lowestNote;
@@ -843,7 +711,6 @@ namespace musicmate.Services
                 }
             }
         }
-
         public string HighestNote
         {
             get => string.IsNullOrWhiteSpace(_highestNote) ? "C6" : _highestNote;
@@ -862,8 +729,6 @@ namespace musicmate.Services
                 }
             }
         }
-
-
         public int CorrectThreshold
         {
             get => _correctThreshold;
@@ -879,49 +744,26 @@ namespace musicmate.Services
                 OnPropertyChanged(nameof(CorrectThreshold));
             }
         }
-
-        private static bool IsEnharmonicToAdjacent(string accidentalNote, List<string> sequence, int index)
-        {
-            int midi = NoteNameToMidi(accidentalNote);
-            // Check previous note
-            if (index > 0 && NoteNameToMidi(sequence[index - 1]) == midi)
-                return true;
-            // Check next note
-            if (index < sequence.Count - 1 && NoteNameToMidi(sequence[index + 1]) == midi)
-                return true;
-            return false;
-        }
-
         public static string[] InstrumentOptions => InstrumentCatalog.DisplayNames;
-
         /// <summary>
         /// Maps a stored instrument value (short key like "Bb" or a full InstrumentOptions entry)
         /// to the canonical InstrumentOptions string.
         /// </summary>
         public static string NormalizeInstrumentOption(string? value)
             => InstrumentCatalog.Resolve(value).Id;
-
         private int GetInstrumentTransposeOffset()
             => CurrentInstrumentProfile.TransposeOffset;
-
         public int InstrumentTransposeOffset => GetInstrumentTransposeOffset();
-
         public InstrumentProfile CurrentInstrumentProfile => InstrumentCatalog.Resolve(_instrument);
-
         public string InstrumentDisplayName => CurrentInstrumentProfile.DisplayName;
-
         public string InstrumentKey => CurrentInstrumentProfile.InstrumentKey;
-
         public string AutomaticNoteRangeDisplay => $"{LowestNote} - {HighestNote}";
-
         public IReadOnlyList<int> AvailableInstrumentMidis
             => InstrumentCatalog.BuildAvailableMidiSet(CurrentInstrumentProfile, ChildLevel);
-
         public IReadOnlyList<string> AvailableInstrumentNoteNames
             => AvailableInstrumentMidis
                 .Select(midi => MidiToNoteName(midi, KeyUsesFlats(Key)))
                 .ToArray();
-
         public void ApplyAutomaticInstrumentRange(int? levelOverride = null)
         {
             int level = levelOverride ?? ChildLevel;
@@ -932,7 +774,6 @@ namespace musicmate.Services
             OnPropertyChanged(nameof(AvailableInstrumentMidis));
             OnPropertyChanged(nameof(AvailableInstrumentNoteNames));
         }
-
         /// <summary>
         /// Ensures random-mode generation has an interval cap and instrument range.
         /// Uses <see cref="ChildLevel"/> when set; otherwise falls back to the saved
@@ -952,41 +793,24 @@ namespace musicmate.Services
             else if (MaxMelodicIntervalSemitones <= 0)
                 MaxMelodicIntervalSemitones = 7;
         }
-
-        private static HashSet<int> GetUnadornedNoteMidis(IEnumerable<string> scaleNotes)
-        {
-            var set = new HashSet<int>();
-            foreach (var note in scaleNotes)
-            {
-                var baseName = new string(note.TakeWhile(c => !char.IsDigit(c)).ToArray());
-                if (!baseName.Contains('#') && !baseName.Contains('b'))
-                {
-                    set.Add(NoteNameToMidi(note));
-                }
-            }
-            return set;
-        }
-
         public string TimingStatsDisplay =>
             _timingAccuracyPercent.HasValue
                 ? $"Timing: {_timingAccuracyPercent.Value:F1}%"
                 : "Timing: N/A";
-
         private void NotifyTimingStatsChanged()
         {
             OnPropertyChanged(nameof(TimingStatsDisplay));
             OnPropertyChanged(nameof(DetectedBpm));
         }
-
         private static string[] SpellDescendingDegrees(
-      char tonicLetter,
-      int startOctave,
-      int tonicIdx,
-      int tonicMidi,
-      int[] semitones,
-      AccidentalPreference pref,
-      HashSet<int> flats,
-      HashSet<int> sharps)
+            char tonicLetter,
+            int startOctave,
+            int tonicIdx,
+            int tonicMidi,
+            int[] semitones,
+            AccidentalPreference pref,
+            HashSet<int> flats,
+            HashSet<int> sharps)
         {
             var result = new List<string>(semitones.Length);
 
@@ -1007,15 +831,15 @@ namespace musicmate.Services
 
             return result.ToArray();
         }
-        private static string[] SpellDegrees(
-     char tonicLetter,
-     int octave,
-     int tonicIdx,
-     int tonicMidi,
-     int[] semitones,
-     AccidentalPreference pref,
-     HashSet<int> flats,
-     HashSet<int> sharps)
+       private static string[] SpellDegrees(
+            char tonicLetter,
+            int octave,
+            int tonicIdx,
+            int tonicMidi,
+            int[] semitones,
+             AccidentalPreference pref,
+             HashSet<int> flats,
+            HashSet<int> sharps)
         {
             var result = new List<string>(semitones.Length);
 
@@ -1034,7 +858,6 @@ namespace musicmate.Services
         }
         private const string PrefMinCorrectCountKey = "musicmate.MinCorrectCount";
         private int _minCorrectCount = Preferences.Get(PrefMinCorrectCountKey, 3);
-
         private const string PrefOmitMsAvgThresholdKey = "musicmate.OmitMsAvgThreshold";
         private int _omitMsAvgThreshold = Preferences.Get(PrefOmitMsAvgThresholdKey, 500);
         public int OmitMsAvgThreshold
@@ -1133,7 +956,6 @@ namespace musicmate.Services
         /// session and should not be overwritten until the child level changes.
         /// </summary>
         public bool ChildPracticeSettingsCustomized { get; private set; }
-
         /// <summary>Marks user-owned child session settings for the current child level.</summary>
         public void MarkChildPracticeSettingsCustomized()
         {
@@ -1141,11 +963,9 @@ namespace musicmate.Services
                 return;
             ChildPracticeSettingsCustomized = true;
         }
-
         /// <summary>Clears the child practice override flag (level defaults will apply again).</summary>
         public void ClearChildPracticeSettingsCustomization()
             => ChildPracticeSettingsCustomized = false;
-
         public string Key
         {
             get => _key;
@@ -1155,6 +975,7 @@ namespace musicmate.Services
                 _key = value;
                 Preferences.Set(PrefKeySignatureKey, _key);
                 OnPropertyChanged(nameof(Key));
+                OnPropertyChanged(nameof(EffectiveScaleDisplay));
             }
         }
         public string SelectedScale
@@ -1166,6 +987,76 @@ namespace musicmate.Services
                 _selectedScale = value;
                 Preferences.Set(PrefSelectedScaleKey, _selectedScale);
                 OnPropertyChanged(nameof(SelectedScale));
+                if (!IsRandomMode)
+                    SetEffectiveScale(_selectedScale);
+            }
+        }
+
+        private string _effectiveScale = string.Empty;
+
+        /// <summary>
+        /// The scale used for the current generated tune. In random mode this is chosen once
+        /// per generation and remains stable for that tune.
+        /// </summary>
+        public string EffectiveScale
+        {
+            get => string.IsNullOrWhiteSpace(_effectiveScale) ? SelectedScale : _effectiveScale;
+            private set => SetEffectiveScale(value);
+        }
+
+        /// <summary>Scale passed to note generation (EffectiveScale in random mode).</summary>
+        public string GenerationScale => IsRandomMode ? EffectiveScale : SelectedScale;
+
+        /// <summary>Label for random mode, e.g. "Random — C Major".</summary>
+        public string EffectiveScaleDisplay =>
+            IsRandomMode ? $"Random — {Key} {EffectiveScale}" : $"{Key} {SelectedScale}";
+
+        private void SetEffectiveScale(string scale)
+        {
+            if (string.IsNullOrWhiteSpace(scale))
+                scale = SelectedScale;
+            if (_effectiveScale == scale)
+            {
+                OnPropertyChanged(nameof(EffectiveScaleDisplay));
+                OnPropertyChanged(nameof(GenerationScale));
+                return;
+            }
+            _effectiveScale = scale;
+            OnPropertyChanged(nameof(EffectiveScale));
+            OnPropertyChanged(nameof(EffectiveScaleDisplay));
+            OnPropertyChanged(nameof(GenerationScale));
+        }
+
+        /// <summary>
+        /// Locks the effective scale for one generated tune. Call once before each new generation.
+        /// </summary>
+        public void PrepareEffectiveScaleForGeneration(int generationSeed)
+        {
+            if (!IsRandomMode)
+            {
+                SetEffectiveScale(SelectedScale);
+                return;
+            }
+
+            int level = ChildLevel;
+            if (level <= 0)
+                level = Preferences.Get("ChildPractice.Level", 0);
+
+            if (level > 0)
+            {
+                if (ChildLevelProgression.LevelHasMultipleScales(level))
+                {
+                    var rng = new Random(generationSeed);
+                    SetEffectiveScale(ChildLevelProgression.PickScaleFromPool(level, rng));
+                }
+                else
+                {
+                    SetEffectiveScale(ChildLevelProgression.GetDefaultScale(level));
+                }
+            }
+            else
+            {
+                SetEffectiveScale(SelectedScale);
             }
         }
         /// <summary>Playback tempo (BPM) when the device plays notes (Auto Play).</summary>
@@ -1200,7 +1091,6 @@ namespace musicmate.Services
                 OnPropertyChanged(nameof(MusicBpm));
             }
         }
-
         /// <summary>
         /// Future pool weights (sum 100): practice tunes, random, scales, arpeggios.
         /// Subsets of each master collection will vary by Level when wired into generation.
@@ -1210,25 +1100,21 @@ namespace musicmate.Services
             get => _pcTunes;
             set => SetSinglePracticeCompositionPercent(ref _pcTunes, PrefPcTunesKey, value, nameof(PcTunes));
         }
-
         public int PcRandom
         {
             get => _pcRandom;
             set => SetSinglePracticeCompositionPercent(ref _pcRandom, PrefPcRandomKey, value, nameof(PcRandom));
         }
-
         public int PcScales
         {
             get => _pcScales;
             set => SetSinglePracticeCompositionPercent(ref _pcScales, PrefPcScalesKey, value, nameof(PcScales));
         }
-
         public int PcArpeggios
         {
             get => _pcArpeggios;
             set => SetSinglePracticeCompositionPercent(ref _pcArpeggios, PrefPcArpeggiosKey, value, nameof(PcArpeggios));
         }
-
         public void SetPracticeCompositionPercents(int tunes, int random, int scales, int arpeggios)
         {
             tunes = Math.Clamp(tunes, 0, 100);
@@ -1251,7 +1137,6 @@ namespace musicmate.Services
             OnPropertyChanged(nameof(PcScales));
             OnPropertyChanged(nameof(PcArpeggios));
         }
-
         /// <summary>
         /// Redistributes the three unchanged categories so all four values sum to 100,
         /// preserving their relative proportions.
@@ -1302,13 +1187,11 @@ namespace musicmate.Services
             result[otherIndices[2]] = remainder - assigned;
             return result;
         }
-
-        public void ResetPracticeCompositionDefaults()
+                public void ResetPracticeCompositionDefaults()
         {
             SetPracticeCompositionPercents(
                 DefaultPcTunes, DefaultPcRandom, DefaultPcScales, DefaultPcArpeggios);
         }
-
         private void SetSinglePracticeCompositionPercent(
             ref int field, string prefKey, int value, string propertyName)
         {
@@ -1319,7 +1202,6 @@ namespace musicmate.Services
             Preferences.Set(prefKey, field);
             OnPropertyChanged(propertyName);
         }
-
         public int Tolerance
         {
             get => _tolerance;
@@ -1349,7 +1231,6 @@ namespace musicmate.Services
                 OnPropertyChanged(nameof(AutoStart));
             }
         }
-
         public bool AutoRepeat
         {
             get => _autoRepeat;
@@ -1364,7 +1245,6 @@ namespace musicmate.Services
                 OnPropertyChanged(nameof(AutoRepeat));
             }
         }
-
         public bool RepeatSameTune
         {
             get => _repeatSameTune;
@@ -1413,7 +1293,6 @@ namespace musicmate.Services
                 OnPropertyChanged(nameof(CooldownMs));
             }
         }
-
         /// <summary>Restores advanced pitch-detection settings to factory defaults.</summary>
         public void ResetAdvancedDetectionDefaults()
         {
@@ -1422,20 +1301,15 @@ namespace musicmate.Services
             CooldownMs = DefaultCooldownMs;
             PitchOffsetCents = DefaultPitchOffsetCents;
         }
-
-        public bool OneOctaveMode { get; set; } = true;
-        public int NoteAdvanceIgnoreMs { get; set; } = 200;
         public ObservableCollection<FeedbackItem> FeedbackViewModels { get; } = new();
         public readonly List<NoteInfo> NotesToDraw = new();
         public int CurrentNoteIndex { get; private set; }
         public readonly HashSet<int> CorrectNoteIndices = new();
-
         /// <summary>
         /// The practice tune currently loaded into <see cref="NotesToDraw"/>.
         /// Null when the active mode is not "Practice Tune".
         /// </summary>
         public PracticeTune? CurrentTune { get; private set; }
-
         /// <summary>
         /// X-positions (in the same coordinate space as <see cref="NoteInfo.X"/>) at which
         /// bar lines should be drawn between measures.  Populated by
@@ -1462,8 +1336,7 @@ namespace musicmate.Services
         /// immediately trigger the second.
         /// </summary>
         private bool _requireSilenceBeforeNote;
-
-        // V3 sustain/rest earliest-start gate (uses MusicBpm as written tempo)
+        // Sustain/rest earliest-start gate (uses MusicBpm as written tempo)
         private bool _rhythmStartGateEnabled;
         private int _rhythmGateMusicBpm;
         private double _rhythmGateUntilMs;
@@ -1471,7 +1344,6 @@ namespace musicmate.Services
         private int _rhythmGateAcceptedIdx = -1;
         private double _rhythmGatePriorDurationMs;
         private double _lastRestViolationLogMs = double.NegativeInfinity;
-
         private enum AccidentalPreference { Auto, Sharps, Flats }
         public static readonly string[] AvailableScales = new[]
         {
@@ -1488,15 +1360,12 @@ namespace musicmate.Services
         private static readonly int[] DoubleHarmonicUp = new[] { 0, 1, 4, 5, 7, 8, 11, 12 };
         private static readonly int[] NeapolitanMinorUp = new[] { 0, 1, 3, 5, 7, 8, 11, 12 };
         private static readonly int[] NeapolitanMajorUp = new[] { 0, 1, 3, 5, 7, 9, 11, 12 };
-
         // Timing: onset-based linear regression (least-squares fit)
         private readonly Stopwatch _sessionStopwatch = new();
         private readonly List<(double OnsetMs, double ExpectedBeat)> _onsetData = new();
         private double? _timingAccuracyPercent;
-
         /// <summary>Detected tempo (BPM) from the user's performance this session.</summary>
         private int? _detectedBpm;
-
         /// <summary>
         /// Detected tempo in beats per minute from the user's playing this session.
         /// Null until <see cref="FinalizeSessionStats"/> runs or when detection is unavailable.
@@ -1515,7 +1384,6 @@ namespace musicmate.Services
                 }
             }
         }
-
         public string SelectedArpeggioId
         {
             get => _selectedArpeggioId;
@@ -1527,7 +1395,6 @@ namespace musicmate.Services
                 OnPropertyChanged(nameof(SelectedArpeggioId));
             }
         }
-
         public string SelectedArpeggioRoot
         {
             get => _selectedArpeggioRoot;
@@ -1539,7 +1406,6 @@ namespace musicmate.Services
                 OnPropertyChanged(nameof(SelectedArpeggioRoot));
             }
         }
-
         public string SelectedArpeggioDisplay
         {
             get => _selectedArpeggioDisplay;
@@ -1551,7 +1417,6 @@ namespace musicmate.Services
                 OnPropertyChanged(nameof(SelectedArpeggioDisplay));
             }
         }
-
         public void SelectArpeggio(ArpeggioPattern pattern, string rootNote, string displayName)
         {
             SelectedArpeggioId = pattern.Id;
@@ -1560,7 +1425,6 @@ namespace musicmate.Services
             Tune = "Arpeggio";
         }
         private readonly Queue<double> _pitchMedianHistory = new();
-
         public double SmoothPitch(double freq)
         {
             if (SmoothingWindowSize <= 1)
@@ -1576,7 +1440,6 @@ namespace musicmate.Services
             var sorted = _pitchMedianHistory.Order().ToArray();
             return sorted[sorted.Length / 2];
         }
-
         public void Reset()
         {
             SessionCompleted = false;
@@ -1614,7 +1477,6 @@ namespace musicmate.Services
             _wrongDebounceMs = Preferences.Get(PrefWrongDebounceMsKey, DefaultDebounceMs);
             _sessionStopwatch.Reset();
         }
-
         /// <summary>
         /// Starts the session clock. Call when the microphone is live (after tune setup).
         /// </summary>
@@ -1622,14 +1484,13 @@ namespace musicmate.Services
         {
             _sessionStopwatch.Restart();
         }
-
         /// <summary>
-        /// Enables sustain/rest earliest-start gating for V3 sessions using <see cref="MusicBpm"/>.
+        /// Enables sustain/rest earliest-start gating using <see cref="MusicBpm"/>.
         /// </summary>
-        public void ConfigureRhythmStartGates(bool enabled)
+        public void ConfigureRhythmStartGates()
         {
             _rhythmGateUntilMs = 0;
-            if (!enabled || StaffDisplayMode != StaffDisplayMode.V3 || NotesToDraw.Count == 0)
+            if (NotesToDraw.Count == 0)
             {
                 _rhythmStartGateEnabled = false;
                 _rhythmGateMusicBpm = 0;
@@ -1639,13 +1500,10 @@ namespace musicmate.Services
             _rhythmGateMusicBpm = Math.Clamp(MusicBpm, 30, 200);
             _rhythmStartGateEnabled = NotesToDraw.Any(n => n.GateBeatsAfterPrevious > 0);
         }
-
         private double GetSessionElapsedMs()
             => _sessionStopwatch.Elapsed.TotalMilliseconds;
-
         private double BeatToGateMs(double beats)
             => beats * 60000.0 / _rhythmGateMusicBpm;
-
         private void ArmRhythmGateAfterAdvance(int acceptedIdx)
         {
             if (!_rhythmStartGateEnabled)
@@ -1672,17 +1530,14 @@ namespace musicmate.Services
             _rhythmGateUntilMs = nowMs + BeatToGateMs(gateBeats);
             _lastRestViolationLogMs = double.NegativeInfinity;
         }
-
         private bool IsRhythmGateBlocking()
             => _rhythmStartGateEnabled && _rhythmGateUntilMs > 0
                && GetSessionElapsedMs() < _rhythmGateUntilMs;
-
         private void ClearRhythmGateIfExpired()
         {
             if (_rhythmGateUntilMs > 0 && GetSessionElapsedMs() >= _rhythmGateUntilMs)
                 _rhythmGateUntilMs = 0;
         }
-
         private bool TryMarkDebouncedWrong(int idx, (int Wrong, int Cents) curFeedback, int cents)
         {
             var nowTrailing = DateTime.UtcNow;
@@ -1696,10 +1551,8 @@ namespace musicmate.Services
             FeedbackViewModels[idx] = new FeedbackItem(idx, updated.Wrong, updated.Cents, false);
             return true;
         }
-
         private static string FormatDurationName(NoteDuration? duration)
             => duration?.ToString() ?? "Quarter";
-
         private static string BeatsToDurationLabel(double beats)
         {
             if (beats >= 3.5) return NoteDuration.Whole.ToString();
@@ -1708,7 +1561,6 @@ namespace musicmate.Services
             if (beats >= 0.35) return NoteDuration.Eighth.ToString();
             return NoteDuration.Sixteenth.ToString();
         }
-
         private NoteAttemptOutcome BuildNoteOutcome(
             NoteInfo targetNote,
             string heardNote,
@@ -1740,7 +1592,6 @@ namespace musicmate.Services
                 MidiNumber = targetNote.Midi,
             };
         }
-
         private void RecordRestViolation(string heardNote, double actualMs)
         {
             if (_rhythmGateAcceptedIdx < 0 || _rhythmGateAcceptedIdx >= NotesToDraw.Count)
@@ -1783,7 +1634,6 @@ namespace musicmate.Services
                 Reason = "SoundDuringRest",
             });
         }
-
         private void TryEnqueueTimingWrong(
             NoteInfo targetNote,
             string heardNote,
@@ -1812,7 +1662,6 @@ namespace musicmate.Services
                 Reason = reason,
             });
         }
-
         /// <summary>
         /// Stop the current session gracefully: mark completed, stop timing,
         /// and clear any short-term ignore state so the app can perform cleanup.
@@ -1943,14 +1792,12 @@ namespace musicmate.Services
         /// Null when fewer than 3 notes were played or expected beats have no variance.
         /// </summary>
         public double? GetTimingAccuracyPercent() => _timingAccuracyPercent;
-
         /// <summary>
         /// Detected tempo (beats per minute) from consecutive user onsets, with IQR outlier removal.
         /// Each interval uses written beat spacing: BPM = 60000 × Δbeats / Δms.
         /// Returns null when fewer than 2 onsets or no valid intervals remain after filtering.
         /// </summary>
         public int? GetDetectedBpm() => ComputeDetectedBpmFromOnsets();
-
         private int? ComputeDetectedBpmFromOnsets()
         {
             if (_onsetData.Count < 2)
@@ -1980,10 +1827,6 @@ namespace musicmate.Services
 
             return (int)Math.Round(filtered.Average());
         }
-
-        [Obsolete("Use GetDetectedBpm() instead.")]
-        public int? GetAverageTempoBpm() => GetDetectedBpm();
-
         private static List<double> FilterOutliersIqr(List<double> values)
         {
             if (values.Count < 4)
@@ -1997,7 +1840,6 @@ namespace musicmate.Services
             double hi = q3 + 1.5 * iqr;
             return values.Where(v => v >= lo && v <= hi).ToList();
         }
-
         private static double Percentile(double[] sorted, double p)
         {
             double pos = p * (sorted.Length - 1);
@@ -2007,10 +1849,6 @@ namespace musicmate.Services
                 return sorted[lo];
             return sorted[lo] + (pos - lo) * (sorted[hi] - sorted[lo]);
         }
-
-        [Obsolete("Use GetDetectedBpm() instead.")]
-        public (double? MeanBpm, double? StdDevBpm) GetFinalBpmStats()
-            => (_detectedBpm, null);
         public bool UpdateFeedbackForCurrent(double freq, (bool correct, int cents) result)
         {
 
@@ -2414,10 +2252,9 @@ namespace musicmate.Services
 
             return result.ToArray();
         }
-
         private List<string> BuildAvailableNotesForCurrentInstrumentAndScale()
         {
-            var scaleDegrees = BuildScaleDegrees(Key, SelectedScale);
+            var scaleDegrees = BuildScaleDegrees(Key, GenerationScale);
             return AvailableInstrumentMidis
                 .Select(midi => MidiToNoteName(midi, KeyUsesFlats(Key)))
                 .Where(noteName => noteName.Length > 0 && scaleDegrees
@@ -2425,9 +2262,8 @@ namespace musicmate.Services
                 .Distinct()
                 .ToList();
         }
-
         /// <summary>
-        /// Builds normal V3 <see cref="GeneratedNote"/> objects from the arpeggio catalog
+        /// Builds normal <see cref="GeneratedNote"/> objects from the arpeggio catalog
         /// without wiring arpeggios into Random weighting.
         /// </summary>
         public List<GeneratedNote> BuildArpeggioNotes(
@@ -2456,7 +2292,7 @@ namespace musicmate.Services
 
         /// <summary>
         /// Loads an arpeggio through the existing listen/play session state.  The returned
-        /// notes are the displayed V3 rhythm order; callers assign them to the V3 drawable.
+        /// notes are the displayed rhythm order; callers assign them to the staff drawable.
         /// </summary>
         public Task<List<GeneratedNote>> LoadArpeggioAsync(
             ArpeggioPattern? pattern = null,
@@ -2467,7 +2303,6 @@ namespace musicmate.Services
 
             Reset();
             CurrentTune = null;
-            StaffDisplayMode = StaffDisplayMode.V3;
 
             var rhythmSlots = RhythmStartGate.BuildSlots(previewNotes);
             int sessionIdx = 0;
@@ -2495,32 +2330,23 @@ namespace musicmate.Services
                 FeedbackViewModels.Add(new FeedbackItem(sessionIdx++, 0, 0, false));
             }
 
-            ConfigureRhythmStartGates(StaffDisplayMode == StaffDisplayMode.V3);
+            ConfigureRhythmStartGates();
             Debug.WriteLine(
                 $"[Arpeggio] Loaded {NotesToDraw.Count} playable notes into session state.");
 
             return Task.FromResult(previewNotes);
         }
-
 #if DEBUG
         public List<GeneratedNote> BuildArpeggioPreviewNotes(
             ArpeggioPattern? pattern = null,
             string? rootNote = null,
             bool descendingAfterAscending = true)
             => BuildArpeggioNotes(pattern, rootNote, descendingAfterAscending);
-
-        public Task<List<GeneratedNote>> LoadArpeggioPreviewAsync(
-            ArpeggioPattern? pattern = null,
-            string? rootNote = null,
-            bool descendingAfterAscending = true)
-            => LoadArpeggioAsync(pattern, rootNote, descendingAfterAscending);
 #endif
-
         public bool ShouldIgnoreAudio(DateTime utcNow)
         {
             return utcNow < IgnoreAudioUntilUtc;
         }
-
         /// <summary>
         /// Called by the audio pipeline when RMS drops below the silence threshold.
         /// Clears the consecutive-same-pitch silence requirement so the next note
@@ -2603,6 +2429,61 @@ namespace musicmate.Services
                     _tunerLastNearestFreq = value;
                     OnPropertyChanged(nameof(TunerLastNearestFreq));
                 }
+            }
+        }
+
+        public void ClearTunerDetection()
+        {
+            _tunerLastNoteName = null;
+            _tunerLastCents = 0;
+            _tunerLastDetectedFreq = 0;
+            _tunerLastNearestFreq = 0;
+            _tunerPrevWrittenMidi = null;
+            OnPropertyChanged(nameof(TunerLastNoteName));
+            OnPropertyChanged(nameof(TunerLastCents));
+            OnPropertyChanged(nameof(TunerDisplay));
+            OnPropertyChanged(nameof(TunerLastDetectedFreq));
+            OnPropertyChanged(nameof(TunerLastNearestFreq));
+        }
+
+        public static GeneratedNote? TryBuildGeneratedNoteFromSpelledName(string? spelledName)
+        {
+            if (string.IsNullOrWhiteSpace(spelledName))
+                return null;
+
+            var raw = spelledName.Trim();
+            try
+            {
+                char letter = char.ToUpperInvariant(raw[0]);
+                int octave = ParseOctaveFromSpelledName(raw);
+                int midi = NoteNameToMidi(raw);
+                Accidental acc = Accidental.None;
+                if (raw.Contains("##"))
+                    acc = Accidental.DoubleSharp;
+                else if (raw.Contains("bb"))
+                    acc = Accidental.DoubleFlat;
+                else if (raw.Contains('#'))
+                    acc = Accidental.Sharp;
+                else if (raw.Length > 1 && raw[1] == 'b')
+                    acc = Accidental.Flat;
+
+                return new GeneratedNote
+                {
+                    MidiNumber = midi,
+                    Letter = letter,
+                    Octave = octave,
+                    Accidental = acc,
+                    SpelledName = raw,
+                    TargetFrequency = MidiToFreq(midi),
+                    Duration = NoteDuration.Quarter,
+                    IsRest = false,
+                    MeasureIndex = 0,
+                    BeatPosition = 0,
+                };
+            }
+            catch
+            {
+                return null;
             }
         }
 
@@ -2814,7 +2695,6 @@ namespace musicmate.Services
             var isPitchClassMatch = (correctPc || enharmonicMatch);
             return (isPitchClassMatch && withinTolerance, cents);
         }
-
         // Returns all MIDI numbers that are enharmonic equivalents of the given MIDI (including itself)
         public static HashSet<int> GetEnharmonicMidis(int midi)
         {
@@ -2900,22 +2780,6 @@ namespace musicmate.Services
             return 440.0 * Math.Pow(2, (midi - 69) / 12.0);
         }
         public static double MidiToFreqPublic(int midi) => MidiToFreq(midi);
-        /// <summary>
-        /// Returns the pitch-detection window size (in samples) that gives at least
-        /// <paramref name="minPeriods"/> complete periods at <paramref name="targetFreq"/>.
-        /// Result is rounded up to the next power of two and clamped to [512, PitchWindowSize]
-        /// so the user-configured ceiling is respected.
-        /// </summary>
-        public int ComputeWindowSizeForFreq(double targetFreq, int minPeriods = 8)
-        {
-            if (targetFreq <= 0) return PitchWindowSize;
-            int periodsNeeded = (int)Math.Ceiling(SampleRate / targetFreq * minPeriods);
-            // Round up to next power of 2 for autocorrelation-friendly sizing
-            int p = 512;
-            while (p < periodsNeeded) p <<= 1;
-            // User-configured PitchWindowSize is the ceiling; floor is 512
-            return Math.Clamp(p, 512, PitchWindowSize);
-        }
         public static string MidiToNoteName(int midi, bool flats)
         {
             var namesSharp = new[] { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
@@ -2936,51 +2800,6 @@ namespace musicmate.Services
         {
             var midi = NoteNameToMidi($"{key}4") + semitones;
             return MidiToNoteName(midi, KeyUsesFlats(key)).TrimEnd('0', '1', '2', '3', '4', '5', '6', '7', '8', '9');
-        }
-
-        /// <summary>
-        /// Returns the transpose offset (semitones) for the given short instrument key
-        /// (e.g. "Bb", "Eb", "C"). Looks up the first segment of each InstrumentOptions entry.
-        /// Returns 0 if not found (concert pitch / C instrument).
-        /// </summary>
-        public static int GetTransposeOffsetForShortKey(string shortKey)
-            => InstrumentCatalog.Resolve(shortKey).TransposeOffset;
-        private static string[] RespellToAvoidConsecutiveSameLetter(string[] notes, bool preferFlats)
-        {
-            if (notes.Length == 0)
-            {
-                return Array.Empty<string>();
-            }
-
-            var result = new string[notes.Length];
-            result[0] = notes[0];
-
-            for (var i = 1; i < notes.Length; i++)
-            {
-                var prev = result[i - 1];
-                var cur = notes[i];
-                var prevLetter = char.ToUpperInvariant(prev[0]);
-                var curLetter = char.ToUpperInvariant(cur[0]);
-
-                if (prevLetter != curLetter)
-                {
-                    result[i] = cur;
-                    continue;
-                }
-
-                var midi = NoteNameToMidi(cur);
-                var flatsName = MidiToNoteName(midi, true);
-                var sharpsName = MidiToNoteName(midi, false);
-                var candidate = preferFlats ? flatsName : sharpsName;
-                if (char.ToUpperInvariant(candidate[0]) == prevLetter)
-                {
-                    candidate = preferFlats ? sharpsName : flatsName;
-                }
-
-                result[i] = candidate;
-            }
-
-            return result;
         }
         private static readonly int[] MajorUp = new[] { 0, 2, 4, 5, 7, 9, 11, 12 };
         private static string[] BuildMajorSpelled(string tonic, string key)
@@ -3224,7 +3043,6 @@ namespace musicmate.Services
 
             return (flats, sharps);
         }
-
         private Color _appBackgroundColor = GetColorPreference("musicmate.AppBackgroundColor", Colors.White);
         public Color AppBackgroundColor
         {
@@ -3265,23 +3083,6 @@ namespace musicmate.Services
                 return fallback;
             }
         }
-        public static Color GetHighContrastColor(Color background)
-        {
-            // Use luminance to determine contrast
-            double luminance = 0.299 * background.Red + 0.587 * background.Green + 0.114 * background.Blue;
-            return luminance > 0.5 ? Colors.Black : Colors.White;
-        }
-
-        public Color ContrastingTextColor
-        {
-            get
-            {
-                var bg = PanelBackgroundColor;
-                double luminance = 0.299 * bg.Red + 0.587 * bg.Green + 0.114 * bg.Blue;
-                return luminance > 0.5 ? Colors.Black : Colors.White;
-            }
-        }
-
         /// <summary>
         /// Sets <see cref="CurrentTune"/> and switches <see cref="Tune"/> to "Practice Tune"
         /// so the next call to <see cref="GenerateNotesAsync"/> will use the supplied tune.
@@ -3292,9 +3093,6 @@ namespace musicmate.Services
             Tune = "Practice Tune";
             OnPropertyChanged(nameof(CurrentTune));
         }
-
-        public List<string> TuneOptions { get; } = new() { "Selected Scale", "Tuner", "Practice Tune" };
-
         private const string PrefIsRandomModeKey = "musicmate.IsRandomMode";
         private bool _isRandomMode = Preferences.Get("musicmate.IsRandomMode", false);
         /// <summary>
@@ -3311,9 +3109,11 @@ namespace musicmate.Services
                 _isRandomMode = value;
                 Preferences.Set(PrefIsRandomModeKey, value);
                 OnPropertyChanged(nameof(IsRandomMode));
+                OnPropertyChanged(nameof(EffectiveScaleDisplay));
+                if (!value)
+                    SetEffectiveScale(SelectedScale);
             }
         }
-
         private bool _sessionCompleted = true;
         public bool SessionCompleted
         {
@@ -3337,7 +3137,6 @@ namespace musicmate.Services
                 await SessionCompletedAsync.Invoke();
             }
         }
-
         /// <summary>Returns the natural (no-accidental) pitch-class 0–11 for a letter A–G.</summary>
         public static int NaturalPcForLetter(char letter) => letter switch
         {
@@ -3350,7 +3149,6 @@ namespace musicmate.Services
             'B' => 11,
             _ => 0
         };
-
         /// <summary>
         /// Spells one MIDI note using the given letter, computing the correct octave and
         /// accidental by comparing <paramref name="targetMidi"/> with the nearest natural
@@ -3378,7 +3176,6 @@ namespace musicmate.Services
                 $"Cannot spell MIDI {targetMidi} as letter {letter} within double accidental range.")
             };
         }
-
         /// <summary>
         /// Builds an ascending+descending scale sequence with correct letter-sequential spelling.
         /// Each degree is assigned the next letter in A–B–C–D–E–F–G order (wrapping) and the
@@ -3446,7 +3243,6 @@ namespace musicmate.Services
             var descSpelled = ascSpelled.Take(up.Length - 1).Reverse().ToArray();
             return ascSpelled.Concat(descSpelled).ToArray();
         }
-
         private static int ComputeSpellDiff(char letter, int targetMidi)
         {
             var naturalPC = NaturalPcForLetter(letter);
@@ -3457,7 +3253,6 @@ namespace musicmate.Services
             else if (diff < -6) diff += 12;
             return diff;
         }
-
         /// <summary>
         /// Adjusts <paramref name="midi"/> for any key-signature accidental implied by
         /// <paramref name="key"/> when the note name has no explicit accidental.
@@ -3479,11 +3274,6 @@ namespace musicmate.Services
                 _ => midi
             };
         }
-
-        /// <inheritdoc cref="ApplyKeySignatureToMidi(string,int,string,string)"/>
-        public static int ApplyKeySignatureToMidi(string noteName, int midi, string key)
-            => ApplyKeySignatureToMidi(noteName, midi, key, "Major");
-
         /// <summary>
         /// Adds a key-signature sharp or flat to <paramref name="noteName"/> when the name
         /// has no explicit accidental and the letter is altered by the key signature.
@@ -3504,7 +3294,6 @@ namespace musicmate.Services
                 _ => raw
             };
         }
-
         /// <summary>
         /// Returns the display/evaluation name for a written note, applying key-signature
         /// spelling when the score omits accidentals that the key signature implies.
@@ -3527,7 +3316,6 @@ namespace musicmate.Services
 
             return SpellNote(letter, midi);
         }
-
         /// <summary>
         /// Resolves body accidental and corrected spelling for a generated or imported note.
         /// </summary>
@@ -3555,7 +3343,6 @@ namespace musicmate.Services
 
             return (Accidental.None, raw);
         }
-
         /// <summary>Circle-of-fifths count for the displayed key signature (scale-aware).</summary>
         public static int GetKeySignatureAccidentalCount(string key, string scale)
         {
@@ -3567,7 +3354,6 @@ namespace musicmate.Services
             };
             return GetAccidentalCountForKey(majorKey);
         }
-
         public static string RelativeMajorForKeySignature(string minorKey) => minorKey switch
         {
             "A" => "C",
@@ -3585,7 +3371,6 @@ namespace musicmate.Services
             "Eb" => "Gb",
             _ => minorKey
         };
-
         public string ResolveWrittenNoteName(NoteInfo note)
         {
             var raw = note.Name?.Trim() ?? string.Empty;
@@ -3594,11 +3379,9 @@ namespace musicmate.Services
             int octave = ParseOctaveFromSpelledName(raw);
             return ResolveWrittenNoteName(raw, note.Midi, letter, octave, Key, SelectedScale);
         }
-
         private static bool HasExplicitAccidentalInName(string raw)
             => raw.Contains("##") || raw.Contains("bb") || raw.Contains('#')
                || (raw.Length > 1 && raw[1] == 'b');
-
         private static string GetOctaveSuffix(string raw)
         {
             int end = raw.Length - 1;
@@ -3606,7 +3389,6 @@ namespace musicmate.Services
             while (start >= 0 && char.IsDigit(raw[start])) start--;
             return start < end ? raw.Substring(start + 1) : "4";
         }
-
         private static int ParseOctaveFromSpelledName(string raw)
         {
             int end = raw.Length - 1;
@@ -3614,7 +3396,6 @@ namespace musicmate.Services
             while (start >= 0 && char.IsDigit(raw[start])) start--;
             return start < end && int.TryParse(raw.AsSpan(start + 1, end - start), out var o) ? o : 4;
         }
-
         /// <summary>Returns the number of sharps (positive) or flats (negative) for a major key.</summary>
         private static int GetAccidentalCountForKey(string key) => key switch
         {
@@ -3635,7 +3416,6 @@ namespace musicmate.Services
             "Cb" => -7,
             _ => 0
         };
-
         private static string? GetSignatureAccidentalForLetter(char letter, int signatureCount)
         {
             if (signatureCount == 0) return null;

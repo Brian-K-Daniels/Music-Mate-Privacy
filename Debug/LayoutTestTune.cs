@@ -4,15 +4,15 @@ using System.Text;
 using musicmate.Models;
 using Microsoft.Maui.Storage;
 
-namespace musicmate.V3LayoutDebug
+namespace musicmate.LayoutDebug
 {
     /// <summary>
-    /// TEMP DEBUG: fixed 4/4 tune for repeatable V3 staff layout testing.
+    /// TEMP DEBUG: fixed 4/4 tune for repeatable two-staff layout testing.
     /// Remove this file and related hooks when layout debugging is done.
     /// </summary>
-    public static class V3LayoutTestTune
+    public static class LayoutTestTune
     {
-        public const string PreferenceKey = "Debug.UseFixedV3TestTune";
+        public const string PreferenceKey = "Debug.UseFixedTestTune";
 
         public static bool IsEnabled =>
             Preferences.Default.Get(PreferenceKey, false);
@@ -26,7 +26,7 @@ namespace musicmate.V3LayoutDebug
         /// </summary>
         public static PracticeTune Create()
         {
-            var tune = new PracticeTune("V3 Layout Test Tune", TimeSignature.FourFour);
+            var tune = new PracticeTune("Layout Test Tune", TimeSignature.FourFour);
 
             // ── Upper staff (measures 0–3) ─────────────────────────────────────
             var m1 = tune.AppendMeasure();
@@ -106,7 +106,7 @@ namespace musicmate.V3LayoutDebug
         public static string BuildLogText(PracticeTune tune)
         {
             var sb = new StringBuilder();
-            sb.AppendLine($"[V3TestTune] \"{tune.Title}\" {tune.TimeSignature} — {tune.Measures.Count} measures");
+            sb.AppendLine($"[LayoutTestTune] \"{tune.Title}\" {tune.TimeSignature} — {tune.Measures.Count} measures");
             for (int mi = 0; mi < tune.Measures.Count; mi++)
             {
                 var m = tune.Measures[mi];

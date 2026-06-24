@@ -13,9 +13,9 @@ namespace musicmate.Services
         public int AccidentalPercent { get; init; }
         public string LowestNote { get; init; } = "C4";
         public string HighestNote { get; init; } = "C5";
-        public string V3SmallestNote { get; init; } = "Quarter";
-        public string V3RhythmMode { get; init; } = "Simple";
-        public string V3Syncopation { get; init; } = "None";
+        public string SmallestRhythmNote { get; init; } = "Quarter";
+        public string RhythmMode { get; init; } = "Simple";
+        public string SyncopationSetting { get; init; } = "None";
         public bool UseRandomMode { get; init; } = true;
         public string ForceKey { get; init; } = "C";
         public string SuggestedKey { get; init; } = "C";
@@ -23,7 +23,7 @@ namespace musicmate.Services
         public int SuggestedNoteCount { get; init; }
         public int MaxMelodicIntervalSemitones { get; init; }
 
-        /// <summary>0–100.  Drives half/eighth/sixteenth variety in V3 generation.</summary>
+        /// <summary>0–100.  Drives half/eighth/sixteenth variety in rhythm generation.</summary>
         public int RhythmVarietyPercent { get; init; }
 
         /// <summary>0–100.  Per-slot rest probability (0 until level 21).</summary>
@@ -76,6 +76,29 @@ namespace musicmate.Services
             => ChildLevelProgression.GetMainFocus(level);
 
         /// <summary>
+        /// Applies a programmatic child-level change: validates key/scale against the new
+        /// level's pools (keeping current values when still allowed), then applies level settings.
+        /// Does not randomly re-pick key or scale.
+        /// </summary>
+        public static PracticeDifficultySettings ApplyLevelChangeToSession(
+            int level,
+            NoteSessionService session,
+            bool preserveUserPracticeSettings = false)
+        {
+            level = Math.Clamp(level, 1, 100);
+            var profile = ChildLevelProgression.GetProfile(level);
+            string scale = ChildLevelProgression.ValidateScaleForLevel(level, session.SelectedScale);
+            string key = ChildLevelProgression.ValidateKeyForLevel(level, session.Key);
+            bool preserve = preserveUserPracticeSettings && session.ChildPracticeSettingsCustomized;
+            var settings = BuildSettings(level, profile, scale, key);
+            ApplyToSession(settings, session, applyKeyAndScale: true, applyPracticeSettings: !preserve);
+#if DEBUG
+            Debug.WriteLine($"[ChildLevel] Level change L{level} → {key} {scale} preserve={preserve}");
+#endif
+            return settings;
+        }
+
+        /// <summary>
         /// Pick scale/key for this session and apply child-level settings to the session.
         /// When <paramref name="preserveUserPracticeSettings"/> is true and the user has
         /// customized settings, key/scale/rhythm/accidental values are kept; range and batch
@@ -84,13 +107,12 @@ namespace musicmate.Services
         public static PracticeDifficultySettings PickAndApplyToSession(
             int level,
             NoteSessionService session,
-            bool forceClassicMode = false,
             Random? rng = null,
             bool preserveUserPracticeSettings = false)
         {
             var settings = ResolveSessionSettings(level, rng);
             bool preserve = preserveUserPracticeSettings && session.ChildPracticeSettingsCustomized;
-            ApplyToSession(settings, session, forceClassicMode,
+            ApplyToSession(settings, session,
                 applyKeyAndScale: !preserve,
                 applyPracticeSettings: !preserve);
 #if DEBUG
@@ -119,13 +141,9 @@ namespace musicmate.Services
         public static void ApplyToSession(
             PracticeDifficultySettings settings,
             NoteSessionService session,
-            bool forceClassicMode = true,
             bool applyKeyAndScale = true,
             bool applyPracticeSettings = true)
         {
-            // V3-only: child levels and MusicPage always use the two-staff display.
-            session.StaffDisplayMode = StaffDisplayMode.V3;
-
             if (applyKeyAndScale)
             {
                 if (settings.UseRandomMode)
@@ -143,11 +161,11 @@ namespace musicmate.Services
             if (applyPracticeSettings)
             {
                 session.AccidentalPercent = settings.AccidentalPercent;
-                session.V3SmallestNote = settings.V3SmallestNote;
-                session.V3RhythmMode = settings.V3RhythmMode;
-                session.V3Syncopation = settings.V3Syncopation;
-                session.V3RhythmVarietyPercent = settings.RhythmVarietyPercent;
-                session.V3RestChancePercent = settings.RestChancePercent;
+                session.SmallestRhythmNote = settings.SmallestRhythmNote;
+                session.RhythmMode = settings.RhythmMode;
+                session.SyncopationSetting = settings.SyncopationSetting;
+                session.RhythmVarietyPercent = settings.RhythmVarietyPercent;
+                session.PracticeRestChancePercent = settings.RestChancePercent;
             }
 
             if (applyKeyAndScale && applyPracticeSettings)
@@ -165,9 +183,9 @@ namespace musicmate.Services
                 AccidentalPercent = profile.AccidentalPercent,
                 LowestNote = profile.LowestNote,
                 HighestNote = profile.HighestNote,
-                V3SmallestNote = ChildLevelProgression.SmallestNoteForLevel(level),
-                V3RhythmMode = variety > 0 ? "Mixed" : "Simple",
-                V3Syncopation = ChildLevelProgression.SyncopationForLevel(level),
+                SmallestRhythmNote = ChildLevelProgression.SmallestNoteForLevel(level),
+                RhythmMode = variety > 0 ? "Mixed" : "Simple",
+                SyncopationSetting = ChildLevelProgression.SyncopationForLevel(level),
                 UseRandomMode = true,
                 ForceKey = key,
                 SuggestedKey = key,

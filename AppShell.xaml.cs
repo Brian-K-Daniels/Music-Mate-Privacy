@@ -18,13 +18,9 @@ namespace musicmate
 
                 BindingContext = this;
                 GoPracticeCommand = new Command(async () => await GoToAsync("//HomePage"));
-
-                // Register routes for navigation
-                Routing.RegisterRoute("HomePage", typeof(Pages.HomePage));
-                Routing.RegisterRoute("WhatToPlayPage", typeof(Pages.WhatToPlayPage));
-                Routing.RegisterRoute("SettingsPage", typeof(Pages.SettingsPage));
-                Routing.RegisterRoute("StatisticsPages", typeof(Pages.StatisticsPages));
-                Routing.RegisterRoute("AboutPage", typeof(Pages.AboutPage));
+                // All page routes are declared via Route="..." on ShellContent in AppShell.xaml,
+                // so no additional Routing.RegisterRoute calls are needed here.  The previous
+                // calls silently threw ArgumentException (duplicate route) on every cold start.
             }
             catch (Exception ex)
             {

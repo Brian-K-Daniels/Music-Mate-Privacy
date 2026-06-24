@@ -678,14 +678,20 @@ namespace musicmate.Services
                     octaveEnd--;
 
                 // If both searches landed on the same tonic the user's range holds less than
-                // one complete octave. Extend upward first (C4→C5) so beginner scales stay
-                // in the middle register; only step down when the upper octave does not fit.
+                // one complete octave. Extend upward first so beginner scales stay in the
+                // middle register; step down only when the upper octave already fits within
+                // the configured bounds.  When neither extension fits within the original
+                // bounds (e.g. G major in a C4–C5 range where G4 is the only tonic), extend
+                // upward unconditionally so the scale always spans a full tonic-to-tonic
+                // octave regardless of how the range was initialised.
                 if (octaveStart == octaveEnd)
                 {
                     if (octaveEnd + 12 <= maxMidi)
                         octaveEnd += 12;
                     else if (octaveStart - 12 >= minMidi)
                         octaveStart -= 12;
+                    else
+                        octaveEnd += 12;   // extend past the configured ceiling — tonic walk requires it
                 }
 
                 // Use the tonic-bounded range only when at least one complete octave fits.
@@ -694,6 +700,14 @@ namespace musicmate.Services
                     minMidi = octaveStart;
                     maxMidi = octaveEnd;
                 }
+
+#if DEBUG
+                System.Diagnostics.Debug.WriteLine(
+                    $"[ScaleRootTest] Key={Key} Scale={Scale} tonicPc={tonicPc} " +
+                    $"octaveStart={octaveStart}({NoteSessionService.MidiToNoteName(octaveStart, false)}) " +
+                    $"octaveEnd={octaveEnd}({NoteSessionService.MidiToNoteName(octaveEnd, false)}) " +
+                    $"pool range={NoteSessionService.MidiToNoteName(minMidi, false)}-{NoteSessionService.MidiToNoteName(maxMidi, false)}");
+#endif
             }
 
             var fullPool = new List<int>();
@@ -740,7 +754,7 @@ namespace musicmate.Services
 
             if (ExcludedMidiNumbers.Count == 0)
             {
-                System.Diagnostics.Debug.WriteLine($"[V3Pool] AccPct={AccidentalPercent} diatonic={fullPool.Count(m => { int p = ((m % 12) + 12) % 12; return scalePcs.Contains(p); })} chromatic={fullPool.Count(m => { int p = ((m % 12) + 12) % 12; return !scalePcs.Contains(p); })} total={fullPool.Count}");
+                System.Diagnostics.Debug.WriteLine($"[StaffPool] AccPct={AccidentalPercent} diatonic={fullPool.Count(m => { int p = ((m % 12) + 12) % 12; return scalePcs.Contains(p); })} chromatic={fullPool.Count(m => { int p = ((m % 12) + 12) % 12; return !scalePcs.Contains(p); })} total={fullPool.Count}");
                 return fullPool;
             }
 

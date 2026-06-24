@@ -1,4 +1,5 @@
 using Application = Microsoft.Maui.Controls.Application;
+using Microsoft.Maui.ApplicationModel;
 #if WINDOWS
 using Microsoft.Maui.Platform;
 using Microsoft.UI.Windowing;
@@ -108,6 +109,9 @@ namespace musicmate
 
         protected override Window CreateWindow(IActivationState? activationState)
         {
+            // Home is the first FlyoutItem in AppShell.xaml, so it is the Shell default.
+            // No explicit navigation needed here; the earlier BeginInvokeOnMainThread
+            // navigation caused a visible About-page flash before arriving at Home.
             return new Window(new AppShell());
         }
     }
