@@ -56,7 +56,7 @@ namespace musicmate.Models
         private static PracticeTune BuildCMajorScale()
         {
             //  C4  D4  E4  F4 | G4  A4  B4  C5 | B4  A4  G4  F4 | E4  D4  C4  (rest)
-            var tune = new PracticeTune("C Major Scale", TimeSignature.FourFour);
+            var tune = new PracticeTune("C Major Scale", TimeSignature.FourFour, key: "C");
 
             var m1 = tune.AppendMeasure();
             m1.AddNote(N(60, "C4", NoteDuration.Quarter));
@@ -88,7 +88,7 @@ namespace musicmate.Models
         {
             //  E4  D4  C4  D4 | E4  E4  E4  — | D4  D4  D4  — | E4  G4  G4  —
             //  E4  D4  C4  D4 | E4  E4  E4  E4 | D4  D4  E4  D4 | C4  —   —   —
-            var tune = new PracticeTune("Mary Had a Little Lamb", TimeSignature.FourFour);
+            var tune = new PracticeTune("Mary Had a Little Lamb", TimeSignature.FourFour, key: "C");
 
             // bar 1:  E D C D
             var m1 = tune.AppendMeasure();
@@ -157,7 +157,7 @@ namespace musicmate.Models
             // bar 7:  C4  C4  D4  E4
             // bar 8:  D4. C4  C4  —       (simplified to D half, C quarter, rest quarter → C half)
 
-            var tune = new PracticeTune("Ode to Joy", TimeSignature.FourFour);
+            var tune = new PracticeTune("Ode to Joy", TimeSignature.FourFour, key: "C");
 
             var m1 = tune.AppendMeasure();
             m1.AddNote(N(64, "E4", NoteDuration.Quarter));
@@ -222,7 +222,7 @@ namespace musicmate.Models
             // bar 8:  G4(h)  (quarter rest)
 
             var ts = TimeSignature.ThreeFour;
-            var tune = new PracticeTune("Minuet in G (simplified)", ts);
+            var tune = new PracticeTune("Minuet in G (simplified)", ts, key: "C");
 
             var m1 = tune.AppendMeasure();
             m1.AddNote(N(62, "D4", NoteDuration.Quarter));

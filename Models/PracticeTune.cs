@@ -16,6 +16,9 @@ namespace musicmate.Models
         /// <summary>Time signature that applies to all measures unless overridden per-measure.</summary>
         public TimeSignature TimeSignature { get; }
 
+        /// <summary>Written key signature for this tune (e.g. "C", "G"). Null when not fixed.</summary>
+        public string? Key { get; }
+
         /// <summary>Read-only view of the measures in this tune.</summary>
         public IReadOnlyList<Measure> Measures => _measures;
 
@@ -25,13 +28,14 @@ namespace musicmate.Models
         /// <summary>Total number of notes across the whole tune.</summary>
         public int NoteCount => _measures.Sum(m => m.Notes.Count);
 
-        public PracticeTune(string title, TimeSignature? timeSignature = null)
+        public PracticeTune(string title, TimeSignature? timeSignature = null, string? key = null)
         {
             if (string.IsNullOrWhiteSpace(title))
                 throw new ArgumentException("Title must not be empty.", nameof(title));
 
             Title = title;
             TimeSignature = timeSignature ?? TimeSignature.FourFour;
+            Key = string.IsNullOrWhiteSpace(key) ? null : key;
         }
 
         /// <summary>Appends a measure to the tune.</summary>

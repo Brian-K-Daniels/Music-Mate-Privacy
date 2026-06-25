@@ -200,12 +200,36 @@ namespace musicmate.Pages
 
         public string EffectiveScaleLabelText => _session?.EffectiveScaleDisplay ?? string.Empty;
 
+        private string? _lastRandomEffectiveScaleDisplay;
+
         private void UpdateEffectiveScaleLabel()
         {
             OnPropertyChanged(nameof(IsEffectiveScaleLabelVisible));
             OnPropertyChanged(nameof(EffectiveScaleLabelText));
             if (_session?.IsRandomMode == true)
+            {
                 UpdatePracticePlayItemPickerCore();
+                SyncPlayItemStatusMessage();
+            }
+        }
+
+        /// <summary>
+        /// Keeps the title status bar aligned with the random-mode picker label
+        /// without clobbering live pitch-feedback messages.
+        /// </summary>
+        private void SyncPlayItemStatusMessage()
+        {
+            if (_session.Tune == "Tuner")
+                return;
+
+            var msg = StatusService.Instance.StatusMessage;
+            if (!string.IsNullOrEmpty(msg) && (
+                    msg.StartsWith("Expected:", StringComparison.Ordinal) ||
+                    msg.StartsWith("Playing note", StringComparison.Ordinal) ||
+                    msg.Contains('¢', StringComparison.Ordinal)))
+                return;
+
+            StatusService.Instance.StatusMessage = GetCurrentPlayItemName();
         }
 
         private string _selectedInstrumentShort = "";
@@ -595,6 +619,8 @@ namespace musicmate.Pages
 
                 // Apply initial pickers-row visibility based on the loaded display mode
                 UpdatePickersContainerVisibility();
+                UpdateKeyPickerSelection();
+                UpdateConcertKeyLabel();
             }
             catch (Exception ex)
             {
@@ -707,8 +733,8 @@ namespace musicmate.Pages
                     await Task.Delay(20);
 
                 await UpdateStaffDisplayAsync();
-                if (_session.Tune == "Arpeggio")
-                    StatusService.Instance.StatusMessage = GetCurrentPlayItemName();
+                if (_session.Tune == "Arpeggio" || _session.IsRandomMode)
+                    SyncPlayItemStatusMessage();
             }
             finally
             {
@@ -1997,10 +2023,11 @@ namespace musicmate.Pages
             _savedNotesToRepeat = null;
             ChildLevelSliderValueLabel.Text = level.ToString();
 
-            StatusService.Instance.StatusMessage =
-                _session.IsRandomMode
-                    ? _session.EffectiveScaleDisplay
-                    : $"Level {level}: {difficulty.StageLabel} — {difficulty.SuggestedKey} {difficulty.SuggestedScale}";
+            if (_session.IsRandomMode)
+                SyncPlayItemStatusMessage();
+            else
+                StatusService.Instance.StatusMessage =
+                    $"Level {level}: {difficulty.StageLabel} — {difficulty.SuggestedKey} {difficulty.SuggestedScale}";
 
             await RefreshDisplayForLevelChangeAsync();
         }
@@ -2175,6 +2202,28 @@ namespace musicmate.Pages
             ChildLevelSliderValueLabel.Text = level.ToString();
         }
 
+        /// <summary>
+        /// Adopts the saved Home-page level when Music is opened without Home → Start
+        /// (e.g. via the flyout menu). Applies range/batch settings only — does not
+        /// overwrite the user's current tune, key, or scale selection.
+        /// </summary>
+        private void EnsureChildLevelFromPreferences()
+        {
+            if (_session.ChildLevel > 0)
+                return;
+
+            int saved = Preferences.Default.Get(ChildLevelPrefKey, 0);
+            if (saved <= 0)
+                return;
+
+            saved = Math.Clamp(saved, 1, 100);
+            _session.ChildLevel = saved;
+            DifficultyLevelMapper.ApplyLevelDerivedSettings(saved, _session);
+#if DEBUG
+            Debug.WriteLine($"[ChildLevel] Hydrated from preferences: L{saved}");
+#endif
+        }
+
         protected async override void OnAppearing()
         {
             base.OnAppearing();
@@ -2220,6 +2269,7 @@ namespace musicmate.Pages
                 _practiceKeyPicker.SelectedIndex = KeyPicker.SelectedIndex;
             }
 
+            EnsureChildLevelFromPreferences();
             UpdateChildLevelSliderDisplay();
             // Android may lay out the slider row after OnAppearing; refresh once more.
             Dispatcher.Dispatch(UpdateChildLevelSliderDisplay);
@@ -2232,21 +2282,9 @@ namespace musicmate.Pages
             }
 #endif
 
-            if (_session.AutoStart)
-            {
-                if (_holdResultForChildSession)
-                {
-                    RestoreSessionEndMarqueeIfNeeded();
-                    return;
-                }
-                ScheduleAutoStartOnAppear();
-                return;
-            }
-
-            // Always regenerate notes on every appearance so that changes made on
-            // Settings/Advanced pages (key, scale, range, etc.) are reflected immediately.
-            // Wait for the layout to provide a valid staff width first.
-            if (!_isRunning && !ShouldPreserveSessionEndMarquee())
+            // Regenerate before AutoStart so random→scale changes (often only IsRandomMode
+            // toggles) always refresh the staff; stale _savedNotesToRepeat is cleared separately.
+            if (!_isRunning && !ShouldPreserveSessionEndMarquee() && !_holdResultForChildSession)
             {
                 try
                 {
@@ -2259,6 +2297,17 @@ namespace musicmate.Pages
                 {
                     Debug.WriteLine($"[OnAppearing] ERROR regenerating notes: {ex}");
                 }
+            }
+
+            if (_session.AutoStart)
+            {
+                if (_holdResultForChildSession)
+                {
+                    RestoreSessionEndMarqueeIfNeeded();
+                    return;
+                }
+                ScheduleAutoStartOnAppear();
+                return;
             }
 
             RestoreSessionEndMarqueeIfNeeded();
@@ -2687,7 +2736,6 @@ namespace musicmate.Pages
                 // Assign a fresh session ID so all NoteAttempts from this run are grouped together.
                 _currentSessionId = Guid.NewGuid().ToString();
 
-                StatusService.Instance.StatusMessage = GetCurrentPlayItemName();
                 Debug.WriteLine($"[Start] Starting listening, playBack={playBack}, forceNewNotes={forceNewNotes}");
                 SetButtonStates(true, keepPlayEnabled: playBack);
 
@@ -2761,6 +2809,8 @@ namespace musicmate.Pages
                         Debug.WriteLine($"[Start] Generated and saved {_session.NotesToDraw.Count} notes");
                     }
                 }
+
+                SyncPlayItemStatusMessage();
 
                 ct.ThrowIfCancellationRequested();
 
@@ -3287,14 +3337,16 @@ namespace musicmate.Pages
                 e.PropertyName == nameof(NoteSessionService.Instrument) ||
                 e.PropertyName == nameof(NoteSessionService.Key) ||
                 e.PropertyName == nameof(NoteSessionService.Tune) ||
-                e.PropertyName == nameof(NoteSessionService.CurrentTune))
+                e.PropertyName == nameof(NoteSessionService.CurrentTune) ||
+                e.PropertyName == nameof(NoteSessionService.IsRandomMode))
             {
                 // Saved notes are for a specific scale/key/tune — invalidate them when any of those change
                 // so the next repeat generates fresh notes for the new selection rather than restoring stale ones.
                 if (e.PropertyName == nameof(_session.SelectedScale) ||
                     e.PropertyName == nameof(NoteSessionService.Key) ||
                     e.PropertyName == nameof(NoteSessionService.Tune) ||
-                    e.PropertyName == nameof(NoteSessionService.CurrentTune))
+                    e.PropertyName == nameof(NoteSessionService.CurrentTune) ||
+                    e.PropertyName == nameof(NoteSessionService.IsRandomMode))
                 {
                     _savedNotesToRepeat = null;
                 }
@@ -3304,6 +3356,10 @@ namespace musicmate.Pages
                 // trigger the first regeneration once the page is actually on screen.
                 if (_isPageVisible && !_suppressSessionRegenerate)
                 {
+#if DEBUG
+                    if (e.PropertyName == nameof(NoteSessionService.IsRandomMode))
+                        Debug.WriteLine($"[PickerTest] IsRandomMode={_session.IsRandomMode} Tune={_session.Tune} → RegenerateNotesAsync");
+#endif
                     await RegenerateNotesAsync();
                     UpdateKeyPickerVisibility();
                 }
@@ -3345,6 +3401,9 @@ namespace musicmate.Pages
                 _staffDrawable?.InvalidateLayoutCache();
                 MainThread.BeginInvokeOnMainThread(() => StaffGraphicsView?.Invalidate());
             }
+
+            if (e.PropertyName == nameof(NoteSessionService.ChildLevel))
+                UpdateChildLevelSliderDisplay();
         }
         private void UpdateInstrumentPickerSelection()
         {
@@ -3849,9 +3908,26 @@ namespace musicmate.Pages
             EnterPickerSyncSuppress();
             try
             {
+                if (category == PlayModeCategory.RandomTuner && _session.IsRandomMode)
+                {
+                    var display = _session.EffectiveScaleDisplay;
+                    if (!string.Equals(_lastRandomEffectiveScaleDisplay, display, StringComparison.Ordinal))
+                    {
+                        _lastRandomEffectiveScaleDisplay = display;
+                        _practiceScaleTunePicker.ItemsSource = null;
+                    }
+                }
+
                 _practiceScaleTunePicker.ItemsSource = items;
                 if (idx >= 0)
                 {
+                    if (_practiceScaleTunePicker.SelectedIndex == idx
+                        && category == PlayModeCategory.RandomTuner
+                        && _session.IsRandomMode)
+                    {
+                        _practiceScaleTunePicker.SelectedIndex = -1;
+                    }
+
                     if (_practiceScaleTunePicker.SelectedIndex != idx)
                         _practiceScaleTunePicker.SelectedIndex = idx;
                     _lastValidPlayItemIndex = idx;
@@ -3947,6 +4023,8 @@ namespace musicmate.Pages
             _session.SelectPracticeTune(practiceTune);
             Preferences.Default.Set("SelectedTune", selected);
             IsAutoRepeatVisible = true;
+            UpdateKeyPickerSelection();
+            UpdateConcertKeyLabel();
             UpdateKeyPickerVisibility();
             await RegenerateNotesAsync();
         }
@@ -4049,6 +4127,8 @@ namespace musicmate.Pages
                 _session.SelectPracticeTune(practiceTune);
                 Preferences.Default.Set("SelectedTune", selected);
                 IsAutoRepeatVisible = true;
+                UpdateKeyPickerSelection();
+                UpdateConcertKeyLabel();
                 UpdateKeyPickerVisibility();
                 await RegenerateNotesAsync();
                 return;
@@ -4088,6 +4168,8 @@ namespace musicmate.Pages
             MarkChildKeyScaleOverrideIfNeeded();
             Preferences.Default.Set("SelectedTune", "Selected Scale");
             IsAutoRepeatVisible = true;
+            UpdateKeyPickerSelection();
+            UpdateConcertKeyLabel();
             UpdateKeyPickerVisibility();
             await RegenerateNotesAsync();
         }

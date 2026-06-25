@@ -718,6 +718,8 @@ namespace musicmate.Pages
                 _session.SelectPracticeTune(practiceTune);
             });
             Preferences.Default.Set("SelectedTune", selected);
+            UpdateKeyPickerSelection();
+            UpdateConcertKeyLabel();
             UpdateKeyPickerVisibility();
             UpdateRepeatButtonsVisibility();
             UpdateRandomModeWarning();
@@ -747,10 +749,16 @@ namespace musicmate.Pages
             ApplyPlayModeSessionChange(() =>
             {
                 _session.IsRandomMode = false;
+                _session.RepeatSameTune = false;
                 _session.Tune = "Selected Scale";
                 _session.SelectedScale = selected;
             });
             Preferences.Default.Set("SelectedTune", selected);
+#if DEBUG
+            Debug.WriteLine($"[PickerTest] Scales/{selected}: IsRandomMode=false Tune=Selected Scale Key={_session.Key}");
+#endif
+            UpdateKeyPickerSelection();
+            UpdateConcertKeyLabel();
             UpdateKeyPickerVisibility();
             UpdateRepeatButtonsVisibility();
             UpdateRandomModeWarning();

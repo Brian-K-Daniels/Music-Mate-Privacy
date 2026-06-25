@@ -388,6 +388,7 @@ namespace musicmate.Services
         }
         private string _instrument = Preferences.Get(PrefInstrumentKey, "Bb");
         private string _key = Preferences.Get(PrefKeySignatureKey, "C");
+        private string? _keyBeforePracticeTune;
         private string _selectedScale = Preferences.Get(PrefSelectedScaleKey, "Major");
         private string? _tune = Preferences.Get(PrefTuneKey, "Selected Scale");
         private string _selectedArpeggioId = Preferences.Get(PrefSelectedArpeggioIdKey, "major-triad");
@@ -1378,8 +1379,17 @@ namespace musicmate.Services
             {
                 if (_tune != value)
                 {
+                    var leavingPracticeTune = _tune == "Practice Tune" && value != "Practice Tune";
                     _tune = value;
                     Preferences.Set(PrefTuneKey, value);
+                    if (leavingPracticeTune && _keyBeforePracticeTune != null)
+                    {
+                        Key = _keyBeforePracticeTune;
+                        _keyBeforePracticeTune = null;
+#if DEBUG
+                        System.Diagnostics.Debug.WriteLine($"[PickerTest] LeavePracticeTune: restored Key={Key} Concert={GetConcertKey()}");
+#endif
+                    }
                     OnPropertyChanged(nameof(Tune));
                 }
             }
@@ -3089,7 +3099,21 @@ namespace musicmate.Services
         /// </summary>
         public void SelectPracticeTune(PracticeTune tune)
         {
-            CurrentTune = tune ?? throw new ArgumentNullException(nameof(tune));
+            ArgumentNullException.ThrowIfNull(tune);
+
+            if (!string.IsNullOrWhiteSpace(tune.Key))
+            {
+                if (Tune != "Practice Tune")
+                    _keyBeforePracticeTune = Key;
+                if (Key != tune.Key)
+                    Key = tune.Key;
+#if DEBUG
+                System.Diagnostics.Debug.WriteLine(
+                    $"[PickerTest] PracticeTune/{tune.Title}: written Key={tune.Key} Concert={GetConcertKey()}");
+#endif
+            }
+
+            CurrentTune = tune;
             Tune = "Practice Tune";
             OnPropertyChanged(nameof(CurrentTune));
         }
