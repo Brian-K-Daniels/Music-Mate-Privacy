@@ -40,6 +40,16 @@
     <AndroidEnable16kBpages>true</AndroidEnable16kBpages>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>portable</DebugType>
+    <Optimize>false</Optimize>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug' and '$(TargetFramework)' == 'net10.0-android'">
+    <AndroidIncludeDebugSymbols>true</AndroidIncludeDebugSymbols>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <AndroidLinkMode>SdkOnly</AndroidLinkMode>
   </PropertyGroup>

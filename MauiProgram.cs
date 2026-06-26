@@ -81,6 +81,8 @@ namespace musicmate
             // Key-sig / transposition self-test → logcat tag "MusicMate" (cold start).
             StaffDrawable.RunKeySignatureTests();
             StaffDrawable.RunMeasureLayoutTests();
+            ChildLevelScaleSelectionTests.RunSelfChecks();
+            ScaleKeyRandomTests.RunSelfChecks();
 #endif
 
             // Sync premium state from the store on every cold start.

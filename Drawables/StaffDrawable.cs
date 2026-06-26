@@ -504,7 +504,9 @@ namespace musicmate.Drawables
                 BeginnerLayout = UseBeginnerHorizontalLayout,
                 ChildLevel = _session.ChildLevel,
                 SessionKey = _session.Key ?? string.Empty,
-                SessionScale = _session.SelectedScale ?? string.Empty,
+                SessionScale = string.IsNullOrWhiteSpace(_session.EffectiveScale)
+                    ? (_session.SelectedScale ?? string.Empty)
+                    : _session.EffectiveScale,
                 SessionTune = _session.Tune ?? string.Empty,
                 TimeSig = _session.GetDisplayTimeSignature(),
                 MusicBpm = _session.MusicBpm,
@@ -3009,28 +3011,6 @@ namespace musicmate.Drawables
             }
         }
 
-        /// <summary>
-        /// Apply horizontal offset when no compression is needed.
-        /// ── Per-staff rendering ───────────────────────────────────────────────────
-        /// Draws a single staff using pre-computed horizontal layout.
-        /// All X positions are read from noteLayouts and barLayouts arrays.
-        /// </summary>        
-        private void DrawStaffStaticChrome(
-            ICanvas canvas, Color ink,
-            float staffTop, float staffMid, float staffBot,
-            NoteLayout[] noteLayouts, BarLayout[] barLayouts,
-            float safeLeft, float safeRight, float layoutRightLimit,
-            float staffLeftMargin,
-            bool drawKeyAndTimeSig)
-        {
-            if (noteLayouts.Length == 0)
-                return;
-
-            DrawStaffLinesAndBars(canvas, ink, staffTop, staffMid, staffBot,
-                noteLayouts, barLayouts, safeLeft, safeRight, layoutRightLimit, staffLeftMargin);
-            DrawStaffHeaderChrome(canvas, ink, staffTop, staffMid, staffBot, drawKeyAndTimeSig);
-        }
-
         private void DrawTunerEmptyStaff(ICanvas canvas, RectF dirtyRect, Color ink)
         {
             if (dirtyRect.Width < 32f || dirtyRect.Height < 32f)
@@ -3723,14 +3703,6 @@ namespace musicmate.Drawables
             }
         }
 
-        private static double SumBeats(List<GeneratedNote> notes, int from, int to)
-        {
-            double s = 0;
-            for (int i = from; i < Math.Min(to, notes.Count); i++)
-                s += notes[i].BeatDuration;
-            return s;
-        }
-
         // ── Layout public API ─────────────────────────────────────────────────────
 
         /// <summary>
@@ -3741,33 +3713,6 @@ namespace musicmate.Drawables
         {
             ComputeLayout(AvailableHeight);
             return AvailableHeight;   // always fill the available space; no wasted bottom gap
-        }
-
-        /// <summary>
-        /// Horizontal center for the Practice play overlay, aligned with the upper-staff time
-        /// signature (canvas coordinates).
-        /// </summary>
-        public bool TryGetPlayButtonCenterX(float canvasWidth, out float centerX)
-        {
-            centerX = 0f;
-            if (canvasWidth <= 0f || AvailableHeight <= 0f)
-                return false;
-
-            ComputeLayout(AvailableHeight);
-            var insets = _safeArea?.GetSafeAreaInsets() ?? (0f, 0f, 0f, 0f);
-            float safeLeft = insets.Left;
-            var metrics = ComputeHeaderMetrics(safeLeft);
-
-            const float timeSigW = 24f;
-            centerX = metrics.TimeSigX + timeSigW * 0.5f;
-            return true;
-        }
-
-        /// <summary>Y offset from the top of the canvas to the upper staff top line.</summary>
-        public float GetUpperStaffTop()
-        {
-            ComputeLayout(AvailableHeight);
-            return _layout.UpperTop;
         }
 
         // ── Header metrics ────────────────────────────────────────────────────────
@@ -3958,7 +3903,7 @@ namespace musicmate.Drawables
                 switch (state)
                 {
                     case StaffNoteState.Current:
-                        noteColor = ApplyAlpha(Colors.Lime, fadeAlpha);  //  2026.06.13 1601  Color.FromArgb("#007BFF"), fadeAlpha);
+                        noteColor = ApplyAlpha(Colors.Gold, fadeAlpha);  //  2026.06.13 1601  Color.FromArgb("#007BFF"), fadeAlpha);
                         break;
                     case StaffNoteState.Correct:
                         noteColor = ApplyAlpha(Color.FromArgb("#22AA44"), fadeAlpha);
@@ -4344,7 +4289,13 @@ namespace musicmate.Drawables
         // ── Key / time signature drawing ──────────────────────────────────────────
 
         private string ActiveKeySignatureScale()
-            => _session.Tune == "Arpeggio" ? "Major" : _session.SelectedScale;
+        {
+            if (_session.Tune == "Arpeggio")
+                return "Major";
+            return string.IsNullOrWhiteSpace(_session.EffectiveScale)
+                ? _session.SelectedScale
+                : _session.EffectiveScale;
+        }
 
         private float DrawKeySignature(ICanvas canvas, float staffTop, float staffMid, Color ink)
         {
@@ -4503,9 +4454,6 @@ namespace musicmate.Drawables
             }
             return null;
         }
-
-        private bool IsAccidentalInKeySig(GeneratedNote note)
-            => IsAccidentalInKeySig(note.Accidental, note.Letter);
 
         private bool IsAccidentalInKeySig(Accidental accidental, char letter)
         {

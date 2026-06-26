@@ -205,6 +205,7 @@ namespace musicmate.Pages
                         UpdateInstrumentPickerSelection();
                         break;
                     case nameof(NoteSessionService.SelectedScale):
+                    case nameof(NoteSessionService.ScaleSelectionMode):
                     case nameof(NoteSessionService.SelectedArpeggioDisplay):
                     case nameof(NoteSessionService.ChildLevel):
                         RefreshArpeggioPickerOptions();
@@ -233,8 +234,19 @@ namespace musicmate.Pages
         {
             if (InstrumentPicker.ItemsSource is not string[] items) return;
             var idx = Array.FindIndex(items, s => s == _session.InstrumentDisplayName);
-            if (idx >= 0 && InstrumentPicker.SelectedIndex != idx)
+            if (idx < 0 || InstrumentPicker.SelectedIndex == idx)
+                return;
+
+            var wasSuppressed = _suppressPickerSync;
+            _suppressPickerSync = true;
+            try
+            {
                 InstrumentPicker.SelectedIndex = idx;
+            }
+            finally
+            {
+                _suppressPickerSync = wasSuppressed;
+            }
             SelectedInstrumentShort = _session.InstrumentDisplayName;
         }
 
@@ -242,14 +254,25 @@ namespace musicmate.Pages
         {
             if (KeyPicker.ItemsSource is not string[] items) return;
             var idx = Array.IndexOf(items, _session.Key);
-            if (idx >= 0 && KeyPicker.SelectedIndex != idx)
+            if (idx < 0 || KeyPicker.SelectedIndex == idx)
+                return;
+
+            var wasSuppressed = _suppressPickerSync;
+            _suppressPickerSync = true;
+            try
+            {
                 KeyPicker.SelectedIndex = idx;
+            }
+            finally
+            {
+                _suppressPickerSync = wasSuppressed;
+            }
         }
 
         private void InitializePlayModePickers()
         {
             _tuneTitles = TuneLibrary.All.Select(t => t.Title).ToArray();
-            _scaleOptions = NoteSessionService.AvailableScales.ToArray();
+            _scaleOptions = NoteSessionService.ScalePickerOptions;
 
             TunesPicker.ItemsSource = _tuneTitles;
             ScalesPicker.ItemsSource = _scaleOptions;
@@ -465,8 +488,9 @@ namespace musicmate.Pages
                 }
                 else
                 {
-                    SetPickerSelection(ScalesPicker, _session.SelectedScale, _scaleOptions);
-                    var scaleIdx = Array.IndexOf(_scaleOptions, _session.SelectedScale);
+                    var display = _session.ScaleSelectionDisplay;
+                    SetPickerSelection(ScalesPicker, display, _scaleOptions);
+                    var scaleIdx = Array.IndexOf(_scaleOptions, display);
                     if (scaleIdx >= 0)
                         _lastValidScaleIndex = scaleIdx;
                 }
@@ -509,15 +533,17 @@ namespace musicmate.Pages
 
         private void ClearPicker(Picker picker)
         {
-            if (picker.SelectedIndex < 0) return;
+            if (picker.SelectedIndex < 0)
+                return;
             picker.SelectedIndex = -1;
         }
 
         private void SetPickerSelection(Picker picker, string value, string[] options)
         {
             var idx = Array.IndexOf(options, value);
-            if (idx >= 0 && picker.SelectedIndex != idx)
-                picker.SelectedIndex = idx;
+            if (idx < 0 || picker.SelectedIndex == idx)
+                return;
+            picker.SelectedIndex = idx;
         }
 
         private void SetArpeggioPickerSelection()
@@ -618,9 +644,6 @@ namespace musicmate.Pages
             });
         }
 
-        private static Task NavigateToPracticePageAsync()
-            => Shell.Current.GoToAsync("//MusicPage");
-
         // ── Instrument picker handlers ───────────────────────────────────────────
 
         private void InstrumentPicker_SelectedIndexChanged(object? sender, EventArgs e)
@@ -681,7 +704,7 @@ namespace musicmate.Pages
 
             _session.Key = shortKey;
             _session.MarkChildPracticeSettingsCustomized();
-            await NavigateToPracticePageAsync();
+            UpdateConcertKeyLabel();
         }
 
         private static string? GetPickerKeyShortName(Picker picker)
@@ -723,7 +746,6 @@ namespace musicmate.Pages
             UpdateKeyPickerVisibility();
             UpdateRepeatButtonsVisibility();
             UpdateRandomModeWarning();
-            await NavigateToPracticePageAsync();
         }
 
         private async void OnScalesPickerChanged(object? sender, EventArgs e)
@@ -734,7 +756,9 @@ namespace musicmate.Pages
             if (idx < 0 || idx >= _scaleOptions.Length) return;
             var selected = _scaleOptions[idx];
 
-            if (!FreeScales.Contains(selected) && !StatusService.Instance.IsPremiumUser)
+            if (NoteSessionService.IsNamedScaleOption(selected)
+                && !FreeScales.Contains(selected)
+                && !StatusService.Instance.IsPremiumUser)
             {
                 var purchased = await PremiumPromptHelper.ShowAsync(this,
                     onDecline: RevertScalesPickerSelection);
@@ -745,24 +769,36 @@ namespace musicmate.Pages
             ClearOtherPlayModePickers(ScalesPicker);
             LayoutTestTune.SetEnabled(false);
 
-            _lastValidScaleIndex = idx;
+            string? rejectionReason = null;
             ApplyPlayModeSessionChange(() =>
             {
                 _session.IsRandomMode = false;
                 _session.RepeatSameTune = false;
                 _session.Tune = "Selected Scale";
-                _session.SelectedScale = selected;
+                if (!_session.TryApplyScalePickerSelection(selected, out rejectionReason))
+                {
+                    var fallbackIdx = Array.IndexOf(_scaleOptions, _session.ScaleSelectionDisplay);
+                    if (fallbackIdx >= 0)
+                        _lastValidScaleIndex = fallbackIdx;
+                }
+                else
+                {
+                    _lastValidScaleIndex = idx;
+                }
             });
-            Preferences.Default.Set("SelectedTune", selected);
+            Preferences.Default.Set("SelectedTune",
+                selected == NoteSessionService.ScaleSelectionByLevel
+                || selected == NoteSessionService.ScaleSelectionRandom
+                    ? "Selected Scale"
+                    : selected);
 #if DEBUG
-            Debug.WriteLine($"[PickerTest] Scales/{selected}: IsRandomMode=false Tune=Selected Scale Key={_session.Key}");
+            Debug.WriteLine($"[PickerTest] Scales/{selected}: mode={_session.ScaleSelectionMode} scale={_session.SelectedScale} Key={_session.Key}");
 #endif
             UpdateKeyPickerSelection();
             UpdateConcertKeyLabel();
             UpdateKeyPickerVisibility();
             UpdateRepeatButtonsVisibility();
             UpdateRandomModeWarning();
-            await NavigateToPracticePageAsync();
         }
 
         private async void OnArpeggiosPickerChanged(object? sender, EventArgs e)
@@ -794,7 +830,6 @@ namespace musicmate.Pages
             UpdateKeyPickerVisibility();
             UpdateRepeatButtonsVisibility();
             UpdateRandomModeWarning();
-            await NavigateToPracticePageAsync();
         }
 
         private async void OnRandomTunerPickerChanged(object? sender, EventArgs e)
@@ -843,7 +878,6 @@ namespace musicmate.Pages
             UpdateKeyPickerVisibility();
             UpdateRepeatButtonsVisibility();
             UpdateRandomModeWarning();
-            await NavigateToPracticePageAsync();
         }
 
         // ── Repeat button handlers ───────────────────────────────────────────────

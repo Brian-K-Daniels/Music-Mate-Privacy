@@ -87,8 +87,9 @@ namespace musicmate.Services
         {
             level = Math.Clamp(level, 1, 100);
             var profile = ChildLevelProgression.GetProfile(level);
-            string scale = ChildLevelProgression.ValidateScaleForLevel(level, session.SelectedScale);
             string key = ChildLevelProgression.ValidateKeyForLevel(level, session.Key);
+            session.ApplyScaleSelectionOnLevelChange(level);
+            string scale = session.SelectedScale;
             bool preserve = preserveUserPracticeSettings && session.ChildPracticeSettingsCustomized;
             var settings = BuildSettings(level, profile, scale, key);
             ApplyToSession(settings, session, applyKeyAndScale: true, applyPracticeSettings: !preserve);
@@ -110,13 +111,26 @@ namespace musicmate.Services
             Random? rng = null,
             bool preserveUserPracticeSettings = false)
         {
-            var settings = ResolveSessionSettings(level, rng);
+            level = Math.Clamp(level, 1, 100);
+            var profile = ChildLevelProgression.GetProfile(level);
+            var (_, key) = ChildLevelProgression.PickScaleAndKey(profile, rng);
             bool preserve = preserveUserPracticeSettings && session.ChildPracticeSettingsCustomized;
+
+            if (!preserve)
+            {
+                session.ScaleSelectionMode = ScaleSelectionMode.ByLevel;
+                session.Key = key;
+                session.IsRandomMode = true;
+                session.Tune = "Selected Scale";
+            }
+
+            session.ApplyScaleSelectionOnLevelChange(level, rng);
+            var settings = BuildSettings(level, profile, session.SelectedScale, session.Key);
             ApplyToSession(settings, session,
-                applyKeyAndScale: !preserve,
+                applyKeyAndScale: false,
                 applyPracticeSettings: !preserve);
 #if DEBUG
-            Debug.WriteLine($"[ChildLevel] Picked session settings: L{level} {settings.SuggestedKey} {settings.SuggestedScale} preserve={preserve}");
+            Debug.WriteLine($"[ChildLevel] Picked session settings: L{level} {session.Key} {session.SelectedScale} mode={session.ScaleSelectionMode} preserve={preserve}");
 #endif
             return settings;
         }
@@ -150,7 +164,8 @@ namespace musicmate.Services
                     session.IsRandomMode = true;
 
                 session.Key = settings.ForceKey;
-                session.SelectedScale = settings.SuggestedScale;
+                if (session.ScaleSelectionMode == ScaleSelectionMode.Named)
+                    session.SelectedScale = settings.SuggestedScale;
                 session.Tune = "Selected Scale";
             }
 

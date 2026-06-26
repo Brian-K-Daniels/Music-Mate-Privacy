@@ -33,6 +33,7 @@ namespace musicmate.Pages
         private bool _isPlaying = false;
         private bool _isRunning = false;
         private bool _isBelowThreshold = true;
+        private bool _dismissedResultBannerForFirstSound;
         private bool _isProgrammaticColorConfirm = false;
         private bool _isPageVisible = false;
         // A new GUID is assigned each time a session starts (see StartListeningAndEvaluatingAsync).
@@ -126,7 +127,26 @@ namespace musicmate.Pages
         private static readonly HashSet<string> FreeKeys = new() { "C", "F", "Bb", "G", "D" };
         private int _lastFreeKeyIndex = 0;
         //private int _lastFreeScaleIndex = 0;
-        private List<NoteInfo>? _savedNotesToRepeat = null;
+
+        /// <summary>Saved notes plus key/scale/staff layout for Repeat Same.</summary>
+        private sealed class RepeatSameSnapshot
+        {
+            public List<NoteInfo> Notes { get; init; } = new();
+            public string Key { get; init; } = "C";
+            public string SelectedScale { get; init; } = "Major";
+            public string EffectiveScale { get; init; } = "Major";
+            public ScaleSelectionMode ScaleSelectionMode { get; init; }
+            public bool IsRandomMode { get; init; }
+            public string Tune { get; init; } = "";
+            public List<GeneratedNote> UpperNotes { get; init; } = new();
+            public List<GeneratedNote> LowerNotes { get; init; } = new();
+            public List<double> UpperBarBeats { get; init; } = new();
+            public List<double> LowerBarBeats { get; init; } = new();
+            public int UpperPitchCount { get; init; }
+            public bool UpperHasEndBar { get; init; }
+        }
+
+        private RepeatSameSnapshot? _repeatSameSnapshot;
 
         public string? Tune => _session?.Tune;
         public bool AutoRepeat
@@ -196,7 +216,9 @@ namespace musicmate.Pages
         public bool IsBottomButtonRowVisible => _session?.Tune != "Tuner";
         public bool IsChildLevelSliderVisible => _session?.ChildLevel > 0 && _session.Tune != "Tuner";
 
-        public bool IsEffectiveScaleLabelVisible => _session?.IsRandomMode == true;
+        public bool IsEffectiveScaleLabelVisible =>
+            _session?.IsRandomMode == true
+            || _session?.ScaleSelectionMode == ScaleSelectionMode.Random;
 
         public string EffectiveScaleLabelText => _session?.EffectiveScaleDisplay ?? string.Empty;
 
@@ -669,7 +691,7 @@ namespace musicmate.Pages
                     || _holdResultForChildSession || _isRunning)
                     return;
 
-                await StartListeningAndEvaluatingAsync();
+                await StartListeningAndEvaluatingAsync(scaleKeyTrigger: "AutoStart");
             }
             catch (OperationCanceledException)
             {
@@ -683,6 +705,16 @@ namespace musicmate.Pages
 
         private async Task RegenerateNotesAsync()
         {
+            // Repeat Same keeps the saved exercise unless the user changes key/scale/tune.
+            if (_session.RepeatSameTune
+                && _repeatSameSnapshot?.Notes.Count > 0
+                && !_suppressSessionRegenerate)
+            {
+                Debug.WriteLine("[RepeatSame] Skipping RegenerateNotesAsync — restoring saved exercise");
+                await RestoreRepeatSameSnapshotAsync(_repeatSameSnapshot.Notes);
+                return;
+            }
+
             // Wait for any in-flight regeneration — never skip after session Reset() cleared notes.
             await _regenerateSemaphore.WaitAsync();
             try
@@ -1985,6 +2017,12 @@ namespace musicmate.Pages
             if (_session.IsRandomMode)
                 return _session.EffectiveScaleDisplay;
 
+            if (_session.ScaleSelectionMode == ScaleSelectionMode.ByLevel)
+                return $"{_session.Key} {_session.EffectiveScale} (By Level)";
+
+            if (_session.ScaleSelectionMode == ScaleSelectionMode.Random)
+                return _session.EffectiveScaleDisplay;
+
             return _session.SelectedScale ?? "Selected Scale";
         }
 
@@ -2020,7 +2058,7 @@ namespace musicmate.Pages
                 _suppressSessionRegenerate = false;
             }
 
-            _savedNotesToRepeat = null;
+            _repeatSameSnapshot = null;
             ChildLevelSliderValueLabel.Text = level.ToString();
 
             if (_session.IsRandomMode)
@@ -2050,7 +2088,7 @@ namespace musicmate.Pages
         {
             _freezeStaff = false;
             _holdResultForChildSession = false;
-            _savedNotesToRepeat = null;
+            _repeatSameSnapshot = null;
             _session.SessionCompleted = false;
 
             await HideSessionResultBannerAsync(refreshMarqueeForNewLevel: false);
@@ -2066,23 +2104,18 @@ namespace musicmate.Pages
         }
 
         /// <summary>
-        /// Apply child-level session settings for a new run. Re-picks key/scale from level pools
-        /// unless the user has customized key, scale, accidental, or rhythm settings.
+        /// Apply child-level range and batch sizing for a new run.
+        /// Scale/key refresh is handled by <see cref="NoteSessionService.PrepareFreshScaleAndKeyForGeneration"/>.
         /// Skipped when Repeat Same will restore the previous tune.
         /// </summary>
         private void PickChildSessionSettingsIfNeeded(bool preserveRepeatSameTune)
         {
             if (_session.ChildLevel <= 0)
                 return;
-            if (preserveRepeatSameTune && _session.RepeatSameTune && _savedNotesToRepeat?.Count > 0)
+            if (preserveRepeatSameTune && _session.RepeatSameTune && _repeatSameSnapshot?.Notes.Count > 0)
                 return;
 
-            DifficultyLevelMapper.PickAndApplyToSession(
-                _session.ChildLevel, _session,
-                preserveUserPracticeSettings: true);
-            UpdateKeyPickerSelection();
-            UpdateScaleTunePicker();
-            UpdateConcertKeyLabel();
+            DifficultyLevelMapper.ApplyLevelDerivedSettings(_session.ChildLevel, _session);
         }
 
         private async Task BuildAndPublishSessionEndMarqueeAsync(
@@ -2122,6 +2155,51 @@ namespace musicmate.Pages
             await MainThread.InvokeOnMainThreadAsync(() => SessionResultBanner.IsVisible = false);
             if (refreshMarqueeForNewLevel)
                 await RefreshMarqueeAfterCongratulatoryBannerAsync();
+        }
+
+        /// <summary>
+        /// Hides the post-session result banner and scrolls so the staff is fully visible.
+        /// Called when the microphone first detects playing (RMS above threshold).
+        /// </summary>
+        private async Task DismissSessionResultBannerAndScrollToStaffAsync()
+        {
+            if (_dismissedResultBannerForFirstSound || SessionResultBanner?.IsVisible != true)
+                return;
+
+            _dismissedResultBannerForFirstSound = true;
+            _holdResultForChildSession = false;
+
+            await HideSessionResultBannerAsync(refreshMarqueeForNewLevel: true);
+
+            if (_session.Tune == "Tuner")
+                ApplyTunerHeight();
+            else
+                ApplyStaffHeight();
+
+            // Let layout settle after the banner is removed from the visual tree.
+            await Task.Delay(50);
+
+            double scrollY = GetViewYOffsetInMainLayout(StaffBorder);
+            try
+            {
+                await MainScrollView.ScrollToAsync(0, scrollY, true);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[FirstSound] scroll error: {ex}");
+            }
+        }
+
+        private double GetViewYOffsetInMainLayout(VisualElement view)
+        {
+            double y = view.Y;
+            Element? parent = view.Parent;
+            while (parent is VisualElement pv && parent != MainPageMainLayout)
+            {
+                y += pv.Y;
+                parent = pv.Parent;
+            }
+            return Math.Max(0, y);
         }
 
         /// <summary>
@@ -2218,6 +2296,10 @@ namespace musicmate.Pages
 
             saved = Math.Clamp(saved, 1, 100);
             _session.ChildLevel = saved;
+            if (_session.ScaleSelectionMode == ScaleSelectionMode.ByLevel)
+                _session.SelectedScale = ChildLevelProgression.GetDefaultScaleForLevel(saved);
+            else
+                _session.ApplyScaleSelectionOnLevelChange(saved);
             DifficultyLevelMapper.ApplyLevelDerivedSettings(saved, _session);
 #if DEBUG
             Debug.WriteLine($"[ChildLevel] Hydrated from preferences: L{saved}");
@@ -2282,8 +2364,8 @@ namespace musicmate.Pages
             }
 #endif
 
-            // Regenerate before AutoStart so random→scale changes (often only IsRandomMode
-            // toggles) always refresh the staff; stale _savedNotesToRepeat is cleared separately.
+            // Regenerate before AutoStart so random→scale changes refresh the staff.
+            // When Repeat Same is on, restore the saved snapshot instead of re-randomizing key.
             if (!_isRunning && !ShouldPreserveSessionEndMarquee() && !_holdResultForChildSession)
             {
                 try
@@ -2291,7 +2373,10 @@ namespace musicmate.Pages
                     var sw = System.Diagnostics.Stopwatch.StartNew();
                     while (StaffGraphicsView != null && StaffGraphicsView.Width <= 0 && sw.ElapsedMilliseconds < 1500)
                         await Task.Delay(40);
-                    await RegenerateNotesAsync();
+                    if (_session.RepeatSameTune && _repeatSameSnapshot?.Notes.Count > 0)
+                        await RestoreRepeatSameSnapshotAsync(_repeatSameSnapshot.Notes);
+                    else
+                        await RegenerateNotesAsync();
                 }
                 catch (Exception ex)
                 {
@@ -2434,7 +2519,17 @@ namespace musicmate.Pages
                 return;
             }
 
+            bool firstSoundAfterSilence = _isBelowThreshold;
             _isBelowThreshold = false;
+
+            if (firstSoundAfterSilence
+                && _isRunning
+                && !_dismissedResultBannerForFirstSound
+                && SessionResultBanner?.IsVisible == true)
+            {
+                MainThread.BeginInvokeOnMainThread(() =>
+                    _ = DismissSessionResultBannerAndScrollToStaffAsync());
+            }
 
             // Don't accumulate audio during ignore period — ensures the first
             // detection after cooldown uses entirely fresh samples
@@ -2720,7 +2815,119 @@ namespace musicmate.Pages
                 Debug.WriteLine($"[NoteAttempts] SaveNoteAttemptsForSessionAsync error: {ex}");
             }
         }
-        private async Task StartListeningAndEvaluatingAsync(bool playBack = false, bool forceNewNotes = false)
+        /// <summary>
+        /// Picks a fresh scale/key before regeneration when Repeat Same is off.
+        /// </summary>
+        private void PrepareFreshScaleAndKeyIfNeeded(bool forceNewNotes, string? scaleKeyTrigger)
+        {
+            if (_session.RepeatSameTune)
+                return;
+
+            string trigger = forceNewNotes ? "GoButton" : (scaleKeyTrigger ?? "SessionStart");
+            _session.PrepareFreshScaleAndKeyForGeneration(trigger, repeatSame: false, _generationSeed);
+            UpdateKeyPickerSelection();
+            UpdateConcertKeyLabel();
+            UpdateScaleTunePicker();
+            UpdateEffectiveScaleLabel();
+        }
+
+        private void CaptureRepeatSameSnapshot()
+        {
+            if (_staffDrawable == null || _session.NotesToDraw.Count == 0)
+                return;
+
+            _repeatSameSnapshot = new RepeatSameSnapshot
+            {
+                Notes = new List<NoteInfo>(_session.NotesToDraw),
+                Key = _session.Key,
+                SelectedScale = _session.SelectedScale,
+                EffectiveScale = _session.EffectiveScale,
+                ScaleSelectionMode = _session.ScaleSelectionMode,
+                IsRandomMode = _session.IsRandomMode,
+                Tune = _session.Tune ?? string.Empty,
+                UpperNotes = new List<GeneratedNote>(_staffDrawable.UpperNotes),
+                LowerNotes = new List<GeneratedNote>(_staffDrawable.LowerNotes),
+                UpperBarBeats = new List<double>(_staffDrawable.UpperBarBeats),
+                LowerBarBeats = new List<double>(_staffDrawable.LowerBarBeats),
+                UpperPitchCount = _sessionUpperPitchCount,
+                UpperHasEndBar = _staffDrawable.UpperHasEndBar,
+            };
+        }
+
+        private async Task RestoreRepeatSameSnapshotAsync(IReadOnlyList<NoteInfo> notes)
+        {
+            var snap = _repeatSameSnapshot;
+            if (snap == null)
+                return;
+
+            _suppressSessionRegenerate = true;
+            try
+            {
+                _session.RestoreRepeatSameGenerationContext(
+                    snap.Key,
+                    snap.SelectedScale,
+                    snap.EffectiveScale,
+                    snap.ScaleSelectionMode,
+                    snap.IsRandomMode,
+                    snap.Tune);
+
+                _session.NotesToDraw.Clear();
+                foreach (var note in notes)
+                    _session.NotesToDraw.Add(note);
+                _session.FeedbackViewModels.Clear();
+                for (int i = 0; i < notes.Count; i++)
+                    _session.FeedbackViewModels.Add(new FeedbackItem(i, 0, 0, false));
+
+                if (_staffDrawable != null)
+                {
+                    _staffDrawable.UpperNotes = new List<GeneratedNote>(snap.UpperNotes);
+                    _staffDrawable.LowerNotes = new List<GeneratedNote>(snap.LowerNotes);
+                    _staffDrawable.UpperBarBeats = new List<double>(snap.UpperBarBeats);
+                    _staffDrawable.LowerBarBeats = new List<double>(snap.LowerBarBeats);
+                    _staffDrawable.UpperHasEndBar = snap.UpperHasEndBar;
+                    _staffDrawable.UpperNoteStates = new StaffNoteState[snap.UpperNotes.Count];
+                    _staffDrawable.LowerNoteStates = new StaffNoteState[snap.LowerNotes.Count];
+                    _staffDrawable.IsUpperActive = true;
+                    _staffDrawable.ActiveNoteIndex = 0;
+                    _staffDrawable.UpperAlpha = 1f;
+                    _staffDrawable.LowerAlpha = 1f;
+                    for (int i = 0; i < snap.UpperNotes.Count; i++)
+                    {
+                        if (!snap.UpperNotes[i].IsRest)
+                        {
+                            _staffDrawable.UpperNoteStates[i] = StaffNoteState.Current;
+                            _staffDrawable.ActiveNoteIndex = i;
+                            break;
+                        }
+                    }
+                    _staffDrawable.InvalidateLayoutCache();
+                }
+
+                _sessionUpperPitchCount = snap.UpperPitchCount;
+                _session.ConfigureRhythmStartGates();
+
+                UpdateKeyPickerSelection();
+                UpdateConcertKeyLabel();
+                UpdateScaleTunePicker();
+                UpdateEffectiveScaleLabel();
+                SyncPlayItemStatusMessage();
+
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    ApplyStaffHeight();
+                    StaffGraphicsView?.Invalidate();
+                });
+            }
+            finally
+            {
+                _suppressSessionRegenerate = false;
+            }
+        }
+
+        private async Task StartListeningAndEvaluatingAsync(
+            bool playBack = false,
+            bool forceNewNotes = false,
+            string? scaleKeyTrigger = null)
         {
             _sessionStartCts?.Cancel();
             var startCts = new CancellationTokenSource();
@@ -2741,6 +2948,7 @@ namespace musicmate.Pages
 
                 _lastProcess = DateTime.MinValue;
                 _isBelowThreshold = true;
+                _dismissedResultBannerForFirstSound = false;
                 _pitchBufferPos = 0;
                 _session.Reset();
 
@@ -2748,18 +2956,24 @@ namespace musicmate.Pages
 
                 PickChildSessionSettingsIfNeeded(preserveRepeatSameTune: !forceNewNotes);
 
-                if (_session.RepeatSameTune && _savedNotesToRepeat == null
+                if (_session.RepeatSameTune && _repeatSameSnapshot == null
                     && _session.NotesToDraw?.Count > 0)
                 {
-                    _savedNotesToRepeat = new List<NoteInfo>(_session.NotesToDraw);
+                    CaptureRepeatSameSnapshot();
                 }
 
                 // Handle note generation based on repeat mode
                 if (!forceNewNotes
-                    && _session.RepeatSameTune && _savedNotesToRepeat != null && _savedNotesToRepeat.Count > 0)
+                    && _session.RepeatSameTune && _repeatSameSnapshot?.Notes.Count > 0)
                 {
+                    if (scaleKeyTrigger is "GoButton" or "AutoStart")
+                    {
+                        _session.PrepareFreshScaleAndKeyForGeneration(
+                            scaleKeyTrigger, repeatSame: true, _generationSeed);
+                    }
+
                     // Filter out notes that are now mastered before restoring
-                    var notesToRestore = _savedNotesToRepeat.ToList();
+                    var notesToRestore = _repeatSameSnapshot!.Notes.ToList();
                     var db = ServiceHelper.GetService<NoteDatabase>();
                     if (db != null)
                     {
@@ -2777,35 +2991,27 @@ namespace musicmate.Pages
                     if (notesToRestore.Count < 2)
                     {
                         PickChildSessionSettingsIfNeeded(preserveRepeatSameTune: false);
+                        PrepareFreshScaleAndKeyIfNeeded(forceNewNotes, scaleKeyTrigger);
                         await RegenerateNotesAsync();
                         if (_session?.NotesToDraw != null && _session.NotesToDraw.Count > 0)
-                            _savedNotesToRepeat = new List<NoteInfo>(_session.NotesToDraw);
+                            CaptureRepeatSameSnapshot();
                     }
                     else
                     {
-                        // Restore the filtered notes for "Repeat Same" mode
-                        _session.NotesToDraw.Clear();
-                        _session.NotesToDraw.AddRange(notesToRestore);
-                        // Re-populate FeedbackViewModels (cleared by Reset) to match the restored notes
-                        _session.FeedbackViewModels.Clear();
-                        for (int i = 0; i < notesToRestore.Count; i++)
-                            _session.FeedbackViewModels.Add(new FeedbackItem(i, 0, 0, false));
-                        await MainThread.InvokeOnMainThreadAsync(() =>
-                        {
-                            StaffGraphicsView.Invalidate();
-                        });
-                        Debug.WriteLine($"[Start] Restored {notesToRestore.Count} notes for Repeat Same (filtered from {_savedNotesToRepeat.Count})");
+                        await RestoreRepeatSameSnapshotAsync(notesToRestore);
+                        Debug.WriteLine($"[Start] Restored {notesToRestore.Count} notes for Repeat Same (filtered from {_repeatSameSnapshot!.Notes.Count})");
                     }
                 }
                 else
                 {
                     // Generate new notes (for first run, "Repeat New", manual GO, or scale modes)
+                    PrepareFreshScaleAndKeyIfNeeded(forceNewNotes, scaleKeyTrigger);
                     await RegenerateNotesAsync();
 
                     // Save notes for potential "Repeat Same" after generation
                     if (_session?.NotesToDraw != null && _session.NotesToDraw.Count > 0)
                     {
-                        _savedNotesToRepeat = new List<NoteInfo>(_session.NotesToDraw);
+                        CaptureRepeatSameSnapshot();
                         Debug.WriteLine($"[Start] Generated and saved {_session.NotesToDraw.Count} notes");
                     }
                 }
@@ -3328,7 +3534,8 @@ namespace musicmate.Pages
             if (e.PropertyName == nameof(NoteSessionService.IsRandomMode)
                 || e.PropertyName == nameof(NoteSessionService.EffectiveScale)
                 || e.PropertyName == nameof(NoteSessionService.EffectiveScaleDisplay)
-                || e.PropertyName == nameof(NoteSessionService.GenerationScale))
+                || e.PropertyName == nameof(NoteSessionService.GenerationScale)
+                || e.PropertyName == nameof(NoteSessionService.ScaleSelectionMode))
             {
                 UpdateEffectiveScaleLabel();
             }
@@ -3348,7 +3555,8 @@ namespace musicmate.Pages
                     e.PropertyName == nameof(NoteSessionService.CurrentTune) ||
                     e.PropertyName == nameof(NoteSessionService.IsRandomMode))
                 {
-                    _savedNotesToRepeat = null;
+                    if (!_suppressSessionRegenerate)
+                        _repeatSameSnapshot = null;
                 }
 
                 // Only regenerate when the page is visible; if called while navigating in from
@@ -3394,6 +3602,13 @@ namespace musicmate.Pages
                 || e.PropertyName == nameof(NoteSessionService.RepeatSameTune))
             {
                 UpdateAutoRepeatButtons();
+                if (_session.RepeatSameTune
+                    && _repeatSameSnapshot == null
+                    && _session.NotesToDraw.Count > 0
+                    && _staffDrawable != null)
+                {
+                    CaptureRepeatSameSnapshot();
+                }
             }
 
             if (e.PropertyName == nameof(NoteSessionService.MusicBpm))
@@ -3542,7 +3757,7 @@ namespace musicmate.Pages
 
         private void EnterTunerMode()
         {
-            _savedNotesToRepeat = null;
+            _repeatSameSnapshot = null;
             _session.IsRandomMode = false;
             _session.Tune = "Tuner";
             _session.ClearTunerDetection();
@@ -3855,7 +4070,7 @@ namespace musicmate.Pages
                 PlayModeCategory.Tunes =>
                     musicmate.Models.TuneLibrary.All.Select(t => t.Title).ToArray(),
                 PlayModeCategory.Scales =>
-                    NoteSessionService.AvailableScales.ToArray(),
+                    NoteSessionService.ScalePickerOptions.ToArray(),
                 PlayModeCategory.Arpeggios =>
                     BuildArpeggioPickerChoices().Select(choice => choice.Label).ToArray(),
                 _ => BuildRandomTunerPickerOptions()
@@ -3865,7 +4080,7 @@ namespace musicmate.Pages
             => category switch
             {
                 PlayModeCategory.Tunes => _session.CurrentTune?.Title ?? string.Empty,
-                PlayModeCategory.Scales => _session.SelectedScale,
+                PlayModeCategory.Scales => _session.ScaleSelectionDisplay,
                 PlayModeCategory.Arpeggios => _session.SelectedArpeggioDisplay,
                 PlayModeCategory.RandomTuner => LayoutTestTune.IsEnabled ? "Fixed Tune"
                     : _session.Tune == "Tuner" ? "Tuner"
@@ -4031,7 +4246,9 @@ namespace musicmate.Pages
 
         private async Task ApplyScaleSelectionAsync(string selected, int idx)
         {
-            if (!FreeScales.Contains(selected) && !StatusService.Instance.IsPremiumUser)
+            if (NoteSessionService.IsNamedScaleOption(selected)
+                && !FreeScales.Contains(selected)
+                && !StatusService.Instance.IsPremiumUser)
             {
                 var purchased = await PremiumPromptHelper.ShowAsync(this,
                     onDecline: () => _practiceScaleTunePicker.SelectedIndex = _lastValidPlayItemIndex);
@@ -4043,11 +4260,19 @@ namespace musicmate.Pages
             LayoutTestTune.SetEnabled(false);
             _session.IsRandomMode = false;
             _session.Tune = "Selected Scale";
-            _session.SelectedScale = selected;
+            if (!_session.TryApplyScalePickerSelection(selected, out _))
+            {
+                var fallbackIdx = Array.IndexOf(
+                    _practiceScaleTunePicker.ItemsSource as string[] ?? Array.Empty<string>(),
+                    _session.ScaleSelectionDisplay);
+                if (fallbackIdx >= 0)
+                    _lastValidPlayItemIndex = fallbackIdx;
+            }
             MarkChildKeyScaleOverrideIfNeeded();
             Preferences.Default.Set("SelectedTune", "Selected Scale");
             IsAutoRepeatVisible = true;
             UpdateKeyPickerVisibility();
+            UpdatePracticePlayItemPickerCore();
             await RegenerateNotesAsync();
         }
 
@@ -4195,6 +4420,13 @@ namespace musicmate.Pages
                 InstrumentPicker.Unfocus();
             }
         }
+
+        private void InstrumentPicker_Unfocused(object? sender, EventArgs e)
+        {
+            IsInstrumentPickerVisible = false;
+            IsInstrumentLabelVisible = true;
+        }
+
         async void OnKeyPickerChangedWithPrompt(object? sender, EventArgs e)
         {
             if (IsPickerSyncSuppressed) return;
@@ -4280,13 +4512,22 @@ namespace musicmate.Pages
                     _isPlaying = false;
                     SetPlayButtonPlaying(false);
                     _session.SessionCompleted = false;
-                    _savedNotesToRepeat = null;
                     _holdResultForChildSession = false;
                     _freezeStaff = false;
                     SetButtonStates(false);
 
                     _session.Reset();
-                    await RegenerateNotesAsync();
+
+                    if (_session.RepeatSameTune && _repeatSameSnapshot?.Notes.Count > 0)
+                    {
+                        // Keep the same exercise on screen; do not re-randomize key or notes.
+                        await RestoreRepeatSameSnapshotAsync(_repeatSameSnapshot.Notes);
+                    }
+                    else
+                    {
+                        _repeatSameSnapshot = null;
+                        await RegenerateNotesAsync();
+                    }
 
                     StatusService.Instance.StatusMessage = GetCurrentPlayItemName();
                 }
@@ -4300,8 +4541,11 @@ namespace musicmate.Pages
             {
                 _holdResultForChildSession = false;
                 _session.SessionCompleted = false;
-                _savedNotesToRepeat = null;
-                await StartListeningAndEvaluatingAsync(forceNewNotes: true);
+
+                bool repeatSame = _session.RepeatSameTune && _repeatSameSnapshot?.Notes.Count > 0;
+                await StartListeningAndEvaluatingAsync(
+                    forceNewNotes: !repeatSame,
+                    scaleKeyTrigger: "GoButton");
             }
         }
 

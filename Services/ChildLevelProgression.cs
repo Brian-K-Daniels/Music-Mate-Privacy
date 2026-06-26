@@ -80,13 +80,110 @@ namespace musicmate.Services
             => PickScaleAndKey(GetProfile(level), rng);
 
         /// <summary>Scale names allowed at this child level.</summary>
-        public static IReadOnlySet<string> GetAllowedScales(int level)
+        public static IReadOnlyList<string> GetAllowedScalesForLevel(int level)
         {
-            var profile = GetProfile(level);
-            return profile.ScalePool
-                .Select(o => o.Scale)
-                .ToHashSet(StringComparer.Ordinal);
+            level = Math.Clamp(level, 1, 100);
+            return level switch
+            {
+                <= 5 => ["Major Pentatonic"],
+                <= 15 => ["Major Pentatonic", "Major"],
+                <= 30 => ["Major", "Natural Minor"],
+                <= 45 => ["Major", "Natural Minor", "Harmonic Minor"],
+                <= 55 => ["Major", "Natural Minor", "Harmonic Minor", "Melodic Minor"],
+                <= 65 =>
+                [
+                    "Major", "Natural Minor", "Harmonic Minor", "Melodic Minor",
+                    "Minor Pentatonic", "Blues"
+                ],
+                <= 75 =>
+                [
+                    "Major", "Natural Minor", "Harmonic Minor", "Melodic Minor",
+                    "Minor Pentatonic", "Blues", "Mixolydian"
+                ],
+                <= 85 =>
+                [
+                    "Major", "Natural Minor", "Harmonic Minor", "Melodic Minor",
+                    "Minor Pentatonic", "Blues", "Mixolydian", "Dorian"
+                ],
+                <= 92 =>
+                [
+                    "Major", "Natural Minor", "Harmonic Minor", "Melodic Minor",
+                    "Minor Pentatonic", "Blues", "Mixolydian", "Dorian",
+                    "Lydian", "Phrygian"
+                ],
+                _ => NoteSessionService.AvailableScales
+                    .Where(s => s != "Chromatic")
+                    .ToArray()
+            };
         }
+
+        /// <summary>Alias for <see cref="GetAllowedScalesForLevel"/>.</summary>
+        public static IReadOnlySet<string> GetAllowedScales(int level)
+            => GetAllowedScalesForLevel(level).ToHashSet(StringComparer.Ordinal);
+
+        public static bool IsScaleAllowedAtLevel(int level, string? scale)
+        {
+            if (string.IsNullOrWhiteSpace(scale))
+                return false;
+            return GetAllowedScalesForLevel(level).Contains(scale, StringComparer.Ordinal);
+        }
+
+        /// <summary>Level-appropriate default when scale selection is By Level.</summary>
+        public static string GetDefaultScaleForLevel(int level)
+        {
+            level = Math.Clamp(level, 1, 100);
+            return level switch
+            {
+                <= 5 => "Major Pentatonic",
+                <= 15 => "Major",
+                <= 30 => "Natural Minor",
+                <= 45 => "Harmonic Minor",
+                <= 55 => "Melodic Minor",
+                <= 65 => "Blues",
+                <= 75 => "Mixolydian",
+                <= 85 => "Dorian",
+                <= 92 => (level % 2 == 0) ? "Lydian" : "Phrygian",
+                _ => "Major"
+            };
+        }
+
+        /// <summary>Alias for <see cref="GetDefaultScaleForLevel"/>.</summary>
+        public static string GetDefaultScale(int level)
+            => GetDefaultScaleForLevel(level);
+
+        private static readonly Dictionary<string, int> MusicalScaleWeights =
+            new(StringComparer.Ordinal)
+            {
+                ["Major"] = 50,
+                ["Natural Minor"] = 25,
+                ["Harmonic Minor"] = 6,
+                ["Melodic Minor"] = 4,
+                ["Major Pentatonic"] = 5,
+                ["Minor Pentatonic"] = 5,
+                ["Blues"] = 5,
+                ["Mixolydian"] = 6,
+                ["Dorian"] = 5,
+                ["Lydian"] = 1,
+                ["Phrygian"] = 1,
+                ["Locrian"] = 1,
+                ["Enigmatic"] = 1,
+            };
+
+        /// <summary>Weighted random scale from the level's allowed pool.</summary>
+        public static string PickWeightedRandomScale(int level, Random rng)
+            => WeightedChoice.Pick(ScalePoolForLevel(level), o => o.Weight, rng).Scale;
+
+        /// <summary>Weighted random key from the level's allowed pool.</summary>
+        public static string PickWeightedRandomKey(int level, Random? rng = null)
+        {
+            level = Math.Clamp(level, 1, 100);
+            var profile = GetProfile(level);
+            return WeightedChoice.Pick(profile.KeyPool, o => o.Weight, rng).Key;
+        }
+
+        /// <summary>Alias kept for existing callers.</summary>
+        public static string PickScaleFromPool(int level, Random rng)
+            => PickWeightedRandomScale(level, rng);
 
         /// <summary>Key names allowed at this child level.</summary>
         public static IReadOnlySet<string> GetAllowedKeys(int level)
@@ -97,10 +194,6 @@ namespace musicmate.Services
                 .ToHashSet(StringComparer.Ordinal);
         }
 
-        /// <summary>Highest-weight scale in the level pool (typically Major).</summary>
-        public static string GetDefaultScale(int level)
-            => GetProfile(level).ScalePool.MaxBy(o => o.Weight).Scale;
-
         /// <summary>Highest-weight key in the level pool (typically C).</summary>
         public static string GetDefaultKey(int level)
             => GetProfile(level).KeyPool.MaxBy(o => o.Weight).Key;
@@ -108,10 +201,9 @@ namespace musicmate.Services
         /// <summary>Keeps <paramref name="currentScale"/> when allowed; otherwise returns the level default.</summary>
         public static string ValidateScaleForLevel(int level, string? currentScale)
         {
-            var allowed = GetAllowedScales(level);
-            if (!string.IsNullOrWhiteSpace(currentScale) && allowed.Contains(currentScale))
+            if (!string.IsNullOrWhiteSpace(currentScale) && IsScaleAllowedAtLevel(level, currentScale))
                 return currentScale;
-            return GetDefaultScale(level);
+            return GetDefaultScaleForLevel(level);
         }
 
         /// <summary>Keeps <paramref name="currentKey"/> when allowed; otherwise returns the level default.</summary>
@@ -125,11 +217,7 @@ namespace musicmate.Services
 
         /// <summary>True when the level pool contains more than one distinct scale.</summary>
         public static bool LevelHasMultipleScales(int level)
-            => GetAllowedScales(level).Count > 1;
-
-        /// <summary>Weighted random scale pick for one generated tune.</summary>
-        public static string PickScaleFromPool(int level, Random rng)
-            => WeightedChoice.Pick(GetProfile(level).ScalePool, o => o.Weight, rng).Scale;
+            => GetAllowedScalesForLevel(level).Count > 1;
 
         /// <summary>
         /// Human-readable report of weighted pools and fixed settings for inspection.
@@ -156,79 +244,10 @@ namespace musicmate.Services
 
         private static IReadOnlyList<WeightedScaleOption> ScalePoolForLevel(int level)
         {
-            WeightedScaleOption[] raw = level switch
-            {
-                <= 20 =>
-                [
-                    new("Major", 100)
-                ],
-                <= 35 =>
-                [
-                    new("Major", 70),
-                    new("Natural Minor", 30)
-                ],
-                <= 50 =>
-                [
-                    new("Major", 50),
-                    new("Natural Minor", 25),
-                    new("Major Pentatonic", 15),
-                    new("Minor Pentatonic", 10)
-                ],
-                <= 65 =>
-                [
-                    new("Major", 40),
-                    new("Natural Minor", 25),
-                    new("Major Pentatonic", 12),
-                    new("Minor Pentatonic", 10),
-                    new("Blues", 7),
-                    new("Dorian", 3),
-                    new("Mixolydian", 3)
-                ],
-                <= 80 =>
-                [
-                    new("Major", 32),
-                    new("Natural Minor", 22),
-                    new("Major Pentatonic", 10),
-                    new("Minor Pentatonic", 8),
-                    new("Blues", 8),
-                    new("Dorian", 5),
-                    new("Mixolydian", 5),
-                    new("Harmonic Minor", 4),
-                    new("Melodic Minor", 3),
-                    new("Lydian", 2),
-                    new("Phrygian", 1)
-                ],
-                <= 95 =>
-                [
-                    new("Major", 25),
-                    new("Natural Minor", 18),
-                    new("Major Pentatonic", 8),
-                    new("Minor Pentatonic", 8),
-                    new("Blues", 8),
-                    new("Dorian", 7),
-                    new("Mixolydian", 7),
-                    new("Harmonic Minor", 6),
-                    new("Melodic Minor", 5),
-                    new("Lydian", 4),
-                    new("Phrygian", 3),
-                    new("Locrian", 1)
-                ],
-                _ =>
-                [
-                    new("Major", 20),
-                    new("Natural Minor", 15),
-                    new("Major Pentatonic", 7),
-                    new("Minor Pentatonic", 7),
-                    new("Blues", 8),
-                    new("Dorian", 8),
-                    new("Mixolydian", 8),
-                    new("Harmonic Minor", 7),
-                    new("Melodic Minor", 6),
-                    new("Lydian", 5),
-                    new("Phrygian", 5),
-                    new("Locrian", 4)
-                ]
-            };
+            var allowed = GetAllowedScalesForLevel(level);
+            var raw = allowed
+                .Select(scale => new WeightedScaleOption(scale, MusicalScaleWeights.GetValueOrDefault(scale, 1)))
+                .ToArray();
             return FilterScales(raw);
         }
 

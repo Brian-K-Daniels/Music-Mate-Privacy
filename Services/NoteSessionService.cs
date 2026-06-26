@@ -267,6 +267,7 @@ namespace musicmate.Services
         private const string PrefInstrumentKey = "musicmate.Instrument";
         private const string PrefKeySignatureKey = "musicmate.Key";
         private const string PrefSelectedScaleKey = "musicmate.SelectedScale";
+        private const string PrefScaleSelectionModeKey = "musicmate.ScaleSelectionMode";
         private const string PrefTuneKey = "musicmate.Tune";
         private const string PrefSelectedArpeggioIdKey = "musicmate.SelectedArpeggioId";
         private const string PrefSelectedArpeggioRootKey = "musicmate.SelectedArpeggioRoot";
@@ -390,6 +391,8 @@ namespace musicmate.Services
         private string _key = Preferences.Get(PrefKeySignatureKey, "C");
         private string? _keyBeforePracticeTune;
         private string _selectedScale = Preferences.Get(PrefSelectedScaleKey, "Major");
+        private ScaleSelectionMode _scaleSelectionMode = ParseScaleSelectionMode(
+            Preferences.Get(PrefScaleSelectionModeKey, nameof(ScaleSelectionMode.ByLevel)));
         private string? _tune = Preferences.Get(PrefTuneKey, "Selected Scale");
         private string _selectedArpeggioId = Preferences.Get(PrefSelectedArpeggioIdKey, "major-triad");
         private string _selectedArpeggioRoot = Preferences.Get(PrefSelectedArpeggioRootKey, "C4");
@@ -988,7 +991,7 @@ namespace musicmate.Services
                 _selectedScale = value;
                 Preferences.Set(PrefSelectedScaleKey, _selectedScale);
                 OnPropertyChanged(nameof(SelectedScale));
-                if (!IsRandomMode)
+                if (ScaleSelectionMode == ScaleSelectionMode.Named && !IsRandomMode)
                     SetEffectiveScale(_selectedScale);
             }
         }
@@ -1005,12 +1008,18 @@ namespace musicmate.Services
             private set => SetEffectiveScale(value);
         }
 
-        /// <summary>Scale passed to note generation (EffectiveScale in random mode).</summary>
-        public string GenerationScale => IsRandomMode ? EffectiveScale : SelectedScale;
+        /// <summary>Scale passed to note generation.</summary>
+        public string GenerationScale => EffectiveScale;
 
-        /// <summary>Label for random mode, e.g. "Random — C Major".</summary>
-        public string EffectiveScaleDisplay =>
-            IsRandomMode ? $"Random — {Key} {EffectiveScale}" : $"{Key} {SelectedScale}";
+        /// <summary>Label for the active scale selection.</summary>
+        public string EffectiveScaleDisplay => ScaleSelectionMode switch
+        {
+            ScaleSelectionMode.ByLevel => $"{Key} {EffectiveScale} (By Level)",
+            ScaleSelectionMode.Random when IsRandomMode => $"Random — {Key} {EffectiveScale}",
+            ScaleSelectionMode.Random => $"Random — {Key} {EffectiveScale}",
+            _ when IsRandomMode => $"Random — {Key} {EffectiveScale}",
+            _ => $"{Key} {SelectedScale}"
+        };
 
         private void SetEffectiveScale(string scale)
         {
@@ -1030,36 +1039,291 @@ namespace musicmate.Services
 
         /// <summary>
         /// Locks the effective scale for one generated tune. Call once before each new generation.
+        /// Does not re-randomize scale or key; use <see cref="PrepareFreshScaleAndKeyForGeneration"/>
+        /// before regeneration when fresh material is required.
         /// </summary>
         public void PrepareEffectiveScaleForGeneration(int generationSeed)
         {
-            if (!IsRandomMode)
+            int level = ResolvePracticeLevel();
+            bool weightedRandom = false;
+            string? resetReason = null;
+            string activeScale;
+
+            switch (ScaleSelectionMode)
             {
-                SetEffectiveScale(SelectedScale);
+                case ScaleSelectionMode.ByLevel:
+                    activeScale = level > 0
+                        ? (!string.IsNullOrWhiteSpace(_effectiveScale)
+                            ? _effectiveScale
+                            : ChildLevelProgression.GetDefaultScaleForLevel(level))
+                        : SelectedScale;
+                    SetEffectiveScale(activeScale);
+                    break;
+
+                case ScaleSelectionMode.Random:
+                    activeScale = !string.IsNullOrWhiteSpace(_effectiveScale)
+                        ? _effectiveScale
+                        : SelectedScale;
+                    weightedRandom = level > 0;
+                    SetEffectiveScale(activeScale);
+                    break;
+
+                default:
+                    activeScale = SelectedScale;
+                    if (level > 0 && !ChildLevelProgression.IsScaleAllowedAtLevel(level, activeScale))
+                    {
+                        ScaleSelectionMode = ScaleSelectionMode.ByLevel;
+                        activeScale = ChildLevelProgression.GetDefaultScaleForLevel(level);
+                        SelectedScale = activeScale;
+                        resetReason = "SelectedScaleNotAllowed";
+                    }
+                    SetEffectiveScale(activeScale);
+                    break;
+            }
+
+            LogScaleLevel(level, activeScale, weightedRandom, resetReason);
+        }
+
+        /// <summary>
+        /// Chooses a fresh scale (when mode is Random or By Level) and key before note generation.
+        /// Skipped when <paramref name="repeatSame"/> is true.
+        /// </summary>
+        public void PrepareFreshScaleAndKeyForGeneration(string trigger, bool repeatSame, int generationSeed)
+        {
+            int level = ResolvePracticeLevel();
+            int keyPoolLevel = level > 0 ? level : 100;
+            string oldScale = EffectiveScale;
+            string oldKey = Key;
+            string scaleModeLabel = GetScaleSelectionModeLogLabel();
+            string allowedScales = level > 0
+                ? string.Join(",", ChildLevelProgression.GetAllowedScalesForLevel(level))
+                : "n/a";
+            string allowedKeys = string.Join(",", ChildLevelProgression.GetAllowedKeys(keyPoolLevel));
+
+            if (repeatSame)
+            {
+                LogScaleKeyRandom(trigger, repeatSame, level, scaleModeLabel, oldScale, oldKey,
+                    oldScale, oldKey, allowedScales, allowedKeys, scaleChanged: false, keyChanged: false);
                 return;
             }
 
-            int level = ChildLevel;
-            if (level <= 0)
-                level = Preferences.Get("ChildPractice.Level", 0);
+            var rng = new Random(generationSeed);
+            string newScale = oldScale;
+            bool scaleChanged = false;
 
-            if (level > 0)
+            switch (ScaleSelectionMode)
             {
-                if (ChildLevelProgression.LevelHasMultipleScales(level))
-                {
-                    var rng = new Random(generationSeed);
-                    SetEffectiveScale(ChildLevelProgression.PickScaleFromPool(level, rng));
-                }
-                else
-                {
-                    SetEffectiveScale(ChildLevelProgression.GetDefaultScale(level));
-                }
+                case ScaleSelectionMode.ByLevel:
+                    if (level > 0)
+                    {
+                        newScale = ChildLevelProgression.GetDefaultScaleForLevel(level);
+                        if (!string.Equals(SelectedScale, newScale, StringComparison.Ordinal))
+                            SelectedScale = newScale;
+                        SetEffectiveScale(newScale);
+                        scaleChanged = !string.Equals(oldScale, newScale, StringComparison.Ordinal);
+                    }
+                    break;
+
+                case ScaleSelectionMode.Random:
+                    if (level > 0)
+                    {
+                        newScale = ChildLevelProgression.PickWeightedRandomScale(level, rng);
+                        SelectedScale = newScale;
+                        SetEffectiveScale(newScale);
+                        scaleChanged = !string.Equals(oldScale, newScale, StringComparison.Ordinal);
+                    }
+                    break;
+
+                default:
+                    newScale = SelectedScale;
+                    if (level > 0 && !ChildLevelProgression.IsScaleAllowedAtLevel(level, newScale))
+                    {
+                        ScaleSelectionMode = ScaleSelectionMode.ByLevel;
+                        newScale = ChildLevelProgression.GetDefaultScaleForLevel(level);
+                        SelectedScale = newScale;
+                        scaleChanged = true;
+                    }
+                    else
+                    {
+                        scaleChanged = !string.Equals(oldScale, newScale, StringComparison.Ordinal);
+                    }
+                    SetEffectiveScale(newScale);
+                    break;
             }
-            else
-            {
-                SetEffectiveScale(SelectedScale);
-            }
+
+            string newKey = ChildLevelProgression.PickWeightedRandomKey(keyPoolLevel, rng);
+            bool keyChanged = !string.Equals(oldKey, newKey, StringComparison.Ordinal);
+            if (keyChanged)
+                Key = newKey;
+
+            LogScaleKeyRandom(trigger, repeatSame, level, scaleModeLabel, oldScale, oldKey,
+                newScale, newKey, allowedScales, allowedKeys, scaleChanged, keyChanged);
         }
+
+        private string GetScaleSelectionModeLogLabel()
+            => ScaleSelectionMode switch
+            {
+                ScaleSelectionMode.ByLevel => "ByLevel",
+                ScaleSelectionMode.Random => "Random",
+                _ => SelectedScale ?? "Named"
+            };
+
+        private static void LogScaleKeyRandom(
+            string trigger,
+            bool repeatSame,
+            int level,
+            string scaleMode,
+            string oldScale,
+            string oldKey,
+            string newScale,
+            string newKey,
+            string allowedScales,
+            string allowedKeys,
+            bool scaleChanged,
+            bool keyChanged)
+        {
+#if DEBUG
+            if (trigger is not ("GoButton" or "AutoStart"))
+                return;
+            Debug.WriteLine(
+                $"[ScaleKeyRandom] Trigger={trigger} RepeatSame={repeatSame} Level={level} " +
+                $"ScaleMode={scaleMode} OldScale={oldScale} OldKey={oldKey} " +
+                $"NewScale={newScale} NewKey={newKey} ScaleChanged={scaleChanged} KeyChanged={keyChanged} " +
+                $"AllowedScales={allowedScales} AllowedKeys={allowedKeys} OK");
+#endif
+        }
+
+        /// <summary>Applies Part 6 rules when the child level changes.</summary>
+        public void ApplyScaleSelectionOnLevelChange(int level, Random? rng = null)
+        {
+            level = Math.Clamp(level, 1, 100);
+            string? resetReason = null;
+            bool weightedRandom = false;
+            string activeScale;
+
+            switch (ScaleSelectionMode)
+            {
+                case ScaleSelectionMode.ByLevel:
+                    activeScale = ChildLevelProgression.GetDefaultScaleForLevel(level);
+                    SelectedScale = activeScale;
+                    SetEffectiveScale(activeScale);
+                    break;
+
+                case ScaleSelectionMode.Random:
+                    activeScale = ChildLevelProgression.PickWeightedRandomScale(level, rng ?? Random.Shared);
+                    weightedRandom = true;
+                    SelectedScale = activeScale;
+                    SetEffectiveScale(activeScale);
+                    break;
+
+                default:
+                    if (ChildLevelProgression.IsScaleAllowedAtLevel(level, SelectedScale))
+                    {
+                        activeScale = SelectedScale;
+                        SetEffectiveScale(activeScale);
+                    }
+                    else
+                    {
+                        ScaleSelectionMode = ScaleSelectionMode.ByLevel;
+                        activeScale = ChildLevelProgression.GetDefaultScaleForLevel(level);
+                        SelectedScale = activeScale;
+                        SetEffectiveScale(activeScale);
+                        resetReason = "SelectedScaleNotAllowed";
+                    }
+                    break;
+            }
+
+            LogScaleLevel(level, activeScale, weightedRandom, resetReason);
+        }
+
+        public bool TryApplyScalePickerSelection(string selection, out string? rejectionReason)
+        {
+            rejectionReason = null;
+            int level = ResolvePracticeLevel();
+
+            if (selection == ScaleSelectionByLevel)
+            {
+                ScaleSelectionMode = ScaleSelectionMode.ByLevel;
+                if (level > 0)
+                {
+                    SelectedScale = ChildLevelProgression.GetDefaultScaleForLevel(level);
+                    SetEffectiveScale(SelectedScale);
+                }
+                LogScaleLevel(level, EffectiveScale, weightedRandom: false, resetReason: null);
+                return true;
+            }
+
+            if (selection == ScaleSelectionRandom)
+            {
+                ScaleSelectionMode = ScaleSelectionMode.Random;
+                if (level > 0)
+                {
+                    var picked = ChildLevelProgression.PickWeightedRandomScale(level, Random.Shared);
+                    SelectedScale = picked;
+                    SetEffectiveScale(picked);
+                    LogScaleLevel(level, picked, weightedRandom: true, resetReason: null);
+                }
+                return true;
+            }
+
+            if (!IsNamedScaleOption(selection))
+            {
+                rejectionReason = "UnknownScaleOption";
+                return false;
+            }
+
+            if (level > 0 && !ChildLevelProgression.IsScaleAllowedAtLevel(level, selection))
+            {
+                ScaleSelectionMode = ScaleSelectionMode.ByLevel;
+                var fallback = ChildLevelProgression.GetDefaultScaleForLevel(level);
+                SelectedScale = fallback;
+                SetEffectiveScale(fallback);
+                rejectionReason = "SelectedScaleNotAllowed";
+                LogScaleLevel(level, fallback, weightedRandom: false, resetReason: rejectionReason);
+                return false;
+            }
+
+            ScaleSelectionMode = ScaleSelectionMode.Named;
+            SelectedScale = selection;
+            SetEffectiveScale(selection);
+            LogScaleLevel(level, selection, weightedRandom: false, resetReason: null);
+            return true;
+        }
+
+        private int ResolvePracticeLevel()
+        {
+            if (ChildLevel > 0)
+                return ChildLevel;
+            return Preferences.Get("ChildPractice.Level", 0);
+        }
+
+        private void LogScaleLevel(int level, string activeScale, bool weightedRandom, string? resetReason)
+        {
+#if DEBUG
+            var allowed = level > 0
+                ? string.Join(",", ChildLevelProgression.GetAllowedScalesForLevel(level))
+                : "n/a";
+            var allowedCheck = level <= 0
+                || ChildLevelProgression.IsScaleAllowedAtLevel(level, activeScale);
+            var selection = ScaleSelectionMode switch
+            {
+                ScaleSelectionMode.ByLevel => "ByLevel",
+                ScaleSelectionMode.Random => "Random",
+                _ => SelectedScale
+            };
+            var reset = resetReason == null
+                ? string.Empty
+                : $" SelectionResetTo=ByLevel Reason={resetReason}";
+            Debug.WriteLine(
+                $"[ScaleLevel] Level={level} Selection={selection} ActiveScale={activeScale} " +
+                $"Allowed={allowed} AllowedCheck={allowedCheck} WeightedRandom={weightedRandom}{reset} OK");
+#endif
+        }
+
+        private static ScaleSelectionMode ParseScaleSelectionMode(string? raw)
+            => Enum.TryParse<ScaleSelectionMode>(raw, out var mode)
+                ? mode
+                : ScaleSelectionMode.ByLevel;
         /// <summary>Playback tempo (BPM) when the device plays notes (Auto Play).</summary>
         public int PlaybackBpm
         {
@@ -1346,11 +1610,47 @@ namespace musicmate.Services
         private double _rhythmGatePriorDurationMs;
         private double _lastRestViolationLogMs = double.NegativeInfinity;
         private enum AccidentalPreference { Auto, Sharps, Flats }
+        public const string ScaleSelectionByLevel = "By Level";
+        public const string ScaleSelectionRandom = "Random";
+
         public static readonly string[] AvailableScales = new[]
         {
             "Major",  "Harmonic Minor", "Melodic Minor", "Natural Minor", "Dorian", "Phrygian",
             "Lydian", "Mixolydian", "Locrian", "Major Pentatonic", "Minor Pentatonic", "Blues",
-            "Chromatic"
+            "Enigmatic", "Chromatic"
+        };
+
+        /// <summary>Scale picker items: By Level, Random, then every supported scale.</summary>
+        public static string[] ScalePickerOptions { get; } =
+            new[] { ScaleSelectionByLevel, ScaleSelectionRandom }
+                .Concat(AvailableScales)
+                .ToArray();
+
+        public static bool IsNamedScaleOption(string? option)
+            => !string.IsNullOrWhiteSpace(option)
+               && option != ScaleSelectionByLevel
+               && option != ScaleSelectionRandom
+               && AvailableScales.Contains(option, StringComparer.Ordinal);
+
+        public ScaleSelectionMode ScaleSelectionMode
+        {
+            get => _scaleSelectionMode;
+            set
+            {
+                if (_scaleSelectionMode == value)
+                    return;
+                _scaleSelectionMode = value;
+                Preferences.Set(PrefScaleSelectionModeKey, value.ToString());
+                OnPropertyChanged(nameof(ScaleSelectionMode));
+                OnPropertyChanged(nameof(EffectiveScaleDisplay));
+            }
+        }
+
+        public string ScaleSelectionDisplay => ScaleSelectionMode switch
+        {
+            ScaleSelectionMode.ByLevel => ScaleSelectionByLevel,
+            ScaleSelectionMode.Random => ScaleSelectionRandom,
+            _ => SelectedScale
         };
         public string[] AvailableScalesForBinding => AvailableScales;
         private static readonly char[] Letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
@@ -1450,6 +1750,23 @@ namespace musicmate.Services
             var sorted = _pitchMedianHistory.Order().ToArray();
             return sorted[sorted.Length / 2];
         }
+        /// <summary>Restores key, scale, and staff layout saved with Repeat Same.</summary>
+        public void RestoreRepeatSameGenerationContext(
+            string key,
+            string selectedScale,
+            string effectiveScale,
+            ScaleSelectionMode scaleMode,
+            bool isRandomMode,
+            string tune)
+        {
+            Key = key;
+            SelectedScale = selectedScale;
+            ScaleSelectionMode = scaleMode;
+            IsRandomMode = isRandomMode;
+            Tune = tune;
+            SetEffectiveScale(effectiveScale);
+        }
+
         public void Reset()
         {
             SessionCompleted = false;
