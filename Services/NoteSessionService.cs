@@ -106,11 +106,11 @@ namespace musicmate.Services
         }
 
         // ── Rhythm / staff generation settings ─────────────────────────────────
-        private const string PrefMeterTimeSignatureKey = "musicmate.V3TimeSignature";
-        private const string PrefSmallestRhythmNoteKey = "musicmate.V3SmallestNote";
-        private const string PrefRhythmModeKey = "musicmate.V3RhythmMode";
-        private const string PrefSyncopationSettingKey = "musicmate.V3Syncopation";
-        private const string PrefNoteNameDisplayKey = "musicmate.V3NoteNameDisplay";
+        private const string PrefMeterTimeSignatureKey = "musicmate.TimeSignature";
+        private const string PrefSmallestRhythmNoteKey = "musicmate.SmallestNote";
+        private const string PrefRhythmModeKey = "musicmate.RhythmMode";
+        private const string PrefSyncopationSettingKey = "musicmate.Syncopation";
+        private const string PrefNoteNameDisplayKey = "musicmate.NoteNameDisplay";
         private string _meterTimeSignature = Preferences.Get(PrefMeterTimeSignatureKey, "4/4");
         private string _smallestRhythmNote = Preferences.Get(PrefSmallestRhythmNoteKey, "Quarter");
         private string _rhythmMode = Preferences.Get(PrefRhythmModeKey, "Simple");
@@ -1357,8 +1357,8 @@ namespace musicmate.Services
             }
         }
         /// <summary>
-        /// Future pool weights (sum 100): practice tunes, random, scales, arpeggios.
-        /// Subsets of each master collection will vary by Level when wired into generation.
+        /// Pool weights (sum 100): practice tunes, random, scales, arpeggios.
+        /// Used by <see cref="PracticeCompositionSelector"/> for Child / By Level / mixed practice.
         /// </summary>
         public int PcTunes
         {
@@ -2355,8 +2355,8 @@ namespace musicmate.Services
         }
         private async Task<string[]> BuildRandomSequenceAsync()
         {
-            // Future: use PcTunes / PcRandom / PcScales / PcArpeggios to pick a pool category
-            // before drawing from Level-specific subsets of each master collection.
+            // Composition-driven exercise types are applied in PracticeCompositionSelector
+            // before generation; this path handles random melodic note lists.
             var availableNotes = BuildAvailableNotesForCurrentInstrumentAndScale();
 
             if (availableNotes.Count < 2)
@@ -3116,9 +3116,7 @@ namespace musicmate.Services
             return $"{(flats ? namesFlat : namesSharp)[pc]}{oct}";
         }
         private static bool KeyUsesFlats(string key)
-        {
-            return key is "F" or "Bb" or "Eb" or "Ab" or "Db" or "Gb" or "Cb";
-        }
+            => KeySignatureRules.IsFlatKeyName(key);
         private int ApplyInstrumentTranspose(int concertMidi)
         {
             return concertMidi - GetInstrumentTransposeOffset();
@@ -3686,32 +3684,10 @@ namespace musicmate.Services
         }
         /// <summary>Circle-of-fifths count for the displayed key signature (scale-aware).</summary>
         public static int GetKeySignatureAccidentalCount(string key, string scale)
-        {
-            string majorKey = scale switch
-            {
-                "Natural Minor" or "Aeolian" or "Harmonic Minor"
-                    or "Melodic Minor" or "Jazz Melodic Minor" => RelativeMajorForKeySignature(key),
-                _ => key
-            };
-            return GetAccidentalCountForKey(majorKey);
-        }
-        public static string RelativeMajorForKeySignature(string minorKey) => minorKey switch
-        {
-            "A" => "C",
-            "E" => "G",
-            "B" => "D",
-            "F#" => "A",
-            "C#" => "E",
-            "G#" => "B",
-            "D#" => "F#",
-            "D" => "F",
-            "G" => "Bb",
-            "C" => "Eb",
-            "F" => "Ab",
-            "Bb" => "Db",
-            "Eb" => "Gb",
-            _ => minorKey
-        };
+            => KeySignatureRules.GetSignedAccidentalCount(key, scale);
+
+        public static string RelativeMajorForKeySignature(string minorKey)
+            => KeySignatureRules.RelativeMajorOf(minorKey);
         public string ResolveWrittenNoteName(NoteInfo note)
         {
             var raw = note.Name?.Trim() ?? string.Empty;
@@ -3737,35 +3713,9 @@ namespace musicmate.Services
             while (start >= 0 && char.IsDigit(raw[start])) start--;
             return start < end && int.TryParse(raw.AsSpan(start + 1, end - start), out var o) ? o : 4;
         }
-        /// <summary>Returns the number of sharps (positive) or flats (negative) for a major key.</summary>
-        private static int GetAccidentalCountForKey(string key) => key switch
-        {
-            "C" => 0,
-            "G" => 1,
-            "D" => 2,
-            "A" => 3,
-            "E" => 4,
-            "B" => 5,
-            "F#" => 6,
-            "C#" => 7,
-            "F" => -1,
-            "Bb" => -2,
-            "Eb" => -3,
-            "Ab" => -4,
-            "Db" => -5,
-            "Gb" => -6,
-            "Cb" => -7,
-            _ => 0
-        };
+
         private static string? GetSignatureAccidentalForLetter(char letter, int signatureCount)
-        {
-            if (signatureCount == 0) return null;
-            var sharpsOrder = new[] { 'F', 'C', 'G', 'D', 'A', 'E', 'B' };
-            var flatsOrder = new[] { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
-            if (signatureCount > 0)
-                return sharpsOrder.Take(signatureCount).Contains(letter) ? "#" : null;
-            return flatsOrder.Take(Math.Abs(signatureCount)).Contains(letter) ? "b" : null;
-        }
+            => KeySignatureRules.GetSignatureAccidentalForLetter(letter, signatureCount);
     }
 }
 

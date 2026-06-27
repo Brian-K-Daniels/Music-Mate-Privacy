@@ -1247,23 +1247,12 @@ namespace musicmate.Services
             _ => null
         };
 
-        /// <summary>Circle-of-fifths accidental count — mirrors the drawable's logic.</summary>
+        /// <summary>Circle-of-fifths accidental count — delegates to KeySignatureRules.</summary>
         private static int GetKeySigAccidentalCount(string key, string scale)
-            => NoteSessionService.GetKeySignatureAccidentalCount(key, scale);
-
-        private static string RelativeMajorForKeySig(string minorKey)
-            => NoteSessionService.RelativeMajorForKeySignature(minorKey);
+            => KeySignatureRules.GetSignedAccidentalCount(key, scale);
 
         private static bool KeyUsesFlats(string key, string scale)
-        {
-            string majorKey = scale switch
-            {
-                "Natural Minor" or "Aeolian" or "Harmonic Minor"
-                    or "Melodic Minor" or "Jazz Melodic Minor" => RelativeMajorForKeySig(key),
-                _ => key
-            };
-            return majorKey is "F" or "Bb" or "Eb" or "Ab" or "Db" or "Gb" or "Cb";
-        }
+            => KeySignatureRules.KeySignatureUsesFlats(key, scale);
 
         private static double MidiToFreq(int midi)
             => 440.0 * Math.Pow(2.0, (midi - 69) / 12.0);

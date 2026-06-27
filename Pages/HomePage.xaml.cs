@@ -9,12 +9,7 @@ namespace musicmate.Pages
     ///
     /// Instrument is persisted via NoteSessionService.Instrument (which writes
     /// Preferences automatically).  Level is persisted under "ChildPractice.Level".
-    ///
-    /// FUTURE: When DifficultyLevelMapper is implemented, call it from
-    /// OnStartClicked before navigating to MusicPage:
-    ///     var p = DifficultyLevelMapper.GetSessionParameters(_selectedLevel);
-    ///     _session.ApplyDifficultyParameters(p);
-    ///
+    ///    ///
     /// FUTURE: Level-up / congratulations logic should be triggered from
     /// MusicPage (or a dedicated service) after a session completes successfully,
     /// then navigate back here with a celebratory overlay.

@@ -479,7 +479,7 @@ namespace musicmate.ViewModels
         public List<string> SyncopationSettingOptions { get; } = new() { "None", "Simple", "Full" };
         public List<string> NoteNameDisplayOptions { get; } = new() { "Current only", "All notes", "Off" };
 
-        private string _meterTimeSignature = Preferences.Get("musicmate.V3TimeSignature", "4/4");
+        private string _meterTimeSignature = Preferences.Get("musicmate.TimeSignature", "4/4");
         public string MeterTimeSignature
         {
             get => _session?.MeterTimeSignature ?? _meterTimeSignature;
@@ -495,13 +495,13 @@ namespace musicmate.ViewModels
                 else
                 {
                     _meterTimeSignature = value;
-                    Preferences.Set("musicmate.V3TimeSignature", value);
+                    Preferences.Set("musicmate.TimeSignature", value);
                     OnPropertyChanged(nameof(MeterTimeSignature));
                 }
             }
         }
 
-        private string _smallestRhythmNote = Preferences.Get("musicmate.V3SmallestNote", "Quarter");
+        private string _smallestRhythmNote = Preferences.Get("musicmate.SmallestNote", "Quarter");
         public string SmallestRhythmNote
         {
             get => _session?.SmallestRhythmNote ?? _smallestRhythmNote;
@@ -517,13 +517,13 @@ namespace musicmate.ViewModels
                 else
                 {
                     _smallestRhythmNote = value;
-                    Preferences.Set("musicmate.V3SmallestNote", value);
+                    Preferences.Set("musicmate.SmallestNote", value);
                     OnPropertyChanged(nameof(SmallestRhythmNote));
                 }
             }
         }
 
-        private string _rhythmMode = Preferences.Get("musicmate.V3RhythmMode", "Simple");
+        private string _rhythmMode = Preferences.Get("musicmate.RhythmMode", "Simple");
         public string RhythmMode
         {
             get => _session?.RhythmMode ?? _rhythmMode;
@@ -539,13 +539,13 @@ namespace musicmate.ViewModels
                 else
                 {
                     _rhythmMode = value;
-                    Preferences.Set("musicmate.V3RhythmMode", value);
+                    Preferences.Set("musicmate.RhythmMode", value);
                     OnPropertyChanged(nameof(RhythmMode));
                 }
             }
         }
 
-        private string _syncopationSetting = Preferences.Get("musicmate.V3Syncopation", "None");
+        private string _syncopationSetting = Preferences.Get("musicmate.Syncopation", "None");
         public string SyncopationSetting
         {
             get => _session?.SyncopationSetting ?? _syncopationSetting;
@@ -561,13 +561,13 @@ namespace musicmate.ViewModels
                 else
                 {
                     _syncopationSetting = value;
-                    Preferences.Set("musicmate.V3Syncopation", value);
+                    Preferences.Set("musicmate.Syncopation", value);
                     OnPropertyChanged(nameof(SyncopationSetting));
                 }
             }
         }
 
-        private string _noteNameDisplay = Preferences.Get("musicmate.V3NoteNameDisplay", "Current only");
+        private string _noteNameDisplay = Preferences.Get("musicmate.NoteNameDisplay", "Current only");
         public string NoteNameDisplay
         {
             get => _session?.NoteNameDisplay ?? _noteNameDisplay;
@@ -583,7 +583,7 @@ namespace musicmate.ViewModels
                 else
                 {
                     _noteNameDisplay = value;
-                    Preferences.Set("musicmate.V3NoteNameDisplay", value);
+                    Preferences.Set("musicmate.NoteNameDisplay", value);
                     OnPropertyChanged(nameof(NoteNameDisplay));
                 }
             }

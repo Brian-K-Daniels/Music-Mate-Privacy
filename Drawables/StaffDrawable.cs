@@ -3747,7 +3747,7 @@ namespace musicmate.Drawables
             bool suppressKeySig = _session.Tune == "Tuner"
                 || _session.Tune == "Practice Tune"
                 || (_session.Tune != "Arpeggio" && _session.SelectedScale == "Chromatic");
-            int accCount = suppressKeySig ? 0 : GetAccidentalCount(key, scale);
+            int accCount = suppressKeySig ? 0 : KeySignatureRules.GetAccidentalCount(key, scale);
 
             float clefX = safeLeft + clefPad;
             float keySigStartX = safeLeft + clefWidth;
@@ -4307,13 +4307,13 @@ namespace musicmate.Drawables
                 || (_session.Tune != "Arpeggio" && _session.SelectedScale == "Chromatic"))
                 return _headerMetrics.KeySigStartX;
 
-            int accCount = GetAccidentalCount(_session.Key, ActiveKeySignatureScale());
+            int accCount = KeySignatureRules.GetAccidentalCount(_session.Key, ActiveKeySignatureScale());
             if (accCount == 0)
                 return _headerMetrics.KeySigStartX;
 
             StaffLog($"[Staff] KeySig key={_session.Key} scale={_session.SelectedScale} count={accCount}");
 
-            bool useFlats = KeySignatureUsesFlats(_session.Key, ActiveKeySignatureScale());
+            bool useFlats = KeySignatureRules.KeySignatureUsesFlats(_session.Key, ActiveKeySignatureScale());
             string glyph = useFlats ? "\uE260" : "\uE262";
             float fontSize = KeySigAccidentalFontSize(useFlats);
             var pitches = useFlats ? KeySigFlatPitches : KeySigSharpPitches;
@@ -4375,105 +4375,21 @@ namespace musicmate.Drawables
             finally { canvas.RestoreState(); }
         }
 
-        // ── Key signature helpers (mirrors V2) ────────────────────────────────────
-
-        private static int GetAccidentalCount(string key, string scale)
-        {
-            string majorKey = scale switch
-            {
-                "Natural Minor" or "Aeolian" or "Harmonic Minor"
-                    or "Melodic Minor" or "Jazz Melodic Minor" => RelativeMajorOf(key),
-                _ => key
-            };
-            return majorKey switch
-            {
-                "C" => 0,
-                "G" => 1,
-                "D" => 2,
-                "A" => 3,
-                "E" => 4,
-                "B" => 5,
-                "F#" => 6,
-                "C#" => 7,
-                "F" => 1,
-                "Bb" => 2,
-                "Eb" => 3,
-                "Ab" => 4,
-                "Db" => 5,
-                "Gb" => 6,
-                "Cb" => 7,
-                _ => 0
-            };
-        }
-
-        private static string RelativeMajorOf(string minorKey) => minorKey switch
-        {
-            "A" => "C",
-            "E" => "G",
-            "B" => "D",
-            "F#" => "A",
-            "C#" => "E",
-            "G#" => "B",
-            "D#" => "F#",
-            "D" => "F",
-            "G" => "Bb",
-            "C" => "Eb",
-            "F" => "Ab",
-            "Bb" => "Db",
-            "Eb" => "Gb",
-            _ => minorKey
-        };
-
-        private static bool IsKeyFlat(string key)
-            => key is "F" or "Bb" or "Eb" or "Ab" or "Db" or "Gb" or "Cb";
-
-        private static bool KeySignatureUsesFlats(string key, string scale)
-        {
-            string majorKey = scale switch
-            {
-                "Natural Minor" or "Aeolian" or "Harmonic Minor"
-                    or "Melodic Minor" or "Jazz Melodic Minor" => RelativeMajorOf(key),
-                _ => key
-            };
-            return IsKeyFlat(majorKey);
-        }
-
         private string? GetSignatureAccidentalForLetter(char letter)
-        {
-            int accCount = GetAccidentalCount(_session.Key, ActiveKeySignatureScale());
-            if (accCount == 0) return null;
-
-            bool useFlats = KeySignatureUsesFlats(_session.Key, ActiveKeySignatureScale());
-            char[] flatLetters = { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
-            char[] sharpLetters = { 'F', 'C', 'G', 'D', 'A', 'E', 'B' };
-            char[] letters = useFlats ? flatLetters : sharpLetters;
-            for (int i = 0; i < Math.Min(accCount, letters.Length); i++)
-            {
-                if (letters[i] == letter)
-                    return useFlats ? "b" : "#";
-            }
-            return null;
-        }
+            => KeySignatureRules.GetSignatureAccidentalForLetter(letter, _session.Key, ActiveKeySignatureScale());
 
         private bool IsAccidentalInKeySig(Accidental accidental, char letter)
         {
             if (accidental == Accidental.None || accidental == Accidental.Natural) return false;
 
-            int accCount = GetAccidentalCount(_session.Key, ActiveKeySignatureScale());
-            if (accCount == 0) return false;
-
-            bool useFlats = KeySignatureUsesFlats(_session.Key, ActiveKeySignatureScale());
+            string scale = ActiveKeySignatureScale();
+            bool useFlats = KeySignatureRules.KeySignatureUsesFlats(_session.Key, scale);
             bool typeMatch = useFlats
                 ? accidental == Accidental.Flat
                 : accidental == Accidental.Sharp;
             if (!typeMatch) return false;
 
-            char[] flatLetters = { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
-            char[] sharpLetters = { 'F', 'C', 'G', 'D', 'A', 'E', 'B' };
-            char[] letters = useFlats ? flatLetters : sharpLetters;
-            for (int i = 0; i < Math.Min(accCount, letters.Length); i++)
-                if (letters[i] == letter) return true;
-            return false;
+            return KeySignatureRules.IsLetterInKeySignature(letter, _session.Key, scale);
         }
 
         /// <summary>
@@ -4484,20 +4400,7 @@ namespace musicmate.Drawables
         /// cancelling the key sig within the bar.
         /// </summary>
         private bool IsNoteInKeySig(GeneratedNote note)
-        {
-            string key = _session.Key;
-            string scale = _session.SelectedScale;
-            int accCount = GetAccidentalCount(key, scale);
-            if (accCount == 0) return false;
-
-            bool useFlats = KeySignatureUsesFlats(key, scale);
-            char[] flatLetters = { 'B', 'E', 'A', 'D', 'G', 'C', 'F' };
-            char[] sharpLetters = { 'F', 'C', 'G', 'D', 'A', 'E', 'B' };
-            char[] letters = useFlats ? flatLetters : sharpLetters;
-            for (int i = 0; i < Math.Min(accCount, letters.Length); i++)
-                if (letters[i] == note.Letter) return true;
-            return false;
-        }
+            => KeySignatureRules.IsLetterInKeySignature(note.Letter, _session.Key, _session.SelectedScale);
 
 #if DEBUG
         private static void StaffLog(string message) => Utilities.Utils.Log(message);
@@ -4522,28 +4425,7 @@ namespace musicmate.Drawables
 
             Utilities.DebugTestLog.Write("[KeySigTest] OK | self-test START");
 
-            // ── Key signature count / sharp-flat type ─────────────────────────────
-            var keySigTests = new (string Key, string Scale, int Count, bool Flats, string Desc)[]
-            {
-                ("C",  "Major",         0, false, "C major – no accidentals"),
-                ("G",  "Major",         1, false, "G major – 1 sharp (F#)"),
-                ("D",  "Major",         2, false, "D major – 2 sharps (F#, C#)"),
-                ("F",  "Major",         1, true,  "F major – 1 flat (Bb)"),
-                ("Bb", "Major",         2, true,  "Bb major – 2 flats (Bb, Eb)"),
-                ("E",  "Major",         4, false, "E major – 4 sharps (F#, C#, G#, D#)"),
-                ("Ab", "Major",         4, true,  "Ab major – 4 flats (Bb, Eb, Ab, Db)"),
-                ("A",  "Natural Minor", 0, false, "A natural minor = C major sig (0 acc)"),
-                ("D",  "Natural Minor", 1, true,  "D natural minor = F major sig (1 flat)"),
-                ("E",  "Natural Minor", 1, false, "E natural minor = G major sig (1 sharp)"),
-            };
-            foreach (var t in keySigTests)
-            {
-                int count = GetAccidentalCount(t.Key, t.Scale);
-                bool flats = KeySignatureUsesFlats(t.Key, t.Scale);
-                bool ok = count == t.Count && (count == 0 || flats == t.Flats);
-                string result = ok ? "OK" : $"FAIL: expected count={t.Count} flats={t.Flats}, got count={count} flats={flats}";
-                Utilities.DebugTestLog.Write($"[KeySigTest] {result} | {t.Desc}");
-            }
+            KeySignatureRules.RunDebugSelfTests();
 
             // ── Instrument transposition: written key → concert key ────────────────
             // TransposeOffset convention (negative = instrument sounds lower than written):

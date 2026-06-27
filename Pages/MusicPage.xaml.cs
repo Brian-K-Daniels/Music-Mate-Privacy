@@ -479,7 +479,7 @@ namespace musicmate.Pages
                         // independent of the CollectNoteStats preference.
                         // Save session summary before attempt rows are cleared.
                         int? newChildLevel = await SaveSessionStatAsync();
-                        await SaveNoteAttemptsForSessionAsync();
+                        await SaveNoteAttemptsForSessionAsync(levelBeforeSave);
 
                         if (_completionFromPlayback)
                         {
@@ -2093,6 +2093,9 @@ namespace musicmate.Pages
 
             await HideSessionResultBannerAsync(refreshMarqueeForNewLevel: false);
 
+            if (!LayoutTestTune.IsEnabled)
+                PracticeCompositionSelector.ApplyNextExerciseIfNeeded(_session, _generationSeed);
+
             await RegenerateNotesAsync();
 
             await MainThread.InvokeOnMainThreadAsync(() =>
@@ -2396,12 +2399,6 @@ namespace musicmate.Pages
             }
 
             RestoreSessionEndMarqueeIfNeeded();
-            //TEMP
-#if DEBUG
-            var notes = _session.BuildArpeggioPreviewNotes(
-                ArpeggioCatalog.MajorTriad,
-                rootNote: "Bb3");
-#endif 
         }
 
         protected override void OnNavigatedTo(NavigatedToEventArgs args)
@@ -2746,8 +2743,9 @@ namespace musicmate.Pages
         ///
         /// Called at session end from <see cref="UpdateNoteStatsDatabaseAsync"/>.
         /// Playback (autoplay) sessions are skipped because no real pitch was detected.
+        /// <paramref name="sessionLevel"/> is the child level at session start (before any level-up).
         /// </summary>
-        private async Task SaveNoteAttemptsForSessionAsync()
+        private async Task SaveNoteAttemptsForSessionAsync(int sessionLevel)
         {
             if (_noteAttemptDb == null) return;
             // Skip autoplay sessions — no microphone input, nothing meaningful to record.
@@ -2758,7 +2756,7 @@ namespace musicmate.Pages
                 await _noteAttemptDb.InitializeAsync();
 
                 var instrument = _session.Instrument ?? string.Empty;
-                var level = _session.ChildLevel;
+                var level = sessionLevel;
                 var sessionId = _currentSessionId;
                 var concertKey = _session.GetConcertKey();
 
@@ -2822,6 +2820,9 @@ namespace musicmate.Pages
         {
             if (_session.RepeatSameTune)
                 return;
+
+            if (!LayoutTestTune.IsEnabled)
+                PracticeCompositionSelector.ApplyNextExerciseIfNeeded(_session, _generationSeed);
 
             string trigger = forceNewNotes ? "GoButton" : (scaleKeyTrigger ?? "SessionStart");
             _session.PrepareFreshScaleAndKeyForGeneration(trigger, repeatSame: false, _generationSeed);
