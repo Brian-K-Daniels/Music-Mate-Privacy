@@ -127,25 +127,7 @@ namespace musicmate.Pages
         private int _lastFreeKeyIndex = 0;
         //private int _lastFreeScaleIndex = 0;
 
-        /// <summary>Saved notes plus key/scale/staff layout for Repeat Same.</summary>
-        private sealed class RepeatSameSnapshot
-        {
-            public List<NoteInfo> Notes { get; init; } = new();
-            public string Key { get; init; } = "C";
-            public string SelectedScale { get; init; } = "Major";
-            public string EffectiveScale { get; init; } = "Major";
-            public ScaleSelectionMode ScaleSelectionMode { get; init; }
-            public bool IsRandomMode { get; init; }
-            public string Tune { get; init; } = "";
-            public List<GeneratedNote> UpperNotes { get; init; } = new();
-            public List<GeneratedNote> LowerNotes { get; init; } = new();
-            public List<double> UpperBarBeats { get; init; } = new();
-            public List<double> LowerBarBeats { get; init; } = new();
-            public int UpperPitchCount { get; init; }
-            public bool UpperHasEndBar { get; init; }
-        }
-
-        private RepeatSameSnapshot? _repeatSameSnapshot;
+        private PracticeSessionSnapshot? _repeatSameSnapshot;
 
         public string? Tune => _session?.Tune;
         public bool AutoRepeat
@@ -2836,22 +2818,16 @@ namespace musicmate.Pages
             if (_staffDrawable == null || _session.NotesToDraw.Count == 0)
                 return;
 
-            _repeatSameSnapshot = new RepeatSameSnapshot
-            {
-                Notes = new List<NoteInfo>(_session.NotesToDraw),
-                Key = _session.Key,
-                SelectedScale = _session.SelectedScale,
-                EffectiveScale = _session.EffectiveScale,
-                ScaleSelectionMode = _session.ScaleSelectionMode,
-                IsRandomMode = _session.IsRandomMode,
-                Tune = _session.Tune ?? string.Empty,
-                UpperNotes = new List<GeneratedNote>(_staffDrawable.UpperNotes),
-                LowerNotes = new List<GeneratedNote>(_staffDrawable.LowerNotes),
-                UpperBarBeats = new List<double>(_staffDrawable.UpperBarBeats),
-                LowerBarBeats = new List<double>(_staffDrawable.LowerBarBeats),
-                UpperPitchCount = _sessionUpperPitchCount,
-                UpperHasEndBar = _staffDrawable.UpperHasEndBar,
-            };
+            _repeatSameSnapshot = PracticeSessionLifecycle.CaptureSnapshot(
+                _session,
+                _session.NotesToDraw,
+                new StaffLayoutCapture(
+                    _staffDrawable.UpperNotes,
+                    _staffDrawable.LowerNotes,
+                    _staffDrawable.UpperBarBeats,
+                    _staffDrawable.LowerBarBeats,
+                    _sessionUpperPitchCount,
+                    _staffDrawable.UpperHasEndBar));
         }
 
         private async Task RestoreRepeatSameSnapshotAsync(IReadOnlyList<NoteInfo> notes)
@@ -2863,47 +2839,12 @@ namespace musicmate.Pages
             _suppressSessionRegenerate = true;
             try
             {
-                _session.RestoreRepeatSameGenerationContext(
-                    snap.Key,
-                    snap.SelectedScale,
-                    snap.EffectiveScale,
-                    snap.ScaleSelectionMode,
-                    snap.IsRandomMode,
-                    snap.Tune);
-
-                _session.NotesToDraw.Clear();
-                foreach (var note in notes)
-                    _session.NotesToDraw.Add(note);
-                _session.FeedbackViewModels.Clear();
-                for (int i = 0; i < notes.Count; i++)
-                    _session.FeedbackViewModels.Add(new FeedbackItem(i, 0, 0, false));
+                PracticeSessionLifecycle.RestoreGenerationContext(_session, snap);
+                PracticeSessionLifecycle.RestoreNotesToSession(_session, notes);
 
                 if (_staffDrawable != null)
-                {
-                    _staffDrawable.UpperNotes = new List<GeneratedNote>(snap.UpperNotes);
-                    _staffDrawable.LowerNotes = new List<GeneratedNote>(snap.LowerNotes);
-                    _staffDrawable.UpperBarBeats = new List<double>(snap.UpperBarBeats);
-                    _staffDrawable.LowerBarBeats = new List<double>(snap.LowerBarBeats);
-                    _staffDrawable.UpperHasEndBar = snap.UpperHasEndBar;
-                    _staffDrawable.UpperNoteStates = new StaffNoteState[snap.UpperNotes.Count];
-                    _staffDrawable.LowerNoteStates = new StaffNoteState[snap.LowerNotes.Count];
-                    _staffDrawable.IsUpperActive = true;
-                    _staffDrawable.ActiveNoteIndex = 0;
-                    _staffDrawable.UpperAlpha = 1f;
-                    _staffDrawable.LowerAlpha = 1f;
-                    for (int i = 0; i < snap.UpperNotes.Count; i++)
-                    {
-                        if (!snap.UpperNotes[i].IsRest)
-                        {
-                            _staffDrawable.UpperNoteStates[i] = StaffNoteState.Current;
-                            _staffDrawable.ActiveNoteIndex = i;
-                            break;
-                        }
-                    }
-                    _staffDrawable.InvalidateLayoutCache();
-                }
+                    _sessionUpperPitchCount = PracticeSessionLifecycle.RestoreStaffDrawable(_staffDrawable, snap);
 
-                _sessionUpperPitchCount = snap.UpperPitchCount;
                 _session.ConfigureRhythmStartGates();
 
                 UpdateKeyPickerSelection();
@@ -2946,11 +2887,14 @@ namespace musicmate.Pages
                 Debug.WriteLine($"[Start] Starting listening, playBack={playBack}, forceNewNotes={forceNewNotes}");
                 SetButtonStates(true, keepPlayEnabled: playBack);
 
-                _lastProcess = DateTime.MinValue;
-                _isBelowThreshold = true;
-                _dismissedResultBannerForFirstSound = false;
-                _pitchBufferPos = 0;
-                _session.Reset();
+                using (PracticeSessionStartProfiler.Scope("SessionReset"))
+                {
+                    _lastProcess = DateTime.MinValue;
+                    _isBelowThreshold = true;
+                    _dismissedResultBannerForFirstSound = false;
+                    _pitchBufferPos = 0;
+                    _session.Reset();
+                }
 
                 ct.ThrowIfCancellationRequested();
 
@@ -2962,57 +2906,57 @@ namespace musicmate.Pages
                     CaptureRepeatSameSnapshot();
                 }
 
-                // Handle note generation based on repeat mode
-                if (!forceNewNotes
-                    && _session.RepeatSameTune && _repeatSameSnapshot?.Notes.Count > 0)
-                {
-                    if (scaleKeyTrigger is "GoButton" or "AutoStart")
-                    {
-                        _session.PrepareFreshScaleAndKeyForGeneration(
-                            scaleKeyTrigger, repeatSame: true, _generationSeed);
-                    }
+                var startPlan = PracticeSessionLifecycle.PlanExerciseStart(
+                    _session.RepeatSameTune, _repeatSameSnapshot, forceNewNotes, scaleKeyTrigger);
 
-                    // Filter out notes that are now mastered before restoring
-                    var notesToRestore = _repeatSameSnapshot!.Notes.ToList();
-                    var db = ServiceHelper.GetService<NoteDatabase>();
-                    if (db != null)
+                using (PracticeSessionStartProfiler.Scope("ExercisePrepare"))
+                {
+                    switch (startPlan.Action)
                     {
-                        await db.InitializeAsync();
-                        var statsList = await db.GetAllAsync();
-                        var stats = statsList.ToDictionary(s => s.WrittenName, s => s);
-                        notesToRestore = notesToRestore.Where(n =>
+                        case PracticeExerciseStartAction.RestoreRepeatSame:
                         {
-                            if (!stats.TryGetValue(n.Name, out var stat)) return true;
-                            return !MasteryEvaluator.IsFullyMastered(stat, _session);
-                        }).ToList();
-                    }
+                            if (startPlan.LogScaleKeyWithoutChanging)
+                            {
+                                _session.PrepareFreshScaleAndKeyForGeneration(
+                                    scaleKeyTrigger!, repeatSame: true, _generationSeed);
+                            }
 
-                    // If too few notes remain after mastery filtering, regenerate instead
-                    if (notesToRestore.Count < 2)
-                    {
-                        PickChildSessionSettingsIfNeeded(preserveRepeatSameTune: false);
-                        PrepareFreshScaleAndKeyIfNeeded(forceNewNotes, scaleKeyTrigger);
-                        await RegenerateNotesAsync();
-                        if (_session?.NotesToDraw != null && _session.NotesToDraw.Count > 0)
-                            CaptureRepeatSameSnapshot();
-                    }
-                    else
-                    {
-                        await RestoreRepeatSameSnapshotAsync(notesToRestore);
-                        Debug.WriteLine($"[Start] Restored {notesToRestore.Count} notes for Repeat Same (filtered from {_repeatSameSnapshot!.Notes.Count})");
-                    }
-                }
-                else
-                {
-                    // Generate new notes (for first run, "Repeat New", manual GO, or scale modes)
-                    PrepareFreshScaleAndKeyIfNeeded(forceNewNotes, scaleKeyTrigger);
-                    await RegenerateNotesAsync();
+                            var db = ServiceHelper.GetService<NoteDatabase>();
+                            List<NoteInfo> notesToRestore;
+                            using (PracticeSessionStartProfiler.Scope("MasteryFilter"))
+                            {
+                                notesToRestore = await PracticeSessionLifecycle.ResolveRepeatSameNotesAsync(
+                                    _repeatSameSnapshot!, _session, db);
+                            }
 
-                    // Save notes for potential "Repeat Same" after generation
-                    if (_session?.NotesToDraw != null && _session.NotesToDraw.Count > 0)
-                    {
-                        CaptureRepeatSameSnapshot();
-                        Debug.WriteLine($"[Start] Generated and saved {_session.NotesToDraw.Count} notes");
+                            if (notesToRestore.Count < PracticeSessionLifecycle.MinNotesAfterMasteryFilter)
+                            {
+                                PickChildSessionSettingsIfNeeded(preserveRepeatSameTune: false);
+                                PrepareFreshScaleAndKeyIfNeeded(forceNewNotes, scaleKeyTrigger);
+                                using (PracticeSessionStartProfiler.Scope("RegenerateNotes"))
+                                    await RegenerateNotesAsync();
+                                if (_session?.NotesToDraw != null && _session.NotesToDraw.Count > 0)
+                                    CaptureRepeatSameSnapshot();
+                            }
+                            else
+                            {
+                                using (PracticeSessionStartProfiler.Scope("RestoreRepeatSame"))
+                                    await RestoreRepeatSameSnapshotAsync(notesToRestore);
+                                Debug.WriteLine($"[Start] Restored {notesToRestore.Count} notes for Repeat Same (filtered from {_repeatSameSnapshot!.Notes.Count})");
+                            }
+                            break;
+                        }
+                        default:
+                            PrepareFreshScaleAndKeyIfNeeded(forceNewNotes, scaleKeyTrigger);
+                            using (PracticeSessionStartProfiler.Scope("RegenerateNotes"))
+                                await RegenerateNotesAsync();
+
+                            if (_session?.NotesToDraw != null && _session.NotesToDraw.Count > 0)
+                            {
+                                CaptureRepeatSameSnapshot();
+                                Debug.WriteLine($"[Start] Generated and saved {_session.NotesToDraw.Count} notes");
+                            }
+                            break;
                     }
                 }
 
@@ -3029,7 +2973,10 @@ namespace musicmate.Pages
                     }
 
                     Debug.WriteLine("[Start] Requesting audio permission...");
-                    await _audio.EnsurePermissionAsync();
+                    using (PracticeSessionStartProfiler.Scope("AudioPermission"))
+                    {
+                        await _audio.EnsurePermissionAsync();
+                    }
                     ct.ThrowIfCancellationRequested();
                     if (!_isRunning)
                     {

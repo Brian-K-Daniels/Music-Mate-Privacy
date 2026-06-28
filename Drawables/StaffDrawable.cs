@@ -1829,8 +1829,8 @@ namespace musicmate.Drawables
 
             LastComputedPxPerBeat = totalBeats > 0 ? availableWidth / (float)totalBeats : 42f;
 
-            if (!beginner)
-                EnforceGlobalBeatOrderSpacing(notes, noteLayouts, beatOrigin, _planInkGap);
+            EnforceGlobalBeatOrderSpacing(notes, noteLayouts, beatOrigin, _planInkGap);
+            EnforceStrictBeatOrderSpacing(notes, noteLayouts, beatOrigin, MinInkGap);
             ValidateLayout(notes, barBeats, noteLayouts, beatOrigin);
 
             return (noteLayouts, barList.ToArray(), totalWidth);
@@ -2167,6 +2167,9 @@ namespace musicmate.Drawables
 
             SanitizeLayoutPositions(upperNoteLayouts, upperBarLayouts);
             SanitizeLayoutPositions(lowerNoteLayouts, lowerBarLayouts);
+
+            EnforceStrictBeatOrderSpacing(UpperNotes, upperNoteLayouts, upperBeatOrigin, MinInkGap);
+            EnforceStrictBeatOrderSpacing(LowerNotes, lowerNoteLayouts, lowerBeatOrigin, MinInkGap);
 
             LogStaffLayoutDiagnostics("Upper", UpperNotes, upperNoteLayouts, upperPreScaleX,
                 upperTop, upperMid, upperBot);
