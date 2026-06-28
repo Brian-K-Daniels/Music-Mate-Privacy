@@ -1151,7 +1151,7 @@ namespace musicmate.Services
                     break;
             }
 
-            string newKey = ChildLevelProgression.PickWeightedRandomKey(keyPoolLevel, rng);
+            string newKey = ChildLevelProgression.PickBalancedKeyForSignature(newScale, keyPoolLevel, rng);
             bool keyChanged = !string.Equals(oldKey, newKey, StringComparison.Ordinal);
             if (keyChanged)
                 Key = newKey;

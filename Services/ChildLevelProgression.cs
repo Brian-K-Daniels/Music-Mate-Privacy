@@ -72,7 +72,7 @@ namespace musicmate.Services
             ChildLevelDifficultyProfile profile, Random? rng = null)
         {
             var scale = WeightedChoice.Pick(profile.ScalePool, o => o.Weight, rng).Scale;
-            var key = WeightedChoice.Pick(profile.KeyPool, o => o.Weight, rng).Key;
+            var key = PickBalancedKeyForSignature(scale, profile.Level, rng);
             return (scale, key);
         }
 
@@ -179,6 +179,48 @@ namespace musicmate.Services
             level = Math.Clamp(level, 1, 100);
             var profile = GetProfile(level);
             return WeightedChoice.Pick(profile.KeyPool, o => o.Weight, rng).Key;
+        }
+
+        /// <summary>
+        /// Picks a key from the level pool with a 50% chance of flat vs sharp displayed
+        /// signature for <paramref name="scale"/>. When the chosen bucket is empty,
+        /// falls back to the other bucket, then to keys with no signature accidentals.
+        /// </summary>
+        public static string PickBalancedKeyForSignature(string scale, int level, Random? rng = null)
+        {
+            level = Math.Clamp(level, 1, 100);
+            rng ??= Random.Shared;
+
+            var flatOptions = new List<WeightedKeyOption>();
+            var sharpOptions = new List<WeightedKeyOption>();
+            var naturalOptions = new List<WeightedKeyOption>();
+
+            foreach (var option in KeyPoolForLevel(level))
+            {
+                if (option.Weight <= 0)
+                    continue;
+
+                int signed = KeySignatureRules.GetSignedAccidentalCount(option.Key, scale);
+                if (signed < 0)
+                    flatOptions.Add(option);
+                else if (signed > 0)
+                    sharpOptions.Add(option);
+                else
+                    naturalOptions.Add(option);
+            }
+
+            bool wantFlat = rng.Next(2) == 0;
+            var primary = wantFlat ? flatOptions : sharpOptions;
+            var fallback = wantFlat ? sharpOptions : flatOptions;
+
+            if (primary.Count > 0)
+                return WeightedChoice.Pick(primary, o => o.Weight, rng).Key;
+            if (fallback.Count > 0)
+                return WeightedChoice.Pick(fallback, o => o.Weight, rng).Key;
+            if (naturalOptions.Count > 0)
+                return WeightedChoice.Pick(naturalOptions, o => o.Weight, rng).Key;
+
+            return PickWeightedRandomKey(level, rng);
         }
 
         /// <summary>Alias kept for existing callers.</summary>

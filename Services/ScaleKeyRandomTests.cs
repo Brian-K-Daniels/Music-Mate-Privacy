@@ -21,6 +21,7 @@ namespace musicmate.Services
             AssertRepeatOffNamedKeepsScaleChangesKey(sb);
             AssertRepeatOnPreservesScaleAndKey(sb);
             AssertLowLevelPoolsRespected(sb);
+            AssertBalancedKeySignatureMixWhenBothBucketsExist(sb);
 
             sb.AppendLine("[ScaleKeyRandom] Self-check END");
             Debug.WriteLine(sb.ToString());
@@ -101,6 +102,33 @@ namespace musicmate.Services
                 AssertTrue(allowedScales.Contains(session.EffectiveScale), sb, "L1 scale in pool");
                 AssertTrue(allowedKeys.Contains(session.Key), sb, "L1 key in pool");
             }
+        }
+
+        private static void AssertBalancedKeySignatureMixWhenBothBucketsExist(StringBuilder sb)
+        {
+            const int level = 80;
+            const string scale = "Major";
+            int flatCount = 0;
+            int sharpCount = 0;
+
+            for (int seed = 0; seed < 200; seed++)
+            {
+                string key = ChildLevelProgression.PickBalancedKeyForSignature(scale, level, new Random(seed));
+                if (KeySignatureRules.KeySignatureUsesFlats(key, scale))
+                    flatCount++;
+                else if (KeySignatureRules.GetSignedAccidentalCount(key, scale) > 0)
+                    sharpCount++;
+            }
+
+            AssertTrue(flatCount > 50 && sharpCount > 50, sb,
+                $"L{level} Major balanced keys (~50/50): flats={flatCount}, sharps={sharpCount}");
+
+            string lowLevelKey = ChildLevelProgression.PickBalancedKeyForSignature(
+                "Natural Minor", level: 18, new Random(42));
+            AssertTrue(
+                KeySignatureRules.KeySignatureUsesFlats(lowLevelKey, "Natural Minor"),
+                sb,
+                "L18 Natural Minor falls back to flat bucket when sharp bucket empty");
         }
 
         private static void AssertTrue(bool condition, StringBuilder sb, string label)
