@@ -305,7 +305,8 @@ namespace musicmate.Services
                 var built = FillPhraseFromRhythm(
                     rng, pool, phraseRhythms, measures, mi, globalBeatCursor,
                     ref globalNoteIndex, ref prevPitch,
-                    reuse, preferPracticeStart, cadenceLast);
+                    reuse, preferPracticeStart, cadenceLast,
+                    durationWeights);
 
                 if (role == PhraseRole.A)
                     contourA = built;
@@ -336,7 +337,8 @@ namespace musicmate.Services
             ref int prevPitch,
             PhraseContour? contourToReuse,
             bool preferPracticeStart,
-            bool cadenceOnLastPitch)
+            bool cadenceOnLastPitch,
+            Dictionary<NoteDuration, int> durationWeights)
         {
             int pitchedSlotCount = measureRhythms.Sum(m => m.Count(s => !s.IsRest));
             bool canReuse = contourToReuse != null
@@ -349,6 +351,7 @@ namespace musicmate.Services
             for (int mi = 0; mi < measureRhythms.Count; mi++)
             {
                 var rhythm = measureRhythms[mi];
+                NormalizeRhythmMeasure(rhythm, rng, durationWeights);
                 var measure = new Measure(TimeSignature);
                 double localCursor = 0.0;
                 int absoluteMi = StartMeasureIndex + startMeasureIndex + mi;
@@ -403,6 +406,8 @@ namespace musicmate.Services
                     globalNoteIndex++;
                     localCursor += slot.Duration.ToBeatValue();
                 }
+
+                PadMeasureToFullBar(rng, measure, ref localCursor, globalBeatCursor, absoluteMi, durationWeights);
 
                 measures.Add(measure);
                 globalBeatCursor += TimeSignature.TotalBeats;
@@ -512,11 +517,11 @@ namespace musicmate.Services
         private List<List<RhythmSlot>> BuildTwoMeasureMotif(
             Random rng, Dictionary<NoteDuration, int> durationWeights)
         {
-            return new List<List<RhythmSlot>>
-            {
-                BuildMeasureRhythmPattern(rng, durationWeights),
-                BuildMeasureRhythmPattern(rng, durationWeights),
-            };
+            var m0 = BuildMeasureRhythmPattern(rng, durationWeights);
+            var m1 = BuildMeasureRhythmPattern(rng, durationWeights);
+            NormalizeRhythmMeasure(m0, rng, durationWeights);
+            NormalizeRhythmMeasure(m1, rng, durationWeights);
+            return new List<List<RhythmSlot>> { m0, m1 };
         }
 
         /// <summary>
@@ -551,11 +556,16 @@ namespace musicmate.Services
                 if (replacement != dur)
                 {
                     if (TryReplaceSlotDuration(measure, slotIdx, replacement, TimeSignature.TotalBeats))
+                    {
+                        NormalizeRhythmMeasure(measure, rng, durationWeights);
                         return motifB;
+                    }
                 }
             }
 
             motifB[1] = BuildMeasureRhythmPattern(rng, durationWeights);
+            NormalizeRhythmMeasure(motifB[0], rng, durationWeights);
+            NormalizeRhythmMeasure(motifB[1], rng, durationWeights);
             return motifB;
         }
 
@@ -585,7 +595,48 @@ namespace musicmate.Services
                 beatsRemaining -= dur.ToBeatValue();
             }
 
+            NormalizeRhythmMeasure(slots, rng, durationWeights);
             return slots;
+        }
+
+        /// <summary>
+        /// Ensures a motif measure spans exactly one notated bar. Motif contrast edits can
+        /// shorten a pattern without topping up, which leaves empty beat space before the
+        /// next bar line.
+        /// </summary>
+        private void NormalizeRhythmMeasure(
+            List<RhythmSlot> measure,
+            Random rng,
+            Dictionary<NoteDuration, int> durationWeights)
+        {
+            double measureBeats = TimeSignature.TotalBeats;
+            double sum = measure.Sum(s => s.Duration.ToBeatValue());
+            double remaining = measureBeats - sum;
+
+            while (remaining > 1e-9)
+            {
+                var dur = PickFittingDuration(rng, durationWeights, remaining, SmallestDuration);
+                measure.Add(new RhythmSlot(dur, true));
+                remaining -= dur.ToBeatValue();
+            }
+        }
+
+        private void PadMeasureToFullBar(
+            Random rng,
+            Measure measure,
+            ref double localCursor,
+            double globalBeatBase,
+            int absoluteMi,
+            Dictionary<NoteDuration, int> durationWeights)
+        {
+            double remaining = TimeSignature.TotalBeats - localCursor;
+            while (remaining > 1e-9)
+            {
+                var dur = PickFittingDuration(rng, durationWeights, remaining, SmallestDuration);
+                measure.AddNote(GeneratedNote.Rest(dur, absoluteMi, globalBeatBase + localCursor));
+                localCursor += dur.ToBeatValue();
+                remaining -= dur.ToBeatValue();
+            }
         }
 
         private bool ShouldSlotBeRest(Random rng)
