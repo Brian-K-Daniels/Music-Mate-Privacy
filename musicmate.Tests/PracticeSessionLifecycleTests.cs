@@ -27,4 +27,55 @@ public class PracticeSessionLifecycleTests
         Assert.Equal(expected, plan.Action);
         Assert.Equal(logScaleKey, plan.LogScaleKeyWithoutChanging);
     }
+
+    [Theory]
+    [InlineData(true, true, 4, PracticeSessionLifecycle.StopToggleAction.StopRestoreRepeatSame, false, false)]
+    [InlineData(true, true, 0, PracticeSessionLifecycle.StopToggleAction.StopRegenerateFresh, false, true)]
+    [InlineData(true, false, 4, PracticeSessionLifecycle.StopToggleAction.StopRegenerateFresh, false, true)]
+    [InlineData(false, true, 4, PracticeSessionLifecycle.StopToggleAction.StartListening, false, false)]
+    [InlineData(false, true, 0, PracticeSessionLifecycle.StopToggleAction.StartListening, true, false)]
+    public void PlanStopToggle_SelectsExpectedAction(
+        bool isRunning,
+        bool repeatSameTune,
+        int snapshotNoteCount,
+        PracticeSessionLifecycle.StopToggleAction expected,
+        bool forceNewNotesOnStart,
+        bool clearSnapshotOnStop)
+    {
+        PracticeSessionSnapshot? snapshot = snapshotNoteCount > 0
+            ? new PracticeSessionSnapshot { Notes = Enumerable.Range(0, snapshotNoteCount).Select(_ => new NoteInfo()).ToList() }
+            : null;
+
+        var plan = PracticeSessionLifecycle.PlanStopToggle(isRunning, repeatSameTune, snapshot);
+
+        Assert.Equal(expected, plan.Action);
+        Assert.Equal(forceNewNotesOnStart, plan.ForceNewNotes);
+        Assert.Equal(clearSnapshotOnStop, plan.ClearRepeatSameSnapshot);
+        if (expected == PracticeSessionLifecycle.StopToggleAction.StartListening)
+            Assert.Equal("GoButton", plan.ScaleKeyTrigger);
+    }
+
+    [Fact]
+    public void FormatSessionResultBanner_IncludesLevelUpWhenPresent()
+    {
+        var stats = new PracticeSessionLifecycle.CompletionSummaryStats(8, 2, 80, 120);
+        var text = PracticeSessionLifecycle.FormatSessionResultBanner(stats, newChildLevel: 5);
+        Assert.Contains("80%", text);
+        Assert.Contains("8/10", text);
+        Assert.Contains("120 BPM", text);
+        Assert.Contains("Level 5", text);
+    }
+
+    [Theory]
+    [InlineData(true, "Major", true)]
+    [InlineData(true, "Tuner", false)]
+    [InlineData(false, "Major", false)]
+    public void ShouldAutoRepeat_RespectsTuneAndSetting(bool autoRepeat, string tune, bool expected)
+        => Assert.Equal(expected, PracticeSessionLifecycle.ShouldAutoRepeat(autoRepeat, tune));
+
+    [Theory]
+    [InlineData(2.0, 2000)]
+    [InlineData(0.5, 500)]
+    public void GetAutoRepeatDelayMs_ConvertsSeconds(double seconds, int expectedMs)
+        => Assert.Equal(expectedMs, PracticeSessionLifecycle.GetAutoRepeatDelayMs(seconds));
 }

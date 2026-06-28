@@ -451,10 +451,7 @@ namespace musicmate.Pages
                         int levelBeforeSave = _session.ChildLevel;
                         var countSinceBeforeSave = Services.LevelUpService.CountSinceUtc;
 
-                        // Capture display stats before SaveSessionStatAsync — a level-up refreshes
-                        // the staff and clears NoteFeedbacks / CorrectNoteIndices.
-                        var (correct, wrong, apc) = _session.GetSessionCorrectWrongTotals();
-                        var detectedBpm = _session.GetDetectedBpm();
+                        var summary = PracticeSessionLifecycle.CaptureCompletionSummary(_session);
 
                         // Rolling per-note attempt history runs unconditionally,
                         // independent of the CollectNoteStats preference.
@@ -476,12 +473,8 @@ namespace musicmate.Pages
                         // Append a level-up notice when the child has just advanced.
                         await MainThread.InvokeOnMainThreadAsync(() =>
                         {
-                            var bpmText = detectedBpm.HasValue ? $"  ·  Detected {detectedBpm.Value} BPM" : string.Empty;
-                            var levelUpText = newChildLevel.HasValue
-                                ? $"  🎉 Great job! You advanced to Level {newChildLevel.Value}!"
-                                : string.Empty;
-                            SessionResultLabel.Text =
-                                $"✓ {apc:F0}% correct  ({(int)correct}/{(int)(correct + wrong)}){bpmText}{levelUpText}";
+                            SessionResultLabel.Text = PracticeSessionLifecycle.FormatSessionResultBanner(
+                                summary, newChildLevel);
                             SessionResultBanner.IsVisible = true;
                         });
                         // Level-up progress: qualifying sessions at current level since start / last level-up
@@ -507,10 +500,10 @@ namespace musicmate.Pages
                         }
                         _session.SessionCompleted = true;
 
-                        if (AutoRepeat && _session.Tune != "Tuner")
+                        if (PracticeSessionLifecycle.ShouldAutoRepeat(AutoRepeat, _session.Tune ?? string.Empty))
                         {
                             double repeatDelay = Preferences.Default.Get("RepeatDelaySeconds", 2.0);
-                            await Task.Delay((int)(repeatDelay * 1000));
+                            await Task.Delay(PracticeSessionLifecycle.GetAutoRepeatDelayMs(repeatDelay));
                             _holdResultForChildSession = false;
                             _session.SessionCompleted = false;
 
@@ -2913,10 +2906,8 @@ namespace musicmate.Pages
             bool forceNewNotes = false,
             string? scaleKeyTrigger = null)
         {
-            _sessionStartCts?.Cancel();
-            var startCts = new CancellationTokenSource();
-            _sessionStartCts = startCts;
-            var ct = startCts.Token;
+            _sessionStartCts = PracticeSessionLifecycle.ReplaceSessionStartCancellation(_sessionStartCts);
+            var ct = _sessionStartCts.Token;
 
             try
             {
@@ -2925,7 +2916,7 @@ namespace musicmate.Pages
                 ClearSessionEndMarquee();
 
                 // Assign a fresh session ID so all NoteAttempts from this run are grouped together.
-                _currentSessionId = Guid.NewGuid().ToString();
+                _currentSessionId = PracticeSessionLifecycle.NewSessionId();
 
                 Debug.WriteLine($"[Start] Starting listening, playBack={playBack}, forceNewNotes={forceNewNotes}");
                 SetButtonStates(true, keepPlayEnabled: playBack);
@@ -3308,217 +3299,25 @@ namespace musicmate.Pages
         /// </summary>
         private async Task<int?> SaveSessionStatAsync()
         {
-            if (_sessionDb == null) { Utils.Log("[LevelUpDebug] _sessionDb is null"); return null; }
+            var outcome = await PracticeSessionPersistence.SaveSessionStatAsync(
+                _session,
+                _sessionDb,
+                _sessionResultDb,
+                Preferences.Default.Get("CollectSessionStats", true),
+                (long)Preferences.Default.Get("MaxSessionDbSizeMb", 50) * 1024 * 1024);
 
-            // Do not record Tuner sessions
-            if (_session.Tune == "Tuner") { Utils.Log("[LevelUpDebug] Tuner session, skipping"); return null; }
-
-            // Respect the user's collection preference
-            if (!Preferences.Default.Get("CollectSessionStats", true)) { Utils.Log("[LevelUpDebug] CollectSessionStats is false"); return null; }
-
-            await _sessionDb.InitializeAsync();
-
-            var (correct, wrong, apc) = _session.GetSessionCorrectWrongTotals();
-            var total = correct + wrong;
-            var pc = total > 0 ? (double)correct * 100.0 / total : 0.0;
-            var detectedBpm = _session.GetDetectedBpm();
-            var hi = _session.NotesToDraw.OrderByDescending(n => n.Midi).FirstOrDefault();
-            var lo = _session.NotesToDraw.OrderBy(n => n.Midi).FirstOrDefault();
-
-            // Get timing accuracy (null when <3 notes)
-            double? timingAccuracyPercent = _session.GetTimingAccuracyPercent();
-
-            // Blend pitch and timing into overall accuracy
-            double overallAccuracy = timingAccuracyPercent.HasValue
-                ? (apc + timingAccuracyPercent.Value) / 2.0
-                : apc;
-
-            var (pitchRight, pitchWrong, timingRight, timingWrong,
-                 overallRight, overallWrong, restRight, restWrong) = _session.GetSessionSummaryCounts();
-
-            var stat = new SessionStat
+            if (outcome.NewChildLevel.HasValue)
             {
-                Dt = DateTime.Now,
-                Key = _session.Key,
-                Tune = _session.Tune ?? string.Empty,
-                Instrument = _session.InstrumentDisplayName,
-                Sc = _session.Tune == "Practice Tune"
-                    ? (_session.CurrentTune?.Title ?? "Practice Tune")
-                    : _session.SelectedScale,
-                Rand = _session.IsRandomMode,
-                AccPct = _session.AccidentalPercent,
-                Hi = hi?.Name ?? "",
-                Lo = lo?.Name ?? "",
-                Pc = apc,
-                PcRaw = pc,
-                Tp = detectedBpm ?? 0,
-                Ts = 0,
-                // New timing/accuracy fields
-                Level = _session.ChildLevel,
-                Pch = apc,
-                Tmg = timingAccuracyPercent ?? 0.0,
-                Ovrl = overallAccuracy,
-                PitchRightCount = pitchRight,
-                PitchWrongCount = pitchWrong,
-                TimingRightCount = timingRight,
-                TimingWrongCount = timingWrong,
-                OverallRightCount = overallRight,
-                OverallWrongCount = overallWrong,
-                RestRightCount = restRight,
-                RestWrongCount = restWrong
-            };
-
-            await _sessionDb.InsertAsync(stat);
-
-            // Prune if over the size limit set in Settings
-            long maxBytes = (long)Preferences.Default.Get("MaxSessionDbSizeMb", 50) * 1024 * 1024;
-            await _sessionDb.PruneToSizeLimitAsync(maxBytes);
-
-            // If this session was started from HomePage, save a child SessionResult
-            // then check level-up criteria.
-            Utils.Log($"[LevelUpDebug] _session.ChildLevel={_session.ChildLevel}, _sessionResultDb null?={_sessionResultDb == null}");
-            if (_session.ChildLevel > 0)
-            {
-                await SaveSessionResultAsync(apc);
-
-                if (_sessionResultDb != null)
-                {
-                    var shortInstrument = _session.InstrumentKey;
-                    Utils.Log($"[LevelUpDebug] Calling CheckAndApplyLevelUpAsync: level={_session.ChildLevel}, instrument={shortInstrument}");
-                    var newLevel = await Services.LevelUpService.CheckAndApplyLevelUpAsync(
-                        _sessionResultDb, _session.ChildLevel, shortInstrument);
-
-                    if (newLevel.HasValue)
-                    {
-                        Utils.Log($"[LevelUpDebug] Level up! New level={newLevel.Value}");
-                        _session.ChildLevel = newLevel.Value;
-                        DifficultyLevelMapper.PickAndApplyToSession(
-                            newLevel.Value, _session);
-                        UpdateChildLevelSliderDisplay();
-                        UpdateKeyPickerSelection();
-                        UpdateScaleTunePicker();
-                        UpdateConcertKeyLabel();
-                        await RefreshDisplayForLevelChangeAsync();
-                    }
-                    else
-                    {
-                        Utils.Log("[LevelUpDebug] No level up this session.");
-                    }
-
-                    return newLevel;
-                }
-                else
-                {
-                    Utils.Log("[LevelUpDebug] _sessionResultDb is null inside ChildLevel>0 block");
-                }
+                UpdateChildLevelSliderDisplay();
+                UpdateKeyPickerSelection();
+                UpdateScaleTunePicker();
+                UpdateConcertKeyLabel();
+                await RefreshDisplayForLevelChangeAsync();
             }
 
-            return null;
+            return outcome.NewChildLevel;
         }
-        /// <summary>
-        /// Calculates and persists a <see cref="SessionResult"/> for child-Practice sessions.
-        /// Called only when <see cref="NoteSessionService.ChildLevel"/> &gt; 0.
-        ///
-        /// Pitch accuracy:
-        ///   • TotalNotes  = number of non-rest note slots generated.
-        ///   • CorrectPitchCount = notes the player eventually sang correctly
-        ///     (CorrectNoteIndices.Count from the session).
-        ///   • WrongPitchCount = total incorrect attempts across all note slots
-        ///     (sum of NoteFeedbacks[i].Wrong for all i).
-        ///   • PitchAccuracyPercent = CorrectPitchCount / TotalNotes * 100.
-        ///
-        /// Average pitch error:
-        ///   • Taken from NoteFeedbacks[i].Cents for indices in CorrectNoteIndices.
-        ///   • Cents is the deviation reported by Evaluate() at the moment the note
-        ///     was accepted — positive = sharp, negative = flat.
-        ///   • We store the mean absolute value so it is always a positive "closeness" number.
-        ///
-        /// Timing:
-        ///   • Sourced from NoteSessionService.GetTimingAccuracyPercent() — computed via
-        ///     least-squares onset fitting.
-        ///   • Null when fewer than 3 notes were played (insufficient for regression).
-        ///
-        /// FUTURE (level-up criteria): after saving, query
-        ///   var recent = await _sessionResultDb.GetByLevelAsync(_session.ChildLevel);
-        ///   and check whether the last N sessions all exceed a target accuracy.
-        /// </summary>
-        private async Task SaveSessionResultAsync(double pitchAccuracyPercent)
-        {
-            if (_sessionResultDb == null) return;
 
-            try
-            {
-                await _sessionResultDb.InitializeAsync();
-
-                var totalNotes = _session.NotesToDraw.Count(n => !n.IsRest);
-                var (correctCount, wrongCount, _) = _session.GetSessionCorrectWrongTotals();
-
-                // Average absolute pitch error in cents across correctly played notes,
-                // excluding attempts whose cents magnitude exceeds the outlier threshold
-                // (Rule 1: |PitchErrorCents| > NoteAttemptThresholds.MaxPitchErrorCentsForCorrectNote).
-                // Those rows are stale or race-condition data and would inflate the average.
-                double avgCents = 0;
-                var correctIndices = _session.CorrectNoteIndices;
-                if (correctIndices.Count > 0)
-                {
-                    var centsList = correctIndices
-                        .Where(i => _session.NoteFeedbacks.ContainsKey(i))
-                        .Select(i => Math.Abs(_session.NoteFeedbacks[i].Cents))
-                        .Where(c => c <= Models.NoteAttemptThresholds.MaxPitchErrorCentsForCorrectNote)
-                        .ToList();
-                    if (centsList.Count > 0)
-                        avgCents = centsList.Average();
-                }
-
-                // Get timing accuracy from least-squares onset fitting
-                double? timingAccuracyPercent = _session.GetTimingAccuracyPercent();
-                int? detectedBpm = _session.GetDetectedBpm();
-
-                // Blend pitch and timing into overall accuracy.
-                // When timing data is unavailable (< 3 notes), fall back to pitch only.
-                double overallAccuracy = timingAccuracyPercent.HasValue
-                    ? (pitchAccuracyPercent + timingAccuracyPercent.Value) / 2.0
-                    : pitchAccuracyPercent;
-
-                var (pitchRight, pitchWrong, timingRight, timingWrong,
-                     overallRight, overallWrong, restRight, restWrong) = _session.GetSessionSummaryCounts();
-
-                var result = new Models.SessionResult
-                {
-                    DateTime = DateTime.UtcNow,
-                    Instrument = _session.InstrumentKey,
-                    Level = _session.ChildLevel,
-                    TotalNotes = totalNotes,
-                    CorrectPitchCount = (int)correctCount,
-                    WrongPitchCount = (int)wrongCount,
-                    PitchAccuracyPercent = pitchAccuracyPercent,
-                    AveragePitchErrorCents = avgCents,
-                    TimingAccuracyPercent = timingAccuracyPercent,
-                    DetectedBpm = detectedBpm,
-                    OverallAccuracyPercent = overallAccuracy,
-                    PitchRightCount = pitchRight,
-                    PitchWrongCount = pitchWrong,
-                    TimingRightCount = timingRight,
-                    TimingWrongCount = timingWrong,
-                    OverallRightCount = overallRight,
-                    OverallWrongCount = overallWrong,
-                    RestRightCount = restRight,
-                    RestWrongCount = restWrong,
-                };
-
-                await _sessionResultDb.InsertAsync(result);
-
-                Utils.Log($"[SessionResult] Saved: Level={result.Level}, " +
-                          $"Correct={result.CorrectPitchCount}/{result.TotalNotes}, " +
-                          $"Pitch={result.PitchAccuracyPercent:F1}%, " +
-                          $"AvgCents={result.AveragePitchErrorCents:F1}, " +
-                          $"Timing={result.TimingAccuracyPercent?.ToString("F1") ?? "N/A"}%");
-            }
-            catch (Exception ex)
-            {
-                Utils.Log($"[SessionResult] SaveSessionResultAsync error: {ex}");
-            }
-        }
         private async void Session_PropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
             if (e.PropertyName == nameof(NoteSessionService.IsRandomMode)
@@ -4491,7 +4290,11 @@ namespace musicmate.Pages
 
         private async void OnStartStopToggleClicked(object? sender, EventArgs e)
         {
-            if (_isRunning)
+            var plan = PracticeSessionLifecycle.PlanStopToggle(
+                _isRunning, _session.RepeatSameTune, _repeatSameSnapshot);
+
+            if (plan.Action is PracticeSessionLifecycle.StopToggleAction.StopRestoreRepeatSame
+                or PracticeSessionLifecycle.StopToggleAction.StopRegenerateFresh)
             {
                 _sessionStartCts?.Cancel();
                 try
@@ -4508,16 +4311,13 @@ namespace musicmate.Pages
 
                     _session.Reset();
 
-                    if (_session.RepeatSameTune && _repeatSameSnapshot?.Notes.Count > 0)
-                    {
-                        // Keep the same exercise on screen; do not re-randomize key or notes.
-                        await RestoreRepeatSameSnapshotAsync(_repeatSameSnapshot.Notes);
-                    }
-                    else
-                    {
+                    if (plan.ClearRepeatSameSnapshot)
                         _repeatSameSnapshot = null;
+
+                    if (plan.Action == PracticeSessionLifecycle.StopToggleAction.StopRestoreRepeatSame)
+                        await RestoreRepeatSameSnapshotAsync(_repeatSameSnapshot!.Notes);
+                    else
                         await RegenerateNotesAsync();
-                    }
 
                     StatusService.Instance.StatusMessage = GetCurrentPlayItemName();
                 }
@@ -4532,10 +4332,9 @@ namespace musicmate.Pages
                 _holdResultForChildSession = false;
                 _session.SessionCompleted = false;
 
-                bool repeatSame = _session.RepeatSameTune && _repeatSameSnapshot?.Notes.Count > 0;
                 await StartListeningAndEvaluatingAsync(
-                    forceNewNotes: !repeatSame,
-                    scaleKeyTrigger: "GoButton");
+                    forceNewNotes: plan.ForceNewNotes,
+                    scaleKeyTrigger: plan.ScaleKeyTrigger);
             }
         }
 

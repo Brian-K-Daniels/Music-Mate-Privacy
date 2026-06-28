@@ -142,6 +142,80 @@ namespace musicmate.Services
         {
             return await FilterNotesExcludingMasteredAsync(snapshot.Notes, session, db);
         }
+
+        /// <summary>Cancels any in-flight session start and returns a fresh token source.</summary>
+        public static CancellationTokenSource ReplaceSessionStartCancellation(CancellationTokenSource? current)
+        {
+            current?.Cancel();
+            return new CancellationTokenSource();
+        }
+
+        public static string NewSessionId() => Guid.NewGuid().ToString();
+
+        public enum StopToggleAction
+        {
+            StopRestoreRepeatSame,
+            StopRegenerateFresh,
+            StartListening
+        }
+
+        public readonly record struct StopTogglePlan(
+            StopToggleAction Action,
+            bool ForceNewNotes,
+            string? ScaleKeyTrigger,
+            bool ClearRepeatSameSnapshot);
+
+        public static StopTogglePlan PlanStopToggle(bool isRunning, bool repeatSameTune, PracticeSessionSnapshot? snapshot)
+        {
+            bool hasSnapshot = snapshot?.Notes.Count > 0;
+
+            if (isRunning)
+            {
+                if (repeatSameTune && hasSnapshot)
+                    return new StopTogglePlan(StopToggleAction.StopRestoreRepeatSame, false, null, false);
+
+                return new StopTogglePlan(StopToggleAction.StopRegenerateFresh, false, null, true);
+            }
+
+            bool repeatSameStart = repeatSameTune && hasSnapshot;
+            return new StopTogglePlan(
+                StopToggleAction.StartListening,
+                ForceNewNotes: !repeatSameStart,
+                ScaleKeyTrigger: "GoButton",
+                ClearRepeatSameSnapshot: false);
+        }
+
+        public readonly record struct CompletionSummaryStats(
+            double Correct,
+            double Wrong,
+            double AccuracyPercent,
+            int? DetectedBpm);
+
+        public static CompletionSummaryStats CaptureCompletionSummary(NoteSessionService session)
+        {
+            var (correct, wrong, apc) = session.GetSessionCorrectWrongTotals();
+            return new CompletionSummaryStats(correct, wrong, apc, session.GetDetectedBpm());
+        }
+
+        public static string FormatSessionResultBanner(
+            CompletionSummaryStats stats,
+            int? newChildLevel)
+        {
+            var total = (int)(stats.Correct + stats.Wrong);
+            var bpmText = stats.DetectedBpm.HasValue
+                ? $"  ·  Detected {stats.DetectedBpm.Value} BPM"
+                : string.Empty;
+            var levelUpText = newChildLevel.HasValue
+                ? $"  🎉 Great job! You advanced to Level {newChildLevel.Value}!"
+                : string.Empty;
+            return $"✓ {stats.AccuracyPercent:F0}% correct  ({(int)stats.Correct}/{total}){bpmText}{levelUpText}";
+        }
+
+        public static bool ShouldAutoRepeat(bool autoRepeatEnabled, string tune)
+            => autoRepeatEnabled && tune != "Tuner";
+
+        public static int GetAutoRepeatDelayMs(double repeatDelaySeconds)
+            => (int)(repeatDelaySeconds * 1000);
     }
 
     public readonly record struct StaffLayoutCapture(
