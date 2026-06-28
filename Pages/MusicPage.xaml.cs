@@ -700,8 +700,8 @@ namespace musicmate.Pages
             await _regenerateSemaphore.WaitAsync();
             try
             {
-                // Hide any previous session result banner when new notes are generated.
-                await HideSessionResultBannerAsync(refreshMarqueeForNewLevel: true);
+                using (PracticeSessionStartProfiler.Scope("RegenerateNotes.Banner"))
+                    await HideSessionResultBannerAsync(refreshMarqueeForNewLevel: true);
                 _holdResultForChildSession = false;
 
                 if (_session.IsRandomMode)
@@ -718,17 +718,6 @@ namespace musicmate.Pages
 
                 _generationSeed = unchecked(_generationSeed + 1);
 
-                float width = StaffGraphicsView?.Width > 0 ? (float)StaffGraphicsView.Width : 360f;
-                await _session.GenerateNotesAsync(width);
-
-#if DEBUG
-                if (_session.IsRandomMode)
-                {
-                    var names = string.Join(", ", _session.NotesToDraw.Select(n => n.Name));
-                    Debug.WriteLine($"[Random] {_session.EffectiveScaleDisplay} → {_session.NotesToDraw.Count} notes: {names}");
-                }
-#endif
-
                 if (_session.Tune == "Tuner")
                 {
                     UpdateTunerStaffDisplay();
@@ -740,12 +729,24 @@ namespace musicmate.Pages
 
                 StaffBorder.IsVisible = true;
 
-                // Wait up to 500 ms for the view to get a measured width.
-                var sw2 = System.Diagnostics.Stopwatch.StartNew();
-                while (StaffGraphicsView?.Width <= 0 && sw2.ElapsedMilliseconds < 500)
-                    await Task.Delay(20);
+                using (PracticeSessionStartProfiler.Scope("RegenerateNotes.ViewWidthWait"))
+                {
+                    var sw2 = System.Diagnostics.Stopwatch.StartNew();
+                    while (StaffGraphicsView?.Width <= 0 && sw2.ElapsedMilliseconds < 500)
+                        await Task.Delay(20);
+                }
 
-                await UpdateStaffDisplayAsync();
+                using (PracticeSessionStartProfiler.Scope("RegenerateNotes.StaffDisplay"))
+                    await UpdateStaffDisplayAsync();
+
+#if DEBUG
+                if (_session.IsRandomMode)
+                {
+                    var names = string.Join(", ", _session.NotesToDraw.Select(n => n.Name));
+                    Debug.WriteLine($"[Random] {_session.EffectiveScaleDisplay} → {_session.NotesToDraw.Count} notes: {names}");
+                }
+#endif
+
                 if (_session.Tune == "Arpeggio" || _session.IsRandomMode)
                     SyncPlayItemStatusMessage();
             }
@@ -878,6 +879,104 @@ namespace musicmate.Pages
             };
             Debug.WriteLine($"[StaffGen] Tune={_session.Tune} Random={_session.IsRandomMode} SimpleScale={simpleSelectedScale} AccPct={_session.AccidentalPercent} EffectiveAccPct={(_session.IsRandomMode ? _session.AccidentalPercent : 0)}");
             return gen;
+        }
+
+        private sealed class StandardStaffGenResult
+        {
+            public required List<GeneratedNote> UpperFlat { get; init; }
+            public required List<double> UpperBarBeats { get; init; }
+            public required List<GeneratedNote> LowerFlat { get; init; }
+            public required List<double> LowerBarBeats { get; init; }
+            public required int SeqNextMeasureIndex { get; init; }
+            public required double SeqNextBeatOffset { get; init; }
+            public required int SeqNextGlobalNoteIndex { get; init; }
+            public required int LowerMeasureIndex { get; init; }
+            public required double LowerBeatOffset { get; init; }
+            public required int LowerGlobalNoteIndex { get; init; }
+        }
+
+        /// <summary>CPU-only staff sequence generation (safe to run off the UI thread).</summary>
+        private StandardStaffGenResult BuildStandardStaffNoteLists(int upperMc, int lowerMc)
+        {
+            var existingUpper = new HashSet<double>();
+            var existingLower = new HashSet<double>();
+
+            var genUpper = BuildSequenceGenerator(upperMc);
+            var upperMeasures = genUpper.GenerateSequence();
+            var upperFlat = MusicSequenceGenerator.Flatten(upperMeasures);
+            double measureBeats = genUpper.TimeSignature.TotalBeats;
+            var upperBarBeats = ComputeStaffBarBeats(upperFlat, measureBeats, existingUpper);
+
+            int seqNextMeasureIndex = upperMeasures.Count;
+            double seqNextBeatOffset = upperMeasures.Count * (double)genUpper.TimeSignature.TotalBeats;
+            int seqNextGlobalNoteIndex = upperFlat.Count(n => !n.IsRest);
+
+            List<GeneratedNote> lowerFlat;
+            List<double> lowerBarBeats;
+            int lowerMeasureIndex;
+            double lowerBeatOffset;
+            int lowerGlobalNoteIndex;
+
+            if (lowerMc > 0)
+            {
+                int lowerStartPitch = MusicSequenceGenerator.LastPitchedMidi(upperFlat);
+                var genLower = BuildSequenceGenerator(lowerMc, lowerStartPitch);
+                var lowerMeasures = genLower.GenerateSequence();
+                lowerFlat = MusicSequenceGenerator.Flatten(lowerMeasures);
+
+                double lowerBeatShift = lowerFlat.Count > 0 ? (lowerFlat[0].BeatPosition ?? 0.0) : 0.0;
+                if (lowerBeatShift > 0.0)
+                {
+                    for (int i = 0; i < lowerFlat.Count; i++)
+                    {
+                        var n = lowerFlat[i];
+                        lowerFlat[i] = new GeneratedNote
+                        {
+                            MidiNumber = n.MidiNumber,
+                            Letter = n.Letter,
+                            Octave = n.Octave,
+                            Accidental = n.Accidental,
+                            SpelledName = n.SpelledName,
+                            TargetFrequency = n.TargetFrequency,
+                            Duration = n.Duration,
+                            IsRest = n.IsRest,
+                            MeasureIndex = n.MeasureIndex,
+                            BeatPosition = (n.BeatPosition ?? 0.0) - lowerBeatShift,
+                            IsPlayedCorrectly = n.IsPlayedCorrectly
+                        };
+                    }
+                }
+
+                lowerBarBeats = ComputeStaffBarBeats(lowerFlat, measureBeats, existingLower);
+                lowerMeasureIndex = seqNextMeasureIndex + lowerMeasures.Count;
+                lowerBeatOffset = seqNextBeatOffset + lowerMeasures.Count * (double)genLower.TimeSignature.TotalBeats;
+                lowerGlobalNoteIndex = seqNextGlobalNoteIndex + lowerFlat.Count(n => !n.IsRest);
+                seqNextMeasureIndex = lowerMeasureIndex;
+                seqNextBeatOffset = lowerBeatOffset;
+                seqNextGlobalNoteIndex = lowerGlobalNoteIndex;
+            }
+            else
+            {
+                lowerFlat = new List<GeneratedNote>();
+                lowerBarBeats = new List<double>();
+                lowerMeasureIndex = seqNextMeasureIndex;
+                lowerBeatOffset = seqNextBeatOffset;
+                lowerGlobalNoteIndex = seqNextGlobalNoteIndex;
+            }
+
+            return new StandardStaffGenResult
+            {
+                UpperFlat = upperFlat,
+                UpperBarBeats = upperBarBeats,
+                LowerFlat = lowerFlat,
+                LowerBarBeats = lowerBarBeats,
+                SeqNextMeasureIndex = seqNextMeasureIndex,
+                SeqNextBeatOffset = seqNextBeatOffset,
+                SeqNextGlobalNoteIndex = seqNextGlobalNoteIndex,
+                LowerMeasureIndex = lowerMeasureIndex,
+                LowerBeatOffset = lowerBeatOffset,
+                LowerGlobalNoteIndex = lowerGlobalNoteIndex,
+            };
         }
 
         /// <summary>
@@ -1235,7 +1334,8 @@ namespace musicmate.Pages
                 }
                 else
                 {
-                    await LoadExcludedMidisAsync();
+                    using (PracticeSessionStartProfiler.Scope("StaffDisplay.LoadExcluded"))
+                        await LoadExcludedMidisAsync();
 
                     // Detect a two-octave scale range: when the hi−lo span is ≥ 24 semitones
                     // (two full octaves) and we are in scale-order mode, generate the full
@@ -1263,6 +1363,8 @@ namespace musicmate.Pages
 
                     if (isTwoOctave)
                     {
+                        using (PracticeSessionStartProfiler.Scope("StaffDisplay.SequenceGen"))
+                        {
                         // Build a combined generator sized to hold the full ascending+descending
                         // scale walk.  The walk length for N pitch-pool notes is (2N − 2) events
                         // so use enough measures to hold it all at the smallest allowed duration.
@@ -1323,90 +1425,28 @@ namespace musicmate.Pages
                         _lowerMeasureIndex = _seqNextMeasureIndex;
                         _lowerBeatOffset = _seqNextBeatOffset;
                         _lowerGlobalNoteIndex = _seqNextGlobalNoteIndex;
+                        }
                     }
                     else
                     {
-                        // Standard path: level-sized measure blocks per staff.
                         var (upperMc, lowerMc) = GetStaffMeasureCounts();
-                        var genUpper = BuildSequenceGenerator(upperMc);
-                        var upperMeasures = genUpper.GenerateSequence();
-                        upperFlat = MusicSequenceGenerator.Flatten(upperMeasures);
-                        double measureBeats = genUpper.TimeSignature.TotalBeats;
-                        upperBarBeats = ComputeStaffBarBeats(upperFlat, measureBeats, existingUpper);
+                        StandardStaffGenResult genResult;
+                        using (PracticeSessionStartProfiler.Scope("StaffDisplay.SequenceGen"))
+                            genResult = await Task.Run(() => BuildStandardStaffNoteLists(upperMc, lowerMc));
 
-                        _seqNextMeasureIndex += upperMeasures.Count;
-                        _seqNextBeatOffset += upperMeasures.Count * (double)genUpper.TimeSignature.TotalBeats;
-                        _seqNextGlobalNoteIndex += upperFlat.Count(n => !n.IsRest);
-
-                        double lowerBeatShift = 0.0;
-                        if (lowerMc > 0)
-                        {
-                            int lowerStartPitch = MusicSequenceGenerator.LastPitchedMidi(upperFlat);
-                            var genLower = BuildSequenceGenerator(lowerMc, lowerStartPitch);
-                            var lowerMeasures = genLower.GenerateSequence();
-                            lowerFlat = MusicSequenceGenerator.Flatten(lowerMeasures);
-
-                            // Re-offset lower staff beat positions to start at 0 (independent staff)
-                            lowerBeatShift = lowerFlat.Count > 0 ? (lowerFlat[0].BeatPosition ?? 0.0) : 0.0;
-                            if (lowerBeatShift > 0.0)
-                            {
-                                for (int i = 0; i < lowerFlat.Count; i++)
-                                {
-                                    var n = lowerFlat[i];
-                                    lowerFlat[i] = new GeneratedNote
-                                    {
-                                        MidiNumber = n.MidiNumber,
-                                        Letter = n.Letter,
-                                        Octave = n.Octave,
-                                        Accidental = n.Accidental,
-                                        SpelledName = n.SpelledName,
-                                        TargetFrequency = n.TargetFrequency,
-                                        Duration = n.Duration,
-                                        IsRest = n.IsRest,
-                                        MeasureIndex = n.MeasureIndex,
-                                        BeatPosition = (n.BeatPosition ?? 0.0) - lowerBeatShift,
-                                        IsPlayedCorrectly = n.IsPlayedCorrectly
-                                    };
-                                }
-                            }
-
-                            lowerBarBeats = ComputeStaffBarBeats(lowerFlat, measureBeats, existingLower);
-
-                            _lowerMeasureIndex = _seqNextMeasureIndex + lowerMeasures.Count;
-                            _lowerBeatOffset = _seqNextBeatOffset + lowerMeasures.Count * (double)genLower.TimeSignature.TotalBeats;
-                            _lowerGlobalNoteIndex = _seqNextGlobalNoteIndex + lowerFlat.Count(n => !n.IsRest);
-
-                            _seqNextMeasureIndex = _lowerMeasureIndex;
-                            _seqNextBeatOffset = _lowerBeatOffset;
-                            _seqNextGlobalNoteIndex = _lowerGlobalNoteIndex;
-                        }
-                        else
-                        {
-                            lowerFlat = new List<GeneratedNote>();
-                            lowerBarBeats = new List<double>();
-                            _lowerMeasureIndex = _seqNextMeasureIndex;
-                            _lowerBeatOffset = _seqNextBeatOffset;
-                            _lowerGlobalNoteIndex = _seqNextGlobalNoteIndex;
-                        }
+                        upperFlat = genResult.UpperFlat;
+                        upperBarBeats = genResult.UpperBarBeats;
+                        lowerFlat = genResult.LowerFlat;
+                        lowerBarBeats = genResult.LowerBarBeats;
+                        _seqNextMeasureIndex = genResult.SeqNextMeasureIndex;
+                        _seqNextBeatOffset = genResult.SeqNextBeatOffset;
+                        _seqNextGlobalNoteIndex = genResult.SeqNextGlobalNoteIndex;
+                        _lowerMeasureIndex = genResult.LowerMeasureIndex;
+                        _lowerBeatOffset = genResult.LowerBeatOffset;
+                        _lowerGlobalNoteIndex = genResult.LowerGlobalNoteIndex;
 
 #if DEBUG
-                        Debug.WriteLine($"[Staff Standard] L{_session.ChildLevel} upperMc={upperMc} lowerMc={lowerMc} Upper: {upperFlat.Count} notes ({upperFlat.Count(n => !n.IsRest)} pitched), Lower: {lowerFlat.Count} notes ({lowerFlat.Count(n => !n.IsRest)} pitched), lowerBeatShift: {lowerBeatShift:F2}");
-
-                        // Log ALL upper staff content
-                        Debug.WriteLine($"[Staff Upper] Bar beats: {string.Join(", ", upperBarBeats)}");
-                        for (int i = 0; i < upperFlat.Count; i++)
-                        {
-                            var n = upperFlat[i];
-                            Debug.WriteLine($"  [{i}] {(n.IsRest ? "REST" : n.SpelledName)} {n.Duration} @ beat {n.BeatPosition:F2}, measure {n.MeasureIndex}");
-                        }
-
-                        // Log ALL lower staff content
-                        Debug.WriteLine($"[Staff Lower] Bar beats: {string.Join(", ", lowerBarBeats)}");
-                        for (int i = 0; i < lowerFlat.Count; i++)
-                        {
-                            var n = lowerFlat[i];
-                            Debug.WriteLine($"  [{i}] {(n.IsRest ? "REST" : n.SpelledName)} {n.Duration} @ beat {n.BeatPosition:F2}, measure {n.MeasureIndex}");
-                        }
+                        Debug.WriteLine($"[Staff Standard] L{_session.ChildLevel} upperMc={upperMc} lowerMc={lowerMc} Upper: {upperFlat.Count} notes ({upperFlat.Count(n => !n.IsRest)} pitched), Lower: {lowerFlat.Count} notes ({lowerFlat.Count(n => !n.IsRest)} pitched)");
 #endif
                     }
 
@@ -1415,6 +1455,8 @@ namespace musicmate.Pages
                 }
 
                 // ── Push to staff drawable ────────────────────────────────────────────
+                using (PracticeSessionStartProfiler.Scope("StaffDisplay.Apply"))
+                {
                 var v3Drawable = _staffDrawable;
                 if (v3Drawable == null) return;
 
@@ -1476,6 +1518,7 @@ namespace musicmate.Pages
                     ApplyStaffHeight();
                     StaffGraphicsView?.Invalidate();
                 });
+                }
             }
             catch (Exception ex)
             {
