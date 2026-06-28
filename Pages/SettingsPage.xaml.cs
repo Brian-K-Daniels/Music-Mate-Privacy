@@ -8,18 +8,128 @@ namespace musicmate.Pages
 {
     public partial class SettingsPage : ContentPage
     {
-        private readonly SettingsPageViewModel _viewModel;
-        private readonly NoteSessionService _session;
-        private readonly IOrientationService _orientation;
-        private readonly ThemeService _themeService;
+        private int                             _lastFreeHighestIndex = 0;
+        private int                             _lastFreeLowestIndex = 0;
+        private readonly IOrientationService    _orientation;
+        private bool                            _premiumDialogOpen = false;
+        private readonly NoteSessionService     _session;
+        private readonly ThemeService           _themeService;
+        private readonly SettingsPageViewModel  _viewModel;
+        public Color                            ContrastingTextColor => _themeService.ContrastingTextColor;
+        public Color                            PanelBackgroundColor => _themeService.PanelBackgroundColor;
+        public NoteSessionService               Session => _session;
 
-        private int _lastFreeLowestIndex = 0;
-        private int _lastFreeHighestIndex = 0;
-        private bool _premiumDialogOpen = false;
+        private static async Task               CheckPremiumStatusAsync()
+        {
+            try
+            {
+                var store = ServiceHelper.GetService<IStoreService>();
+                if (store != null)
+                    await store.CheckPremiumStatusAsync();
+            }
+            catch { }
+        }
 
-        public NoteSessionService Session => _session;
-        public Color PanelBackgroundColor => _themeService.PanelBackgroundColor;
-        public Color ContrastingTextColor => _themeService.ContrastingTextColor;
+        // ── Accidental % slider ───────────────────────────────────────────────
+
+        private async void                      OnAccidentalPercentDragCompleted(object? sender, EventArgs e)
+        {
+            if (_premiumDialogOpen) return;
+            if (StatusService.Instance.IsPremiumUser) return;
+            if (_viewModel.AccidentalPercent <= 0) return;
+
+            _premiumDialogOpen = true;
+
+            await PremiumPromptHelper.ShowAsync(this, onDecline: () =>
+            {
+                _viewModel.AccidentalPercent = 0;
+                if (sender is Slider slider)
+                    slider.Value = 0;
+            });
+
+            _premiumDialogOpen = false;
+        }
+
+        protected override void                 OnAppearing()
+        {
+            _orientation?.ForceLandscape();
+            base.OnAppearing();
+            _viewModel?.RefreshStorageInfo();
+            _ = CheckPremiumStatusAsync();
+        }
+
+        // ── Highest note picker ───────────────────────────────────────────────
+
+        private async void                      OnHighestNotePickerChangedWithPrompt(object? sender, EventArgs e)
+        {
+            var picker = HighestNotePicker;
+            var selectedNote = picker.SelectedItem?.ToString();
+            if (selectedNote == null)
+                return;
+
+            if (!StatusService.Instance.IsPremiumUser)
+            {
+                int minIdx = _viewModel.WhiteKeyNoteNames.ToList().IndexOf("C4");
+                int maxIdx = _viewModel.WhiteKeyNoteNames.ToList().IndexOf("F5");
+                int selIdx = picker.SelectedIndex;
+
+                if (selIdx < minIdx || selIdx > maxIdx)
+                {
+                    var purchased = await PremiumPromptHelper.ShowAsync(this,
+                        onDecline: () => picker.SelectedIndex = _lastFreeHighestIndex);
+
+                    if (!purchased)
+                        return;
+
+                    _lastFreeHighestIndex = selIdx;
+                }
+                else
+                {
+                    _lastFreeHighestIndex = selIdx;
+                }
+            }
+
+            _viewModel.HighestNote = selectedNote;
+        }
+
+        // ── Lowest note picker ────────────────────────────────────────────────
+
+        private async void                      OnLowestNotePickerChangedWithPrompt(object? sender, EventArgs e)
+        {
+            var picker = LowestNotePicker;
+            var selectedNote = picker.SelectedItem?.ToString();
+            if (selectedNote == null)
+                return;
+
+            if (!StatusService.Instance.IsPremiumUser)
+            {
+                int minIdx = _viewModel.WhiteKeyNoteNames.ToList().IndexOf("C4");
+                int maxIdx = _viewModel.WhiteKeyNoteNames.ToList().IndexOf("F5");
+                int selIdx = picker.SelectedIndex;
+
+                if (selIdx < minIdx || selIdx > maxIdx)
+                {
+                    var purchased = await PremiumPromptHelper.ShowAsync(this,
+                        onDecline: () => picker.SelectedIndex = _lastFreeLowestIndex);
+
+                    if (!purchased)
+                        return;
+
+                    _lastFreeLowestIndex = selIdx;
+                }
+                else
+                {
+                    _lastFreeLowestIndex = selIdx;
+                }
+            }
+
+            _viewModel.LowestNote = selectedNote;
+        }
+
+        private async void                      OnNavigatePracticeClicked(object sender, EventArgs e)
+        {
+            await Shell.Current.GoToAsync("//MusicPage");
+        }
 
         public SettingsPage()
         {
@@ -52,118 +162,6 @@ namespace musicmate.Pages
 
             LowestNotePicker.SelectedIndexChanged += OnLowestNotePickerChangedWithPrompt;
             HighestNotePicker.SelectedIndexChanged += OnHighestNotePickerChangedWithPrompt;
-        }
-
-        protected override void OnAppearing()
-        {
-            _orientation?.ForceLandscape();
-            base.OnAppearing();
-            _viewModel?.RefreshStorageInfo();
-            _ = CheckPremiumStatusAsync();
-        }
-
-        private static async Task CheckPremiumStatusAsync()
-        {
-            try
-            {
-                var store = ServiceHelper.GetService<IStoreService>();
-                if (store != null)
-                    await store.CheckPremiumStatusAsync();
-            }
-            catch { }
-        }
-
-        private async void OnNavigatePracticeClicked(object sender, EventArgs e)
-        {
-            await Shell.Current.GoToAsync("//MusicPage");
-        }
-
-        // ── Accidental % slider ───────────────────────────────────────────────
-
-        private async void OnAccidentalPercentDragCompleted(object? sender, EventArgs e)
-        {
-            if (_premiumDialogOpen) return;
-            if (StatusService.Instance.IsPremiumUser) return;
-            if (_viewModel.AccidentalPercent <= 0) return;
-
-            _premiumDialogOpen = true;
-
-            await PremiumPromptHelper.ShowAsync(this, onDecline: () =>
-            {
-                _viewModel.AccidentalPercent = 0;
-                if (sender is Slider slider)
-                    slider.Value = 0;
-            });
-
-            _premiumDialogOpen = false;
-        }
-
-        // ── Lowest note picker ────────────────────────────────────────────────
-
-        private async void OnLowestNotePickerChangedWithPrompt(object? sender, EventArgs e)
-        {
-            var picker = LowestNotePicker;
-            var selectedNote = picker.SelectedItem?.ToString();
-            if (selectedNote == null)
-                return;
-
-            if (!StatusService.Instance.IsPremiumUser)
-            {
-                int minIdx = _viewModel.WhiteKeyNoteNames.ToList().IndexOf("C4");
-                int maxIdx = _viewModel.WhiteKeyNoteNames.ToList().IndexOf("F5");
-                int selIdx = picker.SelectedIndex;
-
-                if (selIdx < minIdx || selIdx > maxIdx)
-                {
-                    var purchased = await PremiumPromptHelper.ShowAsync(this,
-                        onDecline: () => picker.SelectedIndex = _lastFreeLowestIndex);
-
-                    if (!purchased)
-                        return;
-
-                    _lastFreeLowestIndex = selIdx;
-                }
-                else
-                {
-                    _lastFreeLowestIndex = selIdx;
-                }
-            }
-
-            _viewModel.LowestNote = selectedNote;
-        }
-
-        // ── Highest note picker ───────────────────────────────────────────────
-
-        private async void OnHighestNotePickerChangedWithPrompt(object? sender, EventArgs e)
-        {
-            var picker = HighestNotePicker;
-            var selectedNote = picker.SelectedItem?.ToString();
-            if (selectedNote == null)
-                return;
-
-            if (!StatusService.Instance.IsPremiumUser)
-            {
-                int minIdx = _viewModel.WhiteKeyNoteNames.ToList().IndexOf("C4");
-                int maxIdx = _viewModel.WhiteKeyNoteNames.ToList().IndexOf("F5");
-                int selIdx = picker.SelectedIndex;
-
-                if (selIdx < minIdx || selIdx > maxIdx)
-                {
-                    var purchased = await PremiumPromptHelper.ShowAsync(this,
-                        onDecline: () => picker.SelectedIndex = _lastFreeHighestIndex);
-
-                    if (!purchased)
-                        return;
-
-                    _lastFreeHighestIndex = selIdx;
-                }
-                else
-                {
-                    _lastFreeHighestIndex = selIdx;
-                }
-            }
-
-            _viewModel.HighestNote = selectedNote;
         }
     }
 }

@@ -16,18 +16,27 @@ namespace musicmate.Pages
     /// </summary>
     public partial class HomePage : ContentPage
     {
-        private const string PrefLevelKey = "ChildPractice.Level";
+        private static readonly string[]        _instrumentOptions =
+            NoteSessionService.InstrumentOptions.Cast<string>().ToArray();  
 
-        private readonly NoteSessionService _session = null!;
-        private readonly IOrientationService _orientation = null!;
-
-        private int _selectedLevel = 1;
-
-        private static readonly string[] _instrumentOptions =
-            NoteSessionService.InstrumentOptions.Cast<string>().ToArray();
-
-        private int _selectedInstrumentIndex = -1;
-
+        // Level controls — single tap changes by 1; holding repeats automatically.
+        // Initial delay before repeat begins; interval while held.
+        private const int                       LevelRepeatInitialDelayMs = 450;
+        private const int                       LevelRepeatIntervalMs = 90;
+        private CancellationTokenSource?        _levelRepeatCts;
+        private readonly IOrientationService    _orientation = null!;
+        private const string                    PrefLevelKey = "ChildPractice.Level";
+        private readonly NoteSessionService     _session = null!;
+        private int                             _selectedLevel = 1;    
+        private int                             _selectedInstrumentIndex = -1;
+        private void                            AdjustLevel(int delta)
+        {
+            var next = Math.Clamp(_selectedLevel + delta, 1, 100);
+            if (next == _selectedLevel) return;
+            _selectedLevel = next;
+            Preferences.Default.Set(PrefLevelKey, _selectedLevel);
+            UpdateLevelDisplay();
+        }
         public HomePage()
         {
             try
@@ -54,7 +63,7 @@ namespace musicmate.Pages
             }
         }
 
-        protected override void OnAppearing()
+        protected override void                 OnAppearing()
         {
             base.OnAppearing();
             _orientation?.AllowAutorotate();
@@ -72,8 +81,7 @@ namespace musicmate.Pages
         }
 
         // Instrument selection via action sheet
-
-        private async void OnInstrumentTapped(object? sender, TappedEventArgs e)
+        private async void                      OnInstrumentTapped(object? sender, TappedEventArgs e)
         {
             try
             {
@@ -89,114 +97,8 @@ namespace musicmate.Pages
                 Utils.Log($"[HomePage] OnInstrumentTapped ERROR: {ex}");
             }
         }
-
-        private void SetInstrumentSelection(int idx)
-        {
-            _selectedInstrumentIndex = idx;
-            // Show the full label in the picker row
-            InstrumentPickerLabel.Text = _instrumentOptions[idx];
-            InstrumentPickerLabel.TextColor = Colors.Black;
-            // Store the full label so GetInstrumentTransposeOffset() can resolve it correctly
-            _session.Instrument = _instrumentOptions[idx];
-        }
-
-        // Level controls — single tap changes by 1; holding repeats automatically.
-        // Initial delay before repeat begins; interval while held.
-        private const int LevelRepeatInitialDelayMs = 450;
-        private const int LevelRepeatIntervalMs = 90;
-        private CancellationTokenSource? _levelRepeatCts;
-
-        private void OnLevelDown(object? sender, EventArgs e)
-        {
-            if (_selectedLevel > 1)
-            {
-                _selectedLevel--;
-                Preferences.Default.Set(PrefLevelKey, _selectedLevel);
-                UpdateLevelDisplay();
-            }
-        }
-
-        private void OnLevelUp(object? sender, EventArgs e)
-        {
-            if (_selectedLevel < 100)
-            {
-                _selectedLevel++;
-                Preferences.Default.Set(PrefLevelKey, _selectedLevel);
-                UpdateLevelDisplay();
-            }
-        }
-
-        private void OnLevelDownPressed(object? sender, EventArgs e)
-        {
-            StartLevelRepeat(delta: -1);
-        }
-
-        private void OnLevelUpPressed(object? sender, EventArgs e)
-        {
-            StartLevelRepeat(delta: +1);
-        }
-
-        private void OnLevelButtonReleased(object? sender, EventArgs e)
-        {
-            StopLevelRepeat();
-        }
-
-        private void StartLevelRepeat(int delta)
-        {
-            // Apply the first step immediately (mirrors the Clicked behaviour for a simple tap).
-            AdjustLevel(delta);
-
-            // Cancel any previous repeat that may still be running.
-            StopLevelRepeat();
-            var cts = new CancellationTokenSource();
-            _levelRepeatCts = cts;
-
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await Task.Delay(LevelRepeatInitialDelayMs, cts.Token);
-                    while (!cts.Token.IsCancellationRequested)
-                    {
-                        await MainThread.InvokeOnMainThreadAsync(() => AdjustLevel(delta));
-                        await Task.Delay(LevelRepeatIntervalMs, cts.Token);
-                    }
-                }
-                catch (OperationCanceledException) { /* normal on release */ }
-            });
-        }
-
-        private void StopLevelRepeat()
-        {
-            var cts = _levelRepeatCts;
-            _levelRepeatCts = null;
-            cts?.Cancel();
-            cts?.Dispose();
-        }
-
-        private void AdjustLevel(int delta)
-        {
-            var next = Math.Clamp(_selectedLevel + delta, 1, 100);
-            if (next == _selectedLevel) return;
-            _selectedLevel = next;
-            Preferences.Default.Set(PrefLevelKey, _selectedLevel);
-            UpdateLevelDisplay();
-        }
-
-        private void UpdateLevelDisplay()
-        {
-            LevelLabel.Text = _selectedLevel.ToString();
-
-            LevelDescLabel.Text =
-                $"{DifficultyLevelMapper.GetStageLabel(_selectedLevel)} — {DifficultyLevelMapper.GetMainFocus(_selectedLevel)}";
-
-            LevelDownButton.IsEnabled = _selectedLevel > 1;
-            LevelUpButton.IsEnabled = _selectedLevel < 100;
-        }
-
         // Start button
-
-        private async void OnStartClicked(object? sender, EventArgs e)
+        private async void                      OnStartClicked(object? sender, EventArgs e)
         {
             try
             {
@@ -235,5 +137,86 @@ namespace musicmate.Pages
                 Utils.Log($"[HomePage] OnStartClicked ERROR: {ex}");
             }
         }
+        private void                            OnLevelDown(object? sender, EventArgs e)
+        {
+            if (_selectedLevel > 1)
+            {
+                _selectedLevel--;
+                Preferences.Default.Set(PrefLevelKey, _selectedLevel);
+                UpdateLevelDisplay();
+            }
+        }
+        private void                            OnLevelUp(object? sender, EventArgs e)
+        {
+            if (_selectedLevel < 100)
+            {
+                _selectedLevel++;
+                Preferences.Default.Set(PrefLevelKey, _selectedLevel);
+                UpdateLevelDisplay();
+            }
+        }
+        private void                            OnLevelDownPressed(object? sender, EventArgs e)
+        {
+            StartLevelRepeat(delta: -1);
+        }
+        private void                            OnLevelUpPressed(object? sender, EventArgs e)
+        {
+            StartLevelRepeat(delta: +1);
+        }
+        private void                            OnLevelButtonReleased(object? sender, EventArgs e)
+        {
+            StopLevelRepeat();
+        }
+        private void                            SetInstrumentSelection(int idx)
+        {
+            _selectedInstrumentIndex = idx;
+            // Show the full label in the picker row
+            InstrumentPickerLabel.Text = _instrumentOptions[idx];
+            InstrumentPickerLabel.TextColor = Colors.Black;
+            // Store the full label so GetInstrumentTransposeOffset() can resolve it correctly
+            _session.Instrument = _instrumentOptions[idx];
+        }
+        private void                            StartLevelRepeat(int delta)
+        {
+            // Apply the first step immediately (mirrors the Clicked behaviour for a simple tap).
+            AdjustLevel(delta);
+
+            // Cancel any previous repeat that may still be running.
+            StopLevelRepeat();
+            var cts = new CancellationTokenSource();
+            _levelRepeatCts = cts;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(LevelRepeatInitialDelayMs, cts.Token);
+                    while (!cts.Token.IsCancellationRequested)
+                    {
+                        await MainThread.InvokeOnMainThreadAsync(() => AdjustLevel(delta));
+                        await Task.Delay(LevelRepeatIntervalMs, cts.Token);
+                    }
+                }
+                catch (OperationCanceledException) { /* normal on release */ }
+            });
+        }
+        private void                            StopLevelRepeat()
+        {
+            var cts = _levelRepeatCts;
+            _levelRepeatCts = null;
+            cts?.Cancel();
+            cts?.Dispose();
+        }
+        private void                            UpdateLevelDisplay()
+        {
+            LevelLabel.Text = _selectedLevel.ToString();
+
+            LevelDescLabel.Text =
+                $"{DifficultyLevelMapper.GetStageLabel(_selectedLevel)} — {DifficultyLevelMapper.GetMainFocus(_selectedLevel)}";
+
+            LevelDownButton.IsEnabled = _selectedLevel > 1;
+            LevelUpButton.IsEnabled = _selectedLevel < 100;
+        }
+
     }
 }

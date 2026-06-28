@@ -103,6 +103,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="musicmate.Tests\**" />
+    <Content Remove="musicmate.Tests\**" />
+    <EmbeddedResource Remove="musicmate.Tests\**" />
+    <MauiXaml Remove="musicmate.Tests\**" />
+    <None Remove="musicmate.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <MauiImage Include="Resources\Images\logo.png" />
   </ItemGroup>
 

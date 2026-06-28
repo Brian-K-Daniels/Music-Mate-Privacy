@@ -58,7 +58,6 @@ namespace musicmate.Pages
         // fields for inactivity tracking
         private DateTime _lastHeardTime = DateTime.UtcNow;
 #pragma warning disable CS0414
-        private bool _inactivityStopped = false;
         private readonly TimeSpan _inactivityTimeout = TimeSpan.FromMinutes(5);
 
         // When true, RegenerateNotesAsync is suppressed so the post-autoplay
@@ -4548,6 +4547,11 @@ namespace musicmate.Pages
                     forceNewNotes: !repeatSame,
                     scaleKeyTrigger: "GoButton");
             }
+        }
+
+        private void OnStartStopToggleClicked(object sender, TappedEventArgs e)
+        {
+
         }
 
         private void OnAutoRepeatScaleClicked(object? sender, EventArgs e)
