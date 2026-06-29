@@ -408,6 +408,8 @@ namespace musicmate.Services
         public const int DefaultPcRandom = 60;
         public const int DefaultPcScales = 20;
         public const int DefaultPcArpeggios = 0;
+        /// <summary>Scale used for key-signature notation on built-in practice tunes (all major).</summary>
+        public const string PracticeTuneKeySignatureScale = "Major";
         private int _pcTunes = Preferences.Get(PrefPcTunesKey, DefaultPcTunes);
         private int _pcRandom = Preferences.Get(PrefPcRandomKey, DefaultPcRandom);
         private int _pcScales = Preferences.Get(PrefPcScalesKey, DefaultPcScales);
@@ -1151,13 +1153,48 @@ namespace musicmate.Services
                     break;
             }
 
-            string newKey = ChildLevelProgression.PickBalancedKeyForSignature(newScale, keyPoolLevel, rng);
+            string newKey = ResolveKeyForFreshGeneration(Tune ?? string.Empty, CurrentTune, newScale, keyPoolLevel, rng);
             bool keyChanged = !string.Equals(oldKey, newKey, StringComparison.Ordinal);
             if (keyChanged)
                 Key = newKey;
 
             LogScaleKeyRandom(trigger, repeatSame, level, scaleModeLabel, oldScale, oldKey,
                 newScale, newKey, allowedScales, allowedKeys, scaleChanged, keyChanged);
+        }
+
+        /// <summary>
+        /// Key for fresh generation. Practice tunes keep their authored key instead of
+        /// the By Level session key pool.
+        /// </summary>
+        internal static string ResolveKeyForFreshGeneration(
+            string tuneMode,
+            PracticeTune? currentTune,
+            string scale,
+            int keyPoolLevel,
+            Random rng)
+        {
+            if (tuneMode == "Practice Tune" && !string.IsNullOrWhiteSpace(currentTune?.Key))
+                return currentTune.Key;
+            return ChildLevelProgression.PickBalancedKeyForSignature(scale, keyPoolLevel, rng);
+        }
+
+        /// <summary>Written key and scale for a practice tune's fixed key signature.</summary>
+        public static (string Key, string Scale) ResolvePracticeTuneNotation(PracticeTune tune)
+            => string.IsNullOrWhiteSpace(tune.Key)
+                ? ("C", PracticeTuneKeySignatureScale)
+                : (tune.Key, PracticeTuneKeySignatureScale);
+
+        /// <summary>
+        /// Key and scale for note spelling and pitch evaluation.
+        /// Practice tunes use their authored key, not the By Level session key.
+        /// </summary>
+        public (string Key, string Scale) GetNotationKeyAndScale()
+        {
+            if (Tune == "Practice Tune"
+                && CurrentTune != null
+                && !string.IsNullOrWhiteSpace(CurrentTune.Key))
+                return ResolvePracticeTuneNotation(CurrentTune);
+            return (Key, SelectedScale);
         }
 
         private string GetScaleSelectionModeLogLabel()
@@ -2861,6 +2898,7 @@ namespace musicmate.Services
             {
                 var tune = CurrentTune ?? TuneLibrary.CMajorScale;
                 CurrentTune = tune;
+                var (noteKey, noteScale) = ResolvePracticeTuneNotation(tune);
 
                 // Proportional spacing: each beat unit gets a fixed pixel width so that
                 // half notes are twice as wide as quarters, whole notes four times as wide, etc.
@@ -2902,12 +2940,12 @@ namespace musicmate.Services
                         }
                         else
                         {
-                            var adjustedMidi = ApplyKeySignatureToMidi(mn.SpelledName, mn.MidiNumber, Key, SelectedScale);
+                            var adjustedMidi = ApplyKeySignatureToMidi(mn.SpelledName, mn.MidiNumber, noteKey, noteScale);
                             var rawName = mn.SpelledName.Trim();
                             char letter = char.ToUpperInvariant(rawName[0]);
                             int octave = ParseOctaveFromSpelledName(rawName);
                             var displayName = ResolveWrittenNoteName(
-                                rawName, adjustedMidi, letter, octave, Key, SelectedScale);
+                                rawName, adjustedMidi, letter, octave, noteKey, noteScale);
                             var freq = MidiToFreq(adjustedMidi);
                             var noteIdx = NotesToDraw.Count;
                             NotesToDraw.Add(new NoteInfo
@@ -3691,7 +3729,8 @@ namespace musicmate.Services
             if (string.IsNullOrEmpty(raw)) return raw;
             char letter = char.ToUpperInvariant(raw[0]);
             int octave = ParseOctaveFromSpelledName(raw);
-            return ResolveWrittenNoteName(raw, note.Midi, letter, octave, Key, SelectedScale);
+            var (key, scale) = GetNotationKeyAndScale();
+            return ResolveWrittenNoteName(raw, note.Midi, letter, octave, key, scale);
         }
         private static bool HasExplicitAccidentalInName(string raw)
             => raw.Contains("##") || raw.Contains("bb") || raw.Contains('#')

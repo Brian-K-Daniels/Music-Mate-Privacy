@@ -415,19 +415,7 @@
               <ColumnDefinition Width="*" />
               <ColumnDefinition Width="*" />
               <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-
-            <!-- Scale mode: single "Repeat" spans cols 2-3 -->
-            <Button x:Name="AutoRepeatScaleButton"
-                    Grid.Column="2"
-                    Grid.ColumnSpan="2"
-                    Text="Repeat"
-                    Style="{StaticResource CompactBrownButton}"
-                    HeightRequest="44"
-                    HorizontalOptions="Fill"
-                    VerticalOptions="Fill"
-                    Clicked="OnAutoRepeatScaleClicked"
-                    IsVisible="{Binding Source={x:Reference musicPage}, Path=IsScaleRepeatButtonVisible}" />
+            </Grid.ColumnDefinitions>          
 
             <Grid x:Name="BottomPickersLayout"
                   Grid.Column="0" Grid.ColumnSpan="5"

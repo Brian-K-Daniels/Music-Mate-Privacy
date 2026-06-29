@@ -89,15 +89,26 @@ namespace musicmate.Services
             int level = ResolveLevel(session);
             var tuneContext = CompositionTuneEligibility.FromSession(session, level);
             bool hasEligibleTunes = CompositionTuneEligibility.GetEligibleTuneTitles(tuneContext).Count > 0;
-            int arpeggioWeight = session.PcArpeggios;
-            if (ArpeggioCatalog.GetAvailablePatterns(level).Count == 0)
-                arpeggioWeight = 0;
+            bool hasEligibleArpeggios = ArpeggioCatalog.GetAvailablePatterns(level).Count > 0;
 
-            return PickExerciseKindFromWeights(
+            bool applyByLevelTuneRestriction =
+                session.ScaleSelectionMode == ScaleSelectionMode.ByLevel;
+
+            var (tuneW, randomW, scaleW, arpW) = CompositionLevelWeights.ComputeEffectiveWeights(
                 session.PcTunes,
                 session.PcRandom,
                 session.PcScales,
-                arpeggioWeight,
+                session.PcArpeggios,
+                level,
+                applyByLevelTuneRestriction,
+                hasEligibleTunes,
+                hasEligibleArpeggios);
+
+            return PickExerciseKindFromWeights(
+                tuneW,
+                randomW,
+                scaleW,
+                arpW,
                 hasEligibleTunes,
                 rng);
         }

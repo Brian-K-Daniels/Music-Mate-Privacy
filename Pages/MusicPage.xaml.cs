@@ -971,8 +971,15 @@ namespace musicmate.Pages
         /// with correct <see cref="GeneratedNote.BeatPosition"/>, <see cref="GeneratedNote.MeasureIndex"/>,
         /// and accidentals parsed from each note's spelled name.
         /// </summary>
-        private static List<GeneratedNote> BuildNotesFromTune(PracticeTune tune, string key = "C", string scale = "Major")
+        private static List<GeneratedNote> BuildNotesFromTune(PracticeTune tune, string? key = null, string? scale = null)
         {
+            var (noteKey, noteScale) = NoteSessionService.ResolvePracticeTuneNotation(tune);
+            if (string.IsNullOrWhiteSpace(tune.Key))
+            {
+                noteKey = key ?? noteKey;
+                noteScale = scale ?? noteScale;
+            }
+
             var result = new List<GeneratedNote>();
             double beatCursor = 0.0;
             int measureIndex = 0;
@@ -1010,9 +1017,9 @@ namespace musicmate.Pages
 
                         // Apply the key signature: if the note has no explicit accidental,
                         // adjust the MIDI number for any flat/sharp implied by the key.
-                        var adjustedMidi = NoteSessionService.ApplyKeySignatureToMidi(mn.SpelledName, mn.MidiNumber, key, scale);
+                        var adjustedMidi = NoteSessionService.ApplyKeySignatureToMidi(mn.SpelledName, mn.MidiNumber, noteKey, noteScale);
                         var (resolvedAcc, displayName) = NoteSessionService.ResolveAccidentalAndSpelling(
-                            mn.SpelledName, adjustedMidi, letter, octave, key, scale);
+                            mn.SpelledName, adjustedMidi, letter, octave, noteKey, noteScale);
                         acc = resolvedAcc;
 
                         gn = new GeneratedNote
@@ -1268,7 +1275,7 @@ namespace musicmate.Pages
                 else if (_session.Tune == "Practice Tune" && _session.CurrentTune != null)
                 {
                     // Split tune measures between upper and lower staff.
-                    var allNotes = BuildNotesFromTune(_session.CurrentTune, _session.Key, _session.SelectedScale);
+                    var allNotes = BuildNotesFromTune(_session.CurrentTune);
                     var allMeasures = _session.CurrentTune.Measures.Count;
                     int splitAt = allMeasures / 2;
 
