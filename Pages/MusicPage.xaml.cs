@@ -203,8 +203,6 @@ namespace musicmate.Pages
 
         public string EffectiveScaleLabelText => _session?.EffectiveScaleDisplay ?? string.Empty;
 
-        private string? _lastRandomEffectiveScaleDisplay;
-
         private void UpdateEffectiveScaleLabel()
         {
             OnPropertyChanged(nameof(IsEffectiveScaleLabelVisible));
@@ -266,17 +264,6 @@ namespace musicmate.Pages
 
         private bool _isInstrumentLabelVisible = false;
         private static readonly HashSet<string> FreeScales = new() { "Major", "Harmonic Minor" };
-        private static readonly string[] RandomTunerOptions = { "Random", "Tuner", "Fixed Tune" };
-
-        private static bool IsRandomPickerOption(string? selected)
-            => selected == "Random"
-               || (!string.IsNullOrEmpty(selected)
-                   && selected.StartsWith("Random —", StringComparison.Ordinal));
-
-        private string[] BuildRandomTunerPickerOptions()
-            => _session.IsRandomMode
-                ? new[] { _session.EffectiveScaleDisplay, "Tuner", "Fixed Tune" }
-                : RandomTunerOptions;
         private int _lastValidScaleTuneIndex = 0;
         private int _lastValidPlayItemIndex = 0;
 
@@ -285,7 +272,7 @@ namespace musicmate.Pages
             Tunes,
             Scales,
             Arpeggios,
-            RandomTuner
+            Other
         }
         public bool IsInstrumentLabelVisible
         {
@@ -338,6 +325,7 @@ namespace musicmate.Pages
                 BackgroundColor = Colors.White;
                 _orientation = ServiceHelper.GetService<IOrientationService>()!;
                 _session = ServiceHelper.GetService<NoteSessionService>()!;
+                PlayModePickerOptions.MigrateLegacySessionSelection(_session);
                 _sessionDb = ServiceHelper.GetService<SessionDatabase>()!;
                 _sessionResultDb = ServiceHelper.GetService<SessionResultDatabase>()!;
                 _noteAttemptDb = ServiceHelper.GetService<NoteAttemptDatabase>()!;
@@ -357,7 +345,10 @@ namespace musicmate.Pages
                             if (AutoRepeat)
                             {
                                 Debug.WriteLine("[MusicPage] MaxBlocksReached after session completed: full restart (AutoRepeat on).");
-                                await StartListeningAndEvaluatingAsync();
+                                await StartListeningAndEvaluatingAsync(
+                                    forceNewNotes: PracticeSessionLifecycle.ShouldForceNewNotesForRepeatMode(
+                                        _session.RepeatSameTune),
+                                    scaleKeyTrigger: "AutoStart");
                             }
                             else
                             {
@@ -507,9 +498,12 @@ namespace musicmate.Pages
                             _holdResultForChildSession = false;
                             _session.SessionCompleted = false;
 
-                            // StartListeningAndEvaluatingAsync will handle note restoration or generation
-                            // based on the _repeatSameTune flag
-                            await StartListeningAndEvaluatingAsync();
+                            // Repeat New must force fresh generation at the current child level;
+                            // Repeat Same restores the saved snapshot.
+                            await StartListeningAndEvaluatingAsync(
+                                forceNewNotes: PracticeSessionLifecycle.ShouldForceNewNotesForRepeatMode(
+                                    _session.RepeatSameTune),
+                                scaleKeyTrigger: "AutoStart");
                         }
                         else
                         {
@@ -2029,7 +2023,24 @@ namespace musicmate.Pages
                     : _session.SelectedArpeggioDisplay;
 
             if (_session.Tune == "Practice Tune")
-                return _session.CurrentTune?.Title ?? "Practice Tune";
+            {
+                if (!string.IsNullOrWhiteSpace(_session.CurrentTune?.Title))
+                {
+                    if (_session.ScaleSelectionMode == ScaleSelectionMode.ByLevel
+                        && !PlayModePickerOptions.IsUserSelectedPracticeTuneTitle(
+                            Preferences.Default.Get<string?>("SelectedTune", null)))
+                        return $"{_session.CurrentTune.Title} (By Level)";
+
+                    return _session.CurrentTune.Title;
+                }
+
+                var savedTitle = Preferences.Default.Get<string?>("SelectedTune", null);
+                if (!string.IsNullOrWhiteSpace(savedTitle)
+                    && musicmate.Models.TuneLibrary.All.Any(t => t.Title == savedTitle))
+                    return savedTitle;
+
+                return _session.EffectiveScaleDisplay;
+            }
 
             if (_session.IsRandomMode)
                 return _session.EffectiveScaleDisplay;
@@ -2112,6 +2123,9 @@ namespace musicmate.Pages
 
             if (!LayoutTestTune.IsEnabled)
                 PracticeCompositionSelector.ApplyNextExerciseIfNeeded(_session, _generationSeed);
+
+            if (!_session.RepeatSameTune)
+                PrepareFreshScaleAndKeyIfNeeded(forceNewNotes: true, scaleKeyTrigger: "GoButton");
 
             await RegenerateNotesAsync();
 
@@ -2932,6 +2946,9 @@ namespace musicmate.Pages
 
                 ct.ThrowIfCancellationRequested();
 
+                if (!_session.RepeatSameTune)
+                    _repeatSameSnapshot = null;
+
                 PickChildSessionSettingsIfNeeded(preserveRepeatSameTune: !forceNewNotes);
 
                 if (_session.RepeatSameTune && _repeatSameSnapshot == null
@@ -2985,10 +3002,12 @@ namespace musicmate.Pages
                             using (PracticeSessionStartProfiler.Scope("RegenerateNotes"))
                                 await RegenerateNotesAsync();
 
-                            if (_session?.NotesToDraw != null && _session.NotesToDraw.Count > 0)
+                            if (_session.RepeatSameTune
+                                && _session?.NotesToDraw != null
+                                && _session.NotesToDraw.Count > 0)
                             {
                                 CaptureRepeatSameSnapshot();
-                                Debug.WriteLine($"[Start] Generated and saved {_session.NotesToDraw.Count} notes");
+                                Debug.WriteLine($"[Start] Generated and saved {_session.NotesToDraw.Count} notes for Repeat Same");
                             }
                             break;
                     }
@@ -3308,6 +3327,7 @@ namespace musicmate.Pages
 
             if (outcome.NewChildLevel.HasValue)
             {
+                _repeatSameSnapshot = null;
                 UpdateChildLevelSliderDisplay();
                 UpdateKeyPickerSelection();
                 UpdateScaleTunePicker();
@@ -3398,6 +3418,8 @@ namespace musicmate.Pages
                 {
                     CaptureRepeatSameSnapshot();
                 }
+                else if (!_session.RepeatSameTune)
+                    _repeatSameSnapshot = null;
             }
 
             if (e.PropertyName == nameof(NoteSessionService.MusicBpm))
@@ -3407,7 +3429,10 @@ namespace musicmate.Pages
             }
 
             if (e.PropertyName == nameof(NoteSessionService.ChildLevel))
+            {
+                _repeatSameSnapshot = null;
                 UpdateChildLevelSliderDisplay();
+            }
         }
         private void UpdateInstrumentPickerSelection()
         {
@@ -3844,8 +3869,8 @@ namespace musicmate.Pages
 
         private PlayModeCategory GetActivePlayModeCategory()
         {
-            if (LayoutTestTune.IsEnabled || _session.Tune == "Tuner" || _session.IsRandomMode)
-                return PlayModeCategory.RandomTuner;
+            if (PlayModePickerOptions.UsesOtherPicker(_session, LayoutTestTune.IsEnabled))
+                return PlayModeCategory.Other;
             if (_session.Tune == "Practice Tune")
                 return PlayModeCategory.Tunes;
             if (_session.Tune == "Arpeggio")
@@ -3862,27 +3887,23 @@ namespace musicmate.Pages
                     NoteSessionService.ScalePickerOptions.ToArray(),
                 PlayModeCategory.Arpeggios =>
                     BuildArpeggioPickerChoices().Select(choice => choice.Label).ToArray(),
-                _ => BuildRandomTunerPickerOptions()
+                _ => PlayModePickerOptions.OtherOptions.ToArray()
             };
 
         private string GetPracticePlayItemSelection(PlayModeCategory category)
             => category switch
             {
                 PlayModeCategory.Tunes => _session.CurrentTune?.Title ?? string.Empty,
-                PlayModeCategory.Scales => _session.ScaleSelectionDisplay,
+                PlayModeCategory.Scales => _session.SelectedScale,
                 PlayModeCategory.Arpeggios => _session.SelectedArpeggioDisplay,
-                PlayModeCategory.RandomTuner => LayoutTestTune.IsEnabled ? "Fixed Tune"
-                    : _session.Tune == "Tuner" ? "Tuner"
-                    : _session.IsRandomMode ? _session.EffectiveScaleDisplay
-                    : "Random",
+                PlayModeCategory.Other => PlayModePickerOptions.ResolveOtherSelection(
+                    _session, LayoutTestTune.IsEnabled),
                 _ => string.Empty
             };
 
         private int FindPracticePlayItemIndex(string[] items, PlayModeCategory category, string selection)
         {
             var idx = Array.IndexOf(items, selection);
-            if (idx < 0 && category == PlayModeCategory.RandomTuner && _session.IsRandomMode)
-                idx = 0;
             if (idx >= 0 || category != PlayModeCategory.Arpeggios)
                 return idx;
 
@@ -3912,26 +3933,9 @@ namespace musicmate.Pages
             EnterPickerSyncSuppress();
             try
             {
-                if (category == PlayModeCategory.RandomTuner && _session.IsRandomMode)
-                {
-                    var display = _session.EffectiveScaleDisplay;
-                    if (!string.Equals(_lastRandomEffectiveScaleDisplay, display, StringComparison.Ordinal))
-                    {
-                        _lastRandomEffectiveScaleDisplay = display;
-                        _practiceScaleTunePicker.ItemsSource = null;
-                    }
-                }
-
                 _practiceScaleTunePicker.ItemsSource = items;
                 if (idx >= 0)
                 {
-                    if (_practiceScaleTunePicker.SelectedIndex == idx
-                        && category == PlayModeCategory.RandomTuner
-                        && _session.IsRandomMode)
-                    {
-                        _practiceScaleTunePicker.SelectedIndex = -1;
-                    }
-
                     if (_practiceScaleTunePicker.SelectedIndex != idx)
                         _practiceScaleTunePicker.SelectedIndex = idx;
                     _lastValidPlayItemIndex = idx;
@@ -4010,8 +4014,8 @@ namespace musicmate.Pages
                 case PlayModeCategory.Arpeggios:
                     await ApplyArpeggioSelectionAsync(selected, idx);
                     break;
-                case PlayModeCategory.RandomTuner:
-                    await ApplyRandomTunerSelectionAsync(selected, idx);
+                case PlayModeCategory.Other:
+                    await ApplyOtherSelectionAsync(selected, idx);
                     break;
             }
         }
@@ -4035,9 +4039,10 @@ namespace musicmate.Pages
 
         private async Task ApplyScaleSelectionAsync(string selected, int idx)
         {
-            if (NoteSessionService.IsNamedScaleOption(selected)
-                && !FreeScales.Contains(selected)
-                && !StatusService.Instance.IsPremiumUser)
+            if (!NoteSessionService.IsNamedScaleOption(selected))
+                return;
+
+            if (!FreeScales.Contains(selected) && !StatusService.Instance.IsPremiumUser)
             {
                 var purchased = await PremiumPromptHelper.ShowAsync(this,
                     onDecline: () => _practiceScaleTunePicker.SelectedIndex = _lastValidPlayItemIndex);
@@ -4053,12 +4058,12 @@ namespace musicmate.Pages
             {
                 var fallbackIdx = Array.IndexOf(
                     _practiceScaleTunePicker.ItemsSource as string[] ?? Array.Empty<string>(),
-                    _session.ScaleSelectionDisplay);
+                    _session.SelectedScale);
                 if (fallbackIdx >= 0)
                     _lastValidPlayItemIndex = fallbackIdx;
             }
             MarkChildKeyScaleOverrideIfNeeded();
-            Preferences.Default.Set("SelectedTune", "Selected Scale");
+            Preferences.Default.Set("SelectedTune", selected);
             IsAutoRepeatVisible = true;
             UpdateKeyPickerVisibility();
             UpdatePracticePlayItemPickerCore();
@@ -4079,17 +4084,17 @@ namespace musicmate.Pages
             await ApplyArpeggioSelectionAsync(arpeggioChoice, selected, idx);
         }
 
-        private async Task ApplyRandomTunerSelectionAsync(string selected, int idx)
+        private async Task ApplyOtherSelectionAsync(string selected, int idx)
         {
             _lastValidPlayItemIndex = idx;
 
-            if (selected == "Tuner")
+            if (selected == PlayModePickerOptions.Tuner)
             {
                 EnterTunerMode();
                 return;
             }
 
-            if (IsRandomPickerOption(selected))
+            if (selected == PlayModePickerOptions.RandomMelodic)
             {
                 if (_session.IsRandomMode)
                 {
@@ -4098,24 +4103,30 @@ namespace musicmate.Pages
                 }
 
                 LayoutTestTune.SetEnabled(false);
-                _session.Tune = "Selected Scale";
-                _session.IsRandomMode = true;
-                Preferences.Default.Set("SelectedTune", "Random");
+                PlayModePickerOptions.ApplyOtherSelection(_session, selected);
                 IsAutoRepeatVisible = true;
                 UpdateKeyPickerVisibility();
                 await RegenerateNotesAsync();
                 return;
             }
 
-            if (selected == "Fixed Tune")
+            if (selected == PlayModePickerOptions.FixedTune)
             {
                 LayoutTestTune.SetEnabled(true);
-                _session.IsRandomMode = false;
-                if (_session.Tune == "Tuner")
-                    _session.Tune = "Selected Scale";
-                Preferences.Default.Set("SelectedTune", "Fixed Tune");
+                PlayModePickerOptions.ApplyOtherSelection(_session, selected);
                 IsAutoRepeatVisible = true;
                 UpdateKeyPickerVisibility();
+                await RegenerateNotesAsync();
+                return;
+            }
+
+            if (selected == NoteSessionService.ScaleSelectionByLevel)
+            {
+                LayoutTestTune.SetEnabled(false);
+                PlayModePickerOptions.ApplyOtherSelection(_session, selected);
+                IsAutoRepeatVisible = true;
+                UpdateKeyPickerVisibility();
+                UpdatePracticePlayItemPickerCore();
                 await RegenerateNotesAsync();
             }
         }

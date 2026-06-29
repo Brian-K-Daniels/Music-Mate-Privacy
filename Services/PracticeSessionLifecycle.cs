@@ -214,6 +214,13 @@ namespace musicmate.Services
         public static bool ShouldAutoRepeat(bool autoRepeatEnabled, string tune)
             => autoRepeatEnabled && tune != "Tuner";
 
+        /// <summary>
+        /// Repeat New (auto-repeat with <paramref name="repeatSameTune"/> false) must
+        /// regenerate at the current level; Repeat Same restores the saved snapshot.
+        /// </summary>
+        public static bool ShouldForceNewNotesForRepeatMode(bool repeatSameTune)
+            => !repeatSameTune;
+
         public static int GetAutoRepeatDelayMs(double repeatDelaySeconds)
             => (int)(repeatDelaySeconds * 1000);
     }

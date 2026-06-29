@@ -34,6 +34,8 @@ namespace musicmate.Services
             "F" => "Ab",
             "Bb" => "Db",
             "Eb" => "Gb",
+            "Ab" => "Cb",
+            "A#" => "C#",
             _ => minorKey
         };
 

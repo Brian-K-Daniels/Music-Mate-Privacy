@@ -19,42 +19,67 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// User chose a fixed play mode (Random, named scale, arpeggio, tune, or tuner).
+        /// User chose a fixed play mode from What To Play (not composition-assigned).
         /// </summary>
-        public static bool IsExplicitMode(NoteSessionService session)
+        public static bool IsUserExplicitPlayMode(NoteSessionService session)
+            => IsUserExplicitPlayMode(
+                session.Tune ?? string.Empty,
+                session.ScaleSelectionMode,
+                session.IsRandomMode,
+                Preferences.Default.Get<string?>("SelectedTune", null));
+
+        public static bool IsUserExplicitPlayMode(
+            string tune,
+            ScaleSelectionMode scaleSelectionMode,
+            bool isRandomMode,
+            string? selectedTunePreference)
         {
-            var tune = session.Tune ?? string.Empty;
-            if (tune is "Tuner" or "Arpeggio" or "Practice Tune")
+            if (tune == "Tuner")
                 return true;
 
-            if (session.ScaleSelectionMode == ScaleSelectionMode.Named)
+            if (scaleSelectionMode == ScaleSelectionMode.Named)
                 return true;
 
-            if (session.ScaleSelectionMode == ScaleSelectionMode.Random)
+            if (scaleSelectionMode == ScaleSelectionMode.Random)
                 return true;
 
-            // Random/Tuner picker "Random" (not the child default of random + By Level).
-            if (session.IsRandomMode
-                && string.Equals(
-                    Preferences.Default.Get<string?>("SelectedTune", null),
-                    "Random",
-                    StringComparison.Ordinal))
+            if (isRandomMode
+                && string.Equals(selectedTunePreference, "Random", StringComparison.Ordinal))
+                return true;
+
+            if (string.Equals(selectedTunePreference, PlayModePickerOptions.FixedTune, StringComparison.Ordinal))
+                return true;
+
+            if (tune == "Practice Tune" && IsUserSelectedPracticeTune(selectedTunePreference))
+                return true;
+
+            if (tune == "Arpeggio" && IsUserSelectedArpeggio(selectedTunePreference))
                 return true;
 
             return false;
         }
+
+        /// <summary>Alias kept for callers that treated explicit mode as composition-blocking.</summary>
+        public static bool IsExplicitMode(NoteSessionService session)
+            => IsUserExplicitPlayMode(session);
 
         /// <summary>
         /// Child practice, By Level, or adult mixed practice — roll composition sliders.
         /// </summary>
         public static bool UsesCompositionSliders(NoteSessionService session)
         {
-            if (IsExplicitMode(session))
+            if (!IsCompositionEligibleSession(session))
                 return false;
 
-            return session.ChildLevel > 0
-                   || session.ScaleSelectionMode == ScaleSelectionMode.ByLevel;
+            if (IsUserExplicitPlayMode(session))
+                return false;
+
+            return true;
         }
+
+        private static bool IsCompositionEligibleSession(NoteSessionService session)
+            => session.ChildLevel > 0
+               || session.ScaleSelectionMode == ScaleSelectionMode.ByLevel;
 
         /// <summary>
         /// Weighted pick among tunes / random / scales / arpeggios (Pc* sum to 100).
@@ -62,25 +87,62 @@ namespace musicmate.Services
         public static ExerciseKind PickExerciseKind(NoteSessionService session, Random rng)
         {
             int level = ResolveLevel(session);
+            var tuneContext = CompositionTuneEligibility.FromSession(session, level);
+            bool hasEligibleTunes = CompositionTuneEligibility.GetEligibleTuneTitles(tuneContext).Count > 0;
             int arpeggioWeight = session.PcArpeggios;
             if (ArpeggioCatalog.GetAvailablePatterns(level).Count == 0)
                 arpeggioWeight = 0;
 
+            return PickExerciseKindFromWeights(
+                session.PcTunes,
+                session.PcRandom,
+                session.PcScales,
+                arpeggioWeight,
+                hasEligibleTunes,
+                rng);
+        }
+
+        /// <summary>Weighted category pick for tests and composition logic.</summary>
+        public static ExerciseKind PickExerciseKindFromWeights(
+            int pcTunes,
+            int pcRandom,
+            int pcScales,
+            int pcArpeggios,
+            bool hasEligibleTunes,
+            Random rng)
+        {
+            int tuneWeight = hasEligibleTunes ? pcTunes : 0;
+
             var buckets = new (ExerciseKind Kind, int Weight)[]
             {
-                (ExerciseKind.Tune, session.PcTunes),
-                (ExerciseKind.Random, session.PcRandom),
-                (ExerciseKind.Scale, session.PcScales),
-                (ExerciseKind.Arpeggio, arpeggioWeight),
+                (ExerciseKind.Tune, tuneWeight),
+                (ExerciseKind.Random, pcRandom),
+                (ExerciseKind.Scale, pcScales),
+                (ExerciseKind.Arpeggio, pcArpeggios),
             };
 
             int total = buckets.Sum(b => b.Weight);
             if (total <= 0)
-                return ExerciseKind.Random;
+            {
+                buckets =
+                [
+                    (ExerciseKind.Tune, NoteSessionService.DefaultPcTunes),
+                    (ExerciseKind.Random, NoteSessionService.DefaultPcRandom),
+                    (ExerciseKind.Scale, NoteSessionService.DefaultPcScales),
+                    (ExerciseKind.Arpeggio, NoteSessionService.DefaultPcArpeggios),
+                ];
+                if (!hasEligibleTunes)
+                    buckets[0] = (ExerciseKind.Tune, 0);
+                total = buckets.Sum(b => b.Weight);
+                if (total <= 0)
+                    return ExerciseKind.Random;
+            }
 
             int roll = rng.Next(total);
             foreach (var (kind, weight) in buckets)
             {
+                if (weight <= 0)
+                    continue;
                 if (roll < weight)
                     return kind;
                 roll -= weight;
@@ -99,11 +161,13 @@ namespace musicmate.Services
                 case ExerciseKind.Random:
                     session.IsRandomMode = true;
                     session.Tune = "Selected Scale";
+                    Preferences.Default.Set("SelectedTune", "Selected Scale");
                     break;
 
                 case ExerciseKind.Scale:
                     session.IsRandomMode = false;
                     session.Tune = "Selected Scale";
+                    Preferences.Default.Set("SelectedTune", "Selected Scale");
                     break;
 
                 case ExerciseKind.Tune:
@@ -141,6 +205,12 @@ namespace musicmate.Services
             ApplyExerciseKind(session, kind, rng);
         }
 
+        private static bool IsUserSelectedPracticeTune(string? selectedTunePreference)
+            => PlayModePickerOptions.IsUserSelectedPracticeTuneTitle(selectedTunePreference);
+
+        private static bool IsUserSelectedArpeggio(string? selectedTunePreference)
+            => PlayModePickerOptions.IsUserSelectedArpeggioTitle(selectedTunePreference);
+
         private static int ResolveLevel(NoteSessionService session)
         {
             if (session.ChildLevel > 0)
@@ -150,8 +220,18 @@ namespace musicmate.Services
 
         private static void ApplyRandomTune(NoteSessionService session, Random rng)
         {
-            var tunes = TuneLibrary.All;
-            if (tunes.Count == 0)
+            int level = ResolveLevel(session);
+            var context = CompositionTuneEligibility.FromSession(session, level);
+            string? title = CompositionTuneShuffleBag.DrawNextTitle(context, rng);
+            if (string.IsNullOrEmpty(title))
+            {
+                session.IsRandomMode = false;
+                session.Tune = "Selected Scale";
+                return;
+            }
+
+            var tune = TuneLibrary.All.FirstOrDefault(t => t.Title == title);
+            if (tune == null)
             {
                 session.IsRandomMode = false;
                 session.Tune = "Selected Scale";
@@ -159,7 +239,7 @@ namespace musicmate.Services
             }
 
             session.IsRandomMode = false;
-            session.SelectPracticeTune(tunes[rng.Next(tunes.Count)]);
+            session.SelectPracticeTune(tune);
         }
 
         private static bool TryApplyRandomArpeggio(NoteSessionService session, Random rng)

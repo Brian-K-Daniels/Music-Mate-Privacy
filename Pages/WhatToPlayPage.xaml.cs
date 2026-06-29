@@ -31,7 +31,6 @@ namespace musicmate.Pages
         private string[] _tuneTitles = Array.Empty<string>();
         private string[] _scaleOptions = Array.Empty<string>();
         private ArpeggioPickerChoice[] _arpeggioOptions = Array.Empty<ArpeggioPickerChoice>();
-        private static readonly string[] RandomTunerOptions = { "Random", "Tuner", "Fixed Tune" };
 
         private sealed record ArpeggioPickerChoice(
             string PickerLabel,
@@ -120,7 +119,7 @@ namespace musicmate.Pages
 
                 KeyPicker.SelectedIndexChanged += OnKeyPickerChangedWithPrompt;
 
-                // ── Play-mode pickers (Tunes | Scales | Arpeggios | Random/Tuner) ──
+                // ── Play-mode pickers (Tunes | Scales | Arpeggios | Other) ──
                 InitializePlayModePickers();
                 UpdatePlayModePickersFromSession(suppressClear: true);
 
@@ -271,17 +270,19 @@ namespace musicmate.Pages
 
         private void InitializePlayModePickers()
         {
+            PlayModePickerOptions.MigrateLegacySessionSelection(_session);
+
             _tuneTitles = TuneLibrary.All.Select(t => t.Title).ToArray();
             _scaleOptions = NoteSessionService.ScalePickerOptions;
 
             TunesPicker.ItemsSource = _tuneTitles;
             ScalesPicker.ItemsSource = _scaleOptions;
             RefreshArpeggioPickerOptions();
-            RandomTunerPicker.ItemsSource = RandomTunerOptions;
+            OtherPicker.ItemsSource = PlayModePickerOptions.OtherOptions;
 
             TunesPicker.SelectedIndexChanged += OnTunesPickerChanged;
             ScalesPicker.SelectedIndexChanged += OnScalesPickerChanged;
-            RandomTunerPicker.SelectedIndexChanged += OnRandomTunerPickerChanged;
+            OtherPicker.SelectedIndexChanged += OnOtherPickerChanged;
         }
 
         private void RefreshArpeggioPickerOptions()
@@ -464,17 +465,11 @@ namespace musicmate.Pages
                 Picker? activePicker = GetActivePlayModePicker();
                 ClearInactivePlayModePickerSelections(activePicker);
 
-                if (LayoutTestTune.IsEnabled)
+                if (PlayModePickerOptions.UsesOtherPicker(_session, LayoutTestTune.IsEnabled))
                 {
-                    SetPickerSelection(RandomTunerPicker, "Fixed Tune", RandomTunerOptions);
-                }
-                else if (_session.Tune == "Tuner")
-                {
-                    SetPickerSelection(RandomTunerPicker, "Tuner", RandomTunerOptions);
-                }
-                else if (_session.IsRandomMode)
-                {
-                    SetPickerSelection(RandomTunerPicker, "Random", RandomTunerOptions);
+                    var otherSelection = PlayModePickerOptions.ResolveOtherSelection(
+                        _session, LayoutTestTune.IsEnabled);
+                    SetPickerSelection(OtherPicker, otherSelection, PlayModePickerOptions.OtherOptions);
                 }
                 else if (_session.Tune == "Practice Tune")
                 {
@@ -486,11 +481,10 @@ namespace musicmate.Pages
                 {
                     SetArpeggioPickerSelection();
                 }
-                else
+                else if (_session.ScaleSelectionMode == ScaleSelectionMode.Named)
                 {
-                    var display = _session.ScaleSelectionDisplay;
-                    SetPickerSelection(ScalesPicker, display, _scaleOptions);
-                    var scaleIdx = Array.IndexOf(_scaleOptions, display);
+                    SetPickerSelection(ScalesPicker, _session.SelectedScale, _scaleOptions);
+                    var scaleIdx = Array.IndexOf(_scaleOptions, _session.SelectedScale);
                     if (scaleIdx >= 0)
                         _lastValidScaleIndex = scaleIdx;
                 }
@@ -506,8 +500,8 @@ namespace musicmate.Pages
 
         private Picker? GetActivePlayModePicker()
         {
-            if (LayoutTestTune.IsEnabled || _session.Tune == "Tuner" || _session.IsRandomMode)
-                return RandomTunerPicker;
+            if (PlayModePickerOptions.UsesOtherPicker(_session, LayoutTestTune.IsEnabled))
+                return OtherPicker;
             if (_session.Tune == "Practice Tune")
                 return TunesPicker;
             if (_session.Tune == "Arpeggio")
@@ -520,7 +514,7 @@ namespace musicmate.Pages
             ClearPicker(TunesPicker);
             ClearPicker(ScalesPicker);
             ClearPicker(ArpeggiosPicker);
-            ClearPicker(RandomTunerPicker);
+            ClearPicker(OtherPicker);
         }
 
         private void ClearInactivePlayModePickerSelections(Picker? activePicker)
@@ -528,7 +522,7 @@ namespace musicmate.Pages
             if (activePicker != TunesPicker) ClearPicker(TunesPicker);
             if (activePicker != ScalesPicker) ClearPicker(ScalesPicker);
             if (activePicker != ArpeggiosPicker) ClearPicker(ArpeggiosPicker);
-            if (activePicker != RandomTunerPicker) ClearPicker(RandomTunerPicker);
+            if (activePicker != OtherPicker) ClearPicker(OtherPicker);
         }
 
         private void ClearPicker(Picker picker)
@@ -568,7 +562,7 @@ namespace musicmate.Pages
                 if (activePicker != TunesPicker) ClearPicker(TunesPicker);
                 if (activePicker != ScalesPicker) ClearPicker(ScalesPicker);
                 if (activePicker != ArpeggiosPicker) ClearPicker(ArpeggiosPicker);
-                if (activePicker != RandomTunerPicker) ClearPicker(RandomTunerPicker);
+                if (activePicker != OtherPicker) ClearPicker(OtherPicker);
             }
             finally
             {
@@ -581,7 +575,7 @@ namespace musicmate.Pages
             _suppressPickerSync = true;
             try
             {
-                if (_session.Tune == "Selected Scale" && !_session.IsRandomMode
+                if (_session.ScaleSelectionMode == ScaleSelectionMode.Named
                     && _lastValidScaleIndex >= 0 && _lastValidScaleIndex < _scaleOptions.Length)
                 {
                     ScalesPicker.SelectedIndex = _lastValidScaleIndex;
@@ -756,8 +750,10 @@ namespace musicmate.Pages
             if (idx < 0 || idx >= _scaleOptions.Length) return;
             var selected = _scaleOptions[idx];
 
-            if (NoteSessionService.IsNamedScaleOption(selected)
-                && !FreeScales.Contains(selected)
+            if (!NoteSessionService.IsNamedScaleOption(selected))
+                return;
+
+            if (!FreeScales.Contains(selected)
                 && !StatusService.Instance.IsPremiumUser)
             {
                 var purchased = await PremiumPromptHelper.ShowAsync(this,
@@ -777,7 +773,7 @@ namespace musicmate.Pages
                 _session.Tune = "Selected Scale";
                 if (!_session.TryApplyScalePickerSelection(selected, out rejectionReason))
                 {
-                    var fallbackIdx = Array.IndexOf(_scaleOptions, _session.ScaleSelectionDisplay);
+                    var fallbackIdx = Array.IndexOf(_scaleOptions, _session.SelectedScale);
                     if (fallbackIdx >= 0)
                         _lastValidScaleIndex = fallbackIdx;
                 }
@@ -786,11 +782,7 @@ namespace musicmate.Pages
                     _lastValidScaleIndex = idx;
                 }
             });
-            Preferences.Default.Set("SelectedTune",
-                selected == NoteSessionService.ScaleSelectionByLevel
-                || selected == NoteSessionService.ScaleSelectionRandom
-                    ? "Selected Scale"
-                    : selected);
+            Preferences.Default.Set("SelectedTune", selected);
 #if DEBUG
             Debug.WriteLine($"[PickerTest] Scales/{selected}: mode={_session.ScaleSelectionMode} scale={_session.SelectedScale} Key={_session.Key}");
 #endif
@@ -832,47 +824,22 @@ namespace musicmate.Pages
             UpdateRandomModeWarning();
         }
 
-        private async void OnRandomTunerPickerChanged(object? sender, EventArgs e)
+        private async void OnOtherPickerChanged(object? sender, EventArgs e)
         {
             if (_suppressPickerSync) return;
 
-            var idx = RandomTunerPicker.SelectedIndex;
-            if (idx < 0 || idx >= RandomTunerOptions.Length) return;
-            var selected = RandomTunerOptions[idx];
+            var idx = OtherPicker.SelectedIndex;
+            if (idx < 0 || idx >= PlayModePickerOptions.OtherOptions.Length) return;
+            var selected = PlayModePickerOptions.OtherOptions[idx];
 
-            ClearOtherPlayModePickers(RandomTunerPicker);
+            ClearOtherPlayModePickers(OtherPicker);
 
-            if (selected == "Tuner")
-            {
-                LayoutTestTune.SetEnabled(false);
-                ApplyPlayModeSessionChange(() =>
-                {
-                    _session.Tune = "Tuner";
-                    _session.IsRandomMode = false;
-                });
-                Preferences.Default.Set("SelectedTune", "Tuner");
-            }
-            else if (selected == "Random")
-            {
-                LayoutTestTune.SetEnabled(false);
-                ApplyPlayModeSessionChange(() =>
-                {
-                    _session.Tune = "Selected Scale";
-                    _session.IsRandomMode = true;
-                });
-                Preferences.Default.Set("SelectedTune", "Random");
-            }
-            else if (selected == "Fixed Tune")
-            {
+            if (selected == PlayModePickerOptions.FixedTune)
                 LayoutTestTune.SetEnabled(true);
-                ApplyPlayModeSessionChange(() =>
-                {
-                    _session.IsRandomMode = false;
-                    if (_session.Tune == "Tuner")
-                        _session.Tune = "Selected Scale";
-                });
-                Preferences.Default.Set("SelectedTune", "Fixed Tune");
-            }
+            else
+                LayoutTestTune.SetEnabled(false);
+
+            ApplyPlayModeSessionChange(() => PlayModePickerOptions.ApplyOtherSelection(_session, selected));
 
             UpdatePlayModePickersFromSession(suppressClear: true);
             UpdateKeyPickerVisibility();

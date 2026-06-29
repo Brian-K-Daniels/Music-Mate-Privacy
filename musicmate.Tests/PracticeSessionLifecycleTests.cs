@@ -1,3 +1,4 @@
+using musicmate.Models;
 using musicmate.Services;
 
 namespace musicmate.Tests;
@@ -64,6 +65,26 @@ public class PracticeSessionLifecycleTests
         Assert.Contains("8/10", text);
         Assert.Contains("120 BPM", text);
         Assert.Contains("Level 5", text);
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void ShouldForceNewNotesForRepeatMode_MatchesRepeatNew(bool repeatSameTune, bool expected)
+        => Assert.Equal(expected, PracticeSessionLifecycle.ShouldForceNewNotesForRepeatMode(repeatSameTune));
+
+    [Fact]
+    public void PlanExerciseStart_RepeatNewWithSnapshotStillGeneratesFresh()
+    {
+        var snapshot = new PracticeSessionSnapshot
+        {
+            Notes = Enumerable.Range(0, 4).Select(_ => new NoteInfo { Name = "G4" }).ToList()
+        };
+
+        var plan = PracticeSessionLifecycle.PlanExerciseStart(
+            repeatSameTune: false, snapshot, forceNewNotes: true, scaleKeyTrigger: "AutoStart");
+
+        Assert.Equal(PracticeExerciseStartAction.GenerateFresh, plan.Action);
     }
 
     [Theory]

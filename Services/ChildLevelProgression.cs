@@ -8,11 +8,6 @@ namespace musicmate.Services
     /// </summary>
     internal static class ChildLevelProgression
     {
-        private static readonly HashSet<string> SupportedKeys = new(StringComparer.Ordinal)
-        {
-            "C", "G", "F", "D", "Bb", "A", "Eb", "E", "Ab", "B", "Db", "F#"
-        };
-
         private static readonly HashSet<string> SupportedScales =
             new(NoteSessionService.AvailableScales, StringComparer.Ordinal);
 
@@ -182,46 +177,10 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// Picks a key from the level pool with a 50% chance of flat vs sharp displayed
-        /// signature for <paramref name="scale"/>. When the chosen bucket is empty,
-        /// falls back to the other bucket, then to keys with no signature accidentals.
+        /// Picks a key with level-filtered frequency weights and 50% flat vs sharp balance.
         /// </summary>
         public static string PickBalancedKeyForSignature(string scale, int level, Random? rng = null)
-        {
-            level = Math.Clamp(level, 1, 100);
-            rng ??= Random.Shared;
-
-            var flatOptions = new List<WeightedKeyOption>();
-            var sharpOptions = new List<WeightedKeyOption>();
-            var naturalOptions = new List<WeightedKeyOption>();
-
-            foreach (var option in KeyPoolForLevel(level))
-            {
-                if (option.Weight <= 0)
-                    continue;
-
-                int signed = KeySignatureRules.GetSignedAccidentalCount(option.Key, scale);
-                if (signed < 0)
-                    flatOptions.Add(option);
-                else if (signed > 0)
-                    sharpOptions.Add(option);
-                else
-                    naturalOptions.Add(option);
-            }
-
-            bool wantFlat = rng.Next(2) == 0;
-            var primary = wantFlat ? flatOptions : sharpOptions;
-            var fallback = wantFlat ? sharpOptions : flatOptions;
-
-            if (primary.Count > 0)
-                return WeightedChoice.Pick(primary, o => o.Weight, rng).Key;
-            if (fallback.Count > 0)
-                return WeightedChoice.Pick(fallback, o => o.Weight, rng).Key;
-            if (naturalOptions.Count > 0)
-                return WeightedChoice.Pick(naturalOptions, o => o.Weight, rng).Key;
-
-            return PickWeightedRandomKey(level, rng);
-        }
+            => KeyDifficultyRules.PickBalancedKeyForSignature(scale, level, rng);
 
         /// <summary>Alias kept for existing callers.</summary>
         public static string PickScaleFromPool(int level, Random rng)
@@ -250,12 +209,11 @@ namespace musicmate.Services
 
         /// <summary>Keeps <paramref name="currentKey"/> when allowed; otherwise returns the level default.</summary>
         public static string ValidateKeyForLevel(int level, string? currentKey)
-        {
-            var allowed = GetAllowedKeys(level);
-            if (!string.IsNullOrWhiteSpace(currentKey) && allowed.Contains(currentKey))
-                return currentKey;
-            return GetDefaultKey(level);
-        }
+            => ValidateKeyForLevel(level, GetDefaultScaleForLevel(level), currentKey);
+
+        /// <summary>Keeps <paramref name="currentKey"/> when allowed for <paramref name="scale"/>.</summary>
+        public static string ValidateKeyForLevel(int level, string scale, string? currentKey)
+            => KeyDifficultyRules.ValidateKeyForLevel(level, scale, currentKey);
 
         /// <summary>True when the level pool contains more than one distinct scale.</summary>
         public static bool LevelHasMultipleScales(int level)
@@ -294,92 +252,7 @@ namespace musicmate.Services
         }
 
         private static IReadOnlyList<WeightedKeyOption> KeyPoolForLevel(int level)
-        {
-            WeightedKeyOption[] raw = level switch
-            {
-                <= 20 =>
-                [
-                    new("C", 60),
-                    new("G", 20),
-                    new("F", 20)
-                ],
-                <= 35 =>
-                [
-                    new("C", 40),
-                    new("G", 20),
-                    new("F", 20),
-                    new("D", 10),
-                    new("Bb", 10)
-                ],
-                <= 50 =>
-                [
-                    new("C", 30),
-                    new("G", 18),
-                    new("F", 18),
-                    new("D", 12),
-                    new("Bb", 12),
-                    new("A", 5),
-                    new("Eb", 5)
-                ],
-                <= 65 =>
-                [
-                    new("C", 24),
-                    new("G", 16),
-                    new("F", 16),
-                    new("D", 12),
-                    new("Bb", 12),
-                    new("A", 8),
-                    new("Eb", 8),
-                    new("E", 2),
-                    new("Ab", 2)
-                ],
-                <= 80 =>
-                [
-                    new("C", 20),
-                    new("G", 14),
-                    new("F", 14),
-                    new("D", 10),
-                    new("Bb", 10),
-                    new("A", 8),
-                    new("Eb", 8),
-                    new("E", 5),
-                    new("Ab", 5),
-                    new("B", 3),
-                    new("Db", 3)
-                ],
-                <= 95 =>
-                [
-                    new("C", 16),
-                    new("G", 12),
-                    new("F", 12),
-                    new("D", 9),
-                    new("Bb", 9),
-                    new("A", 7),
-                    new("Eb", 7),
-                    new("E", 6),
-                    new("Ab", 6),
-                    new("B", 4),
-                    new("Db", 4),
-                    new("F#", 2)
-                ],
-                _ =>
-                [
-                    new("C", 12),
-                    new("G", 10),
-                    new("F", 10),
-                    new("D", 8),
-                    new("Bb", 8),
-                    new("A", 7),
-                    new("Eb", 7),
-                    new("E", 6),
-                    new("Ab", 6),
-                    new("B", 5),
-                    new("Db", 5),
-                    new("F#", 3)
-                ]
-            };
-            return FilterKeys(raw);
-        }
+            => KeyDifficultyRules.BuildKeyPoolForLevel(level, GetAllowedScalesForLevel(level));
 
         private static IReadOnlyList<WeightedScaleOption> FilterScales(IEnumerable<WeightedScaleOption> options)
         {
@@ -387,14 +260,6 @@ namespace musicmate.Services
                 .Where(o => o.Weight > 0 && SupportedScales.Contains(o.Scale))
                 .ToArray();
             return list.Length > 0 ? list : new[] { new WeightedScaleOption("Major", 1) };
-        }
-
-        private static IReadOnlyList<WeightedKeyOption> FilterKeys(IEnumerable<WeightedKeyOption> options)
-        {
-            var list = options
-                .Where(o => o.Weight > 0 && SupportedKeys.Contains(o.Key))
-                .ToArray();
-            return list.Length > 0 ? list : new[] { new WeightedKeyOption("C", 1) };
         }
 
         public static int NoteCountForLevel(int level)

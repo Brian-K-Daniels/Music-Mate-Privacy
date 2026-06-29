@@ -14,6 +14,7 @@ public class BalancedKeySelectionTests
         {
             string key = ChildLevelProgression.PickBalancedKeyForSignature("Major", level, new Random(seed));
             Assert.Contains(key, allowed);
+            Assert.Equal("C", key);
         }
     }
 
@@ -39,25 +40,27 @@ public class BalancedKeySelectionTests
     }
 
     [Fact]
-    public void PickBalancedKeyForSignature_FallsBackToFlatWhenSharpBucketEmpty()
+    public void PickBalancedKeyForSignature_CanPickFlatMinorKeysAtMidLevel()
     {
-        string key = ChildLevelProgression.PickBalancedKeyForSignature(
-            "Natural Minor", level: 18, new Random(42));
+        bool sawFlat = false;
+        for (int seed = 0; seed < 200; seed++)
+        {
+            string key = ChildLevelProgression.PickBalancedKeyForSignature(
+                "Natural Minor", level: 25, new Random(seed));
+            if (KeySignatureRules.KeySignatureUsesFlats(key, "Natural Minor"))
+                sawFlat = true;
+        }
 
-        Assert.True(KeySignatureRules.KeySignatureUsesFlats(key, "Natural Minor"));
+        Assert.True(sawFlat);
     }
 
     [Fact]
-    public void PickBalancedKeyForSignature_CanPickSharpKeysAtLowMajorLevel()
+    public void PickBalancedKeyForSignature_Level1MajorNeverPicksSharpKeys()
     {
-        bool sawSharp = false;
         for (int seed = 0; seed < 100; seed++)
         {
             string key = ChildLevelProgression.PickBalancedKeyForSignature("Major", level: 1, new Random(seed));
-            if (KeySignatureRules.GetSignedAccidentalCount(key, "Major") > 0)
-                sawSharp = true;
+            Assert.Equal(0, KeySignatureRules.GetAccidentalCount(key, "Major"));
         }
-
-        Assert.True(sawSharp);
     }
 }

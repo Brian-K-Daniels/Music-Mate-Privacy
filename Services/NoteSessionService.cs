@@ -1620,11 +1620,8 @@ namespace musicmate.Services
             "Enigmatic", "Chromatic"
         };
 
-        /// <summary>Scale picker items: By Level, Random, then every supported scale.</summary>
-        public static string[] ScalePickerOptions { get; } =
-            new[] { ScaleSelectionByLevel, ScaleSelectionRandom }
-                .Concat(AvailableScales)
-                .ToArray();
+        /// <summary>Scale picker items: named scales only (By Level and Random live under Other).</summary>
+        public static string[] ScalePickerOptions { get; } = AvailableScales.ToArray();
 
         public static bool IsNamedScaleOption(string? option)
             => !string.IsNullOrWhiteSpace(option)

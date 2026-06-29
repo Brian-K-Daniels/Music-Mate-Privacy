@@ -180,7 +180,7 @@
 
       </Grid>
 
-      <!-- Tunes | Scales | Arpeggios | Random/Tuner -->
+      <!-- Tunes | Scales | Arpeggios | Other -->
       <VerticalStackLayout Spacing="8"
                            HorizontalOptions="Center"
                            Margin="8,0">
@@ -237,18 +237,18 @@
             </Border>
           </VerticalStackLayout>
 
-          <!-- Random / Tuner -->
+          <!-- Other -->
           <VerticalStackLayout Grid.Row="1" Grid.Column="1" Spacing="4">
-            <Label Text="Random/Tuner"
+            <Label Text="Other"
                    FontSize="13"
                    FontAttributes="Bold"
                    TextColor="#333333"
                    HorizontalOptions="Center" />
             <Border Style="{StaticResource WtpPlayModePickerBorder}">
               <Grid BackgroundColor="White">
-                <Picker x:Name="RandomTunerPicker"
+                <Picker x:Name="OtherPicker"
                         Style="{StaticResource WtpPlayModePicker}"
-                        SelectedIndexChanged="OnRandomTunerPickerChanged" />
+                        SelectedIndexChanged="OnOtherPickerChanged" />
               </Grid>
             </Border>
           </VerticalStackLayout>
