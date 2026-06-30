@@ -1118,7 +1118,8 @@ namespace musicmate.Services
                 case ScaleSelectionMode.ByLevel:
                     if (level > 0)
                     {
-                        newScale = ChildLevelProgression.GetDefaultScaleForLevel(level);
+                        newScale = ResolveScaleForFreshGeneration(
+                            ScaleSelectionMode.ByLevel, Tune, IsRandomMode, level, rng);
                         if (!string.Equals(SelectedScale, newScale, StringComparison.Ordinal))
                             SelectedScale = newScale;
                         SetEffectiveScale(newScale);
@@ -1176,6 +1177,38 @@ namespace musicmate.Services
             if (tuneMode == "Practice Tune" && !string.IsNullOrWhiteSpace(currentTune?.Key))
                 return currentTune.Key;
             return ChildLevelProgression.PickBalancedKeyForSignature(scale, keyPoolLevel, rng);
+        }
+
+        /// <summary>
+        /// Scale for fresh By Level generation. Scale and Random composition exercises
+        /// draw from the level pool (e.g. Major + Natural Minor at L24); tunes/arpeggios
+        /// keep the level default for display only.
+        /// </summary>
+        internal static string ResolveScaleForFreshGeneration(
+            ScaleSelectionMode mode,
+            string? tuneMode,
+            bool isRandomMode,
+            int level,
+            Random rng)
+        {
+            if (mode != ScaleSelectionMode.ByLevel || level <= 0)
+                return ChildLevelProgression.GetDefaultScaleForLevel(Math.Max(level, 1));
+
+            if (ShouldPickFreshScaleFromLevelPool(tuneMode, isRandomMode))
+                return ChildLevelProgression.PickWeightedRandomScale(level, rng);
+
+            return ChildLevelProgression.GetDefaultScaleForLevel(level);
+        }
+
+        internal static bool ShouldPickFreshScaleFromLevelPool(string? tuneMode, bool isRandomMode)
+        {
+            if (string.Equals(tuneMode, "Practice Tune", StringComparison.Ordinal))
+                return false;
+            if (string.Equals(tuneMode, "Arpeggio", StringComparison.Ordinal))
+                return false;
+            // Selected Scale: composition Scale (ordered) or Random categories.
+            return string.Equals(tuneMode, "Selected Scale", StringComparison.Ordinal)
+                   || isRandomMode;
         }
 
         /// <summary>Written key and scale for a practice tune's fixed key signature.</summary>

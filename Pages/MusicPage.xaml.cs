@@ -144,15 +144,7 @@ namespace musicmate.Pages
 
         private void UpdateAutoRepeatButtons()
         {
-            MainThread.BeginInvokeOnMainThread(() =>
-            {
-                if (AutoRepeatScaleButton != null)
-                {
-                    AutoRepeatScaleButton.BackgroundColor = _session.AutoRepeat
-                        ? Color.FromArgb("#008000")  // green  = repeat on
-                        : Color.FromArgb("#8B4513"); // brown = repeat off
-                }
-            });
+            // Auto-repeat button styling is handled on WhatToPlayPage.
         }
 
         private bool _isAutoRepeatVisible;
