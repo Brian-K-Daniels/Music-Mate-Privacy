@@ -51,6 +51,7 @@ namespace musicmate
             builder.Services.AddSingleton<StatusService>();
             builder.Services.AddSingleton<ThemeService>();
             builder.Services.AddSingleton<SettingsResetService>();
+            builder.Services.AddSingleton<StatisticsCacheService>();
 
 #if ANDROID
             builder.Services.AddSingleton<ISafeAreaService, musicmate.Platforms.Android.SafeAreaService>();

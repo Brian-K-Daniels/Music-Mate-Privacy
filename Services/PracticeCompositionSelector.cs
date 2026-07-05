@@ -47,7 +47,8 @@ namespace musicmate.Services
                 && string.Equals(selectedTunePreference, "Random", StringComparison.Ordinal))
                 return true;
 
-            if (string.Equals(selectedTunePreference, PlayModePickerOptions.FixedTune, StringComparison.Ordinal))
+            if (string.Equals(selectedTunePreference, PlayModePickerOptions.HalfThroughSixteenthNotes, StringComparison.Ordinal)
+                || string.Equals(selectedTunePreference, PlayModePickerOptions.LegacyFixedTune, StringComparison.Ordinal))
                 return true;
 
             if (tune == "Practice Tune" && IsUserSelectedPracticeTune(selectedTunePreference))

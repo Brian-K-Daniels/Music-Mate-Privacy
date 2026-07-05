@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.IO;
 using musicmate.Services;
 using Microsoft.Maui.Storage;
 using Microsoft.Maui.Graphics;
@@ -257,6 +258,77 @@ namespace musicmate.ViewModels
             _session.SetPracticeCompositionPercents(
                 redistributed[0], redistributed[1], redistributed[2], redistributed[3]);
             SyncCompositionDraftsFromSession();
+        }
+
+        private double _maxSessionDbSizeMb = Preferences.Default.Get("MaxSessionDbSizeMb", 50);
+        public double MaxSessionDbSizeMb
+        {
+            get => _maxSessionDbSizeMb;
+            set
+            {
+                if (Math.Abs(_maxSessionDbSizeMb - value) < 0.001) return;
+                _maxSessionDbSizeMb = value;
+                Preferences.Default.Set("MaxSessionDbSizeMb", (int)value);
+                OnPropertyChanged(nameof(MaxSessionDbSizeMb));
+            }
+        }
+
+        private double _sessionDbSizeMb;
+        public double SessionDbSizeMb
+        {
+            get => _sessionDbSizeMb;
+            private set
+            {
+                _sessionDbSizeMb = value;
+                OnPropertyChanged(nameof(SessionDbSizeMb));
+                OnPropertyChanged(nameof(MemoryUsageDisplay));
+            }
+        }
+
+        private double _availableStorageMb = 500;
+        public double AvailableStorageMb
+        {
+            get => _availableStorageMb;
+            private set
+            {
+                _availableStorageMb = value;
+                OnPropertyChanged(nameof(AvailableStorageMb));
+                OnPropertyChanged(nameof(MemoryUsageDisplay));
+            }
+        }
+
+        public string MemoryUsageDisplay =>
+            $"Memory usage:   Session Database {SessionDbSizeMb:F4} MB   Available {AvailableStorageMb:N0} MB";
+
+        public void RefreshStorageInfo()
+        {
+            try
+            {
+                var sessionDb = ServiceHelper.GetService<SessionDatabase>();
+                var dbPath = sessionDb?.DatabasePath ?? string.Empty;
+
+                long totalSize = 0;
+                if (File.Exists(dbPath))
+                    totalSize += new FileInfo(dbPath).Length;
+
+                var walPath = dbPath + "-wal";
+                if (File.Exists(walPath))
+                    totalSize += new FileInfo(walPath).Length;
+
+                var shmPath = dbPath + "-shm";
+                if (File.Exists(shmPath))
+                    totalSize += new FileInfo(shmPath).Length;
+
+                SessionDbSizeMb = totalSize / 1_048_576.0;
+
+                var drive = new DriveInfo(FileSystem.AppDataDirectory);
+                var freeMb = drive.AvailableFreeSpace / 1_048_576.0;
+                AvailableStorageMb = freeMb;
+
+                if (_maxSessionDbSizeMb > freeMb)
+                    MaxSessionDbSizeMb = freeMb;
+            }
+            catch { }
         }
 
         private void SyncCompositionDraftsFromSession()

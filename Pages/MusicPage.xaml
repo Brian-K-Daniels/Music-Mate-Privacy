@@ -68,10 +68,22 @@
           <RoundRectangle CornerRadius="8" />
         </Setter.Value>
       </Setter>
-      <Setter Property="Padding" Value="8,2" />
+      <Setter Property="Padding" Value="6,2" />
       <Setter Property="HeightRequest" Value="28" />
       <Setter Property="VerticalOptions" Value="Center" />
       <Setter Property="HorizontalOptions" Value="Center" />
+    </Style>
+    <Style x:Key="CompactBrownBoxFill" TargetType="Border" BasedOn="{StaticResource CompactBrownBox}">
+      <Setter Property="HorizontalOptions" Value="Fill" />
+      <Setter Property="Padding" Value="4,2" />
+    </Style>
+    <Style x:Key="PracticeBottomPicker" TargetType="Picker">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="TextColor" Value="#000000" />
+      <Setter Property="BackgroundColor" Value="Transparent" />
+      <Setter Property="VerticalOptions" Value="Fill" />
+      <Setter Property="HorizontalOptions" Value="Fill" />
+      <Setter Property="HeightRequest" Value="28" />
     </Style>
     <Style x:Key="CompactBrownButton" TargetType="Button">
       <Setter Property="BackgroundColor" Value="#8B4513" />
@@ -403,52 +415,63 @@
             </Grid>
           </Border>
 
-          <!-- Bottom row: Repeat buttons + practice pickers -->
+          <!-- Bottom row: practice pickers -->
           <Grid x:Name="BottomButtonRow"
-                Margin="12,8,12,8"
-                ColumnSpacing="8"
+                Margin="8,8,8,8"
+                ColumnSpacing="0"
                 HorizontalOptions="Fill"
                 IsVisible="{Binding Source={x:Reference musicPage}, Path=IsBottomButtonRowVisible}">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="64" />
-              <ColumnDefinition Width="64" />
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>          
 
             <Grid x:Name="BottomPickersLayout"
-                  Grid.Column="0" Grid.ColumnSpan="5"
-                  ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*"
-                  ColumnSpacing="2"
+                  ColumnDefinitions="Auto,84,Auto,48,Auto,*"
+                  ColumnSpacing="4"
                   VerticalOptions="Center"
                   HorizontalOptions="Fill"
                   IsVisible="{Binding Source={x:Reference musicPage}, Path=IsBottomPickersVisible}">
-              <Label Grid.Column="0" Text="Inst." FontSize="10" TextColor="#333333" VerticalOptions="Center" Margin="2,0,0,0"/>
-              <Border Grid.Column="1" Style="{StaticResource CompactBrownBox}">
-                <Picker x:Name="PracticeInstrumentPicker"
-                        WidthRequest="70" HeightRequest="28" FontSize="10"
-                        TextColor="#000000" BackgroundColor="White"
-                        VerticalOptions="Fill" HorizontalOptions="Fill"
-                        SelectedIndexChanged="PracticeInstrumentPicker_SelectedIndexChanged" />
+              <Label Grid.Column="0"
+                     Text="Inst."
+                     FontSize="10"
+                     TextColor="#333333"
+                     VerticalOptions="Center"
+                     Margin="0,0,2,0"
+                     LineBreakMode="TailTruncation"
+                     MaxLines="1" />
+              <Border Grid.Column="1" Style="{StaticResource CompactBrownBoxFill}">
+                <Grid BackgroundColor="White">
+                  <Picker x:Name="PracticeInstrumentPicker"
+                          Style="{StaticResource PracticeBottomPicker}" />
+                </Grid>
               </Border>
-              <Label x:Name="PracticeKeyLabel" Grid.Column="2" Text="Key" FontSize="10" TextColor="#333333" VerticalOptions="Center"/>
-              <Border x:Name="PracticeKeyBorder" Grid.Column="3" Style="{StaticResource CompactBrownBox}">
-                <Picker x:Name="PracticeKeyPicker"
-                        WidthRequest="50" HeightRequest="28" FontSize="10"
-                        TextColor="#000000" BackgroundColor="White"
-                        VerticalOptions="Fill" HorizontalOptions="Fill"
-                        SelectedIndexChanged="PracticeKeyPicker_SelectedIndexChanged" />
+              <Label x:Name="PracticeKeyLabel"
+                     Grid.Column="2"
+                     Text="Key"
+                     FontSize="10"
+                     TextColor="#333333"
+                     VerticalOptions="Center"
+                     Margin="2,0,2,0" />
+              <Border x:Name="PracticeKeyBorder" Grid.Column="3" Style="{StaticResource CompactBrownBoxFill}">
+                <Grid BackgroundColor="White">
+                  <Picker x:Name="PracticeKeyPicker"
+                          Style="{StaticResource PracticeBottomPicker}" />
+                </Grid>
               </Border>
-              <Label x:Name="PracticeConcertKeyLabel" Grid.Column="4" FontSize="10" TextColor="#333333" VerticalOptions="Center"/>
+              <Label x:Name="PracticeConcertKeyLabel"
+                     Grid.Column="4"
+                     FontSize="9"
+                     TextColor="#333333"
+                     VerticalOptions="Center"
+                     Margin="2,0,4,0"
+                     LineBreakMode="TailTruncation"
+                     MaxLines="1"
+                     MaximumWidthRequest="88" />
               <Border Grid.Column="5"
-                      Style="{StaticResource CompactBrownBox}"
+                      Style="{StaticResource CompactBrownBoxFill}"
                       HorizontalOptions="Fill">
-                <Picker x:Name="PracticeScaleTunePicker"
-                        HeightRequest="28" FontSize="10"
-                        TextColor="#000000" BackgroundColor="White"
-                        VerticalOptions="Fill" HorizontalOptions="Fill"
-                        SelectedIndexChanged="PracticeScaleTunePickerChanged" />
+                <Grid BackgroundColor="White">
+                  <Picker x:Name="PracticeScaleTunePicker"
+                          Style="{StaticResource PracticeBottomPicker}"
+                          SelectedIndexChanged="PracticeScaleTunePickerChanged" />
+                </Grid>
               </Border>
             </Grid>
 

@@ -2,6 +2,7 @@ using musicmate.Services;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using musicmate.Utilities;
+using System.Threading;
 using System.Windows.Input;
 
 namespace musicmate.ViewModels
@@ -12,6 +13,8 @@ namespace musicmate.ViewModels
         private readonly SessionDatabase _sessionDatabase;
         private readonly ThemeService _themeService;
         private readonly NoteSessionService _session;
+        private readonly StatisticsCacheService _statisticsCache;
+        private int _loadGeneration;
         public Color PanelBackgroundColor => _themeService.PanelBackgroundColor;
         public Color ContrastingTextColor => _themeService.ContrastingTextColor;
         public bool IsNoteDatabase => SelectedDatabase == "Note";
@@ -35,6 +38,7 @@ namespace musicmate.ViewModels
         // Commands
         public ICommand SortNoteStatsCommand { get; }
         public ICommand SortSessionStatsCommand { get; }
+        public ICommand RefreshCommand { get; }
 
         private bool _isLoading = false;
         public bool IsLoading
@@ -50,29 +54,45 @@ namespace musicmate.ViewModels
             }
         }
 
-        private double _averageWrong = 0.0;
-        public double AverageWrong
+        private DateTime? _lastUpdatedUtc;
+        public DateTime? LastUpdatedUtc
         {
-            get => _averageWrong;
+            get => _lastUpdatedUtc;
             private set
             {
-                if (Math.Abs(_averageWrong - value) > 0.0001)
+                if (_lastUpdatedUtc != value)
                 {
-                    _averageWrong = value;
-                    OnPropertyChanged(nameof(AverageWrong));
+                    _lastUpdatedUtc = value;
+                    OnPropertyChanged(nameof(LastUpdatedUtc));
+                    OnPropertyChanged(nameof(LastUpdatedText));
+                    OnPropertyChanged(nameof(HasLastUpdated));
                 }
             }
         }
 
-        public NoteStatisticsViewModel(NoteDatabase noteDatabase, SessionDatabase sessionDatabase, ThemeService themeService, NoteSessionService session)
+        public bool HasLastUpdated => LastUpdatedUtc.HasValue;
+
+        public string LastUpdatedText =>
+            LastUpdatedUtc.HasValue
+                ? $"Last updated {LastUpdatedUtc.Value.ToLocalTime():g}"
+                : string.Empty;
+
+        public NoteStatisticsViewModel(
+            NoteDatabase noteDatabase,
+            SessionDatabase sessionDatabase,
+            ThemeService themeService,
+            NoteSessionService session,
+            StatisticsCacheService statisticsCache)
         {
             _noteDatabase = noteDatabase;
             _sessionDatabase = sessionDatabase;
             _themeService = themeService;
             _session = session;
+            _statisticsCache = statisticsCache;
 
             SortNoteStatsCommand = new Command<string>(SortNoteStatsByColumn);
             SortSessionStatsCommand = new Command<string>(SortSessionStatsByColumn);
+            RefreshCommand = new Command(() => _ = LoadAsync(forceRefresh: true));
         }
 
         // Expose a debug flag to the view so debug-only UI can be shown/hidden via binding
@@ -88,52 +108,102 @@ namespace musicmate.ViewModels
             }
         }
 
-        public async Task LoadAsync()
+        public async Task LoadAsync(bool forceRefresh = false)
         {
-            Utils.Log($"[NoteStatisticsViewModel] LoadAsync started. IsNoteDatabase={IsNoteDatabase}");
-            IsLoading = true;
+            int loadGeneration = Interlocked.Increment(ref _loadGeneration);
+            var kind = StatisticsCacheService.MapSelectedDatabase(SelectedDatabase);
+            Utils.Log($"[NoteStatisticsViewModel] LoadAsync started. Kind={kind}, forceRefresh={forceRefresh}");
+
+            if (kind == StatisticsDatabaseKind.ChildResults)
+            {
+                NoteStats.Clear();
+                SessionStats.Clear();
+                LastUpdatedUtc = null;
+                IsLoading = false;
+                return;
+            }
+
+            StatisticsDbFingerprint fingerprint;
             try
             {
-                if (IsNoteDatabase)
+                fingerprint = await StatisticsCacheService.GetFingerprintAsync(
+                    kind, _noteDatabase, _sessionDatabase);
+            }
+            catch (Exception ex)
+            {
+                Utils.Log($"[NoteStatisticsViewModel] Fingerprint error: {ex}");
+                IsLoading = true;
+                await ComputeAndApplyAsync(kind, loadGeneration, forceRefresh: true);
+                return;
+            }
+
+            if (!forceRefresh
+                && _statisticsCache.TryGet(kind, out var cached)
+                && cached is not null
+                && StatisticsCacheService.IsValid(cached, fingerprint))
+            {
+                Utils.Log("[NoteStatisticsViewModel] Using valid cache.");
+                ApplyCacheEntry(cached);
+                _ = BackgroundRevalidateAsync(kind, fingerprint, loadGeneration);
+                return;
+            }
+
+            IsLoading = true;
+            await ComputeAndApplyAsync(kind, loadGeneration, forceRefresh);
+        }
+
+        private async Task BackgroundRevalidateAsync(
+            StatisticsDatabaseKind kind,
+            StatisticsDbFingerprint displayedFingerprint,
+            int loadGeneration)
+        {
+            try
+            {
+                var fresh = await Task.Run(() =>
+                    StatisticsCacheService.ComputeAsync(kind, _noteDatabase, _sessionDatabase));
+
+                if (loadGeneration != Volatile.Read(ref _loadGeneration))
+                    return;
+
+                if (fresh.Fingerprint.Matches(displayedFingerprint))
+                    return;
+
+                _statisticsCache.Store(fresh);
+                await MainThread.InvokeOnMainThreadAsync(() =>
                 {
-                    var stats = await _noteDatabase.GetAllAsync();
-                    Utils.Log($"[NoteStatisticsViewModel] Loaded {stats.Count()} Statistics.");
-                    NoteStats.Clear();
-                    foreach (var stat in stats.OrderBy(s => s.PercentCorrect))
-                    {
-                        stat.ContrastingTextColor = _themeService.ContrastingTextColor;
-                        NoteStats.Add(stat);
-                    }
-                    // compute average wrong for display
-                    if (NoteStats.Count > 0)
-                        AverageWrong = NoteStats.Average(n => (double)n.Wrong);
-                    else
-                        AverageWrong = 0.0;
-                    // Clear session stats if switching from session to note
-                    SessionStats.Clear();
-                }
-                else if (IsSessionDatabase)
+                    if (loadGeneration == Volatile.Read(ref _loadGeneration))
+                        ApplyCacheEntry(fresh);
+                });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[NoteStatisticsViewModel] Background revalidate: {ex}");
+            }
+        }
+
+        private async Task ComputeAndApplyAsync(
+            StatisticsDatabaseKind kind,
+            int loadGeneration,
+            bool forceRefresh)
+        {
+            try
+            {
+                if (forceRefresh)
+                    _statisticsCache.Invalidate(kind);
+
+                var entry = await Task.Run(() =>
+                    StatisticsCacheService.ComputeAsync(kind, _noteDatabase, _sessionDatabase));
+
+                if (loadGeneration != Volatile.Read(ref _loadGeneration))
+                    return;
+
+                _statisticsCache.Store(entry);
+                await MainThread.InvokeOnMainThreadAsync(() =>
                 {
-                    var stats = await _sessionDatabase.GetAllAsync();
-                    Utils.Log($"[NoteStatisticsViewModel] Loaded {stats.Count()} session stats.");
-                    SessionStats.Clear();
-                    foreach (var stat in stats)
-                    {
-                        stat.ContrastingTextColor = _themeService.ContrastingTextColor;
-                        SessionStats.Add(stat);
-                        Utils.Log($"SessionStat: Dt={stat.Dt}, Key={stat.Key}, Tune={stat.Tune}, Instrument={stat.Instrument}, Sc={stat.Sc}, Hi={stat.Hi}, Lo={stat.Lo}, Pc={stat.Pc}");
-                        if (stat.Key == null || stat.Tune == null || stat.Instrument == null || stat.Sc == null || stat.Hi == null || stat.Lo == null)
-                            Utils.Log("[WARNING] Null property detected in SessionStat!");
-                    }
-                    // Clear note stats if switching from note to session
-                    NoteStats.Clear();
-                }
-                else
-                {
-                    NoteStats.Clear();
-                    SessionStats.Clear();
-                }
-                Utils.Log("[NoteStatisticsViewModel] LoadAsync completed.");
+                    if (loadGeneration == Volatile.Read(ref _loadGeneration))
+                        ApplyCacheEntry(entry);
+                });
+                Utils.Log("[NoteStatisticsViewModel] LoadAsync completed (computed).");
             }
             catch (Exception ex)
             {
@@ -141,7 +211,44 @@ namespace musicmate.ViewModels
             }
             finally
             {
-                IsLoading = false;
+                if (loadGeneration == Volatile.Read(ref _loadGeneration))
+                    IsLoading = false;
+            }
+        }
+
+        private void ApplyCacheEntry(StatisticsCacheEntry entry)
+        {
+            LastUpdatedUtc = entry.LastComputedUtc;
+
+            if (entry.Kind == StatisticsDatabaseKind.Note && entry.NoteData is not null)
+            {
+                NoteStats.Clear();
+                foreach (var stat in entry.NoteData.Stats)
+                {
+                    stat.ContrastingTextColor = _themeService.ContrastingTextColor;
+                    NoteStats.Add(stat);
+                }
+
+                SessionStats.Clear();
+            }
+            else if (entry.Kind == StatisticsDatabaseKind.Session && entry.SessionData is not null)
+            {
+                SessionStats.Clear();
+                foreach (var stat in entry.SessionData.Stats)
+                {
+                    stat.ContrastingTextColor = _themeService.ContrastingTextColor;
+                    SessionStats.Add(stat);
+                    Utils.Log($"SessionStat: Dt={stat.Dt}, Key={stat.Key}, Tune={stat.Tune}, Instrument={stat.Instrument}, Sc={stat.Sc}, Hi={stat.Hi}, Lo={stat.Lo}, Pc={stat.Pc}");
+                    if (stat.Key == null || stat.Tune == null || stat.Instrument == null || stat.Sc == null || stat.Hi == null || stat.Lo == null)
+                        Utils.Log("[WARNING] Null property detected in SessionStat!");
+                }
+
+                NoteStats.Clear();
+            }
+            else
+            {
+                NoteStats.Clear();
+                SessionStats.Clear();
             }
         }
 

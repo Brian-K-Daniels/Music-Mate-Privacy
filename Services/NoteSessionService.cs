@@ -72,7 +72,10 @@ namespace musicmate.Services
         public NoteSessionService()
         {
             Instrument = _instrument;
-            ApplyAutomaticInstrumentRange();
+            if (!NoteRangeCustomized)
+                ApplyAutomaticInstrumentRange(fullReset: true);
+            else
+                NotifyNoteRangeDerivedPropertiesChanged();
 
             StatusService.Instance.PropertyChanged += (_, e) =>
             {
@@ -87,7 +90,10 @@ namespace musicmate.Services
             if (!FreeKeys.Contains(Key))
                 Key = "C";
 
-            ApplyAutomaticInstrumentRange();
+            if (!NoteRangeCustomized)
+                ApplyAutomaticInstrumentRange(fullReset: true);
+            else
+                NotifyNoteRangeDerivedPropertiesChanged();
         }
         public int SampleRate { get; set; } = 44100;        public int BufferSize { get; set; } = 4096;
         // Add this property to NoteSessionService (near other public properties)  //  2026.04.07 1216  
@@ -702,38 +708,42 @@ namespace musicmate.Services
         public string LowestNote
         {
             get => string.IsNullOrWhiteSpace(_lowestNote) ? "E3" : _lowestNote;
-            set
-            {
-                var normalized = string.IsNullOrWhiteSpace(value) ? "E3" : value;
-                if (_lowestNote != normalized)
-                {
-                    _lowestNote = normalized;
-                    Preferences.Set("musicmate.LowestNote", _lowestNote);
-                    OnPropertyChanged(nameof(LowestNote));
-                    if (IsRandomMode)
-                    {
-                        _ = UpdateRandomSelectedNotesDisplayAsync();
-                    }
-                }
-            }
+            set => SetLowestNote(value);
         }
         public string HighestNote
         {
             get => string.IsNullOrWhiteSpace(_highestNote) ? "C6" : _highestNote;
-            set
-            {
-                var normalized = string.IsNullOrWhiteSpace(value) ? "C6" : value;
-                if (_highestNote != normalized)
-                {
-                    _highestNote = normalized;
-                    Preferences.Set("musicmate.HighestNote", _highestNote);
-                    OnPropertyChanged(nameof(HighestNote));
-                    if (IsRandomMode)
-                    {
-                        _ = UpdateRandomSelectedNotesDisplayAsync();
-                    }
-                }
-            }
+            set => SetHighestNote(value);
+        }
+
+        private void SetLowestNote(string? value, bool fromUser = true)
+        {
+            var normalized = string.IsNullOrWhiteSpace(value) ? "E3" : value;
+            if (_lowestNote == normalized) return;
+
+            _lowestNote = normalized;
+            Preferences.Set("musicmate.LowestNote", _lowestNote);
+            if (fromUser && !_suppressNoteRangeCustomization)
+                NoteRangeCustomized = true;
+            OnPropertyChanged(nameof(LowestNote));
+            OnPropertyChanged(nameof(AutomaticNoteRangeDisplay));
+            if (IsRandomMode)
+                _ = UpdateRandomSelectedNotesDisplayAsync();
+        }
+
+        private void SetHighestNote(string? value, bool fromUser = true)
+        {
+            var normalized = string.IsNullOrWhiteSpace(value) ? "C6" : value;
+            if (_highestNote == normalized) return;
+
+            _highestNote = normalized;
+            Preferences.Set("musicmate.HighestNote", _highestNote);
+            if (fromUser && !_suppressNoteRangeCustomization)
+                NoteRangeCustomized = true;
+            OnPropertyChanged(nameof(HighestNote));
+            OnPropertyChanged(nameof(AutomaticNoteRangeDisplay));
+            if (IsRandomMode)
+                _ = UpdateRandomSelectedNotesDisplayAsync();
         }
         public int CorrectThreshold
         {
@@ -770,12 +780,59 @@ namespace musicmate.Services
             => AvailableInstrumentMidis
                 .Select(midi => MidiToNoteName(midi, KeyUsesFlats(Key)))
                 .ToArray();
-        public void ApplyAutomaticInstrumentRange(int? levelOverride = null)
+        public void ApplyAutomaticInstrumentRange(int? levelOverride = null, bool fullReset = false)
         {
             int level = levelOverride ?? ChildLevel;
-            var (lowest, highest) = InstrumentCatalog.GetAutomaticRange(CurrentInstrumentProfile, level);
-            LowestNote = string.IsNullOrWhiteSpace(lowest) ? "E3" : lowest;
-            HighestNote = string.IsNullOrWhiteSpace(highest) ? "C6" : highest;
+            var (autoLowest, autoHighest) = InstrumentCatalog.GetAutomaticRange(CurrentInstrumentProfile, level);
+            string autoLow = string.IsNullOrWhiteSpace(autoLowest) ? "E3" : autoLowest;
+            string autoHigh = string.IsNullOrWhiteSpace(autoHighest) ? "C6" : autoHighest;
+
+            if (fullReset)
+                ClearNoteRangeCustomization();
+
+            string newLow;
+            string newHigh;
+            if (fullReset)
+            {
+                newLow = autoLow;
+                newHigh = autoHigh;
+            }
+            else
+            {
+                int autoLowMidi = NoteNameToMidi(autoLow);
+                int autoHighMidi = NoteNameToMidi(autoHigh);
+                int curLowMidi = NoteNameToMidi(LowestNote);
+                int curHighMidi = NoteNameToMidi(HighestNote);
+                bool preferFlats = KeyUsesFlats(Key);
+
+                int newLowMidi = curLowMidi < autoLowMidi ? curLowMidi : autoLowMidi;
+                int newHighMidi = curHighMidi > autoHighMidi ? curHighMidi : autoHighMidi;
+                if (newLowMidi > newHighMidi)
+                {
+                    newLowMidi = autoLowMidi;
+                    newHighMidi = autoHighMidi;
+                }
+
+                newLow = MidiToNoteName(newLowMidi, preferFlats);
+                newHigh = MidiToNoteName(newHighMidi, preferFlats);
+            }
+
+            _suppressNoteRangeCustomization = true;
+            try
+            {
+                SetLowestNote(newLow, fromUser: false);
+                SetHighestNote(newHigh, fromUser: false);
+            }
+            finally
+            {
+                _suppressNoteRangeCustomization = false;
+            }
+
+            NotifyNoteRangeDerivedPropertiesChanged();
+        }
+
+        private void NotifyNoteRangeDerivedPropertiesChanged()
+        {
             OnPropertyChanged(nameof(AutomaticNoteRangeDisplay));
             OnPropertyChanged(nameof(AvailableInstrumentMidis));
             OnPropertyChanged(nameof(AvailableInstrumentNoteNames));
@@ -862,6 +919,25 @@ namespace musicmate.Services
 
             return result.ToArray();
         }
+        private const string PrefNoteRangeCustomizedKey = "musicmate.NoteRangeCustomized";
+        private bool _noteRangeCustomized = Preferences.Get(PrefNoteRangeCustomizedKey, false);
+        private bool _suppressNoteRangeCustomization;
+
+        /// <summary>When true, <see cref="LowestNote"/> / <see cref="HighestNote"/> were set manually and are not fully auto-managed.</summary>
+        public bool NoteRangeCustomized
+        {
+            get => _noteRangeCustomized;
+            private set
+            {
+                if (_noteRangeCustomized == value) return;
+                _noteRangeCustomized = value;
+                Preferences.Set(PrefNoteRangeCustomizedKey, value);
+                OnPropertyChanged(nameof(NoteRangeCustomized));
+            }
+        }
+
+        public void ClearNoteRangeCustomization() => NoteRangeCustomized = false;
+
         private const string PrefMinCorrectCountKey = "musicmate.MinCorrectCount";
         private int _minCorrectCount = Preferences.Get(PrefMinCorrectCountKey, 3);
         private const string PrefOmitMsAvgThresholdKey = "musicmate.OmitMsAvgThreshold";
@@ -929,7 +1005,7 @@ namespace musicmate.Services
                 if (_instrument == normalized) return;
                 _instrument = normalized;
                 Preferences.Set(PrefInstrumentKey, _instrument);
-                ApplyAutomaticInstrumentRange();
+                ApplyAutomaticInstrumentRange(fullReset: true);
                 OnPropertyChanged(nameof(Instrument));
                 OnPropertyChanged(nameof(InstrumentDisplayName));
                 OnPropertyChanged(nameof(InstrumentKey));
@@ -952,7 +1028,7 @@ namespace musicmate.Services
                 var clamped = Math.Clamp(value, 0, 100);
                 if (_childLevel == clamped) return;
                 _childLevel = clamped;
-                ApplyAutomaticInstrumentRange();
+                ApplyAutomaticInstrumentRange(fullReset: false);
                 OnPropertyChanged(nameof(ChildLevel));
             }
         }

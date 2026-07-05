@@ -8,18 +8,24 @@ namespace musicmate.Services
     /// </summary>
     public static class PlayModePickerOptions
     {
-        public const string FixedTune = "Fixed Tune";
+        public const string HalfThroughSixteenthNotes = "Half through Sixteenth Notes";
+        internal const string LegacyFixedTune = "Fixed Tune";
         public const string RandomMelodic = NoteSessionService.ScaleSelectionRandom;
         public const string Tuner = "Tuner";
 
-        /// <summary>Other picker: By Level, Fixed Tune, Random, Tuner.</summary>
+        /// <summary>Other picker: By Level, Random, Tuner.</summary>
         public static readonly string[] OtherOptions =
         [
             NoteSessionService.ScaleSelectionByLevel,
-            FixedTune,
             RandomMelodic,
             Tuner
         ];
+
+        /// <summary>Tunes picker: rhythm-note exercise first, then library tunes.</summary>
+        public static string[] BuildTunePickerOptions()
+            => new[] { HalfThroughSixteenthNotes }
+                .Concat(TuneLibrary.All.Select(t => t.Title))
+                .ToArray();
 
         /// <summary>Scales picker: named scales only.</summary>
         public static string[] NamedScaleOptions => NoteSessionService.ScalePickerOptions;
@@ -42,7 +48,10 @@ namespace musicmate.Services
             ScaleSelectionMode scaleSelectionMode,
             string? selectedTunePreference = null)
         {
-            if (layoutTestTuneEnabled || tune == Tuner)
+            if (layoutTestTuneEnabled || IsRhythmNoteTuneSelection(selectedTunePreference))
+                return false;
+
+            if (tune == Tuner)
                 return true;
 
             if (tune == "Practice Tune" && IsUserSelectedPracticeTuneTitle(selectedTunePreference))
@@ -57,6 +66,10 @@ namespace musicmate.Services
             return tune == "Selected Scale" && isRandomMode;
         }
 
+        public static bool IsRhythmNoteTuneSelection(string? selectedTunePreference)
+            => string.Equals(selectedTunePreference, HalfThroughSixteenthNotes, StringComparison.Ordinal)
+               || string.Equals(selectedTunePreference, LegacyFixedTune, StringComparison.Ordinal);
+
         /// <summary>True when the user explicitly chose a tune from the Tunes picker.</summary>
         public static bool IsUserSelectedPracticeTuneTitle(string? selectedTunePreference)
             => !string.IsNullOrEmpty(selectedTunePreference)
@@ -69,8 +82,22 @@ namespace musicmate.Services
                 return false;
             if (IsUserSelectedPracticeTuneTitle(selectedTunePreference))
                 return false;
-            return selectedTunePreference is not ("Random" or "Tuner" or "Fixed Tune" or "Selected Scale"
+            if (IsRhythmNoteTuneSelection(selectedTunePreference))
+                return false;
+            return selectedTunePreference is not ("Random" or "Tuner" or "Selected Scale"
                 or NoteSessionService.ScaleSelectionByLevel);
+        }
+
+        public static string NormalizeRhythmNoteTunePreference(string? value)
+            => string.Equals(value, LegacyFixedTune, StringComparison.Ordinal)
+                ? HalfThroughSixteenthNotes
+                : value ?? string.Empty;
+
+        public static void MigrateLegacySelectedTunePreference()
+        {
+            var saved = Preferences.Default.Get<string?>("SelectedTune", null);
+            if (string.Equals(saved, LegacyFixedTune, StringComparison.Ordinal))
+                Preferences.Default.Set("SelectedTune", HalfThroughSixteenthNotes);
         }
 
         public static string ResolveOtherSelection(NoteSessionService session, bool layoutTestTuneEnabled)
@@ -84,8 +111,6 @@ namespace musicmate.Services
             string tune,
             bool isRandomMode)
         {
-            if (layoutTestTuneEnabled)
-                return FixedTune;
             if (tune == Tuner)
                 return Tuner;
             if (isRandomMode)
@@ -126,16 +151,22 @@ namespace musicmate.Services
                 session.Tune = "Selected Scale";
                 session.IsRandomMode = true;
                 persistSelectedTune(RandomMelodic);
-                return;
             }
+        }
 
-            if (selected == FixedTune)
-            {
-                session.IsRandomMode = false;
-                if (session.Tune == Tuner)
-                    session.Tune = "Selected Scale";
-                persistSelectedTune(FixedTune);
-            }
+        /// <summary>
+        /// Applies Tunes → Half through Sixteenth Notes (legacy Fixed Tune behavior).
+        /// </summary>
+        public static void ApplyRhythmNoteTuneSelection(
+            NoteSessionService session,
+            Action<string>? persistSelectedTune = null)
+        {
+            persistSelectedTune ??= value => Preferences.Default.Set("SelectedTune", value);
+
+            session.IsRandomMode = false;
+            if (session.Tune == Tuner)
+                session.Tune = "Selected Scale";
+            persistSelectedTune(HalfThroughSixteenthNotes);
         }
 
         /// <summary>
@@ -143,6 +174,8 @@ namespace musicmate.Services
         /// </summary>
         public static void MigrateLegacySessionSelection(NoteSessionService session)
         {
+            MigrateLegacySelectedTunePreference();
+
             if (session.ScaleSelectionMode != ScaleSelectionMode.Random || session.IsRandomMode)
                 return;
 

@@ -32,6 +32,7 @@ namespace musicmate.Pages
             base.OnAppearing();
             _viewModel.RefreshCurrentSessionMetrics();
             _viewModel.LoadCompositionPercentsFromSession();
+            _viewModel.RefreshStorageInfo();
             var mainLayout = this.FindByName<VerticalStackLayout>("AdvancedMainLayout");
         }
 

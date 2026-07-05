@@ -11,7 +11,7 @@ public class PlayModePickerOptionsTests
 
         Assert.DoesNotContain(NoteSessionService.ScaleSelectionByLevel, options);
         Assert.DoesNotContain(NoteSessionService.ScaleSelectionRandom, options);
-        Assert.DoesNotContain(PlayModePickerOptions.FixedTune, options);
+        Assert.DoesNotContain(PlayModePickerOptions.HalfThroughSixteenthNotes, options);
         Assert.DoesNotContain(PlayModePickerOptions.Tuner, options);
         Assert.Contains("Major", options);
         Assert.Contains("Natural Minor", options);
@@ -22,8 +22,21 @@ public class PlayModePickerOptionsTests
     public void OtherOptions_ContainsExpectedItemsInOrder()
     {
         Assert.Equal(
-            new[] { "By Level", "Fixed Tune", "Random", "Tuner" },
+            new[] { "By Level", "Random", "Tuner" },
             PlayModePickerOptions.OtherOptions);
+
+        Assert.DoesNotContain(PlayModePickerOptions.HalfThroughSixteenthNotes, PlayModePickerOptions.OtherOptions);
+        Assert.DoesNotContain("Fixed Tune", PlayModePickerOptions.OtherOptions);
+    }
+
+    [Fact]
+    public void TunePickerOptions_ContainsRhythmNotesFirstThenLibraryTunes()
+    {
+        var options = PlayModePickerOptions.BuildTunePickerOptions();
+
+        Assert.Equal(PlayModePickerOptions.HalfThroughSixteenthNotes, options[0]);
+        Assert.Contains("Mary Had a Little Lamb", options);
+        Assert.Contains("Ode to Joy", options);
     }
 
     [Fact]
@@ -57,13 +70,20 @@ public class PlayModePickerOptionsTests
     }
 
     [Fact]
-    public void UsesOtherPicker_ForTunerAndFixedTuneLayout()
+    public void UsesOtherPicker_ForTunerAndRhythmNotesTune()
     {
-        Assert.True(PlayModePickerOptions.UsesOtherPicker(
+        Assert.False(PlayModePickerOptions.UsesOtherPicker(
             layoutTestTuneEnabled: true,
             tune: "Selected Scale",
             isRandomMode: false,
             scaleSelectionMode: ScaleSelectionMode.Named));
+
+        Assert.False(PlayModePickerOptions.UsesOtherPicker(
+            layoutTestTuneEnabled: false,
+            tune: "Selected Scale",
+            isRandomMode: false,
+            scaleSelectionMode: ScaleSelectionMode.Named,
+            selectedTunePreference: PlayModePickerOptions.HalfThroughSixteenthNotes));
 
         Assert.True(PlayModePickerOptions.UsesOtherPicker(
             layoutTestTuneEnabled: false,
@@ -95,19 +115,11 @@ public class PlayModePickerOptionsTests
                 layoutTestTuneEnabled: false,
                 tune: PlayModePickerOptions.Tuner,
                 isRandomMode: false));
-
-        Assert.Equal(
-            PlayModePickerOptions.FixedTune,
-            PlayModePickerOptions.ResolveOtherSelection(
-                layoutTestTuneEnabled: true,
-                tune: "Selected Scale",
-                isRandomMode: false));
     }
 
     [Fact]
     public void UsesOtherPicker_ForCompositionAssignedTunesAndArpeggios()
     {
-        // By Level composition may assign Practice Tune internally; picker stays on Other.
         Assert.True(PlayModePickerOptions.UsesOtherPicker(
             layoutTestTuneEnabled: false,
             tune: "Practice Tune",
@@ -122,7 +134,6 @@ public class PlayModePickerOptionsTests
             scaleSelectionMode: ScaleSelectionMode.ByLevel,
             selectedTunePreference: "Selected Scale"));
 
-        // User explicitly picked from Tunes/Arpeggios pickers — show those pickers instead.
         Assert.False(PlayModePickerOptions.UsesOtherPicker(
             layoutTestTuneEnabled: false,
             tune: "Practice Tune",
@@ -166,5 +177,39 @@ public class PlayModePickerOptionsTests
             Assert.True(PlayModePickerOptions.IsOtherOption(option));
 
         Assert.False(PlayModePickerOptions.IsOtherOption("Major"));
+        Assert.False(PlayModePickerOptions.IsOtherOption(PlayModePickerOptions.HalfThroughSixteenthNotes));
+    }
+
+    [Fact]
+    public void NormalizeRhythmNoteTunePreference_MigratesLegacyFixedTune()
+    {
+        Assert.Equal(
+            PlayModePickerOptions.HalfThroughSixteenthNotes,
+            PlayModePickerOptions.NormalizeRhythmNoteTunePreference("Fixed Tune"));
+    }
+
+    [Fact]
+    public void IsRhythmNoteTuneSelection_AcceptsLegacyAndNewNames()
+    {
+        Assert.True(PlayModePickerOptions.IsRhythmNoteTuneSelection(
+            PlayModePickerOptions.HalfThroughSixteenthNotes));
+        Assert.True(PlayModePickerOptions.IsRhythmNoteTuneSelection("Fixed Tune"));
+        Assert.False(PlayModePickerOptions.IsRhythmNoteTuneSelection("Mary Had a Little Lamb"));
+    }
+
+    [Fact]
+    public void RhythmNoteTuneSelection_IsUserExplicitPlayMode()
+    {
+        Assert.True(PracticeCompositionSelector.IsUserExplicitPlayMode(
+            "Selected Scale",
+            ScaleSelectionMode.ByLevel,
+            isRandomMode: false,
+            selectedTunePreference: PlayModePickerOptions.HalfThroughSixteenthNotes));
+
+        Assert.True(PracticeCompositionSelector.IsUserExplicitPlayMode(
+            "Selected Scale",
+            ScaleSelectionMode.ByLevel,
+            isRandomMode: false,
+            selectedTunePreference: "Fixed Tune"));
     }
 }

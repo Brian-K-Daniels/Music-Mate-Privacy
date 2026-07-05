@@ -39,6 +39,14 @@ namespace musicmate.Services
             return _db.Table<NoteStat>().ToListAsync();
         }
 
+        /// <summary>Row count plus total attempts sum — used by statistics cache validation.</summary>
+        public async Task<StatisticsDbFingerprint> GetStatisticsFingerprintAsync()
+        {
+            var stats = await _db.Table<NoteStat>().ToListAsync();
+            int revision = stats.Sum(s => s.Correct + s.Wrong);
+            return new StatisticsDbFingerprint(stats.Count, revision);
+        }
+
         public Task<NoteStat> GetByWrittenNameAsync(string writtenName)
         {
             return _db.Table<NoteStat>().FirstOrDefaultAsync(n => n.WrittenName == writtenName);

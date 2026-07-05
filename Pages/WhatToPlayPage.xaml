@@ -74,8 +74,9 @@
       <Setter Property="Background" Value="#8B4513" />
       <Setter Property="Stroke" Value="Black" />
       <Setter Property="StrokeThickness" Value="2" />
-      <Setter Property="Padding" Value="4,6" />
-      <Setter Property="MinimumHeightRequest" Value="52" />
+      <Setter Property="Padding" Value="6,4" />
+      <Setter Property="MinimumHeightRequest" Value="56" />
+      <Setter Property="HorizontalOptions" Value="Fill" />
       <Setter Property="StrokeShape">
         <Setter.Value>
           <RoundRectangle CornerRadius="8" />
@@ -83,13 +84,14 @@
       </Setter>
     </Style>
     <Style x:Key="WtpPlayModePicker" TargetType="Picker">
-      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontSize" Value="12" />
       <Setter Property="TextColor" Value="#000000" />
       <Setter Property="BackgroundColor" Value="Transparent" />
       <Setter Property="VerticalOptions" Value="Center" />
       <Setter Property="HorizontalOptions" Value="Fill" />
       <Setter Property="HorizontalTextAlignment" Value="Center" />
       <Setter Property="Margin" Value="2,0" />
+      <Setter Property="MinimumHeightRequest" Value="40" />
     </Style>
   </ContentPage.Resources>
 
@@ -100,97 +102,17 @@
       <VerticalStackLayout Spacing="12"
                           Padding="0,4,0,32">
 
-      <!-- Instrument | Key | Concert key -->
-      <Grid ColumnDefinitions="*,*,*"
-            Margin="8,4,8,0">
-
-        <!-- Instrument -->
-        <VerticalStackLayout Grid.Column="0"
-                             HorizontalOptions="Center"
-                             VerticalOptions="Center"
-                             Spacing="2">
-          <Label Text="Instrument"
-                 FontSize="11"
-                 TextColor="#333333"
-                 HorizontalOptions="Center" />
-          <Border Style="{StaticResource WtpBrownBox}">
-            <Grid WidthRequest="160">
-              <Picker x:Name="InstrumentPicker"
-                      SelectedIndexChanged="InstrumentPicker_SelectedIndexChanged"
-                      Unfocused="InstrumentPicker_Unfocused"
-                      HeightRequest="28"
-                      FontSize="11"
-                      TextColor="White"
-                      BackgroundColor="#2C2C2C"
-                      VerticalOptions="Fill"
-                      HorizontalOptions="Fill"
-                      IsEnabled="True"
-                      InputTransparent="False"
-                      IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsInstrumentPickerVisible}" />
-              <Border BackgroundColor="White" Stroke="#8B4513" StrokeThickness="2"
-                      StrokeShape="RoundRectangle 8"
-                      Padding="8,2" HeightRequest="28"
-                      VerticalOptions="Center" HorizontalOptions="Fill"
-                      IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsInstrumentLabelVisible}">
-                <Label x:Name="InstrumentPickerOverlay"
-                       Text="{Binding Source={x:Reference whatToPlayPage}, Path=SelectedInstrumentShort}"
-                       VerticalOptions="Center"
-                       HorizontalOptions="Fill"
-                       Padding="10,0"
-                       FontSize="11"
-                       TextColor="Black">
-                  <Label.GestureRecognizers>
-                    <TapGestureRecognizer Tapped="OnInstrumentLabelTapped" />
-                  </Label.GestureRecognizers>
-                </Label>
-              </Border>
-            </Grid>
-          </Border>
-        </VerticalStackLayout>
-
-        <!-- Key -->
-        <VerticalStackLayout Grid.Column="1"
-                             HorizontalOptions="Center"
-                             VerticalOptions="Center"
-                             Spacing="2">
-          <Label x:Name="KeyLabel"
-                 Text="Key"
-                 FontSize="11"
-                 TextColor="#333333"
-                 HorizontalOptions="Center" />
-          <Border x:Name="KeyBorder" Style="{StaticResource WtpBrownBox}">
-            <Picker x:Name="KeyPicker"
-                    WidthRequest="50"
-                    HeightRequest="28"
-                    FontSize="11"
-                    TextColor="#000000"
-                    BackgroundColor="White"
-                    VerticalOptions="Fill"
-                    HorizontalOptions="Fill" />
-          </Border>
-        </VerticalStackLayout>
-
-        <!-- Concert key label -->
-        <Label x:Name="ConcertKeyLabel"
-               Grid.Column="2"
-               FontSize="11"
-               TextColor="#333333"
-               HorizontalOptions="Center"
-               VerticalOptions="Center" />
-
-      </Grid>
-
       <!-- Tunes | Scales | Arpeggios | Other -->
       <VerticalStackLayout Spacing="8"
-                           HorizontalOptions="Center"
-                           Margin="8,0">
+                           HorizontalOptions="Fill"
+                           Margin="12,8,12,0">
         <Grid ColumnDefinitions="*,*"
               RowDefinitions="Auto,Auto"
-              ColumnSpacing="12"
+              ColumnSpacing="10"
               RowSpacing="10"
-              WidthRequest="380">
+              HorizontalOptions="Fill">
           <!-- Tunes -->
-          <VerticalStackLayout Grid.Row="0" Grid.Column="0" Spacing="4">
+          <VerticalStackLayout Grid.Row="0" Grid.Column="0" Spacing="4" HorizontalOptions="Fill">
             <Label Text="Tunes"
                    FontSize="13"
                    FontAttributes="Bold"
@@ -206,7 +128,7 @@
           </VerticalStackLayout>
 
           <!-- Scales -->
-          <VerticalStackLayout Grid.Row="0" Grid.Column="1" Spacing="4">
+          <VerticalStackLayout Grid.Row="0" Grid.Column="1" Spacing="4" HorizontalOptions="Fill">
             <Label Text="Scales"
                    FontSize="13"
                    FontAttributes="Bold"
@@ -222,7 +144,7 @@
           </VerticalStackLayout>
 
           <!-- Arpeggios -->
-          <VerticalStackLayout Grid.Row="1" Grid.Column="0" Spacing="4">
+          <VerticalStackLayout Grid.Row="1" Grid.Column="0" Spacing="4" HorizontalOptions="Fill">
             <Label Text="Arpeggios"
                    FontSize="13"
                    FontAttributes="Bold"
@@ -238,7 +160,7 @@
           </VerticalStackLayout>
 
           <!-- Other -->
-          <VerticalStackLayout Grid.Row="1" Grid.Column="1" Spacing="4">
+          <VerticalStackLayout Grid.Row="1" Grid.Column="1" Spacing="4" HorizontalOptions="Fill">
             <Label Text="Other"
                    FontSize="13"
                    FontAttributes="Bold"
@@ -295,20 +217,10 @@
                   Clicked="OnAutoRepeatSameClicked" />
         </Grid>
 
-        <Button Text="Background Color"
-                Style="{StaticResource WtpBrownButton}"
-                HeightRequest="44"
-                HorizontalOptions="Fill"
-                Clicked="OnColorButtonClicked" />
-
-      </VerticalStackLayout>
+        </VerticalStackLayout>
 
       </VerticalStackLayout>
     </ScrollView>
-
-    <!-- Color picker dialog overlay (full-page, above everything) -->
-    <controls:ColorPickerDialog x:Name="ColorPickerDialog"
-                                IsVisible="False" />
 
   </Grid>
 

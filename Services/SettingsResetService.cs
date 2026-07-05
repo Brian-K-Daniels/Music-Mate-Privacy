@@ -49,7 +49,7 @@ namespace musicmate.Services
             // [ResetOptionsTest] Tune is a mode tag ("Selected Scale"), not a scale name.
             _session.Tune = "Selected Scale";
             System.Diagnostics.Debug.WriteLine($"[ResetOptionsTest] After factory reset: Tune={_session.Tune} Scale={_session.SelectedScale} Key={_session.Key} AccPct={_session.AccidentalPercent}");
-            _session.ApplyAutomaticInstrumentRange();
+            _session.ApplyAutomaticInstrumentRange(fullReset: true);
             _session.ResetAdvancedDetectionDefaults();
             _session.ResetPracticeCompositionDefaults();
 

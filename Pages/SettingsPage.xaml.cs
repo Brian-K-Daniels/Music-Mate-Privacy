@@ -1,6 +1,7 @@
 using System;
 using musicmate.Utilities;
 using Microsoft.Maui.Controls;
+using Microsoft.Maui.Storage;
 using musicmate.Services;
 using musicmate.ViewModels;
 
@@ -30,8 +31,6 @@ namespace musicmate.Pages
             catch { }
         }
 
-        // ── Accidental % slider ───────────────────────────────────────────────
-
         private async void                      OnAccidentalPercentDragCompleted(object? sender, EventArgs e)
         {
             if (_premiumDialogOpen) return;
@@ -54,11 +53,8 @@ namespace musicmate.Pages
         {
             _orientation?.ForceLandscape();
             base.OnAppearing();
-            _viewModel?.RefreshStorageInfo();
             _ = CheckPremiumStatusAsync();
         }
-
-        // ── Highest note picker ───────────────────────────────────────────────
 
         private async void                      OnHighestNotePickerChangedWithPrompt(object? sender, EventArgs e)
         {
@@ -92,8 +88,6 @@ namespace musicmate.Pages
             _viewModel.HighestNote = selectedNote;
         }
 
-        // ── Lowest note picker ────────────────────────────────────────────────
-
         private async void                      OnLowestNotePickerChangedWithPrompt(object? sender, EventArgs e)
         {
             var picker = LowestNotePicker;
@@ -126,6 +120,11 @@ namespace musicmate.Pages
             _viewModel.LowestNote = selectedNote;
         }
 
+        private void                            OnBackgroundColorClicked(object? sender, EventArgs e)
+        {
+            ColorPickerDialog.Show(_themeService.PanelBackgroundColor);
+        }
+
         private async void                      OnNavigatePracticeClicked(object sender, EventArgs e)
         {
             await Shell.Current.GoToAsync("//MusicPage");
@@ -152,6 +151,12 @@ namespace musicmate.Pages
             _viewModel.AutoStart = _session.AutoStart;
             _viewModel.MasteredMethod = _session.MasteredMethod;
             _viewModel.StreakCrit = _session.StreakCrit;
+
+            ColorPickerDialog.ColorPicked += (_, color) =>
+            {
+                _themeService.PanelBackgroundColor = color;
+                Preferences.Default.Set("StaffPanelColor", color.ToHex());
+            };
 
             var notes = _viewModel.WhiteKeyNoteNames?.ToList();
             if (notes != null)

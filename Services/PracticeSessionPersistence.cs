@@ -142,6 +142,7 @@ namespace musicmate.Services
             var stat = BuildSessionStat(session);
             await sessionDb.InsertAsync(stat);
             await sessionDb.PruneToSizeLimitAsync(maxSessionDbSizeBytes);
+            ServiceHelper.GetService<StatisticsCacheService>()?.InvalidateSessionStats();
 
             Utils.Log($"[LevelUpDebug] _session.ChildLevel={session.ChildLevel}, sessionResultDb null?={sessionResultDb == null}");
             if (session.ChildLevel <= 0)

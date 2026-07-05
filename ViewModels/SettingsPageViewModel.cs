@@ -37,7 +37,7 @@ namespace musicmate.ViewModels
         public const int DefaultCorrectThreshold = 95;
         public const int DefaultMinCorrectCount = 6;
         public const int DefaultOmitMsAvg = 400;
-        public const bool DefaultAutoStart = false;
+        public const bool DefaultAutoStart = true;
         public const bool DefaultCollectNote = true;
         public const bool DefaultCollectSession = true;
         public const int DefaultMaxSessionDbMb = 50;
@@ -392,14 +392,22 @@ namespace musicmate.ViewModels
         private int _omitMsAvgThreshold = Preferences.Get("musicmate.OmitMsAvgThreshold", 0);
         public int OmitMsAvgThreshold
         {
-            get => _omitMsAvgThreshold;
+            get => _session?.OmitMsAvgThreshold ?? _omitMsAvgThreshold;
             set
             {
                 var clamped = Math.Clamp(value, 0, 5000);
-                if (_omitMsAvgThreshold == clamped) return;
-                _omitMsAvgThreshold = clamped;
-                Preferences.Set("musicmate.OmitMsAvgThreshold", clamped);
-                OnPropertyChanged(nameof(OmitMsAvgThreshold));
+                if ((_session?.OmitMsAvgThreshold ?? _omitMsAvgThreshold) == clamped) return;
+                if (_session != null)
+                {
+                    _session.OmitMsAvgThreshold = clamped;
+                    OnPropertyChanged(nameof(OmitMsAvgThreshold));
+                }
+                else
+                {
+                    _omitMsAvgThreshold = clamped;
+                    Preferences.Set("musicmate.OmitMsAvgThreshold", clamped);
+                    OnPropertyChanged(nameof(OmitMsAvgThreshold));
+                }
             }
         }
 
@@ -592,7 +600,6 @@ namespace musicmate.ViewModels
         // ── Statistics Collection ─────────────────────────────────────────────
         const string KeyCollectNote = "CollectNoteStats";
         const string KeyCollectSession = "CollectSessionStats";
-        const string KeyMaxSessionDbMb = "MaxSessionDbSizeMb";
 
         private bool _collectNoteStats = Preferences.Default.Get("CollectNoteStats", true);
         public bool CollectNoteStats
@@ -621,21 +628,6 @@ namespace musicmate.ViewModels
         }
 
 
-        private double _maxSessionDbSizeMb = Preferences.Default.Get("MaxSessionDbSizeMb", 50);
-        public double MaxSessionDbSizeMb
-        {
-            get => _maxSessionDbSizeMb;
-            set
-            {
-                if (_maxSessionDbSizeMb == value) return;
-                _maxSessionDbSizeMb = value;
-                Preferences.Default.Set(KeyMaxSessionDbMb, (int)value);
-                OnPropertyChanged(nameof(MaxSessionDbSizeMb));
-                OnPropertyChanged(nameof(MaxSessionDbSizeDisplay));
-            }
-        }
-        public string MaxSessionDbSizeDisplay => $"Max Session DB size: {(int)MaxSessionDbSizeMb} MB";
-
         // ── Rolling per-note attempt history limit ────────────────────────────
         // Persisted as "MaxAttemptsPerNote" in app preferences.
         // Default = 100.  Grouping key = WrittenNoteName + Instrument.
@@ -645,67 +637,13 @@ namespace musicmate.ViewModels
             get => _maxAttemptsPerNote;
             set
             {
-                var clamped = Math.Max(10, Math.Min(1000, value));
+                var clamped = Math.Clamp(value, 0, 1000);
                 if (_maxAttemptsPerNote == clamped) return;
                 _maxAttemptsPerNote = clamped;
-                // Persist so NoteAttemptDatabase.SaveAttemptAsync picks up the new limit immediately.
                 Preferences.Default.Set("MaxAttemptsPerNote", clamped);
+                CollectNoteStats = clamped > 0;
                 OnPropertyChanged(nameof(MaxAttemptsPerNote));
             }
-        }
-
-        // ── Storage info (read-only, refreshed on page appear) ────────────────
-        private double _sessionDbSizeMb;
-        public double SessionDbSizeMb
-        {
-            get => _sessionDbSizeMb;
-            private set { _sessionDbSizeMb = value; OnPropertyChanged(nameof(SessionDbSizeMb)); OnPropertyChanged(nameof(MemoryUsageDisplay)); }
-        }
-
-        private double _availableStorageMb = 500;
-        public double AvailableStorageMb
-        {
-            get => _availableStorageMb;
-            private set { _availableStorageMb = value; OnPropertyChanged(nameof(AvailableStorageMb)); OnPropertyChanged(nameof(MemoryUsageDisplay)); }
-        }
-
-        public string MemoryUsageDisplay =>
-            $"Memory usage:   Session Database {SessionDbSizeMb:F4} MB   Available {AvailableStorageMb:N0} MB";
-
-        public void RefreshStorageInfo()
-        {
-            try
-            {
-                var sessionDb = ServiceHelper.GetService<SessionDatabase>();
-                var dbPath = sessionDb?.DatabasePath ?? string.Empty;
-
-                long totalSize = 0;
-
-                // Main database file
-                if (File.Exists(dbPath))
-                    totalSize += new System.IO.FileInfo(dbPath).Length;
-
-                // Include WAL file (Write-Ahead Log) for SQLite databases
-                var walPath = dbPath + "-wal";
-                if (File.Exists(walPath))
-                    totalSize += new System.IO.FileInfo(walPath).Length;
-
-                // Include SHM file (Shared Memory) for SQLite databases
-                var shmPath = dbPath + "-shm";
-                if (File.Exists(shmPath))
-                    totalSize += new System.IO.FileInfo(shmPath).Length;
-
-                SessionDbSizeMb = totalSize / 1_048_576.0;
-
-                var drive = new System.IO.DriveInfo(FileSystem.AppDataDirectory);
-                var freeMb = drive.AvailableFreeSpace / 1_048_576.0;
-                AvailableStorageMb = freeMb;
-
-                // Clamp the slider value so it doesn't exceed the new maximum
-                if (_maxSessionDbSizeMb > freeMb)
-                    MaxSessionDbSizeMb = freeMb;
-            }
-            catch { }
         }
 
         /// <summary>Resets all settings to their factory defaults.</summary>
@@ -730,7 +668,7 @@ namespace musicmate.ViewModels
             StreakCrit = 3;
             CollectNoteStats = DefaultCollectNote;
             CollectSessionStats = DefaultCollectSession;
-            MaxSessionDbSizeMb = DefaultMaxSessionDbMb;
+            MaxAttemptsPerNote = 100;
             SelectedScale = DefaultTune;  // DefaultTune = "Major" is correct for SelectedScale
             if (_session != null)
             {
@@ -738,7 +676,7 @@ namespace musicmate.ViewModels
                 _session.Key = DefaultKey;
                 // [ResetOptionsTest] Tune must be a mode name ("Selected Scale"), not a scale name.
                 _session.Tune = "Selected Scale";
-                _session.ApplyAutomaticInstrumentRange();
+                _session.ApplyAutomaticInstrumentRange(fullReset: true);
                 _session.ResetAdvancedDetectionDefaults();
                 _session.ResetPracticeCompositionDefaults();
             }

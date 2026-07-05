@@ -697,9 +697,12 @@ namespace musicmate.Drawables
                 upperNoteLayouts, upperBarLayouts,
                 safeLeft, safeRight, layoutRightLimit, upperStaffMargin);
 
-            DrawStaffLinesAndBars(canvas, ink, lowerTop, lowerMid, lowerBot,
-                lowerNoteLayouts, lowerBarLayouts,
-                safeLeft, safeRight, layoutRightLimit, lowerStaffMargin);
+            if (_session.Tune != "Tuner")
+            {
+                DrawStaffLinesAndBars(canvas, ink, lowerTop, lowerMid, lowerBot,
+                    lowerNoteLayouts, lowerBarLayouts,
+                    safeLeft, safeRight, layoutRightLimit, lowerStaffMargin);
+            }
         }
 
         private void DrawBothStaffsHeaderChrome(
@@ -708,8 +711,11 @@ namespace musicmate.Drawables
             float lowerTop, float lowerMid, float lowerBot)
         {
             DrawStaffHeaderChrome(canvas, ink, upperTop, upperMid, upperBot, drawKeyAndTimeSig: true);
-            DrawStaffHeaderChrome(canvas, ink, lowerTop, lowerMid, lowerBot,
-                drawKeyAndTimeSig: UpperNotes.Count == 0);
+            if (_session.Tune != "Tuner")
+            {
+                DrawStaffHeaderChrome(canvas, ink, lowerTop, lowerMid, lowerBot,
+                    drawKeyAndTimeSig: UpperNotes.Count == 0);
+            }
         }
 
         private void DrawBothStaffsDynamic(
@@ -728,11 +734,14 @@ namespace musicmate.Drawables
                 UpperAlpha, IsUpperActive, IsUpperActive ? ActiveNoteIndex : -1,
                 safeLeft, safeRight, layoutRightLimit, upperStaffMargin);
 
-            DrawStaffDynamic(canvas, dirtyRect, ink, lowerTop, lowerMid, lowerBot,
-                LowerNotes, LowerNoteStates, lowerNoteLayouts, lowerBarLayouts,
-                LowerBarBeats, lowerBeatOrigin,
-                LowerAlpha, !IsUpperActive, !IsUpperActive ? ActiveNoteIndex : -1,
-                safeLeft, safeRight, layoutRightLimit, lowerStaffMargin);
+            if (_session.Tune != "Tuner")
+            {
+                DrawStaffDynamic(canvas, dirtyRect, ink, lowerTop, lowerMid, lowerBot,
+                    LowerNotes, LowerNoteStates, lowerNoteLayouts, lowerBarLayouts,
+                    LowerBarBeats, lowerBeatOrigin,
+                    LowerAlpha, !IsUpperActive, !IsUpperActive ? ActiveNoteIndex : -1,
+                    safeLeft, safeRight, layoutRightLimit, lowerStaffMargin);
+            }
         }
 
         // ── Constructor ───────────────────────────────────────────────────────────
@@ -913,8 +922,11 @@ namespace musicmate.Drawables
             if (_session.Tune != "Tuner")
                 eA1 = Math.Max(eA1, 9);
 
-            // Total half-spaces consumed by the two staffs (each staff = 8 hs for 5 lines / 4 spaces).
-            float totalHalfSpaces = (float)(8 + eA1 + eB1 + 8 + eA2 + eB2);
+            // Total half-spaces consumed by the staff/staves (each staff = 8 hs for 5 lines / 4 spaces).
+            bool tunerSingleStaff = _session.Tune == "Tuner";
+            float totalHalfSpaces = tunerSingleStaff
+                ? (float)(8 + eA1 + eB1)
+                : (float)(8 + eA1 + eB1 + 8 + eA2 + eB2);
 
             // Derive sls so the two staffs fill usableH, then clamp to a comfortable range.
             float sls = usableH / (totalHalfSpaces / 2f);
@@ -3023,7 +3035,7 @@ namespace musicmate.Drawables
             float upperMid = _layout.UpperMid;
             float upperBot = _layout.UpperBot;
 
-            DrawStaffHeaderChrome(canvas, ink, upperTop, upperMid, upperBot, drawKeyAndTimeSig: true);
+            DrawStaffHeaderChrome(canvas, ink, upperTop, upperMid, upperBot, drawKeyAndTimeSig: false);
 
             const float safeEdgePad = 4f;
             float lineEnd = Math.Max(
@@ -3115,7 +3127,8 @@ namespace musicmate.Drawables
             {
                 DrawMusicBpmMarking(canvas, ink, staffTop);
                 float keySigEndX = DrawKeySignature(canvas, staffTop, staffMid, ink);
-                DrawTimeSignature(canvas, staffTop, staffMid, ink, keySigEndX + KeySigTimeSigGap);
+                if (_session.Tune != "Tuner")
+                    DrawTimeSignature(canvas, staffTop, staffMid, ink, keySigEndX + KeySigTimeSigGap);
             }
         }
 
@@ -3748,7 +3761,10 @@ namespace musicmate.Drawables
             float timeSigX = keySigEndX + KeySigTimeSigGap;
             float timeSigRightRel = timeSigX - safeLeft + timeSigW;
             // Gap from time sig to first item (note/rest/accidental) ≈ one note-head width.
-            float leftMargin = timeSigRightRel + _layout.NoteHeadR + _layout.NoteHeadR;
+            bool suppressTimeSig = _session.Tune == "Tuner";
+            float leftMargin = suppressTimeSig
+                ? clefOnlyLeftMargin
+                : timeSigRightRel + _layout.NoteHeadR + _layout.NoteHeadR;
 
             return new StaffHeaderMetrics
             {
@@ -4342,6 +4358,9 @@ namespace musicmate.Drawables
         private void DrawTimeSignature(ICanvas canvas, float staffTop, float staffMid,
                                        Color ink, float keySigEndX)
         {
+            if (_session.Tune == "Tuner")
+                return;
+
             canvas.SaveState();
             try
             {

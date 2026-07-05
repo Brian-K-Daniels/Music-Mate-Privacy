@@ -73,13 +73,19 @@
           </Border>
           <Button x:Name="ClearAllButton" Text="Clear All" Clicked="OnDeleteDataInSelectedDatabase" WidthRequest="120" />
           <Button x:Name="DeleteAllButton" Text="Delete Selected Database" Clicked="OnDeleteAllDataInSelectedDatabase" WidthRequest="250" IsVisible="True" />
+          <Button Text="Refresh" Command="{Binding RefreshCommand}" WidthRequest="100" />
+          <Label Text="{Binding LastUpdatedText}"
+                 IsVisible="{Binding HasLastUpdated}"
+                 FontSize="12"
+                 VerticalOptions="Center"
+                 TextColor="{Binding ContrastingTextColor}" />
         </HorizontalStackLayout>
       </ScrollView>
 
       <!-- Note Stats Table with fixed header (unchanged) -->
       <ScrollView Orientation="Horizontal">
         <VerticalStackLayout MinimumWidthRequest="480" Spacing="0" Margin="8,0,0,0">
-          <Grid ColumnDefinitions="*,Auto" Padding="0" Margin="0" IsVisible="{Binding IsNoteDatabase}">
+          <Grid ColumnDefinitions="*" Padding="0" Margin="0" IsVisible="{Binding IsNoteDatabase}">
             <Grid Grid.Column="0" ColumnDefinitions="120,80,80,100,100,70" HeightRequest="28">
                 <Border Grid.Column="0" BackgroundColor="Transparent" Padding="0">
                   <Label FontSize="10" FontAttributes="Bold" TextColor="{Binding ContrastingTextColor}"
@@ -166,7 +172,6 @@
                   </Border.GestureRecognizers>
                 </Border>
               </Grid>
-            <Label Grid.Column="1" Text="{Binding AverageWrong, StringFormat='Avg Wrong: {0:F1}'}" VerticalOptions="Center" HorizontalOptions="End" Margin="8,0,8,0" TextColor="{Binding ContrastingTextColor}" />
           </Grid>
 
           <ScrollView Orientation="Vertical" HeightRequest="246" IsVisible="{Binding IsNoteDatabase}">

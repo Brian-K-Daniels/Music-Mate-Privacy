@@ -75,6 +75,12 @@
         ContentTemplate="{DataTemplate local:MusicPage}" />
   </FlyoutItem>
 
+  <FlyoutItem Title="Reset and Options" Route="SettingsReset">
+    <ShellContent
+      Route="ResetOptionsPage"
+      ContentTemplate="{DataTemplate local:ResetOptionsPage}" />
+  </FlyoutItem>
+  
   <FlyoutItem Title="Settings" Route="Settings">
     <ShellContent
         Route="SettingsPage"
@@ -87,11 +93,6 @@
       ContentTemplate="{DataTemplate local:AdvancedPage}" />
   </FlyoutItem>
 
-  <FlyoutItem Title="Settings Reset Options" Route="SettingsReset">
-    <ShellContent
-      Route="ResetOptionsPage"
-      ContentTemplate="{DataTemplate local:ResetOptionsPage}" />
-  </FlyoutItem>
 
   <FlyoutItem Title="Statistics" Route="Statistics">
     <ShellContent

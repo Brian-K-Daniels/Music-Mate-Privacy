@@ -16,6 +16,7 @@ namespace musicmate.Pages
         private readonly IOrientationService _orientationService;
         private readonly NoteSessionService _session;
         private readonly ThemeService _themeService;
+        private readonly StatisticsCacheService _statisticsCache;
 
         public StatisticsPages()
         {
@@ -28,8 +29,10 @@ namespace musicmate.Pages
             _sessionResultDatabase = ServiceHelper.GetService<SessionResultDatabase>()!;
             _session = ServiceHelper.GetService<NoteSessionService>()!;
             _themeService = ServiceHelper.GetService<ThemeService>()!;
+            _statisticsCache = ServiceHelper.GetService<StatisticsCacheService>()!;
 
-            _viewModel = new NoteStatisticsViewModel(_noteDatabase, _sessionDatabase, _themeService, _session);
+            _viewModel = new NoteStatisticsViewModel(
+                _noteDatabase, _sessionDatabase, _themeService, _session, _statisticsCache);
             BindingContext = _viewModel;
         }
 
@@ -46,7 +49,8 @@ namespace musicmate.Pages
                 try
                 {
                     await _sessionDatabase.DeleteByIdAsync(id);
-                    await _viewModel.LoadAsync();
+                    _statisticsCache.InvalidateSessionStats();
+                    await _viewModel.LoadAsync(forceRefresh: true);
                 }
                 catch (Exception ex)
                 {
@@ -112,14 +116,20 @@ namespace musicmate.Pages
 
             try
             {
+                await _noteDatabase.InitializeAsync();
+                await _sessionDatabase.InitializeAsync();
+                await _sessionResultDatabase.InitializeAsync();
+
                 if (vm.IsNoteDatabase)
                 {
                     await _noteDatabase.ClearAllAsync();
+                    _statisticsCache.InvalidateNoteStats();
                 }
                 else if (vm.IsSessionDatabase)
                 {
                     await _sessionDatabase.ClearAllAsync();
                     await _sessionResultDatabase.ClearAllAsync();
+                    _statisticsCache.InvalidateSessionStats();
                     LevelUpService.MarkCountSinceNow();
                 }
                 else if (vm.IsChildResultsDatabase)
@@ -127,7 +137,7 @@ namespace musicmate.Pages
                     await _sessionResultDatabase.ClearAllAsync();
                     LevelUpService.MarkCountSinceNow();
                 }
-                await _viewModel.LoadAsync();
+                await _viewModel.LoadAsync(forceRefresh: true);
                 await DisplayAlertAsync("Success", "All data cleared.", "OK");
             }
             catch (Exception ex)
@@ -176,12 +186,14 @@ namespace musicmate.Pages
                 {
                     await _noteDatabase.DeleteDatabaseAsync();
                     await _noteDatabase.InitializeAsync(); // recreate tables
+                    _statisticsCache.InvalidateNoteStats();
                 }
                 else if (vm.IsSessionDatabase)
                 {
                     await _sessionDatabase.DeleteDatabaseAsync();
                     await _sessionDatabase.InitializeAsync(); // recreate tables
                     await _sessionResultDatabase.ClearAllAsync();
+                    _statisticsCache.InvalidateSessionStats();
                     LevelUpService.MarkCountSinceNow();
                 }
                 else if (vm.IsChildResultsDatabase)
@@ -190,7 +202,7 @@ namespace musicmate.Pages
                     await _sessionResultDatabase.InitializeAsync();
                     LevelUpService.MarkCountSinceNow();
                 }
-                await _viewModel.LoadAsync();
+                await _viewModel.LoadAsync(forceRefresh: true);
                 foreach (var stat in _viewModel.NoteStats)
                     stat.ContrastingTextColor = _themeService!.ContrastingTextColor;
                 foreach (var stat in _viewModel.SessionStats)

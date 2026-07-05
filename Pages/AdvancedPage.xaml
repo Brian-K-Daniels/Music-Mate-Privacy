@@ -175,6 +175,25 @@
           </Grid>
         </VerticalStackLayout>
       </Border>
+
+      <!-- Storage -->
+      <Border Stroke="#8B4513" Padding="12" Margin="0,16,0,0" BackgroundColor="#FFF8F0">
+        <Border.StrokeShape>
+          <RoundRectangle CornerRadius="10"/>
+        </Border.StrokeShape>
+        <VerticalStackLayout Spacing="10">
+          <Label Text="Storage" FontAttributes="Bold" FontSize="16" TextColor="#8B4513"/>
+          <Label Text="{Binding MemoryUsageDisplay}" FontSize="12" FontAttributes="Bold" />
+          <Grid ColumnDefinitions="200,*,60" ColumnSpacing="4" VerticalOptions="Center">
+            <Label Grid.Column="0" Text="Max Session DB (MB)" />
+            <Slider Grid.Column="1" Minimum="10"
+                    Maximum="{Binding AvailableStorageMb}"
+                    Value="{Binding MaxSessionDbSizeMb, Mode=TwoWay}" />
+            <Label Grid.Column="2" Text="{Binding MaxSessionDbSizeMb, StringFormat='{0:F0}'}"
+                   HorizontalTextAlignment="End" />
+          </Grid>
+        </VerticalStackLayout>
+      </Border>
     </VerticalStackLayout>
   </ScrollView>
 </ContentPage>

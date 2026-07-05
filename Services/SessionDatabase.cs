@@ -175,6 +175,14 @@ public class SessionDatabase
         return result;
     }
 
+    /// <summary>Row count plus highest session id — used by statistics cache validation.</summary>
+    public async Task<StatisticsDbFingerprint> GetStatisticsFingerprintAsync()
+    {
+        int count = await _db.Table<SessionStat>().CountAsync();
+        var latest = await _db.Table<SessionStat>().OrderByDescending(s => s.Id).FirstOrDefaultAsync();
+        return new StatisticsDbFingerprint(count, latest?.Id ?? 0);
+    }
+
     public Task<int> DeleteByIdAsync(int id)
     {
         return _db.Table<SessionStat>().DeleteAsync(s => s.Id == id);
