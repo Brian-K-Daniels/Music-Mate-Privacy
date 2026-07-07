@@ -2,6 +2,9 @@ using System.Diagnostics;
 using System;
 using System.Linq;
 using System.Reflection;
+#if DEBUG
+using musicmate.Diagnostics;
+#endif
 
 namespace musicmate.Utilities
 {
@@ -19,6 +22,10 @@ namespace musicmate.Utilities
             {
                 message = string.Join(", ", dblList);
             }
+#if DEBUG
+            if (!DebugLogSettings.IsEnabled(DebugLogSettings.ResolveFromMessage(message)))
+                return;
+#endif
             Debug.WriteLine($"[MusicMate] {message}");
         }
 

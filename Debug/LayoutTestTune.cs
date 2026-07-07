@@ -15,7 +15,12 @@ namespace musicmate.LayoutDebug
         public const string PreferenceKey = "Debug.UseFixedTestTune";
 
         public static bool IsEnabled =>
-            Preferences.Default.Get(PreferenceKey, false);
+#if DEBUG
+            Diagnostics.DebugLogSettings.IsEnabled(Diagnostics.DebugLogCategory.LayoutTestTune)
+            && Preferences.Default.Get(PreferenceKey, false);
+#else
+            false;
+#endif
 
         public static void SetEnabled(bool enabled) =>
             Preferences.Default.Set(PreferenceKey, enabled);
@@ -121,8 +126,12 @@ namespace musicmate.LayoutDebug
 
         public static void LogContents(PracticeTune tune)
         {
+#if DEBUG
+            if (!Diagnostics.DebugLogSettings.IsEnabled(Diagnostics.DebugLogCategory.LayoutTestTune))
+                return;
+#endif
             var text = BuildLogText(tune);
-            Debug.WriteLine(text);
+            Diagnostics.DebugLog.WriteLine(text);
             Utilities.Utils.Log(text);
         }
 

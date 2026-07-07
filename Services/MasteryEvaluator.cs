@@ -1,8 +1,6 @@
-using System.Diagnostics;
 using musicmate.Diagnostics;
 
 namespace musicmate.Services;
-
 /// <summary>
 /// Determines whether a written note is fully mastered for tune-generation omission.
 /// </summary>
@@ -19,35 +17,52 @@ public static class MasteryEvaluator
     /// When timing is active, pitch, timing, and overall thresholds must all pass.
     /// </summary>
     public static bool IsFullyMastered(NoteStat stat, NoteSessionService session)
+        => IsFullyMastered(
+            stat,
+            session.MasteredMethod,
+            session.StreakCrit,
+            session.MinCorrectCount,
+            session.CorrectThreshold,
+            session.ChildLevel,
+            session.OmitMsAvgThreshold);
+
+    public static bool IsFullyMastered(
+        NoteStat stat,
+        string masteredMethod,
+        int streakCrit,
+        int minCorrectCount,
+        int correctThreshold,
+        int childLevel,
+        int omitMsAvgThreshold)
     {
-        if (session.MasteredMethod == "Streak")
+        if (masteredMethod == "Streak")
         {
-            bool mastered = stat.Streak >= session.StreakCrit;
+            bool mastered = stat.Streak >= streakCrit;
             LogMasteryDecision(stat.WrittenName, mastered, "Streak", stat);
             return mastered;
         }
 
         int totalAttempts = stat.OverallCorrectCount + stat.OverallWrongCount;
-        if (totalAttempts < session.MinCorrectCount)
+        if (totalAttempts < minCorrectCount)
         {
             LogMasteryDecision(stat.WrittenName, false, "InsufficientAttempts", stat);
             return false;
         }
 
-        bool pitchOk = stat.PercentPitchCorrect >= session.CorrectThreshold;
+        bool pitchOk = stat.PercentPitchCorrect >= correctThreshold;
         if (!pitchOk)
         {
             LogMasteryDecision(stat.WrittenName, false, "PitchBelowThreshold", stat);
             return false;
         }
 
-        bool timingRequired = TimingAffectsMastery(session.ChildLevel);
+        bool timingRequired = TimingAffectsMastery(childLevel);
         if (timingRequired)
         {
             int timingAttempts = stat.TimingCorrectCount + stat.TimingWrongCount;
             if (timingAttempts > 0)
             {
-                bool timingOk = stat.PercentTimingCorrect >= session.CorrectThreshold;
+                bool timingOk = stat.PercentTimingCorrect >= correctThreshold;
                 if (!timingOk)
                 {
                     LogMasteryDecision(stat.WrittenName, false, "TimingBelowThreshold", stat);
@@ -56,14 +71,14 @@ public static class MasteryEvaluator
             }
         }
 
-        bool overallOk = stat.PercentOverallCorrect >= session.CorrectThreshold;
+        bool overallOk = stat.PercentOverallCorrect >= correctThreshold;
         if (!overallOk)
         {
             LogMasteryDecision(stat.WrittenName, false, "OverallBelowThreshold", stat);
             return false;
         }
 
-        if (session.OmitMsAvgThreshold > 0 && stat.MsCount > 0 && stat.MsAverage >= session.OmitMsAvgThreshold)
+        if (omitMsAvgThreshold > 0 && stat.MsCount > 0 && stat.MsAverage >= omitMsAvgThreshold)
         {
             LogMasteryDecision(stat.WrittenName, false, "MsAverageTooSlow", stat);
             return false;
@@ -75,10 +90,7 @@ public static class MasteryEvaluator
 
     private static void LogMasteryDecision(string writtenName, bool mastered, string reason, NoteStat stat)
     {
-        if (!TimingDiagnostics.EnableTimingDiagnostics)
-            return;
-
-        Debug.WriteLine(
+        DebugLog.WriteLine(
             $"[Mastery] note={writtenName} mastered={mastered} reason={reason} " +
             $"pitch={stat.PercentPitchCorrect:F1}% timing={stat.PercentTimingCorrect:F1}% " +
             $"overall={stat.PercentOverallCorrect:F1}% attempts={stat.OverallCorrectCount + stat.OverallWrongCount}");

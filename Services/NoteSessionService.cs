@@ -117,11 +117,13 @@ namespace musicmate.Services
         private const string PrefRhythmModeKey = "musicmate.RhythmMode";
         private const string PrefSyncopationSettingKey = "musicmate.Syncopation";
         private const string PrefNoteNameDisplayKey = "musicmate.NoteNameDisplay";
+        private const string PrefShowConductorCuesKey = "musicmate.ShowConductorCues";
         private string _meterTimeSignature = Preferences.Get(PrefMeterTimeSignatureKey, "4/4");
         private string _smallestRhythmNote = Preferences.Get(PrefSmallestRhythmNoteKey, "Quarter");
         private string _rhythmMode = Preferences.Get(PrefRhythmModeKey, "Simple");
         private string _syncopationSetting = Preferences.Get(PrefSyncopationSettingKey, "None");
         private string _noteNameDisplay = Preferences.Get(PrefNoteNameDisplayKey, "Current only");
+        private bool _showConductorCues = Preferences.Get(PrefShowConductorCuesKey, false);
 
         /// <summary>
         /// Time signature for rhythm generation.
@@ -217,6 +219,19 @@ namespace musicmate.Services
                 _noteNameDisplay = value;
                 Preferences.Set(PrefNoteNameDisplayKey, value);
                 OnPropertyChanged(nameof(NoteNameDisplay));
+            }
+        }
+
+        /// <summary>When true, red conductor arrows mark conducted beat starts above the staff.</summary>
+        public bool ShowConductorCues
+        {
+            get => _showConductorCues;
+            set
+            {
+                if (_showConductorCues == value) return;
+                _showConductorCues = value;
+                Preferences.Set(PrefShowConductorCuesKey, value);
+                OnPropertyChanged(nameof(ShowConductorCues));
             }
         }
         public int AccidentalPercent
@@ -632,7 +647,7 @@ namespace musicmate.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[Session] GetMasteredMidiNumbersAsync ERROR: {ex}");
+                DebugLog.WriteLine($"[Session] GetMasteredMidiNumbersAsync ERROR: {ex}");
             }
             return result;
         }
@@ -1331,7 +1346,7 @@ namespace musicmate.Services
 #if DEBUG
             if (trigger is not ("GoButton" or "AutoStart"))
                 return;
-            Debug.WriteLine(
+            DebugLog.WriteLine(
                 $"[ScaleKeyRandom] Trigger={trigger} RepeatSame={repeatSame} Level={level} " +
                 $"ScaleMode={scaleMode} OldScale={oldScale} OldKey={oldKey} " +
                 $"NewScale={newScale} NewKey={newKey} ScaleChanged={scaleChanged} KeyChanged={keyChanged} " +
@@ -1460,7 +1475,7 @@ namespace musicmate.Services
             var reset = resetReason == null
                 ? string.Empty
                 : $" SelectionResetTo=ByLevel Reason={resetReason}";
-            Debug.WriteLine(
+            DebugLog.WriteLine(
                 $"[ScaleLevel] Level={level} Selection={selection} ActiveScale={activeScale} " +
                 $"Allowed={allowed} AllowedCheck={allowedCheck} WeightedRandom={weightedRandom}{reset} OK");
 #endif
@@ -1830,7 +1845,7 @@ namespace musicmate.Services
                         Key = _keyBeforePracticeTune;
                         _keyBeforePracticeTune = null;
 #if DEBUG
-                        System.Diagnostics.Debug.WriteLine($"[PickerTest] LeavePracticeTune: restored Key={Key} Concert={GetConcertKey()}");
+                        DebugLog.WriteLine($"[PickerTest] LeavePracticeTune: restored Key={Key} Concert={GetConcertKey()}");
 #endif
                     }
                     OnPropertyChanged(nameof(Tune));
@@ -2754,7 +2769,7 @@ namespace musicmate.Services
             };
 
             var notes = builder.Build(pattern, rootNote, descendingAfterAscending);
-            Debug.WriteLine(
+            DebugLog.WriteLine(
                 $"[Arpeggio] {pattern.DisplayName} root={rootNote} " +
                 $"range={LowestNote}-{HighestNote}: {string.Join(" ", notes.Select(n => n.SpelledName))}");
             return notes;
@@ -2801,7 +2816,7 @@ namespace musicmate.Services
             }
 
             ConfigureRhythmStartGates();
-            Debug.WriteLine(
+            DebugLog.WriteLine(
                 $"[Arpeggio] Loaded {NotesToDraw.Count} playable notes into session state.");
 
             return Task.FromResult(previewNotes);
@@ -3567,7 +3582,7 @@ namespace musicmate.Services
                 if (Key != tune.Key)
                     Key = tune.Key;
 #if DEBUG
-                System.Diagnostics.Debug.WriteLine(
+                DebugLog.WriteLine(
                     $"[PickerTest] PracticeTune/{tune.Title}: written Key={tune.Key} Concert={GetConcertKey()}");
 #endif
             }

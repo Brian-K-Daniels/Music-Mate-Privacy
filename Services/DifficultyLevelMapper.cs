@@ -1,4 +1,4 @@
-using System.Diagnostics;
+using musicmate.Diagnostics;
 using musicmate.Models;
 
 namespace musicmate.Services
@@ -94,7 +94,7 @@ namespace musicmate.Services
             var settings = BuildSettings(level, profile, scale, key);
             ApplyToSession(settings, session, applyKeyAndScale: true, applyPracticeSettings: !preserve);
 #if DEBUG
-            Debug.WriteLine($"[ChildLevel] Level change L{level} → {key} {scale} preserve={preserve}");
+            DebugLog.WriteLine($"[ChildLevel] Level change L{level} → {key} {scale} preserve={preserve}");
 #endif
             return settings;
         }
@@ -130,7 +130,7 @@ namespace musicmate.Services
                 applyKeyAndScale: false,
                 applyPracticeSettings: !preserve);
 #if DEBUG
-            Debug.WriteLine($"[ChildLevel] Picked session settings: L{level} {session.Key} {session.SelectedScale} mode={session.ScaleSelectionMode} preserve={preserve}");
+            DebugLog.WriteLine($"[ChildLevel] Picked session settings: L{level} {session.Key} {session.SelectedScale} mode={session.ScaleSelectionMode} preserve={preserve}");
 #endif
             return settings;
         }

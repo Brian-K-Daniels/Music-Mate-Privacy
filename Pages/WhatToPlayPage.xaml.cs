@@ -5,6 +5,7 @@ using musicmate.Services;
 using musicmate.Utilities;
 
 using musicmate.LayoutDebug;
+using musicmate.Diagnostics;
 
 using System.ComponentModel;
 
@@ -1099,7 +1100,7 @@ namespace musicmate.Pages
 
 #if DEBUG
 
-            Debug.WriteLine($"[PickerTest] Scales/{selected}: mode={_session.ScaleSelectionMode} scale={_session.SelectedScale} Key={_session.Key}");
+            DebugLog.WriteLine($"[PickerTest] Scales/{selected}: mode={_session.ScaleSelectionMode} scale={_session.SelectedScale} Key={_session.Key}");
 
 #endif
 

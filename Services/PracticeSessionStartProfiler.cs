@@ -25,7 +25,10 @@ namespace musicmate.Services
             public void Dispose()
             {
                 _sw.Stop();
-                Debug.WriteLine($"[SessionStart] {_phase}: {_sw.ElapsedMilliseconds} ms");
+#if DEBUG
+                if (Diagnostics.DebugLogSettings.IsEnabled(Diagnostics.DebugLogCategory.SessionStartProfiler))
+                    Debug.WriteLine($"[SessionStart] {_phase}: {_sw.ElapsedMilliseconds} ms");
+#endif
             }
         }
 #endif

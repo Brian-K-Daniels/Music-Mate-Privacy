@@ -1,4 +1,5 @@
 using musicmate.Models;
+using musicmate.Diagnostics;
 
 namespace musicmate.Services
 {
@@ -316,7 +317,7 @@ namespace musicmate.Services
             }
 
 #if DEBUG
-            System.Diagnostics.Debug.WriteLine(
+            DebugLog.WriteLine(
                 $"[MotifPhrase] {MeasureCount} measures, A slots={motifA[0].Count}+{motifA[1].Count}, B slots={motifB[0].Count}+{motifB[1].Count}, contourSteps={contourA?.SemitoneDeltas.Count ?? 0}");
 #endif
             return measures;
@@ -753,7 +754,7 @@ namespace musicmate.Services
                 }
 
 #if DEBUG
-                System.Diagnostics.Debug.WriteLine(
+                DebugLog.WriteLine(
                     $"[ScaleRootTest] Key={Key} Scale={Scale} tonicPc={tonicPc} " +
                     $"octaveStart={octaveStart}({NoteSessionService.MidiToNoteName(octaveStart, false)}) " +
                     $"octaveEnd={octaveEnd}({NoteSessionService.MidiToNoteName(octaveEnd, false)}) " +
@@ -805,7 +806,8 @@ namespace musicmate.Services
 
             if (ExcludedMidiNumbers.Count == 0)
             {
-                System.Diagnostics.Debug.WriteLine($"[StaffPool] AccPct={AccidentalPercent} diatonic={fullPool.Count(m => { int p = ((m % 12) + 12) % 12; return scalePcs.Contains(p); })} chromatic={fullPool.Count(m => { int p = ((m % 12) + 12) % 12; return !scalePcs.Contains(p); })} total={fullPool.Count}");
+                DebugLog.WriteLine(DebugLogCategory.StaffAndSequence,
+                    $"[StaffPool] AccPct={AccidentalPercent} diatonic={fullPool.Count(m => { int p = ((m % 12) + 12) % 12; return scalePcs.Contains(p); })} chromatic={fullPool.Count(m => { int p = ((m % 12) + 12) % 12; return !scalePcs.Contains(p); })} total={fullPool.Count}");
                 return fullPool;
             }
 

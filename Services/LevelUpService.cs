@@ -67,7 +67,7 @@ namespace musicmate.Services
     {
         // ── Default values for LevelUp criteria (used by AdvancePage and reset) ──
         public const int DefaultSessionCount = 3; // Rolling window size for advancement
-        public const double DefaultMinPitchAccuracyPercent = 70.0;  //  2026.06.06 1759  85.0;
+        public const double DefaultMinPitchAccuracyPercent = 55.0;  //  2026.06.06 1759  85.0;
         public const double DefaultMinTimingAccuracyPercent = 15.0;  //  2026.06.06 1800  75.0;
         public const double DefaultMinOverallAccuracyPercent = 35.0;  //  2026.06.06 1801  .0;
         public const int DefaultMinNotesPerSession = 4;
@@ -113,7 +113,7 @@ namespace musicmate.Services
 
         /// <summary>
         /// Minimum pitch accuracy (%) required in every qualifying session.
-        /// Default = 85.
+        /// Default = 55.
         /// </summary>
         public static double MinPitchAccuracyPercent
             => Preferences.Default.Get("LevelUp.MinPitchPct", DefaultMinPitchAccuracyPercent);
@@ -194,7 +194,10 @@ namespace musicmate.Services
                 Utilities.Utils.Log($"[LevelUpDebug] {qualifying.Count} qualifying sessions after filters (min notes, not outlier)");
 
                 // Rule 5: not enough qualifying sessions yet.
-                if (qualifying.Count < SessionCount) { Utilities.Utils.Log($"[LevelUpDebug] Not enough qualifying sessions: {qualifying.Count} < {SessionCount}"); return null; }
+                if (qualifying.Count < SessionCount) 
+                    { 
+                        Utilities.Utils.Log($"[LevelUpDebug] Not enough qualifying sessions: {qualifying.Count} < {SessionCount}"); return null;
+                    }
 
                 // Take the most recent N qualifying sessions
                 var recent = qualifying.Take(SessionCount).ToList();

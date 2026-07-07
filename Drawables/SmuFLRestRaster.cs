@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.Maui.Graphics;
+using musicmate.Diagnostics;
 using musicmate.Models;
 using SkiaSharp;
 
@@ -66,7 +67,7 @@ namespace musicmate.Drawables
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[SmuFLRestRaster] DrawImage failed: {ex.Message}");
+                DebugLog.WriteLine($"[SmuFLRestRaster] DrawImage failed: {ex.Message}");
                 return false;
             }
         }
@@ -108,7 +109,7 @@ namespace musicmate.Drawables
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[SmuFLRestRaster] origin DrawImage failed: {ex.Message}");
+                DebugLog.WriteLine($"[SmuFLRestRaster] origin DrawImage failed: {ex.Message}");
                 return false;
             }
         }
@@ -155,7 +156,7 @@ namespace musicmate.Drawables
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[SmuFLRestRaster] origin raster failed: {ex.Message}");
+                DebugLog.WriteLine($"[SmuFLRestRaster] origin raster failed: {ex.Message}");
                 return null;
             }
         }

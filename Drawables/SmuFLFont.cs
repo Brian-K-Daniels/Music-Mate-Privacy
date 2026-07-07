@@ -1,4 +1,5 @@
 using SkiaSharp;
+using musicmate.Diagnostics;
 
 namespace musicmate.Drawables
 {
@@ -64,9 +65,9 @@ namespace musicmate.Drawables
             }
 
             if (IsLoaded)
-                System.Diagnostics.Debug.WriteLine($"[SmuFLFont] Bravura loaded ({_skiaTypeface!.FamilyName})");
+                DebugLog.WriteLine($"[SmuFLFont] Bravura loaded ({_skiaTypeface!.FamilyName})");
             else
-                System.Diagnostics.Debug.WriteLine("[SmuFLFont] Bravura not loaded; using vector rest fallback.");
+                DebugLog.WriteLine("[SmuFLFont] Bravura not loaded; using vector rest fallback.");
         }
 
         private static byte[]? TryLoadBytes()
@@ -111,7 +112,7 @@ namespace musicmate.Drawables
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[SmuFLFont] android assets failed: {ex.Message}");
+                DebugLog.WriteLine($"[SmuFLFont] android assets failed: {ex.Message}");
             }
 #endif
             return null;
@@ -124,13 +125,13 @@ namespace musicmate.Drawables
                 using var stream = typeof(SmuFLFont).Assembly.GetManifestResourceStream(EmbeddedName);
                 if (stream != null)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[SmuFLFont] embedded resource: {EmbeddedName}");
+                    DebugLog.WriteLine($"[SmuFLFont] embedded resource: {EmbeddedName}");
                     return CopyToBytes(stream);
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[SmuFLFont] embedded load failed: {ex.Message}");
+                DebugLog.WriteLine($"[SmuFLFont] embedded load failed: {ex.Message}");
             }
             return null;
         }
@@ -148,7 +149,7 @@ namespace musicmate.Drawables
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[SmuFLFont] android typeface failed: {ex.Message}");
+                DebugLog.WriteLine($"[SmuFLFont] android typeface failed: {ex.Message}");
             }
             return null;
         }

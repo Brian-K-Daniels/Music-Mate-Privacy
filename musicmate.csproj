@@ -111,6 +111,12 @@
     <None Remove="musicmate.Tests\**" />
   </ItemGroup>
 
+  <ItemGroup Condition="'$(Configuration)' != 'Debug'">
+    <Compile Remove="Pages\DebugItemsPage.xaml.cs" />
+    <Compile Remove="ViewModels\DebugItemsPageViewModel.cs" />
+    <MauiXaml Remove="Pages\DebugItemsPage.xaml" />
+  </ItemGroup>
+
   <ItemGroup>
     <MauiImage Include="Resources\Images\logo.png" />
   </ItemGroup>

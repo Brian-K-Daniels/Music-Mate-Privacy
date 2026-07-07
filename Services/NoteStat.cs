@@ -7,6 +7,9 @@ namespace musicmate.Services
         [Ignore]
         public Microsoft.Maui.Graphics.Color ContrastingTextColor { get; set; } = Microsoft.Maui.Graphics.Colors.Red;
 
+        [Ignore]
+        public string MasteredDisplay { get; set; } = string.Empty;
+
         [PrimaryKey]
         public string WrittenName { get; set; } = string.Empty;
 

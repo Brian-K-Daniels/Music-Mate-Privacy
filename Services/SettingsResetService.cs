@@ -1,4 +1,5 @@
 #nullable enable
+using musicmate.Diagnostics;
 using System.Text.Json;
 using Microsoft.Maui.Graphics;
 using Microsoft.Maui.Storage;
@@ -28,7 +29,7 @@ namespace musicmate.Services
         /// <summary>Resets all settings to factory defaults (same behavior as the former Settings page button).</summary>
         public void ResetToFactoryDefaults()
         {
-            System.Diagnostics.Debug.WriteLine("[ResetOptionsTest] ResetToFactoryDefaults called.");
+            DebugLog.WriteLine("[ResetOptionsTest] ResetToFactoryDefaults called.");
             _session.PlaybackBpm = SettingsPageViewModel.DefaultPlaybackBpm;
             _session.MusicBpm = SettingsPageViewModel.DefaultMusicBpm;
             _session.AccidentalPercent = SettingsPageViewModel.DefaultAccidentalPct;
@@ -48,7 +49,7 @@ namespace musicmate.Services
             _session.Key = SettingsPageViewModel.DefaultKey;
             // [ResetOptionsTest] Tune is a mode tag ("Selected Scale"), not a scale name.
             _session.Tune = "Selected Scale";
-            System.Diagnostics.Debug.WriteLine($"[ResetOptionsTest] After factory reset: Tune={_session.Tune} Scale={_session.SelectedScale} Key={_session.Key} AccPct={_session.AccidentalPercent}");
+            DebugLog.WriteLine($"[ResetOptionsTest] After factory reset: Tune={_session.Tune} Scale={_session.SelectedScale} Key={_session.Key} AccPct={_session.AccidentalPercent}");
             _session.ApplyAutomaticInstrumentRange(fullReset: true);
             _session.ResetAdvancedDetectionDefaults();
             _session.ResetPracticeCompositionDefaults();
@@ -59,7 +60,7 @@ namespace musicmate.Services
         /// <summary>Saves the currently active settings as the user's custom defaults.</summary>
         public void SaveCustomDefaultsFromCurrent()
         {
-            System.Diagnostics.Debug.WriteLine($"[ResetOptionsTest] SaveCustomDefaults: Tune={_session.Tune} Scale={_session.SelectedScale} Key={_session.Key}");
+            DebugLog.WriteLine($"[ResetOptionsTest] SaveCustomDefaults: Tune={_session.Tune} Scale={_session.SelectedScale} Key={_session.Key}");
             var snapshot = CaptureCurrentSnapshot();
             var json = JsonSerializer.Serialize(snapshot);
             Preferences.Set(CustomDefaultsJsonKey, json);
@@ -69,7 +70,7 @@ namespace musicmate.Services
         /// <summary>Restores settings from the saved custom defaults.</summary>
         public void RestoreCustomDefaults()
         {
-            System.Diagnostics.Debug.WriteLine("[ResetOptionsTest] RestoreCustomDefaults called.");
+            DebugLog.WriteLine("[ResetOptionsTest] RestoreCustomDefaults called.");
             if (!HasCustomDefaults)
                 return;
 

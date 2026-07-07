@@ -13,6 +13,10 @@ namespace musicmate.Utilities
         [Conditional("DEBUG")]
         public static void Write(string message)
         {
+#if DEBUG
+            if (!Diagnostics.DebugLogSettings.IsEnabled(Diagnostics.DebugLogSettings.ResolveFromMessage(message)))
+                return;
+#endif
             Debug.WriteLine(message);
 #if ANDROID
             global::Android.Util.Log.Debug(AndroidTag, message);

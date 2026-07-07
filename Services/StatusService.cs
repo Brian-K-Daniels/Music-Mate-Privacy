@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using Microsoft.Maui.Storage;
+using musicmate.Diagnostics;
 
 namespace musicmate.Services
 {
@@ -48,7 +49,7 @@ namespace musicmate.Services
                 if (_statusMessage != value)
                 {
                     _statusMessage = value;
-                    Debug.WriteLine($"[DEBUG] StatusService.StatusMessage changed: {_statusMessage}");
+                    DebugLog.WriteLine($"[DEBUG] StatusService.StatusMessage changed: {_statusMessage}");
                     OnPropertyChanged(nameof(StatusMessage));
                 }
             }

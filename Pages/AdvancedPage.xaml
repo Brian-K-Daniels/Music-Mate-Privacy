@@ -99,7 +99,7 @@
         </VerticalStackLayout>
       </Border>
 
-             <!-- LevelUp Criteria Section -->
+      <!-- Level Advancement Criteria Section -->
       <Border Stroke="#8B4513" Padding="12" Margin="0,16,0,0" BackgroundColor="#FFF8F0">
           <Border.StrokeShape>
             <RoundRectangle CornerRadius="10"/>

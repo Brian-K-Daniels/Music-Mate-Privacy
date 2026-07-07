@@ -86,6 +86,13 @@
                       SelectedItem="{Binding NoteNameDisplay, Mode=TwoWay}"
                       TextColor="Black" BackgroundColor="White" FontSize="12" />
             </Grid>
+            <Grid ColumnDefinitions="170,*,60" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Conductor" />
+              <Switch Grid.Column="2"
+                      IsToggled="{Binding ShowConductorCues, Mode=TwoWay}"
+                      OnColor="#8B4513"
+                      VerticalOptions="Center" />
+            </Grid>
           </VerticalStackLayout>
         </Border>
 

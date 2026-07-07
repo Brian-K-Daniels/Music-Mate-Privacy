@@ -79,11 +79,17 @@ namespace musicmate
             ServiceHelper.Initialize(app.Services); // <-- ensure service locator is initialized
 
 #if DEBUG
-            // Key-sig / transposition self-test → logcat tag "MusicMate" (cold start).
-            StaffDrawable.RunKeySignatureTests();
-            StaffDrawable.RunMeasureLayoutTests();
-            ChildLevelScaleSelectionTests.RunSelfChecks();
-            ScaleKeyRandomTests.RunSelfChecks();
+            Diagnostics.DebugLogSettings.LoadAll();
+            if (Diagnostics.DebugLogSettings.IsEnabled(Diagnostics.DebugLogCategory.StaffSelfTests))
+            {
+                StaffDrawable.RunKeySignatureTests();
+                StaffDrawable.RunMeasureLayoutTests();
+            }
+            if (Diagnostics.DebugLogSettings.IsEnabled(Diagnostics.DebugLogCategory.ChildLevel))
+            {
+                ChildLevelScaleSelectionTests.RunSelfChecks();
+                ScaleKeyRandomTests.RunSelfChecks();
+            }
 #endif
 
             // Sync premium state from the store on every cold start.

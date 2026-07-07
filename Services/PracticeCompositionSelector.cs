@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Maui.Storage;
+using musicmate.Diagnostics;
 using musicmate.Models;
 
 namespace musicmate.Services
@@ -192,11 +193,9 @@ namespace musicmate.Services
                     break;
             }
 
-#if DEBUG
-            Debug.WriteLine(
+            DebugLog.WriteLine(
                 $"[Composition] Applied {kind}: Tune={session.Tune} Random={session.IsRandomMode} " +
                 $"ScaleMode={session.ScaleSelectionMode} Key={session.Key}");
-#endif
         }
 
         /// <summary>
@@ -209,11 +208,9 @@ namespace musicmate.Services
 
             var rng = new Random(seed);
             var kind = PickExerciseKind(session, rng);
-#if DEBUG
-            Debug.WriteLine(
+            DebugLog.WriteLine(
                 $"[Composition] Picked {kind} (Pc: tunes={session.PcTunes}% random={session.PcRandom}% " +
                 $"scales={session.PcScales}% arpeggios={session.PcArpeggios}%)");
-#endif
             ApplyExerciseKind(session, kind, rng);
         }
 

@@ -33,7 +33,9 @@ namespace musicmate.Diagnostics
         public static void LogRhythmSpan(string label, IReadOnlyList<GeneratedNote> sequence)
         {
 #if DEBUG
-            Debug.WriteLine($"[Autoplay] {label}: events={sequence.Count}, beats={TotalBeatSpan(sequence):F2}");
+            Diagnostics.DebugLog.WriteLine(
+                Diagnostics.DebugLogCategory.Autoplay,
+                $"[Autoplay] {label}: events={sequence.Count}, beats={TotalBeatSpan(sequence):F2}");
 #endif
         }
     }

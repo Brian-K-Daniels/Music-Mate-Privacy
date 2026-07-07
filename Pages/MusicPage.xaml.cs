@@ -326,7 +326,7 @@ namespace musicmate.Pages
                             // final status visible and wait for the user to tap Start.
                             if (AutoRepeat)
                             {
-                                Debug.WriteLine("[MusicPage] MaxBlocksReached after session completed: full restart (AutoRepeat on).");
+                                DebugLog.WriteLine("[MusicPage] MaxBlocksReached after session completed: full restart (AutoRepeat on).");
                                 await StartListeningAndEvaluatingAsync(
                                     forceNewNotes: PracticeSessionLifecycle.ShouldForceNewNotesForRepeatMode(
                                         _session.RepeatSameTune),
@@ -334,12 +334,12 @@ namespace musicmate.Pages
                             }
                             else
                             {
-                                Debug.WriteLine("[MusicPage] MaxBlocksReached after session completed: AutoRepeat off, not restarting.");
+                                DebugLog.WriteLine("[MusicPage] MaxBlocksReached after session completed: AutoRepeat off, not restarting.");
                             }
                         }
                         else
                         {
-                            Debug.WriteLine("[MusicPage] MaxBlocksReached mid-session: restarting capture only.");
+                            DebugLog.WriteLine("[MusicPage] MaxBlocksReached mid-session: restarting capture only.");
                             await RestartAudioCaptureAsync();
                         }
                     });
@@ -508,7 +508,7 @@ namespace musicmate.Pages
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"Session completion error: {ex}");
+                        DebugLog.WriteLine($"Session completion error: {ex}");
                     }
                 };
 
@@ -530,6 +530,12 @@ namespace musicmate.Pages
                         UpdateRepeatButtonsVisibility();
                         UpdateKeyPickerVisibility();
                         OnPropertyChanged(nameof(Tune));
+                    }
+
+                    if (e.PropertyName == nameof(NoteSessionService.ShowConductorCues)
+                        || e.PropertyName == nameof(NoteSessionService.NoteNameDisplay))
+                    {
+                        StaffGraphicsView?.Invalidate();
                     }
                 };
 
@@ -610,7 +616,7 @@ namespace musicmate.Pages
             catch (Exception ex)
             {
                 Utils.Log($"[MusicPage Constructor] ERROR: {ex}");
-                Debug.WriteLine($"[MusicPage Constructor] ERROR: {ex}");
+                DebugLog.WriteLine($"[MusicPage Constructor] ERROR: {ex}");
                 throw;
             }
         }
@@ -664,7 +670,7 @@ namespace musicmate.Pages
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[AutoStart] ERROR: {ex}");
+                DebugLog.WriteLine($"[AutoStart] ERROR: {ex}");
             }
         }
 
@@ -675,7 +681,7 @@ namespace musicmate.Pages
                 && _repeatSameSnapshot?.Notes.Count > 0
                 && !_suppressSessionRegenerate)
             {
-                Debug.WriteLine("[RepeatSame] Skipping RegenerateNotesAsync — restoring saved exercise");
+                DebugLog.WriteLine("[RepeatSame] Skipping RegenerateNotesAsync — restoring saved exercise");
                 await RestoreRepeatSameSnapshotAsync(_repeatSameSnapshot.Notes);
                 return;
             }
@@ -727,7 +733,7 @@ namespace musicmate.Pages
                 if (_session.IsRandomMode)
                 {
                     var names = string.Join(", ", _session.NotesToDraw.Select(n => n.Name));
-                    Debug.WriteLine($"[Random] {_session.EffectiveScaleDisplay} → {_session.NotesToDraw.Count} notes: {names}");
+                    DebugLog.WriteLine($"[Random] {_session.EffectiveScaleDisplay} → {_session.NotesToDraw.Count} notes: {names}");
                 }
 #endif
 
@@ -861,7 +867,7 @@ namespace musicmate.Pages
                                            ^ _generationSeed
                                            ^ (_session.ChildLevel * 7919)
             };
-            Debug.WriteLine($"[StaffGen] Tune={_session.Tune} Random={_session.IsRandomMode} SimpleScale={simpleSelectedScale} AccPct={_session.AccidentalPercent} EffectiveAccPct={(_session.IsRandomMode ? _session.AccidentalPercent : 0)}");
+            DebugLog.WriteLine($"[StaffGen] Tune={_session.Tune} Random={_session.IsRandomMode} SimpleScale={simpleSelectedScale} AccPct={_session.AccidentalPercent} EffectiveAccPct={(_session.IsRandomMode ? _session.AccidentalPercent : 0)}");
             return gen;
         }
 
@@ -1141,7 +1147,7 @@ namespace musicmate.Pages
 #if DEBUG
             if (fromMeasures.Count > 0 && regular.Count > fromMeasures.Count)
             {
-                Debug.WriteLine(
+                DebugLog.WriteLine(
                     $"[LayoutTest] ComputeStaffBarBeats: regular grid ({regular.Count}) replaces sparse measure-index ({fromMeasures.Count})");
             }
 #endif
@@ -1437,7 +1443,7 @@ namespace musicmate.Pages
                         _lowerGlobalNoteIndex = genResult.LowerGlobalNoteIndex;
 
 #if DEBUG
-                        Debug.WriteLine($"[Staff Standard] L{_session.ChildLevel} upperMc={upperMc} lowerMc={lowerMc} Upper: {upperFlat.Count} notes ({upperFlat.Count(n => !n.IsRest)} pitched), Lower: {lowerFlat.Count} notes ({lowerFlat.Count(n => !n.IsRest)} pitched)");
+                        DebugLog.WriteLine($"[Staff Standard] L{_session.ChildLevel} upperMc={upperMc} lowerMc={lowerMc} Upper: {upperFlat.Count} notes ({upperFlat.Count(n => !n.IsRest)} pitched), Lower: {lowerFlat.Count} notes ({lowerFlat.Count(n => !n.IsRest)} pitched)");
 #endif
                     }
 
@@ -1513,7 +1519,7 @@ namespace musicmate.Pages
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[Staff] UpdateStaffDisplayAsync ERROR: {ex}");
+                DebugLog.WriteLine($"[Staff] UpdateStaffDisplayAsync ERROR: {ex}");
                 StatusService.Instance.StatusMessage = $"[Staff Error] {ex.Message}";
             }
         }
@@ -1663,7 +1669,7 @@ namespace musicmate.Pages
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApplyTunerHeight] ERROR: {ex}");
+                DebugLog.WriteLine($"[ApplyTunerHeight] ERROR: {ex}");
             }
         }
 
@@ -1798,7 +1804,7 @@ namespace musicmate.Pages
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[Play] Stop listening error: {ex}");
+                DebugLog.WriteLine($"[Play] Stop listening error: {ex}");
             }
             finally
             {
@@ -2231,7 +2237,7 @@ namespace musicmate.Pages
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[FirstSound] scroll error: {ex}");
+                DebugLog.WriteLine($"[FirstSound] scroll error: {ex}");
             }
         }
 
@@ -2349,7 +2355,7 @@ namespace musicmate.Pages
                 _session.ApplyScaleSelectionOnLevelChange(saved);
             DifficultyLevelMapper.ApplyLevelDerivedSettings(saved, _session);
 #if DEBUG
-            Debug.WriteLine($"[ChildLevel] Hydrated from preferences: L{saved}");
+            DebugLog.WriteLine($"[ChildLevel] Hydrated from preferences: L{saved}");
 #endif
         }
 
@@ -2362,7 +2368,7 @@ namespace musicmate.Pages
             catch (Exception ex)
             {
                 Utils.Log($"[MusicPage.OnAppearing] ERROR: {ex}");
-                Debug.WriteLine($"[MusicPage.OnAppearing] ERROR: {ex}");
+                DebugLog.WriteLine($"[MusicPage.OnAppearing] ERROR: {ex}");
             }
         }
 
@@ -2370,8 +2376,11 @@ namespace musicmate.Pages
         {
             base.OnAppearing();
 #if DEBUG
-            Drawables.StaffDrawable.RunKeySignatureTests();
-            Drawables.StaffDrawable.RunMeasureLayoutTests();
+            if (Diagnostics.DebugLogSettings.IsEnabled(Diagnostics.DebugLogCategory.StaffSelfTests))
+            {
+                Drawables.StaffDrawable.RunKeySignatureTests();
+                Drawables.StaffDrawable.RunMeasureLayoutTests();
+            }
 #endif
             bool returningToPage = !_isPageVisible;
             _isPageVisible = true;
@@ -2384,7 +2393,7 @@ namespace musicmate.Pages
             }
             _orientation?.ForceLandscape();
 
-            Debug.WriteLine($"[DEBUG] OnAppearing: IsAutoRepeatVisible={IsAutoRepeatVisible}, Tune={_session.Tune}");
+            DebugLog.WriteLine($"[DEBUG] OnAppearing: IsAutoRepeatVisible={IsAutoRepeatVisible}, Tune={_session.Tune}");
             IsAutoRepeatVisible = _session.Tune != "Tuner";
             UpdateAutoRepeatButtons();
             UpdateEffectiveScaleLabel();
@@ -2422,7 +2431,7 @@ namespace musicmate.Pages
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[OnAppearing] ERROR regenerating notes: {ex}");
+                    DebugLog.WriteLine($"[OnAppearing] ERROR regenerating notes: {ex}");
                 }
             }
 
@@ -2470,7 +2479,7 @@ namespace musicmate.Pages
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[OnNavigatedTo] scroll error: {ex}");
+                    DebugLog.WriteLine($"[OnNavigatedTo] scroll error: {ex}");
                 }
             });
         }
@@ -2546,7 +2555,7 @@ namespace musicmate.Pages
             {
                 if (!_isBelowThreshold)
                 {
-                    Debug.WriteLine("[Audio] Below RMS threshold, ignoring");
+                    DebugLog.WriteLine("[Audio] Below RMS threshold, ignoring");
                     _isBelowThreshold = true;
                     // Notify session so consecutive same-pitch notes can be distinguished
                     _session.NotifySilence();
@@ -2672,16 +2681,16 @@ namespace musicmate.Pages
         {
             try
             {
-                Debug.WriteLine("[Restart] Restarting audio capture (session preserved)...");
+                DebugLog.WriteLine("[Restart] Restarting audio capture (session preserved)...");
                 _audio.StopCapture();
                 _pitchBufferPos = 0;
                 await _audio.EnsurePermissionAsync();
                 _audio.StartCapture(OnAudioBlock);
-                Debug.WriteLine("[Restart] Audio capture restarted");
+                DebugLog.WriteLine("[Restart] Audio capture restarted");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[Restart] ERROR: {ex}");
+                DebugLog.WriteLine($"[Restart] ERROR: {ex}");
                 SetButtonStates(false);
                 StatusService.Instance.StatusMessage = "Listening stopped — tap ● to restart.";
                 await MainThread.InvokeOnMainThreadAsync(async () =>
@@ -2770,7 +2779,7 @@ namespace musicmate.Pages
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[Stats] UpdateNoteStatsDatabaseAsync error: {ex.Message}");
+                DebugLog.WriteLine($"[Stats] UpdateNoteStatsDatabaseAsync error: {ex.Message}");
             }
 
         }
@@ -2851,7 +2860,7 @@ namespace musicmate.Pages
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[NoteAttempts] SaveNoteAttemptsForSessionAsync error: {ex}");
+                DebugLog.WriteLine($"[NoteAttempts] SaveNoteAttemptsForSessionAsync error: {ex}");
             }
         }
         /// <summary>
@@ -2942,7 +2951,7 @@ namespace musicmate.Pages
                 // Assign a fresh session ID so all NoteAttempts from this run are grouped together.
                 _currentSessionId = PracticeSessionLifecycle.NewSessionId();
 
-                Debug.WriteLine($"[Start] Starting listening, playBack={playBack}, forceNewNotes={forceNewNotes}");
+                DebugLog.WriteLine($"[Start] Starting listening, playBack={playBack}, forceNewNotes={forceNewNotes}");
                 SetButtonStates(true, keepPlayEnabled: playBack);
 
                 using (PracticeSessionStartProfiler.Scope("SessionReset"))
@@ -3003,7 +3012,7 @@ namespace musicmate.Pages
                             {
                                 using (PracticeSessionStartProfiler.Scope("RestoreRepeatSame"))
                                     await RestoreRepeatSameSnapshotAsync(notesToRestore);
-                                Debug.WriteLine($"[Start] Restored {notesToRestore.Count} notes for Repeat Same (filtered from {_repeatSameSnapshot!.Notes.Count})");
+                                DebugLog.WriteLine($"[Start] Restored {notesToRestore.Count} notes for Repeat Same (filtered from {_repeatSameSnapshot!.Notes.Count})");
                             }
                             break;
                         }
@@ -3017,7 +3026,7 @@ namespace musicmate.Pages
                                 && _session.NotesToDraw.Count > 0)
                             {
                                 CaptureRepeatSameSnapshot();
-                                Debug.WriteLine($"[Start] Generated and saved {_session.NotesToDraw.Count} notes for Repeat Same");
+                                DebugLog.WriteLine($"[Start] Generated and saved {_session.NotesToDraw.Count} notes for Repeat Same");
                             }
                             break;
                     }
@@ -3031,11 +3040,11 @@ namespace musicmate.Pages
                 {
                     if (!_isRunning)
                     {
-                        Debug.WriteLine("[Start] Aborted before capture: no longer running");
+                        DebugLog.WriteLine("[Start] Aborted before capture: no longer running");
                         return;
                     }
 
-                    Debug.WriteLine("[Start] Requesting audio permission...");
+                    DebugLog.WriteLine("[Start] Requesting audio permission...");
                     using (PracticeSessionStartProfiler.Scope("AudioPermission"))
                     {
                         await _audio.EnsurePermissionAsync();
@@ -3043,7 +3052,7 @@ namespace musicmate.Pages
                     ct.ThrowIfCancellationRequested();
                     if (!_isRunning)
                     {
-                        Debug.WriteLine("[Start] Aborted after permission: no longer running");
+                        DebugLog.WriteLine("[Start] Aborted after permission: no longer running");
                         return;
                     }
 
@@ -3059,12 +3068,12 @@ namespace musicmate.Pages
                         $"transpose={_session?.InstrumentTransposeOffset}, " +
                         $"Key={_session?.Key}, Scale={_session?.SelectedScale}, " +
                         $"Notes=[{string.Join(", ", expectedNotes)}]";
-                    Debug.WriteLine(sessionLog);
+                    DebugLog.WriteLine(sessionLog);
                     Utils.Log(sessionLog);
-                    Debug.WriteLine("[Start] Starting audio capture...");
+                    DebugLog.WriteLine("[Start] Starting audio capture...");
                     _audio.StartCapture(OnAudioBlock);
                     _session?.StartListeningClock();
-                    Debug.WriteLine("[Start] Audio capture started");
+                    DebugLog.WriteLine("[Start] Audio capture started");
                 }
                 else
                 {
@@ -3082,7 +3091,7 @@ namespace musicmate.Pages
                         SetButtonStates(false);
                         StatusService.Instance.StatusMessage =
                             "No notes to play — try again.";
-                        Debug.WriteLine("[Start] Play aborted: NotesToDraw is empty after regenerate");
+                        DebugLog.WriteLine("[Start] Play aborted: NotesToDraw is empty after regenerate");
                         return;
                     }
 
@@ -3093,11 +3102,11 @@ namespace musicmate.Pages
             }
             catch (OperationCanceledException)
             {
-                Debug.WriteLine("[Start] Cancelled");
+                DebugLog.WriteLine("[Start] Cancelled");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[Start] ERROR: {ex}");
+                DebugLog.WriteLine($"[Start] ERROR: {ex}");
                 _isPlaying = false;
                 SetPlayButtonPlaying(false);
                 SetButtonStates(false);
@@ -3280,7 +3289,7 @@ namespace musicmate.Pages
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[PlayDisplayedAsync] ERROR: {ex}");
+                DebugLog.WriteLine($"[PlayDisplayedAsync] ERROR: {ex}");
             }
             finally
             {
@@ -3387,7 +3396,7 @@ namespace musicmate.Pages
                 {
 #if DEBUG
                     if (e.PropertyName == nameof(NoteSessionService.IsRandomMode))
-                        Debug.WriteLine($"[PickerTest] IsRandomMode={_session.IsRandomMode} Tune={_session.Tune} → RegenerateNotesAsync");
+                        DebugLog.WriteLine($"[PickerTest] IsRandomMode={_session.IsRandomMode} Tune={_session.Tune} → RegenerateNotesAsync");
 #endif
                     await RegenerateNotesAsync();
                     UpdateKeyPickerVisibility();
@@ -4224,15 +4233,15 @@ namespace musicmate.Pages
 
         private async void OnScaleTunePickerChanged(object? sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine($"[PickerDBG] OnScaleTunePickerChanged fired. suppress={IsPickerSyncSuppressed} sender={sender?.GetType().Name}");
+            DebugLog.WriteLine($"[PickerDBG] OnScaleTunePickerChanged fired. suppress={IsPickerSyncSuppressed} sender={sender?.GetType().Name}");
             if (IsPickerSyncSuppressed) return;
             var sourcePicker = (sender as Picker) ?? ScaleTunePicker;
             var items = sourcePicker.ItemsSource as string[];
             var idx = sourcePicker.SelectedIndex;
-            System.Diagnostics.Debug.WriteLine($"[PickerDBG] sourcePicker={sourcePicker.GetType().Name} idx={idx} items null={items == null} len={items?.Length}");
+            DebugLog.WriteLine($"[PickerDBG] sourcePicker={sourcePicker.GetType().Name} idx={idx} items null={items == null} len={items?.Length}");
             if (items == null || idx < 0 || idx >= items.Length) return;
             var selected = items[idx];
-            System.Diagnostics.Debug.WriteLine($"[PickerDBG] selected='{selected}'");
+            DebugLog.WriteLine($"[PickerDBG] selected='{selected}'");
 
             if (PlayModePickerOptions.IsRhythmNoteTuneSelection(selected)
                 || selected == PlayModePickerOptions.HalfThroughSixteenthNotes)
@@ -4250,7 +4259,7 @@ namespace musicmate.Pages
 
             // Check if the selection is a practice tune title
             var practiceTune = musicmate.Models.TuneLibrary.All.FirstOrDefault(t => t.Title == selected);
-            System.Diagnostics.Debug.WriteLine($"[PickerDBG] practiceTune={practiceTune?.Title ?? "null"} TuneLibrary.All count={musicmate.Models.TuneLibrary.All.Count}");
+            DebugLog.WriteLine($"[PickerDBG] practiceTune={practiceTune?.Title ?? "null"} TuneLibrary.All count={musicmate.Models.TuneLibrary.All.Count}");
             if (practiceTune != null)
             {
                 _lastValidScaleTuneIndex = sourcePicker.SelectedIndex;
@@ -4439,7 +4448,7 @@ namespace musicmate.Pages
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"Stop error: {ex}");
+                    DebugLog.WriteLine($"Stop error: {ex}");
                     SetButtonStates(false);
                 }
             }

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.Maui.Graphics;
 using Microsoft.Maui.Graphics.Skia;
+using musicmate.Diagnostics;
 using musicmate.Models;
 using musicmate.Services;
 
@@ -552,7 +553,7 @@ namespace musicmate.Drawables
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Staff] StaticChrome blit failed: {ex.Message}");
+                DebugLog.WriteLine($"[Staff] StaticChrome blit failed: {ex.Message}");
                 return false;
             }
         }
@@ -594,7 +595,7 @@ namespace musicmate.Drawables
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Staff] StaticChrome raster failed: {ex.Message}");
+                DebugLog.WriteLine($"[Staff] StaticChrome raster failed: {ex.Message}");
             }
         }
 
@@ -2237,8 +2238,8 @@ namespace musicmate.Drawables
             while (detail.InnerException != null)
                 detail = detail.InnerException;
 #if DEBUG
-            Debug.WriteLine($"[MusicMate] [Staff Draw] {ex.GetType().Name}: {detail.Message}");
-            Debug.WriteLine($"[MusicMate] [Staff Draw] {ex}");
+            DebugLog.WriteLine($"[Staff Draw] {ex.GetType().Name}: {detail.Message}");
+            DebugLog.WriteLine($"[Staff Draw] {ex}");
             Utilities.Utils.Log($"[Staff Draw] {ex.GetType().Name}: {detail.Message}");
 #endif
         }
@@ -3201,6 +3202,15 @@ namespace musicmate.Drawables
                 return;
             }
 
+            if (_session.ShowConductorCues && _session.Tune != "Tuner"
+                && ConductorBeatHelper.TryParseDisplayTimeSignature(_session.GetDisplayTimeSignature(), out var conductorTs))
+            {
+                double? highlightedBeat = GetHighlightedConductedBeatRel(
+                    notes, currentIdx, beatOrigin, barBeats, conductorTs, isActive);
+                DrawConductorBeatCues(canvas, staffTop, barLayouts, barBeats, beatOrigin,
+                    staffLeftMargin, conductorTs, highlightedBeat);
+            }
+
             barBeats ??= Array.Empty<double>();
             float headerRightAbs = safeLeft + staffLeftMargin - _layout.NoteHeadR;
             var beamGroups = ComputeBeamGroups(notes, noteLayouts, staffTop, staffMid, barBeats, beatOrigin);
@@ -3278,6 +3288,72 @@ namespace musicmate.Drawables
 
             // Draw beams using pre-computed stem positions
             DrawBeams(canvas, beamGroups, beamStemTips, barLayouts);
+        }
+
+        private static double? GetHighlightedConductedBeatRel(
+            List<GeneratedNote> notes,
+            int currentIdx,
+            double beatOrigin,
+            IReadOnlyList<double> barBeats,
+            TimeSignature timeSignature,
+            bool isActive)
+        {
+            if (!isActive || currentIdx < 0 || currentIdx >= notes.Count)
+                return null;
+
+            double relBeat = (notes[currentIdx].BeatPosition ?? 0.0) - beatOrigin;
+            var sortedMeasureStarts = barBeats.Select(b => b - beatOrigin).OrderBy(b => b).ToList();
+            return ConductorBeatHelper.GetConductedBeatStartForRelativeBeat(relBeat, timeSignature, sortedMeasureStarts);
+        }
+
+        private void DrawConductorBeatCues(
+            ICanvas canvas,
+            float staffTop,
+            BarLayout[] barLayouts,
+            IReadOnlyList<double> barBeats,
+            double beatOrigin,
+            float staffLeftMargin,
+            TimeSignature timeSignature,
+            double? highlightedConductedBeatRel)
+        {
+            if (barLayouts.Length == 0)
+                return;
+
+            var conductedOffsets = ConductorBeatHelper.GetConductedBeatOffsetsInMeasure(timeSignature);
+            double measureBeats = timeSignature.TotalBeats;
+            var sortedMeasureStarts = barBeats.Select(b => b - beatOrigin).OrderBy(b => b).ToList();
+            int measureCount = sortedMeasureStarts.Count + 1;
+
+            for (int m = 0; m < measureCount; m++)
+            {
+                float measureLeft = m == 0 ? staffLeftMargin : barLayouts[m - 1].X;
+                float measureRight = m < barLayouts.Length ? barLayouts[m].X : barLayouts[^1].X;
+                double segmentStartBeat = m == 0 ? 0.0 : sortedMeasureStarts[m - 1];
+
+                foreach (double offset in conductedOffsets)
+                {
+                    double conductedBeatRel = segmentStartBeat + offset;
+                    float x = ConductorBeatHelper.BeatOffsetToXInMeasure(
+                        measureLeft, measureRight, offset, measureBeats, BarLeftPadding);
+                    bool isCurrent = highlightedConductedBeatRel.HasValue
+                        && Math.Abs(highlightedConductedBeatRel.Value - conductedBeatRel) < 0.05;
+                    DrawConductorArrow(canvas, x, staffTop, isCurrent);
+                }
+            }
+        }
+
+        private static void DrawConductorArrow(ICanvas canvas, float x, float staffTop, bool isCurrent)
+        {
+            float wing = isCurrent ? 5.5f : 4f;
+            float height = isCurrent ? 8f : 5.5f;
+            float tipY = staffTop - (isCurrent ? 1f : 4f);
+            float baseY = tipY - height;
+
+            canvas.StrokeColor = Colors.Red;
+            canvas.StrokeSize = isCurrent ? 2.5f : 1.8f;
+            canvas.DrawLine(x - wing, baseY, x, tipY);
+            canvas.DrawLine(x + wing, baseY, x, tipY);
+            canvas.DrawLine(x - wing, baseY, x + wing, baseY);
         }
 
         /// <summary>Accidentals and key-sig cancellations apply within the current measure only.</summary>
@@ -4415,7 +4491,8 @@ namespace musicmate.Drawables
             => KeySignatureRules.IsLetterInKeySignature(note.Letter, _session.Key, _session.SelectedScale);
 
 #if DEBUG
-        private static void StaffLog(string message) => Utilities.Utils.Log(message);
+        private static void StaffLog(string message)
+            => DebugLog.WriteLine(DebugLogCategory.StaffLog, message);
 
         // ── Diagnostic test runner ────────────────────────────────────────────────
         // Called from MusicPage.OnAppearing (DEBUG builds only) so the tests always

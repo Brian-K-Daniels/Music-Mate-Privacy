@@ -24,7 +24,7 @@ namespace musicmate.Services
             AssertBalancedKeySignatureMixWhenBothBucketsExist(sb);
 
             sb.AppendLine("[ScaleKeyRandom] Self-check END");
-            Debug.WriteLine(sb.ToString());
+            Utilities.DebugTestLog.Write(sb.ToString());
         }
 
         private static void AssertRepeatOffRandomUsuallyChangesScaleOrKey(StringBuilder sb)

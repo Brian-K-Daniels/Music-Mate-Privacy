@@ -1,4 +1,5 @@
 using musicmate.Services;
+using musicmate.Diagnostics;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using musicmate.Utilities;
@@ -177,7 +178,7 @@ namespace musicmate.ViewModels
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[NoteStatisticsViewModel] Background revalidate: {ex}");
+                DebugLog.WriteLine($"[NoteStatisticsViewModel] Background revalidate: {ex}");
             }
         }
 
@@ -216,6 +217,12 @@ namespace musicmate.ViewModels
             }
         }
 
+        private void DecorateNoteStat(NoteStat stat)
+        {
+            stat.ContrastingTextColor = _themeService.ContrastingTextColor;
+            stat.MasteredDisplay = MasteryEvaluator.IsFullyMastered(stat, _session) ? "Yes" : string.Empty;
+        }
+
         private void ApplyCacheEntry(StatisticsCacheEntry entry)
         {
             LastUpdatedUtc = entry.LastComputedUtc;
@@ -225,7 +232,7 @@ namespace musicmate.ViewModels
                 NoteStats.Clear();
                 foreach (var stat in entry.NoteData.Stats)
                 {
-                    stat.ContrastingTextColor = _themeService.ContrastingTextColor;
+                    DecorateNoteStat(stat);
                     NoteStats.Add(stat);
                 }
 
@@ -283,7 +290,7 @@ namespace musicmate.ViewModels
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[NoteStatisticsViewModel] Error loading stats: {ex}");
+                DebugLog.WriteLine($"[NoteStatisticsViewModel] Error loading stats: {ex}");
             }
         }
 
@@ -299,6 +306,7 @@ namespace musicmate.ViewModels
         public string PercentCorrectSortIndicator => _noteCurrentSortColumn == "PercentCorrect" ? (_noteIsAscending ? "▲" : "▼") : "";
         public string MsAvgSortIndicator => _noteCurrentSortColumn == "MsAvg" ? (_noteIsAscending ? "▲" : "▼") : "";
         public string StreakSortIndicator => _noteCurrentSortColumn == "Streak" ? (_noteIsAscending ? "▲" : "▼") : "";
+        public string MasteredSortIndicator => _noteCurrentSortColumn == "Mastered" ? (_noteIsAscending ? "▲" : "▼") : "";
 
         // Sort indicator properties for Session Stats
         public string DateSortIndicator => _sessionCurrentSortColumn == "Date" ? (_sessionIsAscending ? "▲" : "▼") : "";
@@ -404,6 +412,9 @@ namespace musicmate.ViewModels
                 "Streak" => _noteIsAscending
                     ? NoteStats.OrderBy(s => s.Streak)
                     : NoteStats.OrderByDescending(s => s.Streak),
+                "Mastered" => _noteIsAscending
+                    ? NoteStats.OrderBy(s => s.MasteredDisplay)
+                    : NoteStats.OrderByDescending(s => s.MasteredDisplay),
                 _ => NoteStats.OrderBy(s => s.WrittenName) // Default to Note name ordering
             }).ToList(); // Materialize the sequence before clearing
 
@@ -418,6 +429,7 @@ namespace musicmate.ViewModels
             OnPropertyChanged(nameof(PercentCorrectSortIndicator));
             OnPropertyChanged(nameof(MsAvgSortIndicator));
             OnPropertyChanged(nameof(StreakSortIndicator));
+            OnPropertyChanged(nameof(MasteredSortIndicator));
         }
 
         private void SortSessionStatsByColumn(string columnName)

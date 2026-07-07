@@ -27,7 +27,7 @@ namespace musicmate.Services
             AssertLevelChangeResetsDisallowedNamed(sb);
 
             sb.AppendLine("[ScaleLevel] Self-check END");
-            Debug.WriteLine(sb.ToString());
+            Utilities.DebugTestLog.Write(sb.ToString());
         }
 
         private static void AssertLevel1RandomOnlyPentatonic(StringBuilder sb)

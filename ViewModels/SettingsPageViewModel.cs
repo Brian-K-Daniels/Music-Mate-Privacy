@@ -123,6 +123,8 @@ namespace musicmate.ViewModels
                     OnPropertyChanged(nameof(SyncopationSetting)); break;
                 case nameof(NoteSessionService.NoteNameDisplay):
                     OnPropertyChanged(nameof(NoteNameDisplay)); break;
+                case nameof(NoteSessionService.ShowConductorCues):
+                    OnPropertyChanged(nameof(ShowConductorCues)); break;
                 case nameof(NoteSessionService.WhiteKeyNoteNames):
                     OnPropertyChanged(nameof(WhiteKeyNoteNames)); break;
                 case nameof(NoteSessionService.AvailableScalesForBinding):
@@ -576,6 +578,7 @@ namespace musicmate.ViewModels
         }
 
         private string _noteNameDisplay = Preferences.Get("musicmate.NoteNameDisplay", "Current only");
+        private bool _showConductorCues = Preferences.Get("musicmate.ShowConductorCues", false);
         public string NoteNameDisplay
         {
             get => _session?.NoteNameDisplay ?? _noteNameDisplay;
@@ -593,6 +596,26 @@ namespace musicmate.ViewModels
                     _noteNameDisplay = value;
                     Preferences.Set("musicmate.NoteNameDisplay", value);
                     OnPropertyChanged(nameof(NoteNameDisplay));
+                }
+            }
+        }
+
+        public bool ShowConductorCues
+        {
+            get => _session?.ShowConductorCues ?? _showConductorCues;
+            set
+            {
+                if ((_session?.ShowConductorCues ?? _showConductorCues) == value) return;
+                if (_session != null)
+                {
+                    _session.ShowConductorCues = value;
+                    OnPropertyChanged(nameof(ShowConductorCues));
+                }
+                else
+                {
+                    _showConductorCues = value;
+                    Preferences.Set("musicmate.ShowConductorCues", value);
+                    OnPropertyChanged(nameof(ShowConductorCues));
                 }
             }
         }
