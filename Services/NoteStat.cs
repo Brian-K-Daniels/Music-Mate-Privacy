@@ -10,6 +10,10 @@ namespace musicmate.Services
         [Ignore]
         public string MasteredDisplay { get; set; } = string.Empty;
 
+        /// <summary>Persisted mastery snapshot (0/1) at last stats save using current mastery settings.</summary>
+        [Column("Mstrd")]
+        public int Mastered { get; set; }
+
         [PrimaryKey]
         public string WrittenName { get; set; } = string.Empty;
 
@@ -43,8 +47,8 @@ namespace musicmate.Services
         public int MsCount { get; set; }
         public int Streak { get; set; }
 
-        public int CorrectCount => Correct;
-        public int WrongCount => Wrong;
+        //public int CorrectCount => Correct;  //  2026.07.07 1623  out 2 lines
+        //public int WrongCount => Wrong;
 
         [Ignore]
         public double PercentPitchCorrect =>

@@ -2729,6 +2729,7 @@ namespace musicmate.Pages
                             MsAverage = agg.MsCount > 0 ? agg.TotalMs / agg.MsCount : 0.0,
                             Streak = sessionStreaks.GetValueOrDefault(writtenName, 0)
                         };
+                        MasteryEvaluator.RefreshMasteredFields(stat, _session);
                         await db.InsertOrReplaceAsync(stat);
                     }
                     else
@@ -2754,6 +2755,7 @@ namespace musicmate.Pages
                             else
                                 stat.Streak = sessionStreak;
                         }
+                        MasteryEvaluator.RefreshMasteredFields(stat, _session);
                         await db.UpdateAsync(stat);
                     }
                 }

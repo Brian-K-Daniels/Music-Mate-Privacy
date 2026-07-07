@@ -80,6 +80,29 @@ public class ThemeServiceTests : IDisposable
     }
 
     [Fact]
+    public void ShellChromeForeground_StaysReadable_WhenMainBackgroundDiffersFromPanel()
+    {
+        var theme = new ThemeService();
+        theme.SetColor(AppColorTarget.MainBackground, Color.FromArgb("#1f1f1f"));
+        theme.SetColor(AppColorTarget.PanelBackground, Color.FromArgb("#FFFFFF"));
+        theme.SetColor(AppColorTarget.Text, Color.FromArgb("#000000"));
+
+        Assert.Equal("#FFFFFF", theme.ShellChromeBackgroundColor.ToHex());
+        Assert.Equal(Colors.Black.ToHex(), theme.ShellChromeForegroundColor.ToHex());
+        Assert.NotEqual(theme.MainBackgroundColor.ToHex(), theme.ShellChromeBackgroundColor.ToHex());
+    }
+
+    [Fact]
+    public void ShellChromeForeground_FlipsToWhite_OnDarkPanelBackground()
+    {
+        var theme = new ThemeService();
+        theme.SetColor(AppColorTarget.PanelBackground, Color.FromArgb("#1f1f1f"));
+        theme.SetColor(AppColorTarget.Text, Color.FromArgb("#000000"));
+
+        Assert.Equal(Colors.White.ToHex(), theme.ShellChromeForegroundColor.ToHex());
+    }
+
+    [Fact]
     public void LoadFromPreferences_MigratesLegacyStaffPanelColor()
     {
         _store["StaffPanelColor"] = "#AABBCC";

@@ -90,6 +90,7 @@ namespace musicmate.ViewModels
             _themeService = themeService;
             _session = session;
             _statisticsCache = statisticsCache;
+            _session.PropertyChanged += OnSessionPropertyChanged;
 
             SortNoteStatsCommand = new Command<string>(SortNoteStatsByColumn);
             SortSessionStatsCommand = new Command<string>(SortSessionStatsByColumn);
@@ -220,7 +221,35 @@ namespace musicmate.ViewModels
         private void DecorateNoteStat(NoteStat stat)
         {
             stat.ContrastingTextColor = _themeService.ContrastingTextColor;
-            stat.MasteredDisplay = MasteryEvaluator.IsFullyMastered(stat, _session) ? "Yes" : string.Empty;
+            MasteryEvaluator.RefreshMasteredFields(stat, _session);
+        }
+
+        private void OnSessionPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is not (nameof(NoteSessionService.MasteredMethod)
+                or nameof(NoteSessionService.StreakCrit)
+                or nameof(NoteSessionService.CorrectThreshold)
+                or nameof(NoteSessionService.MinCorrectCount)
+                or nameof(NoteSessionService.OmitMsAvgThreshold)
+                or nameof(NoteSessionService.ChildLevel)))
+                return;
+
+            RedecorateMasteredColumn();
+        }
+
+        private void RedecorateMasteredColumn()
+        {
+            if (NoteStats.Count == 0)
+                return;
+
+            foreach (var stat in NoteStats)
+                DecorateNoteStat(stat);
+
+            OnPropertyChanged(nameof(MasteredHeader));
+            if (_noteCurrentSortColumn == "Mastered")
+                SortNoteStatsByColumn("Mastered");
+            else
+                OnPropertyChanged(nameof(MasteredSortIndicator));
         }
 
         private void ApplyCacheEntry(StatisticsCacheEntry entry)
@@ -307,6 +336,7 @@ namespace musicmate.ViewModels
         public string MsAvgSortIndicator => _noteCurrentSortColumn == "MsAvg" ? (_noteIsAscending ? "▲" : "▼") : "";
         public string StreakSortIndicator => _noteCurrentSortColumn == "Streak" ? (_noteIsAscending ? "▲" : "▼") : "";
         public string MasteredSortIndicator => _noteCurrentSortColumn == "Mastered" ? (_noteIsAscending ? "▲" : "▼") : "";
+        public string MasteredHeader => "Mastered" + MasteredSortIndicator;
 
         // Sort indicator properties for Session Stats
         public string DateSortIndicator => _sessionCurrentSortColumn == "Date" ? (_sessionIsAscending ? "▲" : "▼") : "";
@@ -430,6 +460,7 @@ namespace musicmate.ViewModels
             OnPropertyChanged(nameof(MsAvgSortIndicator));
             OnPropertyChanged(nameof(StreakSortIndicator));
             OnPropertyChanged(nameof(MasteredSortIndicator));
+            OnPropertyChanged(nameof(MasteredHeader));
         }
 
         private void SortSessionStatsByColumn(string columnName)

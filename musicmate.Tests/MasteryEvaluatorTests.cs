@@ -56,4 +56,39 @@ public class MasteryEvaluatorTests
         Assert.True(MasteryEvaluator.IsFullyMastered(
             stat, "% Correct", streakCrit: 3, minCorrectCount: 1, correctThreshold: 50, childLevel: 1, omitMsAvgThreshold: 500));
     }
+
+    [Fact]
+    public void RefreshMasteredFields_SetsPersistedAndDisplayFields()
+    {
+        var stat = new NoteStat
+        {
+            WrittenName = "C4",
+            Streak = 5,
+        };
+
+        MasteryEvaluator.RefreshMasteredFields(
+            stat,
+            masteredMethod: "Streak",
+            streakCrit: 3,
+            minCorrectCount: 6,
+            correctThreshold: 95,
+            childLevel: 0,
+            omitMsAvgThreshold: 400);
+
+        Assert.Equal(1, stat.Mastered);
+        Assert.Equal("Yes", stat.MasteredDisplay);
+
+        stat.Streak = 1;
+        MasteryEvaluator.RefreshMasteredFields(
+            stat,
+            masteredMethod: "Streak",
+            streakCrit: 3,
+            minCorrectCount: 6,
+            correctThreshold: 95,
+            childLevel: 0,
+            omitMsAvgThreshold: 400);
+
+        Assert.Equal(0, stat.Mastered);
+        Assert.Equal(string.Empty, stat.MasteredDisplay);
+    }
 }

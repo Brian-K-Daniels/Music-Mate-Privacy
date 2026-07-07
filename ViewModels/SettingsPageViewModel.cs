@@ -34,9 +34,9 @@ namespace musicmate.ViewModels
         // Aligned with NoteSessionService Preferences default (0) so factory reset
         // and a fresh install produce the same initial accidental percentage.
         public const int DefaultAccidentalPct = 0;
-        public const int DefaultCorrectThreshold = 95;
-        public const int DefaultMinCorrectCount = 6;
-        public const int DefaultOmitMsAvg = 400;
+        public const int DefaultCorrectThreshold = MasteryPreferenceDefaults.CorrectThreshold;
+        public const int DefaultMinCorrectCount = MasteryPreferenceDefaults.MinCorrectCount;
+        public const int DefaultOmitMsAvg = MasteryPreferenceDefaults.OmitMsAvgThreshold;
         public const bool DefaultAutoStart = true;
         public const bool DefaultCollectNote = true;
         public const bool DefaultCollectSession = true;
@@ -324,7 +324,7 @@ namespace musicmate.ViewModels
             }
         }
 
-        private int _correctThreshold = Preferences.Get("musicmate.CorrectThreshold", 0);
+        private int _correctThreshold = Preferences.Get("musicmate.CorrectThreshold", MasteryPreferenceDefaults.CorrectThreshold);
         public int CorrectThreshold
         {
             get => _session?.CorrectThreshold ?? _correctThreshold;
@@ -348,7 +348,7 @@ namespace musicmate.ViewModels
             }
         }
 
-        private int _minCorrectCount = Preferences.Get("musicmate.MinCorrectCount", 3);
+        private int _minCorrectCount = Preferences.Get("musicmate.MinCorrectCount", MasteryPreferenceDefaults.MinCorrectCount);
         public int MinCorrectCount
         {
             get => _session?.MinCorrectCount ?? _minCorrectCount;
@@ -391,7 +391,7 @@ namespace musicmate.ViewModels
             }
         }
 
-        private int _omitMsAvgThreshold = Preferences.Get("musicmate.OmitMsAvgThreshold", 0);
+        private int _omitMsAvgThreshold = Preferences.Get("musicmate.OmitMsAvgThreshold", MasteryPreferenceDefaults.OmitMsAvgThreshold);
         public int OmitMsAvgThreshold
         {
             get => _session?.OmitMsAvgThreshold ?? _omitMsAvgThreshold;
@@ -415,7 +415,7 @@ namespace musicmate.ViewModels
 
         public List<string> MasteredMethodOptions { get; } = new() { "% Correct", "Streak" };
 
-        private string _masteredMethod = Preferences.Get("musicmate.MasteredMethod", "% Correct");
+        private string _masteredMethod = Preferences.Get("musicmate.MasteredMethod", MasteryPreferenceDefaults.MasteredMethod);
         public string MasteredMethod
         {
             get => _session?.MasteredMethod ?? _masteredMethod;
@@ -458,7 +458,7 @@ namespace musicmate.ViewModels
             }
         }
 
-        private int _streakCrit = Preferences.Get("musicmate.StreakCrit", 3);
+        private int _streakCrit = Preferences.Get("musicmate.StreakCrit", MasteryPreferenceDefaults.StreakCrit);
         public int StreakCrit
         {
             get => _session?.StreakCrit ?? _streakCrit;
@@ -688,7 +688,7 @@ namespace musicmate.ViewModels
             OmitMsAvgThreshold = DefaultOmitMsAvg;
             AutoStart = DefaultAutoStart;
             MasteredMethod = "% Correct";
-            StreakCrit = 3;
+            StreakCrit = MasteryPreferenceDefaults.StreakCrit;
             CollectNoteStats = DefaultCollectNote;
             CollectSessionStats = DefaultCollectSession;
             MaxAttemptsPerNote = 100;

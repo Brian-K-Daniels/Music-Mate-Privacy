@@ -38,7 +38,7 @@ public static class DebugLogSettings
     public static string GetDisplayName(DebugLogCategory category) => category switch
     {
         DebugLogCategory.General => "General (MusicMate log)",
-        DebugLogCategory.Timing => "Timing diagnostics",
+        DebugLogCategory.Timing => "Timing diagnostics and Mastery",
         DebugLogCategory.SessionStartProfiler => "Session start profiler",
         DebugLogCategory.LevelUp => "Level up",
         DebugLogCategory.Picker => "Picker debug",

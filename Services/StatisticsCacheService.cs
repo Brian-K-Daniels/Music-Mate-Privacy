@@ -48,7 +48,7 @@ public sealed class StatisticsCacheEntry
 public sealed class StatisticsCacheService
 {
   /// <summary>Increment when statistics calculation logic or displayed schema changes.</summary>
-    public const int CacheVersion = 1;
+    public const int CacheVersion = 2;
 
     private readonly object _lock = new();
     private readonly Dictionary<StatisticsDatabaseKind, StatisticsCacheEntry> _entries = new();
@@ -217,7 +217,8 @@ public static class StatisticsDataLoader
                 Octave = stat.Octave,
                 MsAverage = stat.MsAverage,
                 MsCount = stat.MsCount,
-                Streak = stat.Streak
+                Streak = stat.Streak,
+                Mastered = stat.Mastered
             });
         }
 

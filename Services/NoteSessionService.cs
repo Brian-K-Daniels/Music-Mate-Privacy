@@ -436,7 +436,7 @@ namespace musicmate.Services
         private int _pcScales = Preferences.Get(PrefPcScalesKey, DefaultPcScales);
         private int _pcArpeggios = Preferences.Get(PrefPcArpeggiosKey, DefaultPcArpeggios);
         private int _accidentalPercent = Preferences.Get(PrefAccidentalPercentKey, 0);
-        private int _correctThreshold = Preferences.Get(PrefCorrectThresholdKey, 50);
+        private int _correctThreshold = Preferences.Get(PrefCorrectThresholdKey, MasteryPreferenceDefaults.CorrectThreshold);
         private double _pitchOffsetCents = Preferences.Get(PrefPitchOffsetCentsKey, DefaultPitchOffsetCents);
         public const double DefaultPitchOffsetCents = 0.0;
         public double PitchOffsetCents
@@ -483,8 +483,8 @@ namespace musicmate.Services
 
         private const string PrefMasteredMethodKey = "musicmate.MasteredMethod";
         private const string PrefStreakCritKey = "musicmate.StreakCrit";
-        private string _masteredMethod = Preferences.Get(PrefMasteredMethodKey, "% Correct");
-        private int _streakCrit = Preferences.Get(PrefStreakCritKey, 3);
+        private string _masteredMethod = Preferences.Get(PrefMasteredMethodKey, MasteryPreferenceDefaults.MasteredMethod);
+        private int _streakCrit = Preferences.Get(PrefStreakCritKey, MasteryPreferenceDefaults.StreakCrit);
 
         public string MasteredMethod
         {
@@ -496,6 +496,7 @@ namespace musicmate.Services
                     _masteredMethod = value;
                     Preferences.Set(PrefMasteredMethodKey, value);
                     OnPropertyChanged(nameof(MasteredMethod));
+                    NotifyMasterySettingsChanged();
                 }
             }
         }
@@ -510,6 +511,7 @@ namespace musicmate.Services
                     _streakCrit = clamped;
                     Preferences.Set(PrefStreakCritKey, clamped);
                     OnPropertyChanged(nameof(StreakCrit));
+                    NotifyMasterySettingsChanged();
                 }
             }
         }
@@ -577,11 +579,14 @@ namespace musicmate.Services
                 _lastRandomWrongUtc.Remove(writtenName);
                 _sessionStreaks[writtenName] = _sessionStreaks.GetValueOrDefault(writtenName, 0) + 1;
             }
-            else if (!_lastRandomWrongUtc.TryGetValue(writtenName, out var lastWrong)
-                     || (now - lastWrong).TotalMilliseconds >= _wrongDebounceMs)
+            else
             {
-                _lastRandomWrongUtc[writtenName] = now;
                 _sessionStreaks[writtenName] = 0;
+                if (!_lastRandomWrongUtc.TryGetValue(writtenName, out var lastWrong)
+                    || (now - lastWrong).TotalMilliseconds >= _wrongDebounceMs)
+                {
+                    _lastRandomWrongUtc[writtenName] = now;
+                }
             }
 
             _sessionNoteStats[writtenName] = agg;
@@ -621,6 +626,11 @@ namespace musicmate.Services
         public Dictionary<string, int> GetSessionStreaks()
         {
             return new Dictionary<string, int>(_sessionStreaks);
+        }
+
+        private static void NotifyMasterySettingsChanged()
+        {
+            ServiceHelper.GetService<StatisticsCacheService>()?.InvalidateNoteStats();
         }
         /// <summary>
         /// Returns the set of written-pitch MIDI numbers that the player has mastered,
@@ -773,6 +783,7 @@ namespace musicmate.Services
                 _correctThreshold = clamped;
                 Preferences.Set(PrefCorrectThresholdKey, _correctThreshold);
                 OnPropertyChanged(nameof(CorrectThreshold));
+                NotifyMasterySettingsChanged();
             }
         }
         public static string[] InstrumentOptions => InstrumentCatalog.DisplayNames;
@@ -954,9 +965,9 @@ namespace musicmate.Services
         public void ClearNoteRangeCustomization() => NoteRangeCustomized = false;
 
         private const string PrefMinCorrectCountKey = "musicmate.MinCorrectCount";
-        private int _minCorrectCount = Preferences.Get(PrefMinCorrectCountKey, 3);
+        private int _minCorrectCount = Preferences.Get(PrefMinCorrectCountKey, MasteryPreferenceDefaults.MinCorrectCount);
         private const string PrefOmitMsAvgThresholdKey = "musicmate.OmitMsAvgThreshold";
-        private int _omitMsAvgThreshold = Preferences.Get(PrefOmitMsAvgThresholdKey, 500);
+        private int _omitMsAvgThreshold = Preferences.Get(PrefOmitMsAvgThresholdKey, MasteryPreferenceDefaults.OmitMsAvgThreshold);
         public int OmitMsAvgThreshold
         {
             get => _omitMsAvgThreshold;
@@ -968,6 +979,7 @@ namespace musicmate.Services
                     _omitMsAvgThreshold = clamped;
                     Preferences.Set(PrefOmitMsAvgThresholdKey, clamped);
                     OnPropertyChanged(nameof(OmitMsAvgThreshold));
+                    NotifyMasterySettingsChanged();
                 }
             }
         }
@@ -982,6 +994,7 @@ namespace musicmate.Services
                     _minCorrectCount = clamped;
                     Preferences.Set(PrefMinCorrectCountKey, clamped);
                     OnPropertyChanged(nameof(MinCorrectCount));
+                    NotifyMasterySettingsChanged();
                 }
             }
         }
@@ -1045,6 +1058,7 @@ namespace musicmate.Services
                 _childLevel = clamped;
                 ApplyAutomaticInstrumentRange(fullReset: false);
                 OnPropertyChanged(nameof(ChildLevel));
+                NotifyMasterySettingsChanged();
             }
         }
 
@@ -1951,7 +1965,7 @@ namespace musicmate.Services
             _timingAccuracyPercent = null;
             _detectedBpm = null;
             _lastCorrectNoteUtc = null;
-            OmitMsAvgThreshold = Preferences.Get(PrefOmitMsAvgThresholdKey, 500);
+            OmitMsAvgThreshold = Preferences.Get(PrefOmitMsAvgThresholdKey, MasteryPreferenceDefaults.OmitMsAvgThreshold);
             _lastWrongTimePerIndex.Clear();
             _lastRandomWrongUtc.Clear();
             _sessionNoteStats.Clear();

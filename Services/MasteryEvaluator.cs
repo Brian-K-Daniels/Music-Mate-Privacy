@@ -88,6 +88,32 @@ public static class MasteryEvaluator
         return true;
     }
 
+    /// <summary>Updates persisted and display mastery fields from current stats and session settings.</summary>
+    public static void RefreshMasteredFields(NoteStat stat, NoteSessionService session)
+        => RefreshMasteredFields(
+            stat,
+            session.MasteredMethod,
+            session.StreakCrit,
+            session.MinCorrectCount,
+            session.CorrectThreshold,
+            session.ChildLevel,
+            session.OmitMsAvgThreshold);
+
+    public static void RefreshMasteredFields(
+        NoteStat stat,
+        string masteredMethod,
+        int streakCrit,
+        int minCorrectCount,
+        int correctThreshold,
+        int childLevel,
+        int omitMsAvgThreshold)
+    {
+        bool mastered = IsFullyMastered(
+            stat, masteredMethod, streakCrit, minCorrectCount, correctThreshold, childLevel, omitMsAvgThreshold);
+        stat.Mastered = mastered ? 1 : 0;
+        stat.MasteredDisplay = mastered ? "Yes" : string.Empty;
+    }
+
     private static void LogMasteryDecision(string writtenName, bool mastered, string reason, NoteStat stat)
     {
         DebugLog.WriteLine(

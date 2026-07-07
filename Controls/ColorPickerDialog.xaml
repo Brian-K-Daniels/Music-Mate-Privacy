@@ -20,7 +20,7 @@
 
   <ScrollView HorizontalOptions="Center" VerticalOptions="Center">
     
-        <Grid
+        <Grid x:Name="DialogPanel"
           HorizontalOptions="Center"
           VerticalOptions="Center"
           Padding="24"
@@ -118,7 +118,8 @@
                     WidthRequest="40" HeightRequest="40"
                     Pressed="OnDownArrowPressed"
                     Released="OnArrowReleased"/>
-            <Button Text="OK"
+            <Button x:Name="OkButton"
+                    Text="OK"
                     TextColor="White"
                     BackgroundColor="#8B4513"
                     Clicked="OnOkClicked"

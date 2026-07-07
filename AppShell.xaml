@@ -9,7 +9,7 @@
     Title="MusicMate"
     FlyoutBehavior="Flyout"
     FlyoutWidth="300"
-    Shell.BackgroundColor="Transparent"
+    Shell.BackgroundColor="{DynamicResource ThemePanelBackground}"
     Shell.FlyoutBackgroundColor="{DynamicResource ThemeSecondPanelBackground}"
     Shell.TitleColor="{DynamicResource ThemeContrastingText}"
     Shell.ForegroundColor="{DynamicResource ThemeContrastingText}"

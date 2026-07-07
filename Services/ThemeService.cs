@@ -65,6 +65,12 @@ public class ThemeService : INotifyPropertyChanged
     /// <summary>Readable body text on the main panel background.</summary>
     public Color ContrastingTextColor => GetEffectiveTextColor(AppColorTarget.Text, AppColorTarget.PanelBackground);
 
+    /// <summary>Shell navigation bar background; paired with <see cref="ContrastingTextColor"/>.</summary>
+    public Color ShellChromeBackgroundColor => PanelBackgroundColor;
+
+    /// <summary>Shell navigation bar icons and title; contrast-checked against <see cref="ShellChromeBackgroundColor"/>.</summary>
+    public Color ShellChromeForegroundColor => ContrastingTextColor;
+
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? ThemeColorsChanged;
 
@@ -184,11 +190,11 @@ public class ThemeService : INotifyPropertyChanged
             var page = Application.Current?.Windows.FirstOrDefault()?.Page;
             if (page is Shell shell)
             {
-                shell.BackgroundColor = MainBackgroundColor;
+                shell.BackgroundColor = ShellChromeBackgroundColor;
                 shell.FlyoutBackgroundColor = SecondPanelBackgroundColor;
-                Shell.SetTitleColor(shell, ContrastingTextColor);
-                Shell.SetForegroundColor(shell, ContrastingTextColor);
-                Shell.SetDisabledColor(shell, ContrastingTextColor.WithAlpha(0.5f));
+                Shell.SetTitleColor(shell, ShellChromeForegroundColor);
+                Shell.SetForegroundColor(shell, ShellChromeForegroundColor);
+                Shell.SetDisabledColor(shell, ShellChromeForegroundColor.WithAlpha(0.5f));
             }
         }
         catch

@@ -84,9 +84,9 @@
 
       <!-- Note Stats Table with fixed header (unchanged) -->
       <ScrollView Orientation="Horizontal">
-        <VerticalStackLayout MinimumWidthRequest="550" Spacing="0" Margin="8,0,0,0">
+        <VerticalStackLayout MinimumWidthRequest="626" Spacing="0" Margin="8,0,0,0">
           <Grid ColumnDefinitions="*" Padding="0" Margin="0" IsVisible="{Binding IsNoteDatabase}">
-            <Grid Grid.Column="0" ColumnDefinitions="120,80,80,100,100,70,60" HeightRequest="28">
+            <Grid Grid.Column="0" ColumnDefinitions="120,80,80,100,100,70,76" HeightRequest="28">
                 <Border Grid.Column="0" BackgroundColor="Transparent" Padding="0">
                   <Label FontSize="10" FontAttributes="Bold" TextColor="{DynamicResource ThemeContrastingText}"
                          HorizontalOptions="Center" HorizontalTextAlignment="Center" VerticalOptions="Center">
@@ -172,15 +172,10 @@
                   </Border.GestureRecognizers>
                 </Border>
                 <Border Grid.Column="6" BackgroundColor="Transparent" Padding="0">
-                  <Label FontSize="10" FontAttributes="Bold" TextColor="{DynamicResource ThemeContrastingText}"
-                         HorizontalOptions="Center" HorizontalTextAlignment="Center" VerticalOptions="Center">
-                    <Label.FormattedText>
-                      <FormattedString>
-                        <Span Text="Mastered " />
-                        <Span Text="{Binding MasteredSortIndicator}" />
-                      </FormattedString>
-                    </Label.FormattedText>
-                  </Label>
+                  <Label Text="{Binding MasteredHeader}"
+                         FontSize="10" FontAttributes="Bold" TextColor="{DynamicResource ThemeContrastingText}"
+                         LineBreakMode="NoWrap"
+                         HorizontalOptions="Center" HorizontalTextAlignment="Center" VerticalOptions="Center" />
                   <Border.GestureRecognizers>
                     <TapGestureRecognizer Command="{Binding SortNoteStatsCommand}" CommandParameter="Mastered" />
                   </Border.GestureRecognizers>
@@ -192,7 +187,7 @@
             <VerticalStackLayout BindableLayout.ItemsSource="{Binding NoteStats}" Padding="0,0,0,60">
               <BindableLayout.ItemTemplate>
                 <DataTemplate>
-                  <Grid ColumnDefinitions="120,80,80,100,100,70,60" Padding="0,0,0,0" HeightRequest="24">
+                  <Grid ColumnDefinitions="120,80,80,100,100,70,76" Padding="0,0,0,0" HeightRequest="24">
                     <Label Text="{Binding WrittenName}" Grid.Column="0" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}" />
                     <Label Text="{Binding Correct}" Grid.Column="1" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}" />
                     <Label Text="{Binding Wrong}" Grid.Column="2" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}" />
