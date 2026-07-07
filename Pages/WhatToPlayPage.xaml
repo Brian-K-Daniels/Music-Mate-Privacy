@@ -8,7 +8,7 @@
              x:Name="whatToPlayPage"
              Shell.NavBarIsVisible="True"
              Padding="0"             
-             BackgroundColor="{Binding Source={x:Reference whatToPlayPage}, Path=PanelBackgroundColor}">
+             BackgroundColor="{DynamicResource ThemePanelBackground}">
   <!--BackgroundColor="#F7F7F7"> -->
 
   <Shell.TitleView>
@@ -17,12 +17,12 @@
         <Button Text="←"
                 Clicked="OnNavigatePracticeClicked"
                 BackgroundColor="Transparent"
-                TextColor="White"
+                TextColor="{DynamicResource ThemeContrastingText}"
                 FontSize="18"
                 Padding="12,0"
                 WidthRequest="56" />
         <Label Text="What to Play"
-               TextColor="White"
+               TextColor="{DynamicResource ThemeContrastingText}"
                FontAttributes="Bold"
                FontSize="18"
                VerticalOptions="Center" />
@@ -45,7 +45,7 @@
 
   <ContentPage.Resources>
     <Style x:Key="WtpBrownBox" TargetType="Border">
-      <Setter Property="Background" Value="#8B4513" />
+      <Setter Property="Background" Value="{DynamicResource ThemeButtonBackground}" />
       <Setter Property="Stroke" Value="Black" />
       <Setter Property="StrokeThickness" Value="2" />
       <Setter Property="StrokeShape">
@@ -59,8 +59,8 @@
       <Setter Property="HorizontalOptions" Value="Center" />
     </Style>
     <Style x:Key="WtpBrownButton" TargetType="Button">
-      <Setter Property="BackgroundColor" Value="#8B4513" />
-      <Setter Property="TextColor" Value="White" />
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeButtonText}" />
       <Setter Property="FontSize" Value="13" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="HeightRequest" Value="44" />
@@ -71,7 +71,7 @@
       <Setter Property="HorizontalOptions" Value="Center" />
     </Style>
     <Style x:Key="WtpPlayModePickerBorder" TargetType="Border">
-      <Setter Property="Background" Value="#8B4513" />
+      <Setter Property="Background" Value="{DynamicResource ThemeButtonBackground}" />
       <Setter Property="Stroke" Value="Black" />
       <Setter Property="StrokeThickness" Value="2" />
       <Setter Property="Padding" Value="6,4" />
@@ -85,7 +85,7 @@
     </Style>
     <Style x:Key="WtpPlayModePicker" TargetType="Picker">
       <Setter Property="FontSize" Value="12" />
-      <Setter Property="TextColor" Value="#000000" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemePickerText}" />
       <Setter Property="BackgroundColor" Value="Transparent" />
       <Setter Property="VerticalOptions" Value="Center" />
       <Setter Property="HorizontalOptions" Value="Fill" />
@@ -116,10 +116,10 @@
             <Label Text="Tunes"
                    FontSize="13"
                    FontAttributes="Bold"
-                   TextColor="#333333"
+                   TextColor="{DynamicResource ThemeContrastingText}"
                    HorizontalOptions="Center" />
             <Border Style="{StaticResource WtpPlayModePickerBorder}">
-              <Grid BackgroundColor="White">
+              <Grid BackgroundColor="{DynamicResource ThemePickerBackground}">
                 <Picker x:Name="TunesPicker"
                         Style="{StaticResource WtpPlayModePicker}"
                         SelectedIndexChanged="OnTunesPickerChanged" />
@@ -132,10 +132,10 @@
             <Label Text="Scales"
                    FontSize="13"
                    FontAttributes="Bold"
-                   TextColor="#333333"
+                   TextColor="{DynamicResource ThemeContrastingText}"
                    HorizontalOptions="Center" />
             <Border Style="{StaticResource WtpPlayModePickerBorder}">
-              <Grid BackgroundColor="White">
+              <Grid BackgroundColor="{DynamicResource ThemePickerBackground}">
                 <Picker x:Name="ScalesPicker"
                         Style="{StaticResource WtpPlayModePicker}"
                         SelectedIndexChanged="OnScalesPickerChanged" />
@@ -148,10 +148,10 @@
             <Label Text="Arpeggios"
                    FontSize="13"
                    FontAttributes="Bold"
-                   TextColor="#333333"
+                   TextColor="{DynamicResource ThemeContrastingText}"
                    HorizontalOptions="Center" />
             <Border Style="{StaticResource WtpPlayModePickerBorder}">
-              <Grid BackgroundColor="White">
+              <Grid BackgroundColor="{DynamicResource ThemePickerBackground}">
                 <Picker x:Name="ArpeggiosPicker"
                         Style="{StaticResource WtpPlayModePicker}"
                         SelectedIndexChanged="OnArpeggiosPickerChanged" />
@@ -164,10 +164,10 @@
             <Label Text="Other"
                    FontSize="13"
                    FontAttributes="Bold"
-                   TextColor="#333333"
+                   TextColor="{DynamicResource ThemeContrastingText}"
                    HorizontalOptions="Center" />
             <Border Style="{StaticResource WtpPlayModePickerBorder}">
-              <Grid BackgroundColor="White">
+              <Grid BackgroundColor="{DynamicResource ThemePickerBackground}">
                 <Picker x:Name="OtherPicker"
                         Style="{StaticResource WtpPlayModePicker}"
                         SelectedIndexChanged="OnOtherPickerChanged" />

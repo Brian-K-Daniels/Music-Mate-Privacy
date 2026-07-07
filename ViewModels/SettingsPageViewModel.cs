@@ -53,7 +53,10 @@ namespace musicmate.ViewModels
             if (_session != null)
                 _session.PropertyChanged += Session_PropertyChanged;
             if (_theme != null)
+            {
                 _theme.PropertyChanged += Theme_PropertyChanged;
+                _theme.ThemeColorsChanged += (_, _) => RefreshThemeColorBindings();
+            }
         }
 
         /// <summary>
@@ -136,42 +139,39 @@ namespace musicmate.ViewModels
 
         private void Theme_PropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
-            if (e.PropertyName == nameof(ThemeService.PanelBackgroundColor))
-            {
-                OnPropertyChanged(nameof(PanelBackgroundColor));
-                OnPropertyChanged(nameof(ContrastingTextColor));
-            }
+            RefreshThemeColorBindings();
         }
 
-        public Color PanelBackgroundColor
+        public void RefreshThemeColorBindings()
         {
-            get => _theme?.PanelBackgroundColor ?? _panelBackgroundColor;
-            set
-            {
-                if ((_theme?.PanelBackgroundColor ?? _panelBackgroundColor) != value)
-                {
-                    if (_theme != null)
-                    {
-                        _theme.PanelBackgroundColor = value;
-                    }
-                    else
-                    {
-                        _panelBackgroundColor = value;
-                        Preferences.Set("musicmate.PanelBackgroundColor", value.ToHex());
-                        OnPropertyChanged(nameof(PanelBackgroundColor));
-                        OnPropertyChanged(nameof(ContrastingTextColor));
-                    }
-                }
-            }
+            OnPropertyChanged(nameof(PanelBackgroundColor));
+            OnPropertyChanged(nameof(SecondPanelBackgroundColor));
+            OnPropertyChanged(nameof(ContrastingTextColor));
+            OnPropertyChanged(nameof(TextColor));
+            OnPropertyChanged(nameof(HeadingTextColor));
+            OnPropertyChanged(nameof(SliderColor));
+            OnPropertyChanged(nameof(ButtonBackgroundColor));
+            OnPropertyChanged(nameof(ButtonTextColor));
+            OnPropertyChanged(nameof(PickerBackgroundColor));
+            OnPropertyChanged(nameof(PickerTextColor));
+            OnPropertyChanged(nameof(PickerBorderColor));
+            OnPropertyChanged(nameof(EntryBackgroundColor));
+            OnPropertyChanged(nameof(EntryTextColor));
         }
-        public Color ContrastingTextColor
-        {
-            get
-            {
-                double luminance = 0.299 * PanelBackgroundColor.Red + 0.587 * PanelBackgroundColor.Green + 0.114 * PanelBackgroundColor.Blue;
-                return luminance > 0.5 ? Colors.Black : Colors.White;
-            }
-        }
+
+        public Color PanelBackgroundColor => _theme?.PanelBackgroundColor ?? _panelBackgroundColor;
+        public Color SecondPanelBackgroundColor => _theme?.SecondPanelBackgroundColor ?? Color.FromArgb("#F8F8FF");
+        public Color TextColor => _theme?.TextColor ?? Colors.Black;
+        public Color HeadingTextColor => _theme?.HeadingTextColor ?? Color.FromArgb("#8B4513");
+        public Color SliderColor => _theme?.SliderColor ?? Color.FromArgb("#8B4513");
+        public Color ButtonBackgroundColor => _theme?.ButtonBackgroundColor ?? Color.FromArgb("#8B4513");
+        public Color ButtonTextColor => _theme?.ButtonTextColor ?? Colors.White;
+        public Color PickerBackgroundColor => _theme?.PickerBackgroundColor ?? Colors.White;
+        public Color PickerTextColor => _theme?.PickerTextColor ?? Colors.Black;
+        public Color PickerBorderColor => _theme?.PickerBorderColor ?? Color.FromArgb("#8B4513");
+        public Color EntryBackgroundColor => _theme?.EntryBackgroundColor ?? Colors.White;
+        public Color EntryTextColor => _theme?.EntryTextColor ?? Colors.Black;
+        public Color ContrastingTextColor => _theme?.ContrastingTextColor ?? ThemeColorContrast.GetContrastingTextColor(PanelBackgroundColor);
 
         // Picker and slider properties
         public string[] AvailableScalesForBinding => _session?.AvailableScalesForBinding ?? new[]

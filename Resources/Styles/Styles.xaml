@@ -409,7 +409,7 @@
 
     <!-- Circular gold frame for logo.png (masks the square white PNG background). -->
     <Style x:Key="TitleLogoBorder" TargetType="Border">
-        <Setter Property="BackgroundColor" Value="{StaticResource LogoGold}" />
+        <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
         <Setter Property="WidthRequest" Value="32" />
         <Setter Property="HeightRequest" Value="32" />
         <Setter Property="StrokeThickness" Value="0" />
@@ -422,7 +422,7 @@
     </Style>
 
     <Style x:Key="LargeLogoBorder" TargetType="Border">
-        <Setter Property="BackgroundColor" Value="{StaticResource LogoGold}" />
+        <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
         <Setter Property="WidthRequest" Value="80" />
         <Setter Property="HeightRequest" Value="80" />
         <Setter Property="StrokeThickness" Value="0" />

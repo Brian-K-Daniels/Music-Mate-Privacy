@@ -103,18 +103,10 @@ namespace musicmate
             }
             catch { }
 
-            // Deploy saved panel background color now that services are initialized
+            // Load saved theme colors now that services are initialized
             try
             {
-                var theme = app.Services.GetService<ThemeService>();
-                if (theme != null)
-                {
-                    var saved = Microsoft.Maui.Storage.Preferences.Default.Get<string?>("StaffPanelColor", null);
-                    if (!string.IsNullOrEmpty(saved))
-                    {
-                        theme.PanelBackgroundColor = Microsoft.Maui.Graphics.Color.FromArgb(saved);
-                    }
-                }
+                app.Services.GetService<ThemeService>()?.LoadFromPreferences();
             }
             catch { }
             return app;

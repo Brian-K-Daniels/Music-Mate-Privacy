@@ -4,39 +4,49 @@
              xmlns:controls="clr-namespace:musicmate.Controls"
              x:Class="musicmate.Pages.SettingsPage"
              Shell.NavBarIsVisible="True"
-             BackgroundColor="{Binding PanelBackgroundColor}">
+             BackgroundColor="{DynamicResource ThemePanelBackground}">
 
   <ContentPage.Resources>
     <Style TargetType="Label">
-      <Setter Property="TextColor" Value="{Binding ContrastingTextColor}" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeContrastingText}" />
       <Setter Property="FontSize" Value="13" />
       <Setter Property="VerticalOptions" Value="Center" />
     </Style>
     <Style x:Key="SliderStyle" TargetType="Slider">
-      <Setter Property="ThumbColor" Value="#8B4513" />
-      <Setter Property="MinimumTrackColor" Value="#8B4513" />
+      <Setter Property="ThumbColor" Value="{DynamicResource ThemeSlider}" />
+      <Setter Property="MinimumTrackColor" Value="{DynamicResource ThemeSlider}" />
       <Setter Property="MaximumTrackColor" Value="#CCCCCC" />
       <Setter Property="HorizontalOptions" Value="Fill" />
     </Style>
     <Style TargetType="Button">
-      <Setter Property="TextColor" Value="White" />
-      <Setter Property="BackgroundColor" Value="#8B4513" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeButtonText}" />
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="Padding" Value="12,4" />
       <Setter Property="Margin" Value="4,2" />
       <Setter Property="FontSize" Value="12" />
     </Style>
     <Style x:Key="SettingsPanelBorder" TargetType="Border">
-      <Setter Property="Stroke" Value="#8B4513" />
+      <Setter Property="Stroke" Value="{DynamicResource ThemePickerBorder}" />
       <Setter Property="Padding" Value="12" />
       <Setter Property="Margin" Value="0,0,0,8" />
-      <Setter Property="BackgroundColor" Value="#F8F8FF" />
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemeSecondPanelBackground}" />
     </Style>
     <Style x:Key="SettingsPanelTitle" TargetType="Label">
       <Setter Property="FontAttributes" Value="Bold" />
       <Setter Property="FontSize" Value="16" />
-      <Setter Property="TextColor" Value="#8B4513" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeHeadingText}" />
       <Setter Property="Margin" Value="0,0,0,6" />
+    </Style>
+    <Style x:Key="SettingsPickerStyle" TargetType="Picker">
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemePickerBackground}" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemePickerText}" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style x:Key="SettingsEntryStyle" TargetType="Entry">
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemeEntryBackground}" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeEntryText}" />
+      <Setter Property="FontSize" Value="12" />
     </Style>
   </ContentPage.Resources>
 
@@ -46,12 +56,12 @@
         <Button Text="←"
                 Clicked="OnNavigatePracticeClicked"
                 BackgroundColor="Transparent"
-                TextColor="White"
+                TextColor="{DynamicResource ThemeContrastingText}"
                 FontSize="18"
                 Padding="12,0"
                 WidthRequest="56" />
         <Label Text="Settings"
-               TextColor="White"
+               TextColor="{DynamicResource ThemeContrastingText}"
                FontAttributes="Bold"
                FontSize="18"
                VerticalOptions="Center" />
@@ -76,21 +86,21 @@
           </Border.StrokeShape>
           <VerticalStackLayout Spacing="8">
             <Label Text="Display" Style="{StaticResource SettingsPanelTitle}" />
-            <Button Text="Background Color"
-                    Clicked="OnBackgroundColorClicked"
+            <Button Text="Colors selection"
+                    Clicked="OnColorsSelectionClicked"
                     HorizontalOptions="Fill" />
             <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
               <Label Grid.Column="0" Text="Show note names" />
               <Picker Grid.Column="1"
                       ItemsSource="{Binding NoteNameDisplayOptions}"
                       SelectedItem="{Binding NoteNameDisplay, Mode=TwoWay}"
-                      TextColor="Black" BackgroundColor="White" FontSize="12" />
+                      Style="{StaticResource SettingsPickerStyle}" />
             </Grid>
             <Grid ColumnDefinitions="170,*,60" ColumnSpacing="4" VerticalOptions="Center">
               <Label Grid.Column="0" Text="Conductor" />
               <Switch Grid.Column="2"
                       IsToggled="{Binding ShowConductorCues, Mode=TwoWay}"
-                      OnColor="#8B4513"
+                      OnColor="{DynamicResource ThemeSlider}"
                       VerticalOptions="Center" />
             </Grid>
           </VerticalStackLayout>
@@ -144,7 +154,7 @@
                       Grid.Column="1"
                       ItemsSource="{Binding WhiteKeyNoteNames}"
                       SelectedItem="{Binding LowestNote, Mode=TwoWay}"
-                      TextColor="Black" BackgroundColor="White" FontSize="12" />
+                      Style="{StaticResource SettingsPickerStyle}" />
             </Grid>
             <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
               <Label Grid.Column="0" Text="Highest note" />
@@ -152,35 +162,35 @@
                       Grid.Column="1"
                       ItemsSource="{Binding WhiteKeyNoteNames}"
                       SelectedItem="{Binding HighestNote, Mode=TwoWay}"
-                      TextColor="Black" BackgroundColor="White" FontSize="12" />
+                      Style="{StaticResource SettingsPickerStyle}" />
             </Grid>
             <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
               <Label Grid.Column="0" Text="Rhythm mode" />
               <Picker Grid.Column="1"
                       ItemsSource="{Binding RhythmModeOptions}"
                       SelectedItem="{Binding RhythmMode, Mode=TwoWay}"
-                      TextColor="Black" BackgroundColor="White" FontSize="12" />
+                      Style="{StaticResource SettingsPickerStyle}" />
             </Grid>
             <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
               <Label Grid.Column="0" Text="Smallest note" />
               <Picker Grid.Column="1"
                       ItemsSource="{Binding SmallestRhythmNoteOptions}"
                       SelectedItem="{Binding SmallestRhythmNote, Mode=TwoWay}"
-                      TextColor="Black" BackgroundColor="White" FontSize="12" />
+                      Style="{StaticResource SettingsPickerStyle}" />
             </Grid>
             <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
               <Label Grid.Column="0" Text="Syncopation" />
               <Picker Grid.Column="1"
                       ItemsSource="{Binding SyncopationSettingOptions}"
                       SelectedItem="{Binding SyncopationSetting, Mode=TwoWay}"
-                      TextColor="Black" BackgroundColor="White" FontSize="12" />
+                      Style="{StaticResource SettingsPickerStyle}" />
             </Grid>
             <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
               <Label Grid.Column="0" Text="Time signature" />
               <Picker Grid.Column="1"
                       ItemsSource="{Binding MeterTimeSignatureOptions}"
                       SelectedItem="{Binding MeterTimeSignature, Mode=TwoWay}"
-                      TextColor="Black" BackgroundColor="White" FontSize="12" />
+                      Style="{StaticResource SettingsPickerStyle}" />
             </Grid>
           </VerticalStackLayout>
         </Border>
@@ -195,7 +205,7 @@
             <Grid ColumnDefinitions="200,*,60" ColumnSpacing="4" VerticalOptions="Center">
               <Label Grid.Column="0" Text="Listening starts when music appears." />
               <Switch Grid.Column="2" IsToggled="{Binding AutoStart, Mode=TwoWay}"
-                      OnColor="#8B4513" HorizontalOptions="End" />
+                      OnColor="{DynamicResource ThemeSlider}" HorizontalOptions="End" />
             </Grid>
             <Grid ColumnDefinitions="200,*,60" ColumnSpacing="4" VerticalOptions="Center">
               <Label Grid.Column="0" Text="Number of latest attempts per note to keep" LineBreakMode="WordWrap" />
@@ -208,7 +218,7 @@
             <Grid ColumnDefinitions="200,*,60" ColumnSpacing="4" VerticalOptions="Center">
               <Label Grid.Column="0" Text="Collect session statistics" />
               <Switch Grid.Column="2" IsToggled="{Binding CollectSessionStats, Mode=TwoWay}"
-                      OnColor="#8B4513" HorizontalOptions="End" />
+                      OnColor="{DynamicResource ThemeSlider}" HorizontalOptions="End" />
             </Grid>
           </VerticalStackLayout>
         </Border>
@@ -225,7 +235,7 @@
               <Picker Grid.Column="1"
                       ItemsSource="{Binding MasteredMethodOptions}"
                       SelectedItem="{Binding MasteredMethod, Mode=TwoWay}"
-                      TextColor="Black" BackgroundColor="White" FontSize="12" />
+                      Style="{StaticResource SettingsPickerStyle}" />
             </Grid>
             <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center"
                   IsVisible="{Binding IsPercentCorrectMethod}">

@@ -1,22 +1,52 @@
+using System.Collections.Generic;
+using System.Linq;
 using Maui.ColorPicker;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Graphics;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Timers;
+using musicmate.Services;
 using musicmate.Utilities;
 
 namespace musicmate.Controls
 {
+    public sealed class ColorTargetOption
+    {
+        public ColorTargetOption(AppColorTarget target, string displayName)
+        {
+            Target = target;
+            DisplayName = displayName;
+        }
+
+        public AppColorTarget Target { get; }
+        public string DisplayName { get; }
+    }
+
     public partial class ColorPickerDialog : ContentView, INotifyPropertyChanged
     {
         public event EventHandler<Color>? ColorPicked;
+        public event EventHandler<AppColorPickedEventArgs>? AppColorPicked;
         public new event PropertyChangedEventHandler? PropertyChanged;
         private Color _previewColor = Colors.White;
+        private AppColorTarget _selectedTarget = AppColorTarget.PanelBackground;
 
         // For arrow button repeat
         private System.Timers.Timer? _arrowTimer;
         private Action? _moveAction;
+
+        public AppColorTarget SelectedTarget
+        {
+            get => _selectedTarget;
+            set
+            {
+                if (_selectedTarget != value)
+                {
+                    _selectedTarget = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
 
         public Color PreviewColor
         {
@@ -36,6 +66,20 @@ namespace musicmate.Controls
             InitializeComponent();
             ColorPicker.PickedColorChanged += OnPickedColorChanged;
             WhitenessSlider.ValueChanged += OnWhitenessSliderChanged;
+
+            var options = ThemeService.AllColorTargets
+                .Select(t => new ColorTargetOption(t, ThemeService.GetDisplayName(t)))
+                .ToList();
+            ColorTargetPicker.ItemsSource = options;
+            ColorTargetPicker.ItemDisplayBinding = new Binding(nameof(ColorTargetOption.DisplayName));
+            ColorTargetPicker.SelectedIndexChanged += (_, _) =>
+            {
+                if (ColorTargetPicker.SelectedItem is ColorTargetOption option)
+                    SelectedTarget = option.Target;
+            };
+            ColorTargetPicker.SelectedIndex = options.FindIndex(o => o.Target == AppColorTarget.PanelBackground);
+
+            EnsurePickerReadableColors();
             UpdatePreviewColor();
         }
 
@@ -44,29 +88,49 @@ namespace musicmate.Controls
         /// </summary>
         public void Show()
         {
-            // Restore pointer and slider positions from preferences (default to center/white)
-            ColorPicker.PointerRingPositionXUnits = Preferences.Default.Get("ColorPicker_X", 0.5);
-            ColorPicker.PointerRingPositionYUnits = Preferences.Default.Get("ColorPicker_Y", 0.5);
-            WhitenessSlider.Value = Preferences.Default.Get("ColorPicker_Whiteness", 0.8);
-
-            UpdatePreviewColor();
-            IsVisible = true;
+            Show(AppColorTarget.PanelBackground);
         }
 
         /// <summary>
-        /// Show the dialog, restoring the last saved pointer and whiteness positions.
-        /// The color argument is ignored — the saved positions already encode the color.
+        /// Show the dialog for the given color target.
+        /// </summary>
+        public void Show(AppColorTarget target)
+        {
+            SelectedTarget = target;
+            if (ColorTargetPicker.ItemsSource is IList<ColorTargetOption> options)
+            {
+                var index = options.ToList().FindIndex(o => o.Target == target);
+                if (index >= 0)
+                    ColorTargetPicker.SelectedIndex = index;
+            }
+
+            RestorePickerPositions();
+            EnsurePickerReadableColors();
+            IsVisible = true;
+        }
+
+        private void EnsurePickerReadableColors()
+        {
+            // Dialog panel is always white; override app/global picker theme so text stays readable.
+            ColorTargetPicker.TextColor = Colors.Black;
+            ColorTargetPicker.TitleColor = Color.FromArgb("#444444");
+            ColorTargetPicker.BackgroundColor = Colors.White;
+        }
+
+        /// <summary>
+        /// Show the dialog for panel background (legacy overload).
         /// </summary>
         public void Show(Color staffPanelColor)
         {
-            // Restore saved pointer and slider positions — do NOT set PickedColor because
-            // the library resets X/Y when PickedColor is assigned, moving the dot to the bottom.
+            Show(AppColorTarget.PanelBackground);
+        }
+
+        private void RestorePickerPositions()
+        {
             ColorPicker.PointerRingPositionXUnits = Preferences.Default.Get("ColorPicker_X", 0.5);
             ColorPicker.PointerRingPositionYUnits = Preferences.Default.Get("ColorPicker_Y", 0.5);
             WhitenessSlider.Value = Preferences.Default.Get("ColorPicker_Whiteness", 0.8);
-
             UpdatePreviewColor();
-            IsVisible = true;
         }
 
         private void OnPickedColorChanged(object? sender, Maui.ColorPicker.PickedColorChangedEventArgs e)
@@ -102,16 +166,37 @@ namespace musicmate.Controls
         }
 
         public event EventHandler<Color>? ColorPreviewed;
+        public event EventHandler? DialogClosed;
 
         private void OnOkClicked(object sender, EventArgs e)
         {
-            // Persist pointer and slider positions
+            ApplyCurrentSelection();
+        }
+
+        private void OnCloseClicked(object sender, EventArgs e)
+        {
+            Close();
+        }
+
+        /// <summary>Hides the dialog without applying the current preview color.</summary>
+        public void Close()
+        {
+            if (!IsVisible)
+                return;
+
+            IsVisible = false;
+            DialogClosed?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void ApplyCurrentSelection()
+        {
+            UpdatePreviewColor();
             Preferences.Default.Set("ColorPicker_X", ColorPicker.PointerRingPositionXUnits);
             Preferences.Default.Set("ColorPicker_Y", ColorPicker.PointerRingPositionYUnits);
             Preferences.Default.Set("ColorPicker_Whiteness", WhitenessSlider.Value);
 
             ColorPicked?.Invoke(this, PreviewColor);
-            this.IsVisible = false;
+            AppColorPicked?.Invoke(this, new AppColorPickedEventArgs(SelectedTarget, PreviewColor));
         }
 
         /// <summary>
@@ -120,15 +205,7 @@ namespace musicmate.Controls
         /// </summary>
         public void Confirm()
         {
-            // Ensure preview is up to date
-            UpdatePreviewColor();
-            // Persist pointer and slider positions
-            Preferences.Default.Set("ColorPicker_X", ColorPicker.PointerRingPositionXUnits);
-            Preferences.Default.Set("ColorPicker_Y", ColorPicker.PointerRingPositionYUnits);
-            Preferences.Default.Set("ColorPicker_Whiteness", WhitenessSlider.Value);
-
-            ColorPicked?.Invoke(this, PreviewColor);
-            this.IsVisible = false;
+            ApplyCurrentSelection();
         }
 
         protected new void OnPropertyChanged([CallerMemberName] string? name = null)

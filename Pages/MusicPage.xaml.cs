@@ -88,24 +88,8 @@ namespace musicmate.Pages
         {
             try
             {
-                var savedColorHex = Preferences.Default.Get<string?>("StaffPanelColor", null);
-                if (!string.IsNullOrEmpty(savedColorHex))
-                {
-                    var savedColor = Color.FromArgb(savedColorHex);
-                    _theme_service.PanelBackgroundColor = savedColor;
-                    StaffBorder.Background = new SolidColorBrush(savedColor);
-                    return;
-                }
-
-                var dialog = this.FindByName<Controls.ColorPickerDialog>("ColorPickerDialog");
-                if (dialog != null)
-                {
-                    dialog.ResetToDefaults();
-                    var preview = dialog.PreviewColor;
-                    _theme_service?.PanelBackgroundColor = preview;
-                    Preferences.Default.Set("StaffPanelColor", preview.ToHex());
-                    StaffBorder.Background = new SolidColorBrush(preview);
-                }
+                var panelColor = _theme_service?.PanelBackgroundColor ?? Colors.White;
+                StaffBorder.Background = new SolidColorBrush(panelColor);
             }
             catch (Exception ex)
             {
@@ -394,22 +378,24 @@ namespace musicmate.Pages
                 };
 
                 // ColorPickerDialog event: update theme color for all pages
-                ColorPickerDialog.ColorPicked += async (s, color) =>
+                ColorPickerDialog.AppColorPicked += (s, e) =>
                 {
-                    _theme_service?.PanelBackgroundColor = color;
-                    Preferences.Default.Set("StaffPanelColor", color.ToHex());
-                    StaffBorder.Background = new SolidColorBrush(color);
-                    if (!_isProgrammaticColorConfirm)
-                    {
-                        await StartListeningAndEvaluatingAsync();
-                    }
+                    _theme_service?.SetColor(e.Target, e.Color);
+                    if (e.Target == AppColorTarget.PanelBackground)
+                        StaffBorder.Background = new SolidColorBrush(e.Color);
                 };
 
-                // High-contrast drawing update
+                ColorPickerDialog.DialogClosed += async (_, _) =>
+                {
+                    if (!_isProgrammaticColorConfirm)
+                        await StartListeningAndEvaluatingAsync();
+                };
+
                 _theme_service?.PropertyChanged += (s, e) =>
                 {
                     if (e.PropertyName == nameof(ThemeService.PanelBackgroundColor))
                     {
+                        StaffBorder.Background = new SolidColorBrush(_theme_service.PanelBackgroundColor);
                         StaffGraphicsView.Invalidate();
                         ApplyStaffHeight();
                     }

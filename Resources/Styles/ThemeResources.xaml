@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+
+  <!-- Factory defaults; ThemeService overwrites these at runtime. -->
+  <Color x:Key="ThemeMainBackground">#FFFFFF</Color>
+  <Color x:Key="ThemePanelBackground">#FFFFFF</Color>
+  <Color x:Key="ThemeSecondPanelBackground">#F8F8FF</Color>
+  <Color x:Key="ThemeText">#000000</Color>
+  <Color x:Key="ThemeHeadingText">#8B4513</Color>
+  <Color x:Key="ThemeContrastingText">#000000</Color>
+  <Color x:Key="ThemeSlider">#8B4513</Color>
+  <Color x:Key="ThemeButtonBackground">#8B4513</Color>
+  <Color x:Key="ThemeButtonText">#FFFFFF</Color>
+  <Color x:Key="ThemePickerBackground">#FFFFFF</Color>
+  <Color x:Key="ThemePickerText">#000000</Color>
+  <Color x:Key="ThemePickerBorder">#8B4513</Color>
+  <Color x:Key="ThemeEntryBackground">#FFFFFF</Color>
+  <Color x:Key="ThemeEntryText">#000000</Color>
+
+</ResourceDictionary>

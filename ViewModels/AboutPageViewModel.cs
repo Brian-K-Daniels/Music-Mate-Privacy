@@ -75,14 +75,8 @@ namespace musicmate.ViewModels
             }
         }
 
-        public Color ContrastingTextColor
-        {
-            get
-            {
-                double luminance = 0.299 * PanelBackgroundColor.Red + 0.587 * PanelBackgroundColor.Green + 0.114 * PanelBackgroundColor.Blue;
-                return luminance > 0.5 ? Colors.Black : Colors.White;
-            }
-        }
+        public Color ContrastingTextColor => _themeService?.ContrastingTextColor
+            ?? ThemeColorContrast.GetContrastingTextColor(PanelBackgroundColor);
 
         public ObservableCollection<double> FontSizeOptions { get; }
 

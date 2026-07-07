@@ -55,6 +55,7 @@ namespace musicmate.Services
             _session.ResetPracticeCompositionDefaults();
 
             LevelUpService.ResetCriteriaToDefaults();
+            _theme.ResetAllToFactoryDefaults();
         }
 
         /// <summary>Saves the currently active settings as the user's custom defaults.</summary>
@@ -141,12 +142,7 @@ namespace musicmate.Services
         private void ApplySnapshot(AppSettingsSnapshot snapshot)
         {
             if (!string.IsNullOrWhiteSpace(snapshot.StaffPanelColorHex))
-            {
-                var color = Color.FromArgb(snapshot.StaffPanelColorHex);
-                _theme.PanelBackgroundColor = color;
-                Preferences.Default.Set("StaffPanelColor", snapshot.StaffPanelColorHex);
-                Preferences.Set("musicmate.PanelBackgroundColor", snapshot.StaffPanelColorHex);
-            }
+                _theme.SetColor(AppColorTarget.PanelBackground, Color.FromArgb(snapshot.StaffPanelColorHex));
 
             _session.SelectedScale = snapshot.SelectedScale;
             _session.LowestNote = snapshot.LowestNote;

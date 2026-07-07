@@ -4,27 +4,27 @@
              x:Name="StatisticsPageRoot"
              Title="Statistics"
              Shell.NavBarIsVisible="True"
-             BackgroundColor="{Binding PanelBackgroundColor}">
+             BackgroundColor="{DynamicResource ThemePanelBackground}">
 
   <ContentPage.Resources>
     <Style x:Key="StatsLabelStyle" TargetType="Label">
-      <Setter Property="TextColor" Value="{Binding ContrastingTextColor}" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeContrastingText}" />
       <Setter Property="FontSize" Value="13" />
     </Style>
     <Style TargetType="Button">
-      <Setter Property="TextColor" Value="white" />
-      <Setter Property="BackgroundColor" Value="#8B4513" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeButtonText}" />
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="Padding" Value="12,4" />
       <Setter Property="Margin" Value="4,2,4,2" />
       <Setter Property="FontSize" Value="12" />
     </Style>
     <Style TargetType="Border">
-      <Setter Property="Stroke" Value="#8B4513" />
+      <Setter Property="Stroke" Value="{DynamicResource ThemePickerBorder}" />
     </Style>
     <Style TargetType="Picker">
-      <Setter Property="TextColor" Value="{Binding ContrastingTextColor}" />
-      <Setter Property="BackgroundColor" Value="{Binding PanelBackgroundColor}" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemePickerText}" />
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemePickerBackground}" />
       <Setter Property="FontSize" Value="20" />
     </Style>
   </ContentPage.Resources>
@@ -35,12 +35,12 @@
         <Button Text="←"
                 Clicked="OnNavigatePracticeClicked"
                 BackgroundColor="Transparent"
-                TextColor="white"
+                TextColor="{DynamicResource ThemeContrastingText}"
                 FontSize="18"
                 Padding="12,0"
                 WidthRequest="56" />
         <Label Text="Statistics"
-               TextColor="white"
+               TextColor="{DynamicResource ThemeContrastingText}"
                FontAttributes="Bold"
                FontSize="18"
                VerticalOptions="Center" />
@@ -61,15 +61,15 @@
       <!-- Database Picker and Actions -->
       <ScrollView Orientation="Horizontal">
         <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
-          <Label Text="Database:" FontSize="14" VerticalOptions="Center" TextColor="{Binding ContrastingTextColor}" />
-          <Border StrokeThickness="2" StrokeShape="RoundRectangle 4" Padding="2,2,2,2" BackgroundColor="WhiteSmoke" WidthRequest="160">
+          <Label Text="Database:" FontSize="14" VerticalOptions="Center" TextColor="{DynamicResource ThemeContrastingText}" />
+          <Border StrokeThickness="2" StrokeShape="RoundRectangle 4" Padding="2,2,2,2" BackgroundColor="{DynamicResource ThemeSecondPanelBackground}" WidthRequest="160">
             <Picker x:Name="DatabasePicker"
                     ItemsSource="{Binding DatabaseOptions}"
                     SelectedItem="{Binding SelectedDatabase, Mode=TwoWay}"
                     WidthRequest="150"
                     HeightRequest="40"
                     FontSize="12"
-                    TextColor="{Binding ContrastingTextColor}" />
+                    TextColor="{DynamicResource ThemeContrastingText}" />
           </Border>
           <Button x:Name="ClearAllButton" Text="Clear All" Clicked="OnDeleteDataInSelectedDatabase" WidthRequest="120" />
           <Button x:Name="DeleteAllButton" Text="Delete Selected Database" Clicked="OnDeleteAllDataInSelectedDatabase" WidthRequest="250" IsVisible="True" />
@@ -78,7 +78,7 @@
                  IsVisible="{Binding HasLastUpdated}"
                  FontSize="12"
                  VerticalOptions="Center"
-                 TextColor="{Binding ContrastingTextColor}" />
+                 TextColor="{DynamicResource ThemeContrastingText}" />
         </HorizontalStackLayout>
       </ScrollView>
 
@@ -88,7 +88,7 @@
           <Grid ColumnDefinitions="*" Padding="0" Margin="0" IsVisible="{Binding IsNoteDatabase}">
             <Grid Grid.Column="0" ColumnDefinitions="120,80,80,100,100,70,60" HeightRequest="28">
                 <Border Grid.Column="0" BackgroundColor="Transparent" Padding="0">
-                  <Label FontSize="10" FontAttributes="Bold" TextColor="{Binding ContrastingTextColor}"
+                  <Label FontSize="10" FontAttributes="Bold" TextColor="{DynamicResource ThemeContrastingText}"
                          HorizontalOptions="Center" HorizontalTextAlignment="Center" VerticalOptions="Center">
                     <Label.FormattedText>
                       <FormattedString>
@@ -102,7 +102,7 @@
                   </Border.GestureRecognizers>
                 </Border>
                 <Border Grid.Column="1" BackgroundColor="Transparent" Padding="0">
-                  <Label FontSize="10" FontAttributes="Bold" TextColor="{Binding ContrastingTextColor}"
+                  <Label FontSize="10" FontAttributes="Bold" TextColor="{DynamicResource ThemeContrastingText}"
                          HorizontalOptions="Center" HorizontalTextAlignment="Center" VerticalOptions="Center">
                     <Label.FormattedText>
                       <FormattedString>
@@ -116,7 +116,7 @@
                   </Border.GestureRecognizers>
                 </Border>
                 <Border Grid.Column="2" BackgroundColor="Transparent" Padding="0">
-                  <Label FontSize="10" FontAttributes="Bold" TextColor="{Binding ContrastingTextColor}"
+                  <Label FontSize="10" FontAttributes="Bold" TextColor="{DynamicResource ThemeContrastingText}"
                          HorizontalOptions="Center" HorizontalTextAlignment="Center" VerticalOptions="Center">
                     <Label.FormattedText>
                       <FormattedString>
@@ -130,7 +130,7 @@
                   </Border.GestureRecognizers>
                 </Border>
                 <Border Grid.Column="3" BackgroundColor="Transparent" Padding="0">
-                  <Label FontSize="10" FontAttributes="Bold" TextColor="{Binding ContrastingTextColor}"
+                  <Label FontSize="10" FontAttributes="Bold" TextColor="{DynamicResource ThemeContrastingText}"
                          HorizontalOptions="Center" HorizontalTextAlignment="Center" VerticalOptions="Center">
                     <Label.FormattedText>
                       <FormattedString>
@@ -144,7 +144,7 @@
                   </Border.GestureRecognizers>
                 </Border>
                 <Border Grid.Column="4" BackgroundColor="Transparent" Padding="0">
-                  <Label FontSize="10" FontAttributes="Bold" TextColor="{Binding ContrastingTextColor}"
+                  <Label FontSize="10" FontAttributes="Bold" TextColor="{DynamicResource ThemeContrastingText}"
                          HorizontalOptions="Center" HorizontalTextAlignment="Center" VerticalOptions="Center">
                     <Label.FormattedText>
                       <FormattedString>
@@ -158,7 +158,7 @@
                   </Border.GestureRecognizers>
                 </Border>
                 <Border Grid.Column="5" BackgroundColor="Transparent" Padding="0">
-                  <Label FontSize="10" FontAttributes="Bold" TextColor="{Binding ContrastingTextColor}"
+                  <Label FontSize="10" FontAttributes="Bold" TextColor="{DynamicResource ThemeContrastingText}"
                          HorizontalOptions="Center" HorizontalTextAlignment="Center" VerticalOptions="Center">
                     <Label.FormattedText>
                       <FormattedString>
@@ -172,7 +172,7 @@
                   </Border.GestureRecognizers>
                 </Border>
                 <Border Grid.Column="6" BackgroundColor="Transparent" Padding="0">
-                  <Label FontSize="10" FontAttributes="Bold" TextColor="{Binding ContrastingTextColor}"
+                  <Label FontSize="10" FontAttributes="Bold" TextColor="{DynamicResource ThemeContrastingText}"
                          HorizontalOptions="Center" HorizontalTextAlignment="Center" VerticalOptions="Center">
                     <Label.FormattedText>
                       <FormattedString>
@@ -193,13 +193,13 @@
               <BindableLayout.ItemTemplate>
                 <DataTemplate>
                   <Grid ColumnDefinitions="120,80,80,100,100,70,60" Padding="0,0,0,0" HeightRequest="24">
-                    <Label Text="{Binding WrittenName}" Grid.Column="0" FontSize="10" TextColor="{Binding ContrastingTextColor}" />
-                    <Label Text="{Binding Correct}" Grid.Column="1" FontSize="10" TextColor="{Binding ContrastingTextColor}" />
-                    <Label Text="{Binding Wrong}" Grid.Column="2" FontSize="10" TextColor="{Binding ContrastingTextColor}" />
-                    <Label Text="{Binding PercentCorrect, StringFormat='{0:F1}'}" Grid.Column="3" FontSize="10" TextColor="{Binding ContrastingTextColor}" />
-                    <Label Text="{Binding MsAverage, StringFormat='{0:F0}'}" Grid.Column="4" FontSize="10" TextColor="{Binding ContrastingTextColor}" />
-                    <Label Text="{Binding Streak}" Grid.Column="5" FontSize="10" TextColor="{Binding ContrastingTextColor}" />
-                    <Label Text="{Binding MasteredDisplay}" Grid.Column="6" FontSize="10" TextColor="{Binding ContrastingTextColor}" HorizontalTextAlignment="Center" />
+                    <Label Text="{Binding WrittenName}" Grid.Column="0" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}" />
+                    <Label Text="{Binding Correct}" Grid.Column="1" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}" />
+                    <Label Text="{Binding Wrong}" Grid.Column="2" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}" />
+                    <Label Text="{Binding PercentCorrect, StringFormat='{0:F1}'}" Grid.Column="3" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}" />
+                    <Label Text="{Binding MsAverage, StringFormat='{0:F0}'}" Grid.Column="4" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}" />
+                    <Label Text="{Binding Streak}" Grid.Column="5" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}" />
+                    <Label Text="{Binding MasteredDisplay}" Grid.Column="6" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}" HorizontalTextAlignment="Center" />
                   </Grid>
                 </DataTemplate>
               </BindableLayout.ItemTemplate>
@@ -211,7 +211,7 @@
       <Label Text="Child Results (level-up / ssns). Use Clear All to reset progress."
              FontSize="12"
              Margin="8,4,0,0"
-             TextColor="{Binding ContrastingTextColor}"
+             TextColor="{DynamicResource ThemeContrastingText}"
              IsVisible="{Binding IsChildResultsDatabase}" />
 
       <!-- Session Stats Table -->
@@ -245,11 +245,11 @@
               <ColumnDefinition Width="96" />  <!-- Instrument -->
             </Grid.ColumnDefinitions>
 
-            <Label Text="" Grid.Column="0" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+            <Label Text="" Grid.Column="0" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                    HorizontalTextAlignment="Center" HorizontalOptions="Center" />
 
             <Border Grid.Column="1" BackgroundColor="Transparent" Padding="4,0">
-              <Label Text="{Binding DateHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding DateHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Date" />
@@ -257,7 +257,7 @@
             </Border>
 
             <Border Grid.Column="2" BackgroundColor="Transparent" Padding="4,0">
-              <Label Text="{Binding LevelHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding LevelHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Level" />
@@ -265,7 +265,7 @@
             </Border>
 
             <Border Grid.Column="3" BackgroundColor="Transparent" Padding="4,0">
-              <Label Text="{Binding CorrectPercentHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding CorrectPercentHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="CorrectPercent" />
@@ -273,7 +273,7 @@
             </Border>
 
             <Border Grid.Column="4" BackgroundColor="Transparent" Padding="4,0">
-              <Label Text="{Binding PchHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding PchHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Pch" />
@@ -281,7 +281,7 @@
             </Border>
 
             <Border Grid.Column="5" BackgroundColor="Transparent" Padding="4,0">
-              <Label Text="{Binding TmgHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding TmgHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Tmg" />
@@ -289,7 +289,7 @@
             </Border>
 
             <Border Grid.Column="6" BackgroundColor="Transparent" Padding="4,0">
-              <Label Text="{Binding OvrlHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding OvrlHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Ovrl" />
@@ -297,7 +297,7 @@
             </Border>
 
             <Border Grid.Column="7" BackgroundColor="Transparent" Padding="2,0">
-              <Label Text="{Binding PitchRightHeader}" FontAttributes="Bold" FontSize="9" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding PitchRightHeader}" FontAttributes="Bold" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="PitchRight" />
@@ -305,7 +305,7 @@
             </Border>
 
             <Border Grid.Column="8" BackgroundColor="Transparent" Padding="2,0">
-              <Label Text="{Binding PitchWrongHeader}" FontAttributes="Bold" FontSize="9" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding PitchWrongHeader}" FontAttributes="Bold" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="PitchWrong" />
@@ -313,7 +313,7 @@
             </Border>
 
             <Border Grid.Column="9" BackgroundColor="Transparent" Padding="2,0">
-              <Label Text="{Binding TimingRightHeader}" FontAttributes="Bold" FontSize="9" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding TimingRightHeader}" FontAttributes="Bold" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="TimingRight" />
@@ -321,7 +321,7 @@
             </Border>
 
             <Border Grid.Column="10" BackgroundColor="Transparent" Padding="2,0">
-              <Label Text="{Binding TimingWrongHeader}" FontAttributes="Bold" FontSize="9" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding TimingWrongHeader}" FontAttributes="Bold" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="TimingWrong" />
@@ -329,7 +329,7 @@
             </Border>
 
             <Border Grid.Column="11" BackgroundColor="Transparent" Padding="2,0">
-              <Label Text="{Binding OverallRightHeader}" FontAttributes="Bold" FontSize="9" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding OverallRightHeader}" FontAttributes="Bold" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="OverallRight" />
@@ -337,7 +337,7 @@
             </Border>
 
             <Border Grid.Column="12" BackgroundColor="Transparent" Padding="2,0">
-              <Label Text="{Binding OverallWrongHeader}" FontAttributes="Bold" FontSize="9" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding OverallWrongHeader}" FontAttributes="Bold" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="OverallWrong" />
@@ -345,7 +345,7 @@
             </Border>
 
             <Border Grid.Column="13" BackgroundColor="Transparent" Padding="2,0">
-              <Label Text="{Binding RestRightHeader}" FontAttributes="Bold" FontSize="9" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding RestRightHeader}" FontAttributes="Bold" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="RestRight" />
@@ -353,7 +353,7 @@
             </Border>
 
             <Border Grid.Column="14" BackgroundColor="Transparent" Padding="2,0">
-              <Label Text="{Binding RestWrongHeader}" FontAttributes="Bold" FontSize="9" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding RestWrongHeader}" FontAttributes="Bold" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="RestWrong" />
@@ -361,7 +361,7 @@
             </Border>
 
             <Border Grid.Column="15" BackgroundColor="Transparent" Padding="4,0">
-              <Label Text="{Binding KeyHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding KeyHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Key" />
@@ -369,7 +369,7 @@
             </Border>
 
             <Border Grid.Column="16" BackgroundColor="Transparent" Padding="4,0">
-              <Label Text="{Binding ScaleHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding ScaleHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Scale" />
@@ -377,7 +377,7 @@
             </Border>
 
             <Border Grid.Column="17" BackgroundColor="Transparent" Padding="2,0">
-              <Label Text="{Binding RandHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding RandHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Rand" />
@@ -385,7 +385,7 @@
             </Border>
 
             <Border Grid.Column="18" BackgroundColor="Transparent" Padding="2,0">
-              <Label Text="{Binding AccPctHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding AccPctHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="AccPct" />
@@ -393,7 +393,7 @@
             </Border>
 
             <Border Grid.Column="19" BackgroundColor="Transparent" Padding="4,0">
-              <Label Text="{Binding HiHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding HiHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Hi" />
@@ -401,7 +401,7 @@
             </Border>
 
             <Border Grid.Column="20" BackgroundColor="Transparent" Padding="4,0">
-              <Label Text="{Binding LoHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding LoHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Lo" />
@@ -409,7 +409,7 @@
             </Border>
 
             <Border Grid.Column="21" BackgroundColor="Transparent" Padding="4,0">
-              <Label Text="{Binding InstrumentHeader}" FontAttributes="Bold" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+              <Label Text="{Binding InstrumentHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                      LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
               <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Instrument" />
@@ -451,47 +451,47 @@
 
                     <Button Text="🗑" Grid.Column="0" WidthRequest="20" HeightRequest="20" Clicked="OnDeleteSessionStatClicked"
                             CommandParameter="{Binding Id}" BackgroundColor="#CC3333" TextColor="White" FontSize="10" Padding="0" CornerRadius="4" />
-                    <Label Text="{Binding Dt, StringFormat='{0:yyyy-MM-dd HH:mm}'}" Grid.Column="1" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding Dt, StringFormat='{0:yyyy-MM-dd HH:mm}'}" Grid.Column="1" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            LineBreakMode="NoWrap" Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Level}" Grid.Column="2" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding Level}" Grid.Column="2" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Pc, StringFormat='{0:F1}'}" Grid.Column="3" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding Pc, StringFormat='{0:F1}'}" Grid.Column="3" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Pch, StringFormat='{0:F1}'}" Grid.Column="4" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding Pch, StringFormat='{0:F1}'}" Grid.Column="4" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Tmg, StringFormat='{0:F1}'}" Grid.Column="5" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding Tmg, StringFormat='{0:F1}'}" Grid.Column="5" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Ovrl, StringFormat='{0:F1}'}" Grid.Column="6" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding Ovrl, StringFormat='{0:F1}'}" Grid.Column="6" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding PitchRightCount}" Grid.Column="7" FontSize="9" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding PitchRightCount}" Grid.Column="7" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding PitchWrongCount}" Grid.Column="8" FontSize="9" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding PitchWrongCount}" Grid.Column="8" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding TimingRightCount}" Grid.Column="9" FontSize="9" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding TimingRightCount}" Grid.Column="9" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding TimingWrongCount}" Grid.Column="10" FontSize="9" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding TimingWrongCount}" Grid.Column="10" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding OverallRightCount}" Grid.Column="11" FontSize="9" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding OverallRightCount}" Grid.Column="11" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding OverallWrongCount}" Grid.Column="12" FontSize="9" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding OverallWrongCount}" Grid.Column="12" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding RestRightCount}" Grid.Column="13" FontSize="9" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding RestRightCount}" Grid.Column="13" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding RestWrongCount}" Grid.Column="14" FontSize="9" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding RestWrongCount}" Grid.Column="14" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Key}" Grid.Column="15" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding Key}" Grid.Column="15" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Sc}" Grid.Column="16" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding Sc}" Grid.Column="16" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            LineBreakMode="TailTruncation" Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding RandDisplay}" Grid.Column="17" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding RandDisplay}" Grid.Column="17" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding AccPct}" Grid.Column="18" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding AccPct}" Grid.Column="18" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Hi}" Grid.Column="19" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding Hi}" Grid.Column="19" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Lo}" Grid.Column="20" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding Lo}" Grid.Column="20" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Instrument}" Grid.Column="21" FontSize="10" TextColor="{Binding ContrastingTextColor}"
+                    <Label Text="{Binding Instrument}" Grid.Column="21" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            LineBreakMode="TailTruncation" Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
                   </Grid>
                 </DataTemplate>
@@ -510,11 +510,11 @@
           HorizontalOptions="Fill">
       <VerticalStackLayout VerticalOptions="Center" HorizontalOptions="Center" Spacing="10">
         <ActivityIndicator IsRunning="{Binding IsLoading}"
-                           Color="#8B4513"
+                           Color="{DynamicResource ThemeSlider}"
                            WidthRequest="52"
                            HeightRequest="52" />
         <Label Text="Loading…"
-               TextColor="White"
+               TextColor="{DynamicResource ThemeContrastingText}"
                HorizontalOptions="Center"
                FontSize="14"
                FontAttributes="Bold" />

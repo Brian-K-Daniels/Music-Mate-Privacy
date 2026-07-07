@@ -4,7 +4,7 @@
              x:Class="musicmate.Pages.HomePage"
              Shell.NavBarIsVisible="True"
              Title="Home"
-             BackgroundColor="#1A6B3C">
+             BackgroundColor="{DynamicResource ThemeMainBackground}">
 
     <ScrollView>
         <VerticalStackLayout Spacing="28" Padding="24,32,24,40" HorizontalOptions="Center"
@@ -18,7 +18,7 @@
                 <Label Text="Music Mate"
                        FontSize="36"
                        FontAttributes="Bold"
-                       TextColor="White"
+                       TextColor="{DynamicResource ThemeContrastingText}"
                        HorizontalOptions="Center" />
             </VerticalStackLayout>
 
@@ -27,11 +27,11 @@
                 <Label Text="Instrument"
                        FontSize="18"
                        FontAttributes="Bold"
-                       TextColor="White"
+                       TextColor="{DynamicResource ThemeContrastingText}"
                        HorizontalOptions="Center" />
                 <Border x:Name="InstrumentPickerBorder"
-                        BackgroundColor="White"
-                        Stroke="#CCCCCC"
+                        BackgroundColor="{DynamicResource ThemePickerBackground}"
+                        Stroke="{DynamicResource ThemePickerBorder}"
                         StrokeThickness="2"
                         Padding="16,14">
                     <Border.StrokeShape>
@@ -43,7 +43,7 @@
                     <Label x:Name="InstrumentPickerLabel"
                            Text="Tap here and pick your instrument. Then swipe up/down."
                            FontSize="12"
-                           TextColor="#888888"
+                           TextColor="{DynamicResource ThemePickerText}"
                            VerticalOptions="Center"
                            InputTransparent="True" />
                 </Border>
@@ -54,7 +54,7 @@
                 <Label Text="Level"
                        FontSize="18"
                        FontAttributes="Bold"
-                       TextColor="White"
+                       TextColor="{DynamicResource ThemeContrastingText}"
                        HorizontalOptions="Center" />
                 <HorizontalStackLayout Spacing="16" HorizontalOptions="Center">
                     <Button x:Name="LevelDownButton"
@@ -65,11 +65,11 @@
                             FontAttributes="Bold"
                             WidthRequest="64"
                             HeightRequest="64"
-                            BackgroundColor="#8B4513"
-                            TextColor="White"
+                            BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                            TextColor="{DynamicResource ThemeButtonText}"
                             CornerRadius="32" />
-                    <Border BackgroundColor="White"
-                            Stroke="#CCCCCC"
+                    <Border BackgroundColor="{DynamicResource ThemePickerBackground}"
+                            Stroke="{DynamicResource ThemePickerBorder}"
                             StrokeThickness="2"
                             Padding="16,8"
                             MinimumWidthRequest="90">
@@ -80,7 +80,7 @@
                                Text="1"
                                FontSize="30"
                                FontAttributes="Bold"
-                               TextColor="#1A6B3C"
+                               TextColor="{DynamicResource ThemeHeadingText}"
                                HorizontalOptions="Center"
                                VerticalOptions="Center" />
                     </Border>
@@ -92,16 +92,16 @@
                             FontAttributes="Bold"
                             WidthRequest="64"
                             HeightRequest="64"
-                            BackgroundColor="#2E8B57"
-                            TextColor="White"
+                            BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                            TextColor="{DynamicResource ThemeButtonText}"
                             CornerRadius="32"
-                            BorderColor="White"
+                            BorderColor="{DynamicResource ThemePickerBorder}"
                             BorderWidth="2" />
                 </HorizontalStackLayout>
                 <Label x:Name="LevelDescLabel"
                        Text="Beginner"
                        FontSize="15"
-                       TextColor="#CCFFCC"
+                       TextColor="{DynamicResource ThemeContrastingText}"
                        HorizontalOptions="Center" />
             </VerticalStackLayout>
 
@@ -111,8 +111,8 @@
                     Clicked="OnStartClicked"
                     FontSize="26"
                     FontAttributes="Bold"
-                    BackgroundColor="#F5C518"
-                    TextColor="#1A1A1A"
+                    BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                    TextColor="{DynamicResource ThemeButtonText}"
                     HeightRequest="68"
                     CornerRadius="34"
                     HorizontalOptions="Fill"

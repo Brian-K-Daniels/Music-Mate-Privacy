@@ -120,7 +120,7 @@ namespace musicmate.Pages
             _viewModel.LowestNote = selectedNote;
         }
 
-        private void                            OnBackgroundColorClicked(object? sender, EventArgs e)
+        private void                            OnColorsSelectionClicked(object? sender, EventArgs e)
         {
             ColorPickerDialog.Show(_themeService.PanelBackgroundColor);
         }
@@ -139,7 +139,7 @@ namespace musicmate.Pages
             _themeService = ServiceHelper.GetService<ThemeService>()!;
             BindingContext = _viewModel;
 
-            _viewModel.PanelBackgroundColor = _themeService.PanelBackgroundColor;
+            _viewModel.RefreshThemeColorBindings();
             _viewModel.LowestNote = _session.LowestNote;
             _viewModel.HighestNote = _session.HighestNote;
             _viewModel.PlaybackBpm = _session.PlaybackBpm;
@@ -152,10 +152,9 @@ namespace musicmate.Pages
             _viewModel.MasteredMethod = _session.MasteredMethod;
             _viewModel.StreakCrit = _session.StreakCrit;
 
-            ColorPickerDialog.ColorPicked += (_, color) =>
+            ColorPickerDialog.AppColorPicked += (_, e) =>
             {
-                _themeService.PanelBackgroundColor = color;
-                Preferences.Default.Set("StaffPanelColor", color.ToHex());
+                _themeService.SetColor(e.Target, e.Color);
             };
 
             var notes = _viewModel.WhiteKeyNoteNames?.ToList();

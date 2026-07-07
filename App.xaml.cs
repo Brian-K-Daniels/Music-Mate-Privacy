@@ -21,40 +21,15 @@ namespace musicmate
 
             // Initialize premium status at app startup
             InitializePremiumStatus();
-            // Deploy saved panel background color early so pages bind to ThemeService with the right color
-            DeploySavedPanelBackground();
+            LoadSavedThemeColors();
         }
 
-        private void DeploySavedPanelBackground()
+        private void LoadSavedThemeColors()
         {
             try
             {
                 var theme = Services.ServiceHelper.GetService<Services.ThemeService>();
-                if (theme == null)
-                    return;
-
-                var savedColorHex = Microsoft.Maui.Storage.Preferences.Default.Get<string?>("StaffPanelColor", null);
-                if (!string.IsNullOrEmpty(savedColorHex))
-                {
-                    var savedColor = Microsoft.Maui.Graphics.Color.FromArgb(savedColorHex);
-                    theme.PanelBackgroundColor = savedColor;
-                    return;
-                }
-
-                // No saved color: instantiate a ColorPickerDialog to get its defaults (non-visual use)
-                try
-                {
-                    var dialog = new musicmate.Controls.ColorPickerDialog();
-                    dialog.ResetToDefaults();
-                    var preview = dialog.PreviewColor;
-                    theme.PanelBackgroundColor = preview;
-                    Microsoft.Maui.Storage.Preferences.Default.Set("StaffPanelColor", preview.ToHex());
-                }
-                catch
-                {
-                    // Fallback to white if any error occurs
-                    theme.PanelBackgroundColor = Microsoft.Maui.Graphics.Colors.White;
-                }
+                theme?.LoadFromPreferences();
             }
             catch { }
         }
@@ -109,10 +84,12 @@ namespace musicmate
 
         protected override Window CreateWindow(IActivationState? activationState)
         {
-            // Home is the first FlyoutItem in AppShell.xaml, so it is the Shell default.
-            // No explicit navigation needed here; the earlier BeginInvokeOnMainThread
-            // navigation caused a visible About-page flash before arriving at Home.
-            return new Window(new AppShell());
+            var window = new Window(new AppShell());
+            Microsoft.Maui.ApplicationModel.MainThread.BeginInvokeOnMainThread(() =>
+            {
+                Services.ServiceHelper.GetService<Services.ThemeService>()?.ApplyToShellIfAvailable();
+            });
+            return window;
         }
     }
 }

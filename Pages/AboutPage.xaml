@@ -6,25 +6,25 @@
              x:Name="AboutPageRoot"
              Title="About"
              Shell.NavBarIsVisible="True"
-             BackgroundColor="{Binding PanelBackgroundColor}">
+             BackgroundColor="{DynamicResource ThemePanelBackground}">
 
   <ContentPage.Resources>
     <conv:BoolToYesNoConverter x:Key="BoolToYesNoConverter" />
     <Style TargetType="Label">
-      <Setter Property="TextColor" Value="{Binding ContrastingTextColor}" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeContrastingText}" />
       <Setter Property="FontSize" Value="13" />
     </Style>
     <Style TargetType="Button">
-      <Setter Property="TextColor" Value="{Binding ContrastingTextColor}" />
-      <Setter Property="BackgroundColor" Value="#8B4513" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeButtonText}" />
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="FontAttributes" Value="Bold" />
       <Setter Property="Padding" Value="12,4" />
       <Setter Property="FontSize" Value="13" />
     </Style>
     <Style TargetType="Picker">
-      <Setter Property="TextColor" Value="Black" />
-      <Setter Property="BackgroundColor" Value="White" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemePickerText}" />
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemePickerBackground}" />
       <Setter Property="FontSize" Value="13" />
     </Style>
   </ContentPage.Resources>
@@ -35,14 +35,14 @@
         <Button Text="&#x2190;"
                 Clicked="OnNavigatePracticeClicked"
                 BackgroundColor="Transparent"
-                TextColor="White"
+                TextColor="{DynamicResource ThemeContrastingText}"
                 FontSize="18"
                 Padding="12,0"
                 WidthRequest="56" />
         <Label Text="About"
                FontAttributes="Bold"
                FontSize="18"
-               TextColor="White"
+               TextColor="{DynamicResource ThemeContrastingText}"
                VerticalOptions="Center" />
       </HorizontalStackLayout>
       <Border Style="{StaticResource TitleLogoBorder}"
@@ -73,7 +73,7 @@
 
       <!-- Font picker -->
       <Border Grid.Column="1"
-              Stroke="#8B4513" StrokeThickness="2"
+              Stroke="{DynamicResource ThemePickerBorder}" StrokeThickness="2"
               BackgroundColor="Transparent" Padding="4,2"
               VerticalOptions="Center">
         <Picker x:Name="FontSizePicker"
@@ -87,21 +87,21 @@
       <Label Grid.Column="2"
              Text="🔍"
              FontSize="{Binding SelectedFontSize}"
-             TextColor="#8B4513"
+             TextColor="{DynamicResource ThemeHeadingText}"
              VerticalOptions="Center"
              Margin="4,0,2,0" />
 
       <!-- Search bar: fills remaining space -->
       <Border Grid.Column="3"
-              Stroke="#8B4513" StrokeThickness="1"
+              Stroke="{DynamicResource ThemePickerBorder}" StrokeThickness="1"
               StrokeShape="RoundRectangle 8"
               Padding="4,0"
               VerticalOptions="Center">
         <SearchBar x:Name="AboutSearchBar"
                    Placeholder="Search About…"
-                   TextColor="Black"
-                   PlaceholderColor="#888888"
-                   BackgroundColor="White"
+                   TextColor="{DynamicResource ThemeEntryText}"
+                   PlaceholderColor="{DynamicResource ThemeContrastingText}"
+                   BackgroundColor="{DynamicResource ThemeEntryBackground}"
                    HorizontalOptions="Fill"
                    FontSize="{Binding SelectedFontSize}"
                    TextChanged="OnAboutSearchTextChanged"
@@ -143,7 +143,7 @@
                   Text="Get Premium"
                   Command="{Binding BuyPremiumCommand}"
                   IsVisible="{Binding NotIsPremium}"
-                  TextColor="White"
+                  TextColor="{DynamicResource ThemeContrastingText}"
                   FontSize="{Binding SelectedFontSize}"
                   Padding="8,4" />
 

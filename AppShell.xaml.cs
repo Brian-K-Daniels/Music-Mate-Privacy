@@ -21,6 +21,12 @@ namespace musicmate
 
                 BindingContext = this;
                 GoPracticeCommand = new Command(async () => await GoToAsync("//HomePage"));
+                var theme = ServiceHelper.GetService<ThemeService>();
+                if (theme != null)
+                {
+                    theme.ThemeColorsChanged += (_, _) => theme.ApplyToShellIfAvailable();
+                    theme.ApplyToShellIfAvailable();
+                }
 #if DEBUG
                 RegisterDebugFlyoutItem();
 #endif

@@ -4,11 +4,11 @@
              x:Class="musicmate.Pages.DebugItemsPage"
              Title="Debug Items"
              Shell.NavBarIsVisible="True"
-             BackgroundColor="{Binding PanelBackgroundColor}">
+             BackgroundColor="{DynamicResource ThemePanelBackground}">
 
   <ContentPage.Resources>
     <Style TargetType="Label">
-      <Setter Property="TextColor" Value="{Binding ContrastingTextColor}" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeContrastingText}" />
       <Setter Property="FontSize" Value="13" />
       <Setter Property="VerticalOptions" Value="Center" />
     </Style>
@@ -20,12 +20,12 @@
         <Button Text="←"
                 Clicked="OnNavigatePracticeClicked"
                 BackgroundColor="Transparent"
-                TextColor="White"
+                TextColor="{DynamicResource ThemeContrastingText}"
                 FontSize="18"
                 Padding="12,0"
                 WidthRequest="56" />
         <Label Text="Debug Items"
-               TextColor="White"
+               TextColor="{DynamicResource ThemeContrastingText}"
                FontAttributes="Bold"
                FontSize="18"
                VerticalOptions="Center" />
@@ -57,15 +57,15 @@
               <VerticalStackLayout Grid.Column="0" Spacing="2">
                 <Label Text="{Binding DisplayName}"
                        FontAttributes="Bold"
-                       TextColor="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.ContrastingTextColor}" />
+                       TextColor="{DynamicResource ThemeContrastingText}" />
                 <Label Text="{Binding Description}"
                        FontSize="11"
                        LineBreakMode="WordWrap"
-                       TextColor="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.ContrastingTextColor}" />
+                       TextColor="{DynamicResource ThemeContrastingText}" />
               </VerticalStackLayout>
               <Switch Grid.Column="1"
                       IsToggled="{Binding IsEnabled, Mode=TwoWay}"
-                      OnColor="#8B4513"
+                      OnColor="{DynamicResource ThemeSlider}"
                       VerticalOptions="Center" />
             </Grid>
           </DataTemplate>

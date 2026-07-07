@@ -33,14 +33,9 @@ namespace musicmate.ViewModels
             _session = session;
 
             // Listen for theme changes
-            _themeService.PropertyChanged += (s, e) =>
-            {
-                if (e.PropertyName == nameof(_themeService.PanelBackgroundColor))
-                {
-                    OnPropertyChanged(nameof(PanelBackgroundColor));
-                    OnPropertyChanged(nameof(ContrastingTextColor));
-                }
-            };
+            _themeService.PropertyChanged += Theme_PropertyChanged;
+            _themeService.ThemeColorsChanged += (_, _) => RefreshThemeColorBindings();
+
             // Forward session property changes so the view model updates when other pages modify session settings
             _session.PropertyChanged += (s, e) =>
             {
@@ -104,8 +99,40 @@ namespace musicmate.ViewModels
             OnPropertyChanged(nameof(CurrentSessionOverallAccuracyPercent));
         }
 
+        private void Theme_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+            => RefreshThemeColorBindings();
+
+        private void RefreshThemeColorBindings()
+        {
+            OnPropertyChanged(nameof(PanelBackgroundColor));
+            OnPropertyChanged(nameof(SecondPanelBackgroundColor));
+            OnPropertyChanged(nameof(ContrastingTextColor));
+            OnPropertyChanged(nameof(TextColor));
+            OnPropertyChanged(nameof(HeadingTextColor));
+            OnPropertyChanged(nameof(SliderColor));
+            OnPropertyChanged(nameof(ButtonBackgroundColor));
+            OnPropertyChanged(nameof(ButtonTextColor));
+            OnPropertyChanged(nameof(PickerBackgroundColor));
+            OnPropertyChanged(nameof(PickerTextColor));
+            OnPropertyChanged(nameof(PickerBorderColor));
+            OnPropertyChanged(nameof(EntryBackgroundColor));
+            OnPropertyChanged(nameof(EntryTextColor));
+        }
+
         public Color PanelBackgroundColor => _themeService.PanelBackgroundColor;
+        public Color SecondPanelBackgroundColor => _themeService.SecondPanelBackgroundColor;
         public Color ContrastingTextColor => _themeService.ContrastingTextColor;
+        public Color TextColor => _themeService.TextColor;
+        public Color HeadingTextColor => _themeService.HeadingTextColor;
+        public Color SliderColor => _themeService.SliderColor;
+        public Color ButtonBackgroundColor => _themeService.ButtonBackgroundColor;
+        public Color ButtonTextColor => _themeService.ButtonTextColor;
+        public Color PickerBackgroundColor => _themeService.PickerBackgroundColor;
+        public Color PickerTextColor => _themeService.PickerTextColor;
+        public Color PickerBorderColor => _themeService.PickerBorderColor;
+        public Color EntryBackgroundColor => _themeService.EntryBackgroundColor;
+        public Color EntryTextColor => _themeService.EntryTextColor;
+
         public int AccidentalPercent
         {
             get => _session.AccidentalPercent;

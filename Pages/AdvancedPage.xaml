@@ -4,28 +4,33 @@
              x:Class="musicmate.Pages.AdvancedPage"
              Title="Advanced"
              Shell.NavBarIsVisible="True"
-             BackgroundColor="{Binding PanelBackgroundColor}">
+             BackgroundColor="{DynamicResource ThemePanelBackground}">
 
   <ContentPage.Resources>
     <Style TargetType="Label">
-      <Setter Property="TextColor" Value="{Binding ContrastingTextColor}" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeContrastingText}" />
       <Setter Property="FontSize" Value="13" />
     </Style>
     <Style TargetType="Button">
-      <Setter Property="TextColor" Value="{Binding ContrastingTextColor}" />
-      <Setter Property="BackgroundColor" Value="#8B4513" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeButtonText}" />
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="FontAttributes" Value="Bold" />
       <Setter Property="Padding" Value="12,4" />
       <Setter Property="FontSize" Value="13" />
     </Style>
     <Style TargetType="Border">
-      <Setter Property="Stroke" Value="#8B4513" />
+      <Setter Property="Stroke" Value="{DynamicResource ThemePickerBorder}" />
     </Style>
     <Style TargetType="Slider">
-      <Setter Property="ThumbColor" Value="#8B4513" />
-      <Setter Property="MinimumTrackColor" Value="#8B4513" />
-      <Setter Property="MaximumTrackColor" Value="White" />
+      <Setter Property="ThumbColor" Value="{DynamicResource ThemeSlider}" />
+      <Setter Property="MinimumTrackColor" Value="{DynamicResource ThemeSlider}" />
+      <Setter Property="MaximumTrackColor" Value="#CCCCCC" />
+    </Style>
+    <Style x:Key="AdvancedPanelTitle" TargetType="Label">
+      <Setter Property="FontAttributes" Value="Bold" />
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeHeadingText}" />
     </Style>
   </ContentPage.Resources>
 
@@ -35,12 +40,12 @@
         <Button Text="←"
                 Clicked="OnNavigatePracticeClicked"
                 BackgroundColor="Transparent"
-                TextColor="White"
+                TextColor="{DynamicResource ThemeContrastingText}"
                 FontSize="18"
                 Padding="12,0"
                 WidthRequest="56" />
         <Label Text="Advanced"
-               TextColor="White"
+               TextColor="{DynamicResource ThemeContrastingText}"
                FontAttributes="Bold"
                FontSize="18"
                VerticalOptions="Center" />
@@ -57,12 +62,12 @@
   <ScrollView>
     <VerticalStackLayout x:Name="AdvancedMainLayout" Spacing="16" HorizontalOptions="Fill" Padding="16, 8">
       <!-- Practice composition % -->
-      <Border Stroke="#8B4513" Padding="12" Margin="0,0,0,0" BackgroundColor="#F8F8FF">
+      <Border Stroke="{DynamicResource ThemePickerBorder}" Padding="12" Margin="0,0,0,0" BackgroundColor="{DynamicResource ThemeSecondPanelBackground}">
         <Border.StrokeShape>
           <RoundRectangle CornerRadius="10"/>
         </Border.StrokeShape>
         <VerticalStackLayout Spacing="10">
-          <Label Text="Practice composition %" FontAttributes="Bold" FontSize="16" TextColor="#8B4513"/>
+          <Label Text="Practice composition %" Style="{StaticResource AdvancedPanelTitle}"/>
 
           <Grid ColumnDefinitions="160,*,60" RowSpacing="8">
             <Grid.RowDefinitions>
@@ -100,12 +105,12 @@
       </Border>
 
       <!-- Level Advancement Criteria Section -->
-      <Border Stroke="#8B4513" Padding="12" Margin="0,16,0,0" BackgroundColor="#FFF8F0">
+      <Border Stroke="{DynamicResource ThemePickerBorder}" Padding="12" Margin="0,16,0,0" BackgroundColor="{DynamicResource ThemeSecondPanelBackground}">
           <Border.StrokeShape>
             <RoundRectangle CornerRadius="10"/>
           </Border.StrokeShape>
           <VerticalStackLayout Spacing="10">
-          <Label Text="Level Advancement Criteria" FontAttributes="Bold" FontSize="16" TextColor="#8B4513"/>
+          <Label Text="Level Advancement Criteria" Style="{StaticResource AdvancedPanelTitle}"/>
 
           <Grid ColumnDefinitions="160,*,60,80" RowSpacing="8" >
             <Grid.RowDefinitions>
@@ -145,10 +150,10 @@
         </VerticalStackLayout>
       </Border>
       <!-- Advanced Settings Section -->
-      <Border Stroke="#8B4513" Padding="12" Margin="0,16,0,0" BackgroundColor="#F8F8FF">
+      <Border Stroke="{DynamicResource ThemePickerBorder}" Padding="12" Margin="0,16,0,0" BackgroundColor="{DynamicResource ThemeSecondPanelBackground}">
         <Border.StrokeShape> <RoundRectangle CornerRadius="10"/></Border.StrokeShape>
         <VerticalStackLayout Spacing="10">
-          <Label Text="Advanced Audio &amp; Pitch Settings" FontAttributes="Bold" FontSize="16" TextColor="#8B4513"/>
+          <Label Text="Advanced Audio &amp; Pitch Settings" Style="{StaticResource AdvancedPanelTitle}"/>
 
           <Grid ColumnDefinitions="160,*,60" RowSpacing="8" >
             <Grid.RowDefinitions>
@@ -177,12 +182,12 @@
       </Border>
 
       <!-- Storage -->
-      <Border Stroke="#8B4513" Padding="12" Margin="0,16,0,0" BackgroundColor="#FFF8F0">
+      <Border Stroke="{DynamicResource ThemePickerBorder}" Padding="12" Margin="0,16,0,0" BackgroundColor="{DynamicResource ThemeSecondPanelBackground}">
         <Border.StrokeShape>
           <RoundRectangle CornerRadius="10"/>
         </Border.StrokeShape>
         <VerticalStackLayout Spacing="10">
-          <Label Text="Storage" FontAttributes="Bold" FontSize="16" TextColor="#8B4513"/>
+          <Label Text="Storage" Style="{StaticResource AdvancedPanelTitle}"/>
           <Label Text="{Binding MemoryUsageDisplay}" FontSize="12" FontAttributes="Bold" />
           <Grid ColumnDefinitions="200,*,60" ColumnSpacing="4" VerticalOptions="Center">
             <Label Grid.Column="0" Text="Max Session DB (MB)" />

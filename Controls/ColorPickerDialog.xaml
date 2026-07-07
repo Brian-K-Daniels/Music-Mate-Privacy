@@ -10,6 +10,14 @@
     HorizontalOptions="Center"
     VerticalOptions="Center">
 
+  <ContentView.Resources>
+    <Style TargetType="Picker">
+      <Setter Property="TextColor" Value="#000000" />
+      <Setter Property="TitleColor" Value="#444444" />
+      <Setter Property="BackgroundColor" Value="#FFFFFF" />
+    </Style>
+  </ContentView.Resources>
+
   <ScrollView HorizontalOptions="Center" VerticalOptions="Center">
     
         <Grid
@@ -26,6 +34,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
           </Grid.RowDefinitions>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
@@ -38,8 +47,24 @@
               HorizontalOptions="Center"
               Margin="0,0,0,12"/>
 
-          <!-- Row 1: ColorPicker + PreviewBox -->
-          <HorizontalStackLayout Grid.Row="1" Grid.Column="0"
+          <Grid Grid.Row="1" Grid.Column="0" ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="0,0,0,8">
+            <Label Text="Color applies to"
+                   FontSize="10"
+                   TextColor="#000000"
+                   VerticalOptions="Center"
+                   Grid.Column="0"/>
+            <Picker x:Name="ColorTargetPicker"
+                    Title="Item to color"
+                    FontSize="12"
+                    TextColor="#000000"
+                    TitleColor="#444444"
+                    BackgroundColor="#FFFFFF"
+                    Grid.Column="1"
+                    HorizontalOptions="Fill"/>
+          </Grid>
+
+          <!-- Row 2: ColorPicker + PreviewBox -->
+          <HorizontalStackLayout Grid.Row="2" Grid.Column="0"
                                  HorizontalOptions="Center"
                                  VerticalOptions="Center"
                                  Spacing="12">
@@ -56,8 +81,8 @@
                      BackgroundColor="{Binding PreviewColor, Source={x:Reference ColorPickerDialogRoot}}"/>
           </HorizontalStackLayout>
 
-          <!-- Row 2: Arrow buttons + OK button -->
-          <HorizontalStackLayout Grid.Row="2" Grid.Column="0"
+          <!-- Row 3: Arrow buttons + OK button -->
+          <HorizontalStackLayout Grid.Row="3" Grid.Column="0"
                                  HorizontalOptions="Center"
                                  VerticalOptions="Center"
                                  Spacing="8">
@@ -101,10 +126,18 @@
                     HeightRequest="40"
                     HorizontalOptions="Center"
                     VerticalOptions="Center"/>
+            <Button Text="Close"
+                    TextColor="White"
+                    BackgroundColor="#666666"
+                    Clicked="OnCloseClicked"
+                    WidthRequest="80"
+                    HeightRequest="40"
+                    HorizontalOptions="Center"
+                    VerticalOptions="Center"/>
           </HorizontalStackLayout>
 
           <!-- Whiteness slider labels and slider -->
-          <Grid Grid.Row="3" Grid.Column="0" Margin="0">
+          <Grid Grid.Row="4" Grid.Column="0" Margin="0">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="Auto"/>
               <ColumnDefinition Width="*"/>
