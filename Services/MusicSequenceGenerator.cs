@@ -178,7 +178,7 @@ namespace musicmate.Services
         public List<Measure> GenerateSequence()
         {
             var rng = RandomSeed.HasValue ? new Random(RandomSeed.Value) : new Random();
-            ExcludedMidiNumbers ??= new HashSet<int>();
+            ExcludedMidiNumbers ??= new HashSet<int>();   //  2026.07.08 1757  Mastered notes in the table.
 
             // 1. Build the allowed pitch pool from the scale + range settings.
             var pool = BuildPitchPool();

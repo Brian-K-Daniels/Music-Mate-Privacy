@@ -665,7 +665,8 @@ namespace musicmate.Pages
             // Repeat Same keeps the saved exercise unless the user changes key/scale/tune.
             if (_session.RepeatSameTune
                 && _repeatSameSnapshot?.Notes.Count > 0
-                && !_suppressSessionRegenerate)
+                && !_suppressSessionRegenerate
+                && !_session.IsDirty)  //  2026.07.09 1120  
             {
                 DebugLog.WriteLine("[RepeatSame] Skipping RegenerateNotesAsync — restoring saved exercise");
                 await RestoreRepeatSameSnapshotAsync(_repeatSameSnapshot.Notes);
@@ -714,6 +715,9 @@ namespace musicmate.Pages
 
                 using (PracticeSessionStartProfiler.Scope("RegenerateNotes.StaffDisplay"))
                     await UpdateStaffDisplayAsync();
+
+
+                _session.IsDirty = false;  //  2026.07.09 1131  
 
 #if DEBUG
                 if (_session.IsRandomMode)

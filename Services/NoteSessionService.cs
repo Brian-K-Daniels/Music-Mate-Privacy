@@ -67,6 +67,8 @@ namespace musicmate.Services
 
     public partial class NoteSessionService : INotifyPropertyChanged
     {
+        public bool IsDirty { get; set; } = true;  //  2026.07.09 1104  
+
         private static readonly HashSet<string> FreeScales = new() { "Major", "Harmonic Minor" };
         private static readonly HashSet<string> FreeKeys = new() { "C", "F", "Bb", "G", "D" };
         public NoteSessionService()

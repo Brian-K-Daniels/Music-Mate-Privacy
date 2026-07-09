@@ -100,14 +100,18 @@ public class PlayModePickerOptionsTests
             PlayModePickerOptions.ResolveOtherSelection(
                 layoutTestTuneEnabled: false,
                 tune: "Selected Scale",
-                isRandomMode: false));
+                isRandomMode: false,
+                scaleSelectionMode: ScaleSelectionMode.ByLevel,
+                selectedTunePreference: "Selected Scale"));
 
         Assert.Equal(
             PlayModePickerOptions.RandomMelodic,
             PlayModePickerOptions.ResolveOtherSelection(
                 layoutTestTuneEnabled: false,
                 tune: "Selected Scale",
-                isRandomMode: true));
+                isRandomMode: true,
+                scaleSelectionMode: ScaleSelectionMode.ByLevel,
+                selectedTunePreference: PlayModePickerOptions.RandomMelodic));
 
         Assert.Equal(
             PlayModePickerOptions.Tuner,
@@ -115,6 +119,20 @@ public class PlayModePickerOptionsTests
                 layoutTestTuneEnabled: false,
                 tune: PlayModePickerOptions.Tuner,
                 isRandomMode: false));
+    }
+
+    [Fact]
+    public void ResolveOtherSelection_ByLevelCompositionRandom_KeepsByLevelPicker()
+    {
+        // Composition under By Level sets IsRandomMode but leaves SelectedTune as "Selected Scale".
+        Assert.Equal(
+            NoteSessionService.ScaleSelectionByLevel,
+            PlayModePickerOptions.ResolveOtherSelection(
+                layoutTestTuneEnabled: false,
+                tune: "Selected Scale",
+                isRandomMode: true,
+                scaleSelectionMode: ScaleSelectionMode.ByLevel,
+                selectedTunePreference: "Selected Scale"));
     }
 
     [Fact]

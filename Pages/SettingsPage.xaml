@@ -260,9 +260,10 @@
             <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center"
                   IsVisible="{Binding IsPercentCorrectMethod}">
               <Label Grid.Column="0" Text="Omit below MsAvg" />
-              <Slider Grid.Column="1" Minimum="0" Maximum="5000"
+              <Slider Grid.Column="1" Minimum="0" Maximum="5"    
                       Value="{Binding OmitMsAvgThreshold, Mode=TwoWay}"
                       Style="{StaticResource SliderStyle}" />
+              <!--//  2026.07.08 1421. 5000 -> 5 -->
               <Label Grid.Column="2" Text="{Binding OmitMsAvgThreshold}"
                      HorizontalTextAlignment="End" LineBreakMode="NoWrap" />
             </Grid>

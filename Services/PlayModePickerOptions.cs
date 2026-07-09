@@ -104,17 +104,33 @@ namespace musicmate.Services
             => ResolveOtherSelection(
                 layoutTestTuneEnabled,
                 session.Tune ?? string.Empty,
-                session.IsRandomMode);
+                session.IsRandomMode,
+                session.ScaleSelectionMode,
+                Preferences.Default.Get<string?>("SelectedTune", null));
 
         public static string ResolveOtherSelection(
             bool layoutTestTuneEnabled,
             string tune,
-            bool isRandomMode)
+            bool isRandomMode,
+            ScaleSelectionMode scaleSelectionMode = ScaleSelectionMode.ByLevel,
+            string? selectedTunePreference = null)
         {
             if (tune == Tuner)
                 return Tuner;
+
+            // Explicit Other → Random persists SelectedTune as "Random".
+            // By Level composition may set IsRandomMode without that preference —
+            // keep the picker on By Level in that case.
+            if (isRandomMode
+                && string.Equals(selectedTunePreference, RandomMelodic, StringComparison.Ordinal))
+                return RandomMelodic;
+
+            if (scaleSelectionMode == ScaleSelectionMode.ByLevel)
+                return NoteSessionService.ScaleSelectionByLevel;
+
             if (isRandomMode)
                 return RandomMelodic;
+
             return NoteSessionService.ScaleSelectionByLevel;
         }
 
