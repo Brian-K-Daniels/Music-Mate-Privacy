@@ -3,6 +3,15 @@ using musicmate.Models;
 
 namespace musicmate.Services
 {
+    /// <summary>Which What To Play picker row reflects the user's saved choice.</summary>
+    public enum PlayModePickerCategory
+    {
+        Tunes,
+        Scales,
+        Arpeggios,
+        Other
+    }
+
     /// <summary>
     /// What To Play picker contents and shared selection logic for Scales vs Other.
     /// </summary>
@@ -132,6 +141,140 @@ namespace musicmate.Services
                 return RandomMelodic;
 
             return NoteSessionService.ScaleSelectionByLevel;
+        }
+
+        /// <summary>
+        /// What To Play should display from the user's saved picker choice, not from
+        /// composition-assigned <see cref="NoteSessionService.Tune"/> / arpeggio / tune title.
+        /// </summary>
+        public static (PlayModePickerCategory Category, string Selection) ResolveDisplayedPicker(
+            NoteSessionService session,
+            bool layoutTestTuneEnabled,
+            string? selectedTunePreference = null)
+            => ResolveDisplayedPicker(
+                layoutTestTuneEnabled,
+                NormalizeRhythmNoteTunePreference(
+                    selectedTunePreference ?? Preferences.Default.Get<string?>("SelectedTune", null)),
+                session.ScaleSelectionMode,
+                session.SelectedScale);
+
+        /// <summary>Testable/display resolver from persisted preference + scale mode.</summary>
+        public static (PlayModePickerCategory Category, string Selection) ResolveDisplayedPicker(
+            bool layoutTestTuneEnabled,
+            string? selectedTunePreference,
+            ScaleSelectionMode scaleSelectionMode,
+            string? selectedScale)
+        {
+            selectedTunePreference = NormalizeRhythmNoteTunePreference(selectedTunePreference);
+
+            if (layoutTestTuneEnabled || IsRhythmNoteTuneSelection(selectedTunePreference))
+                return (PlayModePickerCategory.Tunes, HalfThroughSixteenthNotes);
+
+            if (string.Equals(selectedTunePreference, Tuner, StringComparison.Ordinal))
+                return (PlayModePickerCategory.Other, Tuner);
+
+            if (string.Equals(selectedTunePreference, RandomMelodic, StringComparison.Ordinal))
+                return (PlayModePickerCategory.Other, RandomMelodic);
+
+            if (string.Equals(selectedTunePreference, "Selected Scale", StringComparison.Ordinal)
+                && scaleSelectionMode == ScaleSelectionMode.ByLevel)
+                return (PlayModePickerCategory.Other, NoteSessionService.ScaleSelectionByLevel);
+
+            if (scaleSelectionMode == ScaleSelectionMode.Named
+                && NoteSessionService.IsNamedScaleOption(selectedTunePreference))
+                return (PlayModePickerCategory.Scales, selectedTunePreference!);
+
+            if (IsUserSelectedPracticeTuneTitle(selectedTunePreference))
+                return (PlayModePickerCategory.Tunes, selectedTunePreference!);
+
+            if (IsUserSelectedArpeggioTitle(selectedTunePreference))
+                return (PlayModePickerCategory.Arpeggios, selectedTunePreference!);
+
+            if (scaleSelectionMode == ScaleSelectionMode.Named && !string.IsNullOrWhiteSpace(selectedScale))
+                return (PlayModePickerCategory.Scales, selectedScale);
+
+            return (PlayModePickerCategory.Other, NoteSessionService.ScaleSelectionByLevel);
+        }
+
+        public static string BuildSessionWhatLabel(
+            NoteSessionService session,
+            bool layoutTestTuneEnabled,
+            string? selectedTunePreference = null)
+        {
+            var (category, selection) = ResolveDisplayedPicker(
+                session, layoutTestTuneEnabled, selectedTunePreference);
+            return AbbreviateDisplayedSelection(category, selection);
+        }
+
+        /// <summary>Abbreviated label for session statistics (What column).</summary>
+        public static string AbbreviateDisplayedSelection(
+            PlayModePickerCategory category,
+            string selection)
+        {
+            if (string.IsNullOrWhiteSpace(selection))
+                return string.Empty;
+
+            if (string.Equals(selection, NoteSessionService.ScaleSelectionByLevel, StringComparison.Ordinal))
+                return "ByLvl";
+            if (string.Equals(selection, RandomMelodic, StringComparison.Ordinal))
+                return "Rnd";
+            if (string.Equals(selection, Tuner, StringComparison.Ordinal))
+                return "Tuner";
+            if (string.Equals(selection, HalfThroughSixteenthNotes, StringComparison.Ordinal))
+                return "Rhythm";
+
+            return category switch
+            {
+                PlayModePickerCategory.Scales => AbbreviateScaleName(selection),
+                PlayModePickerCategory.Tunes => AbbreviateTitle(selection, 14),
+                PlayModePickerCategory.Arpeggios => AbbreviateArpeggioLabel(selection),
+                _ => AbbreviateTitle(selection, 12)
+            };
+        }
+
+        private static string AbbreviateScaleName(string scale)
+            => scale switch
+            {
+                "Natural Minor" => "Nat Min",
+                "Harmonic Minor" => "Harm Min",
+                "Melodic Minor" => "Mel Min",
+                "Jazz Melodic Minor" => "Jazz Mel",
+                "Major Pentatonic" => "Maj Pent",
+                "Minor Pentatonic" => "Min Pent",
+                "Major Blues" => "Maj Blues",
+                "Minor Blues" => "Min Blues",
+                "Phrygian Dominant" => "Phryg Dom",
+                "Lydian Dominant" => "Lyd Dom",
+                "Double Harmonic" => "Dbl Harm",
+                "Neapolitan Minor" => "Nap Min",
+                "Whole Tone" => "W Tone",
+                _ => AbbreviateTitle(scale, 12)
+            };
+
+        private static string AbbreviateArpeggioLabel(string label)
+        {
+            if (string.IsNullOrWhiteSpace(label))
+                return string.Empty;
+
+            var trimmed = label.Trim();
+            var words = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length >= 3
+                && words[1].Equals("major", StringComparison.OrdinalIgnoreCase)
+                && words[2].StartsWith("tri", StringComparison.OrdinalIgnoreCase))
+                return $"{words[0]} maj tri";
+            if (words.Length >= 3
+                && words[1].Equals("minor", StringComparison.OrdinalIgnoreCase)
+                && words[2].StartsWith("tri", StringComparison.OrdinalIgnoreCase))
+                return $"{words[0]} min tri";
+
+            return AbbreviateTitle(trimmed, 14);
+        }
+
+        private static string AbbreviateTitle(string text, int maxLen)
+        {
+            if (text.Length <= maxLen)
+                return text;
+            return maxLen <= 3 ? text[..maxLen] : text[..(maxLen - 1)] + "…";
         }
 
         /// <summary>

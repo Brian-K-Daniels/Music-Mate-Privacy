@@ -274,8 +274,8 @@ namespace musicmate.ViewModels
                 {
                     stat.ContrastingTextColor = _themeService.ContrastingTextColor;
                     SessionStats.Add(stat);
-                    Utils.Log($"SessionStat: Dt={stat.Dt}, Key={stat.Key}, Tune={stat.Tune}, Instrument={stat.Instrument}, Sc={stat.Sc}, Hi={stat.Hi}, Lo={stat.Lo}, Pc={stat.Pc}");
-                    if (stat.Key == null || stat.Tune == null || stat.Instrument == null || stat.Sc == null || stat.Hi == null || stat.Lo == null)
+                    Utils.Log($"SessionStat: Dt={stat.Dt}, Key={stat.Key}, Tune={stat.Tune}, Instrument={stat.Instrument}, What={stat.What}, Hi={stat.Hi}, Lo={stat.Lo}, Pc={stat.Pc}");
+                    if (stat.Key == null || stat.Tune == null || stat.Instrument == null || stat.What == null || stat.Hi == null || stat.Lo == null)
                         Utils.Log("[WARNING] Null property detected in SessionStat!");
                 }
 
@@ -354,7 +354,7 @@ namespace musicmate.ViewModels
         public string RestRightSortIndicator => _sessionCurrentSortColumn == "RestRight" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string RestWrongSortIndicator => _sessionCurrentSortColumn == "RestWrong" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string KeySortIndicator => _sessionCurrentSortColumn == "Key" ? (_sessionIsAscending ? "▲" : "▼") : "";
-        public string ScaleSortIndicator => _sessionCurrentSortColumn == "Scale" ? (_sessionIsAscending ? "▲" : "▼") : "";
+        public string WhatSortIndicator => _sessionCurrentSortColumn == "What" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string RandSortIndicator => _sessionCurrentSortColumn == "Rand" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string AccPctSortIndicator => _sessionCurrentSortColumn == "AccPct" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string HiSortIndicator => _sessionCurrentSortColumn == "Hi" ? (_sessionIsAscending ? "▲" : "▼") : "";
@@ -380,7 +380,7 @@ namespace musicmate.ViewModels
         public string RestRightHeader => "R+ " + RestRightSortIndicator;
         public string RestWrongHeader => "R− " + RestWrongSortIndicator;
         public string KeyHeader => "Key " + KeySortIndicator;
-        public string ScaleHeader => "Scale " + ScaleSortIndicator;
+        public string WhatHeader => "What " + WhatSortIndicator;
         public string RandHeader => "Rand " + RandSortIndicator;
         public string AccPctHeader => "Acc% " + AccPctSortIndicator;
         public string HiHeader => "Hi " + HiSortIndicator;
@@ -521,9 +521,9 @@ namespace musicmate.ViewModels
                 "Key" => _sessionIsAscending
                     ? SessionStats.OrderBy(s => s.Key)
                     : SessionStats.OrderByDescending(s => s.Key),
-                "Scale" => _sessionIsAscending
-                    ? SessionStats.OrderBy(s => s.Sc)
-                    : SessionStats.OrderByDescending(s => s.Sc),
+                "What" or "Scale" => _sessionIsAscending
+                    ? SessionStats.OrderBy(s => s.What)
+                    : SessionStats.OrderByDescending(s => s.What),
                 "Rand" => _sessionIsAscending
                     ? SessionStats.OrderBy(s => s.Rand)
                     : SessionStats.OrderByDescending(s => s.Rand),
@@ -571,7 +571,7 @@ namespace musicmate.ViewModels
             OnPropertyChanged(nameof(RestRightSortIndicator));
             OnPropertyChanged(nameof(RestWrongSortIndicator));
             OnPropertyChanged(nameof(KeySortIndicator));
-            OnPropertyChanged(nameof(ScaleSortIndicator));
+            OnPropertyChanged(nameof(WhatSortIndicator));
             OnPropertyChanged(nameof(RandSortIndicator));
             OnPropertyChanged(nameof(AccPctSortIndicator));
             OnPropertyChanged(nameof(HiSortIndicator));
@@ -595,7 +595,7 @@ namespace musicmate.ViewModels
             OnPropertyChanged(nameof(RestRightHeader));
             OnPropertyChanged(nameof(RestWrongHeader));
             OnPropertyChanged(nameof(KeyHeader));
-            OnPropertyChanged(nameof(ScaleHeader));
+            OnPropertyChanged(nameof(WhatHeader));
             OnPropertyChanged(nameof(RandHeader));
             OnPropertyChanged(nameof(AccPctHeader));
             OnPropertyChanged(nameof(HiHeader));

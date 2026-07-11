@@ -392,7 +392,9 @@ namespace musicmate.Pages
 
             ArpeggiosPicker.ItemsSource = _arpeggioOptions.Select(o => o.PickerLabel).ToArray();
 
-            if (_session.Tune == "Arpeggio")
+            var displayed = PlayModePickerOptions.ResolveDisplayedPicker(_session, LayoutTestTune.IsEnabled);
+
+            if (displayed.Category == PlayModePickerCategory.Arpeggios)
 
             {
 
@@ -404,7 +406,7 @@ namespace musicmate.Pages
 
                 {
 
-                    SetArpeggioPickerSelection();
+                    SetArpeggioPickerSelectionFromPreference(displayed.Selection);
 
                 }
 
@@ -612,73 +614,65 @@ namespace musicmate.Pages
 
             {
 
-                Picker? activePicker = GetActivePlayModePicker();
+                var (category, selection) = PlayModePickerOptions.ResolveDisplayedPicker(
+
+                    _session, LayoutTestTune.IsEnabled);
+
+
+
+                Picker? activePicker = category switch
+
+                {
+
+                    PlayModePickerCategory.Tunes => TunesPicker,
+
+                    PlayModePickerCategory.Scales => ScalesPicker,
+
+                    PlayModePickerCategory.Arpeggios => ArpeggiosPicker,
+
+                    _ => OtherPicker
+
+                };
+
+
 
                 ClearInactivePlayModePickerSelections(activePicker);
 
 
 
-                if (PlayModePickerOptions.UsesOtherPicker(_session, LayoutTestTune.IsEnabled))
+                switch (category)
 
                 {
 
-                    var otherSelection = PlayModePickerOptions.ResolveOtherSelection(
+                    case PlayModePickerCategory.Tunes:
 
-                        _session, LayoutTestTune.IsEnabled);
+                        SetPickerSelection(TunesPicker, selection, _tuneTitles);
 
-                    SetPickerSelection(OtherPicker, otherSelection, PlayModePickerOptions.OtherOptions);
+                        break;
 
-                }
+                    case PlayModePickerCategory.Scales:
 
-                else if (LayoutTestTune.IsEnabled
+                        SetPickerSelection(ScalesPicker, selection, _scaleOptions);
 
-                         || PlayModePickerOptions.IsRhythmNoteTuneSelection(
+                        var scaleIdx = Array.IndexOf(_scaleOptions, selection);
 
-                             Preferences.Default.Get<string?>("SelectedTune", null)))
+                        if (scaleIdx >= 0)
 
-                {
+                            _lastValidScaleIndex = scaleIdx;
 
-                    SetPickerSelection(
+                        break;
 
-                        TunesPicker,
+                    case PlayModePickerCategory.Arpeggios:
 
-                        PlayModePickerOptions.HalfThroughSixteenthNotes,
+                        SetArpeggioPickerSelectionFromPreference(selection);
 
-                        _tuneTitles);
+                        break;
 
-                }
+                    default:
 
-                else if (_session.Tune == "Practice Tune")
+                        SetPickerSelection(OtherPicker, selection, PlayModePickerOptions.OtherOptions);
 
-                {
-
-                    var title = _session.CurrentTune?.Title;
-
-                    if (!string.IsNullOrEmpty(title))
-
-                        SetPickerSelection(TunesPicker, title, _tuneTitles);
-
-                }
-
-                else if (_session.Tune == "Arpeggio")
-
-                {
-
-                    SetArpeggioPickerSelection();
-
-                }
-
-                else if (_session.ScaleSelectionMode == ScaleSelectionMode.Named)
-
-                {
-
-                    SetPickerSelection(ScalesPicker, _session.SelectedScale, _scaleOptions);
-
-                    var scaleIdx = Array.IndexOf(_scaleOptions, _session.SelectedScale);
-
-                    if (scaleIdx >= 0)
-
-                        _lastValidScaleIndex = scaleIdx;
+                        break;
 
                 }
 
@@ -706,27 +700,19 @@ namespace musicmate.Pages
 
         {
 
-            if (LayoutTestTune.IsEnabled
+            return PlayModePickerOptions.ResolveDisplayedPicker(_session, LayoutTestTune.IsEnabled).Category switch
 
-                || PlayModePickerOptions.IsRhythmNoteTuneSelection(
+            {
 
-                    Preferences.Default.Get<string?>("SelectedTune", null)))
+                PlayModePickerCategory.Tunes => TunesPicker,
 
-                return TunesPicker;
+                PlayModePickerCategory.Scales => ScalesPicker,
 
-            if (PlayModePickerOptions.UsesOtherPicker(_session, LayoutTestTune.IsEnabled))
+                PlayModePickerCategory.Arpeggios => ArpeggiosPicker,
 
-                return OtherPicker;
+                _ => OtherPicker
 
-            if (_session.Tune == "Practice Tune")
-
-                return TunesPicker;
-
-            if (_session.Tune == "Arpeggio")
-
-                return ArpeggiosPicker;
-
-            return ScalesPicker;
+            };
 
         }
 
@@ -799,6 +785,40 @@ namespace musicmate.Pages
 
 
             if (idx >= 0 && ArpeggiosPicker.SelectedIndex != idx)
+
+                ArpeggiosPicker.SelectedIndex = idx;
+
+        }
+
+
+
+        private void SetArpeggioPickerSelectionFromPreference(string selection)
+
+        {
+
+            var idx = Array.FindIndex(_arpeggioOptions, choice =>
+
+                string.Equals(choice.DisplayLabel, selection, StringComparison.Ordinal)
+
+                || string.Equals(choice.PickerLabel, selection, StringComparison.Ordinal)
+
+                || string.Equals(choice.PickerLabel.TrimStart('★', ' '), selection, StringComparison.Ordinal));
+
+
+
+            if (idx < 0)
+
+            {
+
+                SetArpeggioPickerSelection();
+
+                return;
+
+            }
+
+
+
+            if (ArpeggiosPicker.SelectedIndex != idx)
 
                 ArpeggiosPicker.SelectedIndex = idx;
 

@@ -304,6 +304,7 @@ namespace musicmate.Services
         private const string PrefPitchMethodKey = "musicmate.PitchMethod";
         private const string PrefToleranceKey = "musicmate.Tolerance";
         private const string PrefAutoStartKey = "musicmate.AutoStart";
+        //private const string PrefShowConductorCuesKey = "musicmate.ShowConductorCues";
         private const string PrefAutoRepeatKey = "musicmate.AutoRepeat";
         private const string PrefRepeatSameTuneKey = "musicmate.RepeatSameTune";
         private const string PrefAccidentalPercentKey = "musicmate.AccidentalPercent";
@@ -421,12 +422,24 @@ namespace musicmate.Services
         private string _selectedArpeggioRoot = Preferences.Get(PrefSelectedArpeggioRootKey, "C4");
         private string _selectedArpeggioDisplay = Preferences.Get(PrefSelectedArpeggioDisplayKey, "C major triad");
         private int _childLevel;
-        private int _playbackBpm = Preferences.Get(PrefPlaybackBpmKey, 100);
-        private int _musicBpm = Preferences.Get(PrefMusicBpmKey, 100);
+        private int _tempo = LoadUnifiedTempo();
         private int _tolerance = Preferences.Get(PrefToleranceKey, DefaultTolerance);
+        public const int MinTempo = 30;
+        public const int MaxTempo = 150;  //  2026.07.09 1658  reduce from 200 to 150 for better usability after testing play by phone.
+        public const int DefaultTempo = 100;
         public const int DefaultTolerance = 50;
-        public const int DefaultMusicBpm = 100;
-        public const int DefaultPlaybackBpm = 100;
+        public const int DefaultMusicBpm = DefaultTempo;
+        public const int DefaultPlaybackBpm = DefaultTempo;
+
+        private static int LoadUnifiedTempo()
+        {
+            int music = Preferences.Get(PrefMusicBpmKey, DefaultTempo);
+            int playback = Preferences.Get(PrefPlaybackBpmKey, DefaultTempo);
+            int tempo = Math.Clamp(music, MinTempo, MaxTempo);
+            if (playback != tempo)
+                Preferences.Set(PrefPlaybackBpmKey, tempo);
+            return tempo;
+        }
         public const int DefaultPcTunes = 20;
         public const int DefaultPcRandom = 60;
         public const int DefaultPcScales = 20;
@@ -1501,37 +1514,39 @@ namespace musicmate.Services
             => Enum.TryParse<ScaleSelectionMode>(raw, out var mode)
                 ? mode
                 : ScaleSelectionMode.ByLevel;
-        /// <summary>Playback tempo (BPM) when the device plays notes (Auto Play).</summary>
-        public int PlaybackBpm
+        /// <summary>Tempo (BPM) for score marking, rhythm gates, and phone autoplay.</summary>
+        public int Tempo
         {
-            get => _playbackBpm;
-            set
-            {
-                var clamped = Math.Clamp(value, 30, 400);
-                if (_playbackBpm == clamped)
-                {
-                    return;
-                }
-                _playbackBpm = clamped;
-                Preferences.Set(PrefPlaybackBpmKey, _playbackBpm);
-                OnPropertyChanged(nameof(PlaybackBpm));
-            }
+            get => _tempo;
+            set => ApplyTempo(value);
         }
-        /// <summary>Written tempo (BPM) shown on the score (quarter note = value).</summary>
+
+        /// <summary>Alias for <see cref="Tempo"/> (score marking).</summary>
         public int MusicBpm
         {
-            get => _musicBpm;
-            set
-            {
-                var clamped = Math.Clamp(value, 30, 200);
-                if (_musicBpm == clamped)
-                {
-                    return;
-                }
-                _musicBpm = clamped;
-                Preferences.Set(PrefMusicBpmKey, _musicBpm);
-                OnPropertyChanged(nameof(MusicBpm));
-            }
+            get => _tempo;
+            set => ApplyTempo(value);
+        }
+
+        /// <summary>Alias for <see cref="Tempo"/> (phone autoplay).</summary>
+        public int PlaybackBpm
+        {
+            get => _tempo;
+            set => ApplyTempo(value);
+        }
+
+        private void ApplyTempo(int value)
+        {
+            var clamped = Math.Clamp(value, MinTempo, MaxTempo);
+            if (_tempo == clamped)
+                return;
+
+            _tempo = clamped;
+            Preferences.Set(PrefMusicBpmKey, _tempo);
+            Preferences.Set(PrefPlaybackBpmKey, _tempo);
+            OnPropertyChanged(nameof(Tempo));
+            OnPropertyChanged(nameof(MusicBpm));
+            OnPropertyChanged(nameof(PlaybackBpm));
         }
         /// <summary>
         /// Pool weights (sum 100): practice tunes, random, scales, arpeggios.
@@ -1673,6 +1688,20 @@ namespace musicmate.Services
                 OnPropertyChanged(nameof(AutoStart));
             }
         }
+        //public bool ShowConductorCues
+        //{
+        //    get => _showConductorCues;
+        //    set
+        //    {
+        //        if (_showConductorCues == value)
+        //        {
+        //            return;
+        //        }
+        //        _showConductorCues = value;
+        //        Preferences.Set(PrefShowConductorCuesKey, value);
+        //        OnPropertyChanged(nameof(ShowConductorCues));
+        //    }
+        //}
         public bool AutoRepeat
         {
             get => _autoRepeat;
@@ -1998,7 +2027,7 @@ namespace musicmate.Services
                 return;
             }
 
-            _rhythmGateMusicBpm = Math.Clamp(MusicBpm, 30, 200);
+            _rhythmGateMusicBpm = Math.Clamp(MusicBpm, MinTempo, MaxTempo);
             _rhythmStartGateEnabled = NotesToDraw.Any(n => n.GateBeatsAfterPrevious > 0);
         }
         private double GetSessionElapsedMs()
@@ -2808,20 +2837,20 @@ namespace musicmate.Services
             var rhythmSlots = RhythmStartGate.BuildSlots(previewNotes);
             int sessionIdx = 0;
             int pitchIdx = 0;
+            var (noteKey, noteScale) = GetNotationKeyAndScale();
             foreach (var note in previewNotes)
             {
                 if (note.IsRest)
                     continue;
 
                 var slot = rhythmSlots[pitchIdx++];
-                string name = ResolveWrittenNoteName(
-                    note.SpelledName, note.MidiNumber, note.Letter, note.Octave, Key, SelectedScale);
+                var (midi, name) = ResolveTargetPitch(note, noteKey, noteScale);
 
                 NotesToDraw.Add(new NoteInfo
                 {
-                    Midi = note.MidiNumber,
+                    Midi = midi,
                     Name = name,
-                    TargetFreq = note.TargetFrequency,
+                    TargetFreq = 440.0 * Math.Pow(2.0, (midi - 69) / 12.0),
                     X = 0f,
                     Duration = note.Duration,
                     StartBeat = slot.StartBeat,
@@ -3808,6 +3837,37 @@ namespace musicmate.Services
                 _ => raw
             };
         }
+        /// <summary>
+        /// Resolves the sounding MIDI and evaluation label for a staff note, applying
+        /// key-signature accidentals when the score omits them (e.g. G on the G line in E major → G#).
+        /// </summary>
+        public static (int Midi, string Name) ResolveTargetPitch(
+            GeneratedNote note, string key, string scale)
+        {
+            var raw = note.SpelledName.Trim();
+            char letter = note.Letter;
+            int octave = note.Octave;
+            int naturalMidi = NoteNameToMidi($"{letter}{octave}");
+
+            if (note.Accidental == Accidental.Natural)
+                return (naturalMidi, raw);
+
+            if (HasExplicitAccidentalInName(raw))
+                return (note.MidiNumber, raw);
+
+            int keySigMidi = ApplyKeySignatureToMidi($"{letter}{octave}", naturalMidi, key, scale);
+            if (keySigMidi != naturalMidi)
+            {
+                return (
+                    keySigMidi,
+                    ApplyKeySignatureToSpelledName($"{letter}{octave}", key, scale));
+            }
+
+            return (
+                note.MidiNumber,
+                ResolveWrittenNoteName(raw, note.MidiNumber, letter, octave, key, scale));
+        }
+
         /// <summary>
         /// Returns the display/evaluation name for a written note, applying key-signature
         /// spelling when the score omits accidentals that the key signature implies.

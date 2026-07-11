@@ -29,8 +29,9 @@ namespace musicmate.ViewModels
         public const string DefaultTune = "Major";
         public const string DefaultLowestNote = "C4";
         public const string DefaultHighestNote = "F5";
-        public const int DefaultPlaybackBpm = NoteSessionService.DefaultPlaybackBpm;
-        public const int DefaultMusicBpm = NoteSessionService.DefaultMusicBpm;
+        public const int DefaultTempo = NoteSessionService.DefaultTempo;
+        public const int DefaultMusicBpm = DefaultTempo;
+        public const int DefaultPlaybackBpm = DefaultTempo;
         // Aligned with NoteSessionService Preferences default (0) so factory reset
         // and a fresh install produce the same initial accidental percentage.
         public const int DefaultAccidentalPct = 0;
@@ -90,10 +91,10 @@ namespace musicmate.ViewModels
                     break;
                 case nameof(NoteSessionService.AccidentalPercent):
                     OnPropertyChanged(nameof(AccidentalPercent)); break;
+                case nameof(NoteSessionService.Tempo):
                 case nameof(NoteSessionService.PlaybackBpm):
-                    OnPropertyChanged(nameof(PlaybackBpm)); break;
                 case nameof(NoteSessionService.MusicBpm):
-                    OnPropertyChanged(nameof(MusicBpm)); break;
+                    OnPropertyChanged(nameof(Tempo)); break;
                 case nameof(NoteSessionService.CorrectThreshold):
                     OnPropertyChanged(nameof(CorrectThreshold));
                     OnPropertyChanged(nameof(OmitSliderValue));
@@ -102,6 +103,8 @@ namespace musicmate.ViewModels
                     OnPropertyChanged(nameof(MinCorrectCount)); break;
                 case nameof(NoteSessionService.AutoStart):
                     OnPropertyChanged(nameof(AutoStart)); break;
+                //case nameof(NoteSessionService.ShowConductorCues):
+                //    OnPropertyChanged(nameof(ShowConductorCues)); break;
                 case nameof(NoteSessionService.OmitMsAvgThreshold):
                     OnPropertyChanged(nameof(OmitMsAvgThreshold)); break;
                 case nameof(NoteSessionService.MasteredMethod):
@@ -126,8 +129,6 @@ namespace musicmate.ViewModels
                     OnPropertyChanged(nameof(SyncopationSetting)); break;
                 case nameof(NoteSessionService.NoteNameDisplay):
                     OnPropertyChanged(nameof(NoteNameDisplay)); break;
-                case nameof(NoteSessionService.ShowConductorCues):
-                    OnPropertyChanged(nameof(ShowConductorCues)); break;
                 case nameof(NoteSessionService.WhiteKeyNoteNames):
                     OnPropertyChanged(nameof(WhiteKeyNoteNames)); break;
                 case nameof(NoteSessionService.AvailableScalesForBinding):
@@ -279,47 +280,28 @@ namespace musicmate.ViewModels
             }
         }
 
-        private int _playbackBpm = Preferences.Get("musicmate.PlaybackBpm", 100);
-        public int PlaybackBpm
-        {
-            get => _session?.PlaybackBpm ?? _playbackBpm;
-            set
-            {
-                var clamped = Math.Clamp(value, 30, 400);
-                if ((_session?.PlaybackBpm ?? _playbackBpm) == clamped) return;
-                if (_session != null
-                )
-                {
-                    _session.PlaybackBpm = clamped;
-                    OnPropertyChanged(nameof(PlaybackBpm));
-                }
-                else
-                {
-                    _playbackBpm = clamped;
-                    Preferences.Set("musicmate.PlaybackBpm", _playbackBpm);
-                    OnPropertyChanged(nameof(PlaybackBpm));
-                }
-            }
-        }
+        public int MinTempo => NoteSessionService.MinTempo;
+        public int MaxTempo => NoteSessionService.MaxTempo;
 
-        private int _musicBpm = Preferences.Get("musicmate.MusicBpm", DefaultMusicBpm);
-        public int MusicBpm
+        private int _tempo = Preferences.Get("musicmate.MusicBpm", DefaultTempo);
+        public int Tempo
         {
-            get => _session?.MusicBpm ?? _musicBpm;
+            get => _session?.Tempo ?? _tempo;
             set
             {
-                var clamped = Math.Clamp(value, 30, 200);
-                if ((_session?.MusicBpm ?? _musicBpm) == clamped) return;
+                var clamped = Math.Clamp(value, MinTempo, MaxTempo);
+                if ((_session?.Tempo ?? _tempo) == clamped) return;
                 if (_session != null)
                 {
-                    _session.MusicBpm = clamped;
-                    OnPropertyChanged(nameof(MusicBpm));
+                    _session.Tempo = clamped;
+                    OnPropertyChanged(nameof(Tempo));
                 }
                 else
                 {
-                    _musicBpm = clamped;
-                    Preferences.Set("musicmate.MusicBpm", _musicBpm);
-                    OnPropertyChanged(nameof(MusicBpm));
+                    _tempo = clamped;
+                    Preferences.Set("musicmate.MusicBpm", _tempo);
+                    Preferences.Set("musicmate.PlaybackBpm", _tempo);
+                    OnPropertyChanged(nameof(Tempo));
                 }
             }
         }
@@ -680,8 +662,7 @@ namespace musicmate.ViewModels
             }
 
             // Fallback when service locator is unavailable (e.g. design-time).
-            PlaybackBpm = DefaultPlaybackBpm;
-            MusicBpm = DefaultMusicBpm;
+            Tempo = DefaultTempo;
             AccidentalPercent = DefaultAccidentalPct;
             CorrectThreshold = DefaultCorrectThreshold;
             MinCorrectCount = DefaultMinCorrectCount;

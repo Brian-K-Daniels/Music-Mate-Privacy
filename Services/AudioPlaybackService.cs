@@ -54,28 +54,18 @@ namespace musicmate.Services
 
         private static async Task PlayToCompletionAsync(IAudioPlayer player, double noteSeconds, CancellationToken ct)
         {
-            var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            EventHandler? onEnded = null;
-            onEnded = (_, _) =>
-            {
-                player.PlaybackEnded -= onEnded;
-                done.TrySetResult();
-            };
-            player.PlaybackEnded += onEnded;
-
             player.Play();
 
-            var playTask = done.Task;
-            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(noteSeconds + 0.25), ct);
-            var finished = await Task.WhenAny(playTask, timeoutTask).ConfigureAwait(false);
-            player.PlaybackEnded -= onEnded;
-
-            if (finished == playTask)
-                await playTask.ConfigureAwait(false);
-            else
-                ct.ThrowIfCancellationRequested();
-
-            try { player.Stop(); } catch { }
+            // Generated PCM matches noteSeconds exactly; wall-clock delay is more reliable
+            // on mobile than PlaybackEnded (often late or never fires for MemoryStream tones).
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(noteSeconds), ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                try { player.Stop(); } catch { }
+            }
         }
 
         private static Stream BuildToneStream(double freq, double durationSeconds, float volume)

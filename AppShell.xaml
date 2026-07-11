@@ -63,7 +63,7 @@
        ContentTemplate="{DataTemplate local:AboutPage}" />
   </FlyoutItem>
 
-  <FlyoutItem Title="Item to Play" Route="WhatToPlay">
+  <FlyoutItem Title="What to Play" Route="WhatToPlay">
     <ShellContent
         Route="WhatToPlayPage"
         ContentTemplate="{DataTemplate local:WhatToPlayPage}" />

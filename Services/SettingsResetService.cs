@@ -30,8 +30,7 @@ namespace musicmate.Services
         public void ResetToFactoryDefaults()
         {
             DebugLog.WriteLine("[ResetOptionsTest] ResetToFactoryDefaults called.");
-            _session.PlaybackBpm = SettingsPageViewModel.DefaultPlaybackBpm;
-            _session.MusicBpm = SettingsPageViewModel.DefaultMusicBpm;
+            _session.Tempo = SettingsPageViewModel.DefaultTempo;
             _session.AccidentalPercent = SettingsPageViewModel.DefaultAccidentalPct;
             _session.CorrectThreshold = SettingsPageViewModel.DefaultCorrectThreshold;
             _session.MinCorrectCount = SettingsPageViewModel.DefaultMinCorrectCount;
@@ -95,8 +94,9 @@ namespace musicmate.Services
                 LowestNote = _session.LowestNote,
                 HighestNote = _session.HighestNote,
                 AccidentalPercent = _session.AccidentalPercent,
-                PlaybackBpm = _session.PlaybackBpm,
-                MusicBpm = _session.MusicBpm,
+                Tempo = _session.Tempo,
+                PlaybackBpm = _session.Tempo,
+                MusicBpm = _session.Tempo,
                 CorrectThreshold = _session.CorrectThreshold,
                 MinCorrectCount = _session.MinCorrectCount,
                 OmitMsAvgThreshold = Preferences.Get("musicmate.OmitMsAvgThreshold", _session.OmitMsAvgThreshold),
@@ -148,8 +148,7 @@ namespace musicmate.Services
             _session.LowestNote = snapshot.LowestNote;
             _session.HighestNote = snapshot.HighestNote;
             _session.AccidentalPercent = snapshot.AccidentalPercent;
-            _session.PlaybackBpm = snapshot.PlaybackBpm;
-            _session.MusicBpm = snapshot.MusicBpm;
+            _session.Tempo = snapshot.Tempo > 0 ? snapshot.Tempo : snapshot.MusicBpm;
             _session.CorrectThreshold = snapshot.CorrectThreshold;
             _session.MinCorrectCount = snapshot.MinCorrectCount;
             _session.OmitMsAvgThreshold = snapshot.OmitMsAvgThreshold;
@@ -200,6 +199,7 @@ namespace musicmate.Services
             public string LowestNote { get; init; } = "C4";
             public string HighestNote { get; init; } = "F5";
             public int AccidentalPercent { get; init; }
+            public int Tempo { get; init; } = 100;
             public int PlaybackBpm { get; init; } = 100;
             public int MusicBpm { get; init; } = 100;
             public int CorrectThreshold { get; init; }

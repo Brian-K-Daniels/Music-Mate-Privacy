@@ -1,9 +1,11 @@
-using System.Diagnostics;
 using Microsoft.Maui.Graphics;
 using Microsoft.Maui.Graphics.Skia;
+  //  2026.07.09 1946  using Microsoft.UI.Xaml.Controls;
+  using Microsoft.Maui.Controls;
 using musicmate.Diagnostics;
 using musicmate.Models;
 using musicmate.Services;
+using System.Diagnostics;
 
 namespace musicmate.Drawables
 {
@@ -93,7 +95,7 @@ namespace musicmate.Drawables
         }
 
         // ── Fixed horizontal constants ─────────────────────────────────────────
-        private const float ScrollPxPerBeat = 42f;   // reduced from 48 for better fit
+          //  2026.07.09 1912  private const float ScrollPxPerBeat = 42f;   // reduced from 48 for better fit
         private const float RightMargin = 36f;
 
         // Uniform spacing constants
@@ -3139,7 +3141,7 @@ namespace musicmate.Drawables
             if (_session.Tune == "Tuner")
                 return;
 
-            int bpm = Math.Clamp(_session.MusicBpm, 30, 200);
+            int bpm = Math.Clamp(_session.Tempo, NoteSessionService.MinTempo, NoteSessionService.MaxTempo);
             float fontSize = Math.Max(10f, _layout.Sls * 1.6f);
             const float timeSigW = 24f;
             float timeSigCenterX = _headerMetrics.TimeSigX + timeSigW * 0.5f;
@@ -3207,8 +3209,8 @@ namespace musicmate.Drawables
             {
                 double? highlightedBeat = GetHighlightedConductedBeatRel(
                     notes, currentIdx, beatOrigin, barBeats, conductorTs, isActive);
-                DrawConductorBeatCues(canvas, staffTop, barLayouts, barBeats, beatOrigin,
-                    staffLeftMargin, conductorTs, highlightedBeat);
+                DrawConductorBeatCues(canvas, staffTop, notes, noteLayouts, barLayouts, barBeats, beatOrigin,
+                    staffLeftMargin, conductorTs, highlightedBeat ) ; //  2026.07.09 1942  conductorTs, highlightedBeat);
             }
 
             barBeats ??= Array.Empty<double>();
@@ -3306,16 +3308,27 @@ namespace musicmate.Drawables
             return ConductorBeatHelper.GetConductedBeatStartForRelativeBeat(relBeat, timeSignature, sortedMeasureStarts);
         }
 
+        //private void DrawConductorBeatCues(
+        //    ICanvas canvas,
+        //    float staffTop,
+        //    BarLayout[] barLayouts,
+        //    IReadOnlyList<double> barBeats,
+        //    double beatOrigin,
+        //    float staffLeftMargin,
+        //    TimeSignature timeSignature,
+        //    double? highlightedConductedBeatRel)
         private void DrawConductorBeatCues(
-            ICanvas canvas,
-            float staffTop,
-            BarLayout[] barLayouts,
-            IReadOnlyList<double> barBeats,
-            double beatOrigin,
-            float staffLeftMargin,
-            TimeSignature timeSignature,
-            double? highlightedConductedBeatRel)
-        {
+            ICanvas                     canvas,
+            float                       staffTop,
+            IReadOnlyList<GeneratedNote> notes,
+            NoteLayout[]                noteLayouts,
+            BarLayout[]                 barLayouts,
+            IReadOnlyList<double>       barBeats,
+            double                      beatOrigin,
+            float                       staffLeftMargin,
+            TimeSignature               timeSignature,
+            double?                     highlightedConductedBeatRel)
+        { 
             if (barLayouts.Length == 0)
                 return;
 
@@ -3330,22 +3343,106 @@ namespace musicmate.Drawables
                 float measureRight = m < barLayouts.Length ? barLayouts[m].X : barLayouts[^1].X;
                 double segmentStartBeat = m == 0 ? 0.0 : sortedMeasureStarts[m - 1];
 
-                foreach (double offset in conductedOffsets)
+                for (int c = 0; c < conductedOffsets.Count; c++)
                 {
+                    double offset = conductedOffsets[c];
+
                     double conductedBeatRel = segmentStartBeat + offset;
-                    float x = ConductorBeatHelper.BeatOffsetToXInMeasure(
-                        measureLeft, measureRight, offset, measureBeats, BarLeftPadding);
+
+                    double nextOffset = c + 1 < conductedOffsets.Count
+                        ? conductedOffsets[c + 1]
+                        : measureBeats;
+
+                    double conductedBeatEndRel = segmentStartBeat + nextOffset;
+
+                    float x = TryGetFirstLayoutXInBeatWindow(
+                        notes,
+                        noteLayouts,
+                        beatOrigin,
+                        conductedBeatRel,
+                        conductedBeatEndRel,
+                        out float noteX)
+                            ? noteX
+                            : ConductorBeatHelper.BeatOffsetToXInMeasure(
+                                measureLeft, measureRight, offset, measureBeats, BarLeftPadding);
+
                     bool isCurrent = highlightedConductedBeatRel.HasValue
                         && Math.Abs(highlightedConductedBeatRel.Value - conductedBeatRel) < 0.05;
+
                     DrawConductorArrow(canvas, x, staffTop, isCurrent);
                 }
             }
         }
 
+        //private static bool TryGetLayoutXAtBeat(  //  2026.07.10 1001  method out
+        //    IReadOnlyList<GeneratedNote> notes,
+        //    NoteLayout[] noteLayouts,
+        //    double beatOrigin,
+        //    double targetBeatRel,
+        //    out float x)
+        //{
+        //    const double tolerance = 0.05;
+
+        //    x = 0f;
+
+        //    int count = Math.Min(notes.Count, noteLayouts.Length);
+
+        //    for (int i = 0; i < count; i++)
+        //    {
+        //        double noteBeatRel = (notes[i].BeatPosition ?? 0.0) - beatOrigin;
+
+        //        if (Math.Abs(noteBeatRel - targetBeatRel) <= tolerance)
+        //        {
+        //            x = noteLayouts[i].X;
+        //            return true;
+        //        }
+        //    }
+
+        //    return false;
+        //}
+        private static bool TryGetFirstLayoutXInBeatWindow(
+    IReadOnlyList<GeneratedNote> notes,
+    NoteLayout[] noteLayouts,
+    double beatOrigin,
+    double beatStartRel,
+    double beatEndRel,
+    out float x)
+        {
+            const double tolerance = 0.0001;
+
+            x = 0f;
+
+            int count = Math.Min(notes.Count, noteLayouts.Length);
+
+            int bestIndex = -1;
+            double bestBeat = double.PositiveInfinity;
+
+            for (int i = 0; i < count; i++)
+            {
+                double noteBeatRel = (notes[i].BeatPosition ?? 0.0) - beatOrigin;
+
+                if (noteBeatRel >= beatStartRel - tolerance
+                    && noteBeatRel < beatEndRel - tolerance)
+                {
+                    if (noteBeatRel < bestBeat)
+                    {
+                        bestBeat = noteBeatRel;
+                        bestIndex = i;
+                    }
+                }
+            }
+
+            if (bestIndex < 0)
+                return false;
+
+            x = noteLayouts[bestIndex].X;
+            return true;
+        }
+
         private static void DrawConductorArrow(ICanvas canvas, float x, float staffTop, bool isCurrent)
         {
-            float wing = isCurrent ? 5.5f : 4f;
-            float height = isCurrent ? 8f : 5.5f;
+            float wing = isCurrent ? 8.0f: 2.0f;  //  2026.07.09 1924  '5.5f : 4f;
+            float height = isCurrent ? 8f : 2.25f;  //  2026.07.09 1926  5.5f;
             float tipY = staffTop - (isCurrent ? 1f : 4f);
             float baseY = tipY - height;
 

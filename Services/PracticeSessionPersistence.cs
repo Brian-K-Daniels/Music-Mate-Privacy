@@ -1,3 +1,5 @@
+using Microsoft.Maui.Storage;
+using musicmate.LayoutDebug;
 using musicmate.Models;
 using musicmate.Utilities;
 
@@ -35,9 +37,10 @@ namespace musicmate.Services
                 Key = session.Key,
                 Tune = session.Tune ?? string.Empty,
                 Instrument = session.InstrumentDisplayName,
-                Sc = session.Tune == "Practice Tune"
-                    ? (session.CurrentTune?.Title ?? "Practice Tune")
-                    : session.SelectedScale,
+                What = PlayModePickerOptions.BuildSessionWhatLabel(
+                    session,
+                    LayoutTestTune.IsEnabled,
+                    Preferences.Default.Get<string?>("SelectedTune", null)),
                 Rand = session.IsRandomMode,
                 AccPct = session.AccidentalPercent,
                 Hi = hi?.Name ?? "",

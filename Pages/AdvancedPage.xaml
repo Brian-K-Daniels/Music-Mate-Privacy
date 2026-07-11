@@ -35,7 +35,7 @@
   </ContentPage.Resources>
 
   <Shell.TitleView>
-    <Grid ColumnDefinitions="*,Auto" HeightRequest="30" VerticalOptions="Center">
+    <Grid ColumnDefinitions="*,Auto" HeightRequest="44" VerticalOptions="Center">
       <HorizontalStackLayout Spacing="10" VerticalOptions="Center" Grid.Column="0">
         <Button Text="←"
                 Clicked="OnNavigatePracticeClicked"

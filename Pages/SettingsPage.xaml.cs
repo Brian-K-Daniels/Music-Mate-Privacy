@@ -142,13 +142,13 @@ namespace musicmate.Pages
             _viewModel.RefreshThemeColorBindings();
             _viewModel.LowestNote = _session.LowestNote;
             _viewModel.HighestNote = _session.HighestNote;
-            _viewModel.PlaybackBpm = _session.PlaybackBpm;
-            _viewModel.MusicBpm = _session.MusicBpm;
+            _viewModel.Tempo = _session.Tempo;
             _viewModel.AccidentalPercent = _session.AccidentalPercent;
             _viewModel.CorrectThreshold = _session.CorrectThreshold;
             _viewModel.MinCorrectCount = _session.MinCorrectCount;
             _viewModel.OmitMsAvgThreshold = _session.OmitMsAvgThreshold;
             _viewModel.AutoStart = _session.AutoStart;
+            _viewModel.ShowConductorCues = _session.ShowConductorCues; 
             _viewModel.MasteredMethod = _session.MasteredMethod;
             _viewModel.StreakCrit = _session.StreakCrit;
 

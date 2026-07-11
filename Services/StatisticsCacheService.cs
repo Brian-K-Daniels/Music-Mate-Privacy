@@ -237,7 +237,7 @@ public static class StatisticsDataLoader
                 Tune = stat.Tune,
                 Instrument = stat.Instrument,
                 Dt = stat.Dt,
-                Sc = stat.Sc,
+                What = stat.What,
                 Hi = stat.Hi,
                 Lo = stat.Lo,
                 Pc = stat.Pc,

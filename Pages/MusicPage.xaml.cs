@@ -1477,16 +1477,17 @@ namespace musicmate.Pages
                 int pitchIdx = 0;
                 _session.NotesToDraw.Clear();
                 _session.FeedbackViewModels.Clear();
+                var (noteKey, noteScale) = _session.GetNotationKeyAndScale();
                 foreach (var gn in rhythmOrder)
                 {
                     if (gn.IsRest) continue;
                     var slot = rhythmSlots[pitchIdx++];
+                    var (midi, name) = NoteSessionService.ResolveTargetPitch(gn, noteKey, noteScale);
                     _session.NotesToDraw.Add(new NoteInfo
                     {
-                        Midi = gn.MidiNumber,
-                        Name = NoteSessionService.ResolveWrittenNoteName(
-                            gn.SpelledName, gn.MidiNumber, gn.Letter, gn.Octave, _session.Key, _session.SelectedScale),
-                        TargetFreq = gn.TargetFrequency,
+                        Midi = midi,
+                        Name = name,
+                        TargetFreq = 440.0 * Math.Pow(2.0, (midi - 69) / 12.0),
                         X = 0f,
                         Duration = gn.Duration,
                         StartBeat = slot.StartBeat,
@@ -3166,7 +3167,7 @@ namespace musicmate.Pages
                 {
                     PlaybackRhythmDiagnostics.LogRhythmSpan("sequence", rhythmSeq);
 
-                    var bpm = Math.Clamp(_session.PlaybackBpm, 30, 200);
+                    var bpm = Math.Clamp(_session.Tempo, NoteSessionService.MinTempo, NoteSessionService.MaxTempo);
                     var beatSeconds = 60.0 / bpm;
                     int pitchCount = rhythmSeq.Count(n => !n.IsRest);
                     int pitchIndex = 0;
@@ -3226,7 +3227,7 @@ namespace musicmate.Pages
                 if (_session.NotesToDraw.Count == 0)
                     return;
 
-                var bpmLegacy = Math.Clamp(_session.PlaybackBpm, 30, 200);
+                var bpmLegacy = Math.Clamp(_session.Tempo, NoteSessionService.MinTempo, NoteSessionService.MaxTempo);
                 var beatSecondsLegacy = 60.0 / bpmLegacy;
 
                 for (int i = 0; i < _session.NotesToDraw.Count; i++)
@@ -3300,9 +3301,9 @@ namespace musicmate.Pages
                         _completionFromPlayback = true;
                         await _session.TriggerSessionCompletionAsync();
 
-                        var playbackBpm = (double)_session.PlaybackBpm;
+                        var tempo = (double)_session.Tempo;
                         StatusService.Instance.StatusMessage =
-                            $"Playback {playbackBpm:F0} BPM. Tap GO to listen or Play to hear again.";
+                            $"Playback {tempo:F0} BPM. Tap GO to listen or Play to hear again.";
                     }
 
                     // Restore instrument after freeze — its PropertyChanged will
@@ -3435,7 +3436,9 @@ namespace musicmate.Pages
                     _repeatSameSnapshot = null;
             }
 
-            if (e.PropertyName == nameof(NoteSessionService.MusicBpm))
+            if (e.PropertyName == nameof(NoteSessionService.Tempo)
+                || e.PropertyName == nameof(NoteSessionService.MusicBpm)
+                || e.PropertyName == nameof(NoteSessionService.PlaybackBpm))
             {
                 _staffDrawable?.InvalidateLayoutCache();
                 MainThread.BeginInvokeOnMainThread(() => StaffGraphicsView?.Invalidate());

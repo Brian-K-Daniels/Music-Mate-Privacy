@@ -122,6 +122,58 @@ public class PlayModePickerOptionsTests
     }
 
     [Fact]
+    public void ResolveDisplayedPicker_ByLevelComposition_StaysOnOtherByLevel()
+    {
+        var (category, selection) = PlayModePickerOptions.ResolveDisplayedPicker(
+            layoutTestTuneEnabled: false,
+            selectedTunePreference: "Selected Scale",
+            scaleSelectionMode: ScaleSelectionMode.ByLevel,
+            selectedScale: "Major");
+
+        Assert.Equal(PlayModePickerCategory.Other, category);
+        Assert.Equal(NoteSessionService.ScaleSelectionByLevel, selection);
+    }
+
+    [Fact]
+    public void ResolveDisplayedPicker_ExplicitScale_IgnoresCompositionTune()
+    {
+        var (category, selection) = PlayModePickerOptions.ResolveDisplayedPicker(
+            layoutTestTuneEnabled: false,
+            selectedTunePreference: "Major",
+            scaleSelectionMode: ScaleSelectionMode.Named,
+            selectedScale: "Natural Minor");
+
+        Assert.Equal(PlayModePickerCategory.Scales, category);
+        Assert.Equal("Major", selection);
+    }
+
+    [Fact]
+    public void ResolveDisplayedPicker_ExplicitTune_IgnoresSessionChanges()
+    {
+        var (category, selection) = PlayModePickerOptions.ResolveDisplayedPicker(
+            layoutTestTuneEnabled: false,
+            selectedTunePreference: "Mary Had a Little Lamb",
+            scaleSelectionMode: ScaleSelectionMode.ByLevel,
+            selectedScale: "Major");
+
+        Assert.Equal(PlayModePickerCategory.Tunes, category);
+        Assert.Equal("Mary Had a Little Lamb", selection);
+    }
+
+    [Fact]
+    public void ResolveDisplayedPicker_ExplicitRandom_StaysOnOtherRandom()
+    {
+        var (category, selection) = PlayModePickerOptions.ResolveDisplayedPicker(
+            layoutTestTuneEnabled: false,
+            selectedTunePreference: PlayModePickerOptions.RandomMelodic,
+            scaleSelectionMode: ScaleSelectionMode.ByLevel,
+            selectedScale: "Major");
+
+        Assert.Equal(PlayModePickerCategory.Other, category);
+        Assert.Equal(PlayModePickerOptions.RandomMelodic, selection);
+    }
+
+    [Fact]
     public void ResolveOtherSelection_ByLevelCompositionRandom_KeepsByLevelPicker()
     {
         // Composition under By Level sets IsRandomMode but leaves SelectedTune as "Selected Scale".
@@ -229,5 +281,22 @@ public class PlayModePickerOptionsTests
             ScaleSelectionMode.ByLevel,
             isRandomMode: false,
             selectedTunePreference: "Fixed Tune"));
+    }
+
+    [Theory]
+    [InlineData(PlayModePickerCategory.Other, "By Level", "ByLvl")]
+    [InlineData(PlayModePickerCategory.Other, "Random", "Rnd")]
+    [InlineData(PlayModePickerCategory.Other, "Tuner", "Tuner")]
+    [InlineData(PlayModePickerCategory.Tunes, "Half through Sixteenth Notes", "Rhythm")]
+    [InlineData(PlayModePickerCategory.Scales, "Natural Minor", "Nat Min")]
+    [InlineData(PlayModePickerCategory.Scales, "Major", "Major")]
+    [InlineData(PlayModePickerCategory.Tunes, "Mary Had a Little Lamb", "Mary Had a Li…")]
+    [InlineData(PlayModePickerCategory.Arpeggios, "C major triad", "C maj tri")]
+    public void AbbreviateDisplayedSelection_UsesShortLabels(
+        PlayModePickerCategory category,
+        string selection,
+        string expected)
+    {
+        Assert.Equal(expected, PlayModePickerOptions.AbbreviateDisplayedSelection(category, selection));
     }
 }

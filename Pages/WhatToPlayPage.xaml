@@ -12,7 +12,7 @@
   <!--BackgroundColor="#F7F7F7"> -->
 
   <Shell.TitleView>
-    <Grid ColumnDefinitions="*,Auto" HeightRequest="30" VerticalOptions="Center" BackgroundColor="Transparent">
+    <Grid ColumnDefinitions="*,Auto" HeightRequest="44" VerticalOptions="Center" BackgroundColor="Transparent">
       <HorizontalStackLayout Spacing="10" VerticalOptions="Center" Grid.Column="0">
         <Button Text="←"
                 Clicked="OnNavigatePracticeClicked"
@@ -197,13 +197,13 @@
                 Clicked="OnAutoRepeatScaleClicked"
                 IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsScaleRepeatButtonVisible}" />
 
-        <!-- Random mode: Repeat New + Repeat Same side by side -->
+        <!-- Random mode: New Each Time + Repeat Same side by side -->
         <Grid ColumnDefinitions="*,*"
               ColumnSpacing="8"
               IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsRandomRepeatButtonsVisible}">
           <Button x:Name="AutoRepeatNewButton"
                   Grid.Column="0"
-                  Text="Repeat New"
+                  Text="New Each Time"
                   Style="{StaticResource WtpBrownButton}"
                   HeightRequest="44"
                   HorizontalOptions="Fill"

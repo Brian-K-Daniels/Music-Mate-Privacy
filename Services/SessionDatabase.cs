@@ -17,7 +17,8 @@ public class SessionStat
     public string Tune { get; set; } = "";
     public string Instrument { get; set; } = "";  // NEW: Instrument column
     public DateTime Dt { get; set; }      // Date and time
-    public string Sc { get; set; } = "";  // Scale name
+    [Column("Sc")]
+    public string What { get; set; } = "";  // Abbreviated What-to-Play picker choice (legacy column name Sc)
     public string Hi { get; set; } = "";  // Highest note
     public string Lo { get; set; } = "";  // Lowest note
     public double Pc { get; set; }        // % correct
@@ -73,7 +74,7 @@ public class SessionStat
     public string DisplayKey => Key;
     [Ignore]
     public string RandDisplay => Rand ? "Y" : "N";
-    public string KeyAndScale => $"{Key} {Sc}";
+    public string KeyAndWhat => $"{Key} {What}";
     [Ignore]
     public Microsoft.Maui.Graphics.Color ContrastingTextColor { get; set; } = Microsoft.Maui.Graphics.Colors.Red;
 }

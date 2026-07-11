@@ -12,7 +12,7 @@
 
   <Shell.TitleView>
     <Grid x:Name="TitleMarqueeGrid"
-          ColumnDefinitions="Auto,Auto,*,Auto" HeightRequest="32" VerticalOptions="Fill"
+          ColumnDefinitions="Auto,Auto,*,Auto" HeightRequest="44" VerticalOptions="Fill"
           BackgroundColor="#8B0000">
       <!-- 38dp slot preserves horizontal center for the play overlay below. -->
       <Grid Grid.Column="0"
