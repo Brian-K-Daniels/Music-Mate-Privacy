@@ -30,6 +30,7 @@ namespace musicmate
             {
                 var theme = Services.ServiceHelper.GetService<Services.ThemeService>();
                 theme?.LoadFromPreferences();
+                theme?.PushToApplicationResources();
             }
             catch { }
         }

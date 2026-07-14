@@ -13,18 +13,18 @@ public class ThemeService : INotifyPropertyChanged
 
     private static readonly IReadOnlyDictionary<AppColorTarget, string> FactoryDefaultHex = new Dictionary<AppColorTarget, string>
     {
-        [AppColorTarget.MainBackground] = "#FFFFFF",
-        [AppColorTarget.PanelBackground] = "#FFFFFF",
-        [AppColorTarget.SecondPanelBackground] = "#F8F8FF",
+        [AppColorTarget.MainBackground] = "#8CFA64",
+        [AppColorTarget.PanelBackground] = "#A0FA8C",
+        [AppColorTarget.SecondPanelBackground] = "#BEFAAA",
         [AppColorTarget.Text] = "#000000",
-        [AppColorTarget.HeadingText] = "#8B4513",
-        [AppColorTarget.Slider] = "#8B4513",
-        [AppColorTarget.ButtonBackground] = "#8B4513",
-        [AppColorTarget.ButtonText] = "#FFFFFF",
-        [AppColorTarget.PickerBackground] = "#FFFFFF",
+        [AppColorTarget.HeadingText] = "#001EFA",
+        [AppColorTarget.Slider] = "#6E8CFA",
+        [AppColorTarget.ButtonBackground] = "#E7FFCC",
+        [AppColorTarget.ButtonText] = "#000000",
+        [AppColorTarget.PickerBackground] = "#DCFAD2",
         [AppColorTarget.PickerText] = "#000000",
-        [AppColorTarget.PickerBorder] = "#8B4513",
-        [AppColorTarget.EntryBackground] = "#FFFFFF",
+        [AppColorTarget.PickerBorder] = "#AAAAFA",
+        [AppColorTarget.EntryBackground] = "#DCFAD2",
         [AppColorTarget.EntryText] = "#000000",
     };
 
@@ -133,6 +133,7 @@ public class ThemeService : INotifyPropertyChanged
     public void LoadFromPreferences()
     {
         MigrateLegacyPanelColor();
+        MigrateButtonBackgroundIfNeeded();
 
         foreach (var target in AllColorTargets)
         {
@@ -213,6 +214,35 @@ public class ThemeService : INotifyPropertyChanged
         var key = PreferenceKey(AppColorTarget.PanelBackground);
         if (!HasPreference(key))
             SetPreference(key, legacyHex);
+    }
+
+    private void MigrateButtonBackgroundIfNeeded()
+    {
+        var key = PreferenceKey(AppColorTarget.ButtonBackground);
+        var current = GetPreference(key, FactoryDefaultHex[AppColorTarget.ButtonBackground]);
+        if (string.Equals(current, FactoryDefaultHex[AppColorTarget.ButtonBackground], StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (!IsLegacyButtonBackground(current))
+            return;
+
+        var factory = FactoryDefaultHex[AppColorTarget.ButtonBackground];
+        SetPreference(key, factory);
+        _colors[AppColorTarget.ButtonBackground] = Color.FromArgb(factory);
+    }
+
+    private static bool IsLegacyButtonBackground(string hex)
+    {
+        if (string.IsNullOrWhiteSpace(hex))
+            return true;
+
+        return hex.Equals("#8B4513", StringComparison.OrdinalIgnoreCase)
+            || hex.Equals("#D8FACB", StringComparison.OrdinalIgnoreCase)
+            || hex.Equals("#AAAAFA", StringComparison.OrdinalIgnoreCase)
+            || hex.Equals("#6E8CFA", StringComparison.OrdinalIgnoreCase)
+            || hex.Equals("#AC99EA", StringComparison.OrdinalIgnoreCase)
+            || hex.Equals("#DFD8F7", StringComparison.OrdinalIgnoreCase)
+            || hex.Equals("#F8F8FF", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsTextTarget(AppColorTarget target) => target is

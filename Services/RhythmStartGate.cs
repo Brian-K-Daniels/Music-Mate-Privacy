@@ -9,6 +9,16 @@ namespace musicmate.Services;
 public static class RhythmStartGate
 {
     /// <summary>
+    /// Rest beats between pitched notes — gateBeats after previous minus prior note duration.
+    /// Consecutive notes with no written rest return 0 (no rhythm gate).
+    /// </summary>
+    public static double RestGateBeatsAfterPrevious(double gateBeatsAfterPrevious, double priorDurationBeats)
+        => Math.Max(0, gateBeatsAfterPrevious - priorDurationBeats);
+
+    public static bool HasRestGapAfter(double gateBeatsAfterPrevious, double priorDurationBeats)
+        => RestGateBeatsAfterPrevious(gateBeatsAfterPrevious, priorDurationBeats) > 0;
+
+    /// <summary>
     /// Walks rhythm in display order; one entry per pitched note (rests skipped).
     /// <see cref="PitchRhythmSlot.GateBeatsAfterPrevious"/> is
     /// startBeat(i) − startBeat(i−1) = duration(i−1) + rests between i−1 and i.

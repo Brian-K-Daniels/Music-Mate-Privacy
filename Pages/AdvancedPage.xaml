@@ -39,7 +39,7 @@
       <HorizontalStackLayout Spacing="10" VerticalOptions="Center" Grid.Column="0">
         <Button Text="←"
                 Clicked="OnNavigatePracticeClicked"
-                BackgroundColor="Transparent"
+                BackgroundColor="{DynamicResource ThemeButtonBackground}"
                 TextColor="{DynamicResource ThemeContrastingText}"
                 FontSize="18"
                 Padding="12,0"
@@ -123,29 +123,29 @@
             <Label Grid.Row="0" Grid.Column="0" Text="Sessions Required to Advance" VerticalOptions="Center"/>
             <Slider Grid.Row="0" Grid.Column="1" Minimum="1" Maximum="10" Value="{Binding SessionCount, Mode=TwoWay}"/>
             <Label Grid.Row="0" Grid.Column="2" Text="{Binding SessionCount}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
-            <Label Grid.Row="0" Grid.Column="3" Text="{Binding CurrentSessionNotesCount}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+            <!--<Label Grid.Row="0" Grid.Column="3" Text="{Binding CurrentSessionNotesCount}" HorizontalTextAlignment="End" VerticalOptions="Center"/>-->
 
             <Label Grid.Row="1" Grid.Column="0" Text="Minimum Pitch Accuracy (%)" VerticalOptions="Center"/>
             <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding MinPitchAccuracyPercent, Mode=TwoWay}"/>
             <Label Grid.Row="1" Grid.Column="2" Text="{Binding MinPitchAccuracyPercent, StringFormat='{0:F0}%'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
-            <Label Grid.Row="1" Grid.Column="3" Text="{Binding CurrentSessionPitchAccuracyPercent, StringFormat='{0:F0}%'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+            <!--<Label Grid.Row="1" Grid.Column="3" Text="{Binding CurrentSessionPitchAccuracyPercent, StringFormat='{0:F0}%'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>-->
 
             <Label Grid.Row="2" Grid.Column="0" Text="Minimum Timing Consistency (%)" VerticalOptions="Center"/>
             <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding MinTimingAccuracyPercent, Mode=TwoWay}"/>
             <Label Grid.Row="2" Grid.Column="2" Text="{Binding MinTimingAccuracyPercent, StringFormat='{0:F0}%'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
-            <Label Grid.Row="2" Grid.Column="3"
+            <!--<Label Grid.Row="2" Grid.Column="3"
                    Text="{Binding CurrentSessionTimingAccuracyPercent, StringFormat='{0:F0}%', TargetNullValue='N/A'}"
-                   HorizontalTextAlignment="End" VerticalOptions="Center"/>
+                   HorizontalTextAlignment="End" VerticalOptions="Center"/>-->
 
             <Label Grid.Row="3" Grid.Column="0" Text="Minimum Overall Accuracy (%)" VerticalOptions="Center"/>
             <Slider Grid.Row="3" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding MinOverallAccuracyPercent, Mode=TwoWay}"/>
             <Label Grid.Row="3" Grid.Column="2" Text="{Binding MinOverallAccuracyPercent, StringFormat='{0:F0}%'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
-            <Label Grid.Row="3" Grid.Column="3" Text="{Binding CurrentSessionOverallAccuracyPercent, StringFormat='{0:F0}%'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+            <!--<Label Grid.Row="3" Grid.Column="3" Text="{Binding CurrentSessionOverallAccuracyPercent, StringFormat='{0:F0}%'}" HorizontalTextAlignment="End" VerticalOptions="Center"/>-->
 
             <Label Grid.Row="4" Grid.Column="0" Text="Minimum Notes Per Session" VerticalOptions="Center"/>
             <Slider Grid.Row="4" Grid.Column="1" Minimum="1" Maximum="20" Value="{Binding MinNotesPerSession, Mode=TwoWay}"/>
             <Label Grid.Row="4" Grid.Column="2" Text="{Binding MinNotesPerSession}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
-            <Label Grid.Row="4" Grid.Column="3" Text="{Binding CurrentSessionNotesCount}" HorizontalTextAlignment="End" VerticalOptions="Center"/>
+            <!--<Label Grid.Row="4" Grid.Column="3" Text="{Binding CurrentSessionNotesCount}" HorizontalTextAlignment="End" VerticalOptions="Center"/>-->
           </Grid>
         </VerticalStackLayout>
       </Border>

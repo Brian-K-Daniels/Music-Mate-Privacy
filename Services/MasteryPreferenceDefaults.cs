@@ -4,8 +4,8 @@ namespace musicmate.Services;
 public static class MasteryPreferenceDefaults
 {
     public const string MasteredMethod = "% Correct";
-    public const int CorrectThreshold = 95;
+    public const int CorrectThreshold = 60;
     public const int MinCorrectCount = 6;
-    public const int OmitMsAvgThreshold = 400;
+    public const int OmitMsAvgThreshold = 0;
     public const int StreakCrit = 3;
 }

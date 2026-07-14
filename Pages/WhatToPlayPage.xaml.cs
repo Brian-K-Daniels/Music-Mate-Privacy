@@ -358,7 +358,8 @@ namespace musicmate.Pages
 
                         RootNote: rootNote,
 
-                        KeySignature: GetArpeggioKeySignature(pattern, rootNote));
+                        KeySignature: NoteSessionService.ResolveArpeggioWrittenKeySignature(
+                            pattern, rootNote, _session.InstrumentTransposeOffset));
 
 
 
@@ -503,78 +504,6 @@ namespace musicmate.Pages
         private static string TrimOctave(string noteName)
 
             => new(noteName.TakeWhile(c => !char.IsDigit(c)).ToArray());
-
-
-
-        private static string GetArpeggioKeySignature(ArpeggioPickerChoice choice)
-
-            => choice.KeySignature;
-
-
-
-        private static string GetArpeggioKeySignature(ArpeggioPattern pattern, string rootNote)
-
-        {
-
-            var root = NormalizeMajorKeyName(TrimOctave(rootNote));
-
-
-
-            if (UsesMinorFamilyKeySignature(pattern))
-
-                return RelativeMajorKeyForMinorRoot(root);
-
-
-
-            return root;
-
-        }
-
-
-
-        private static bool UsesMinorFamilyKeySignature(ArpeggioPattern pattern)
-
-            => pattern.SemitoneIntervals.Contains(3) && !pattern.SemitoneIntervals.Contains(4);
-
-
-
-        private static string RelativeMajorKeyForMinorRoot(string minorRoot) => minorRoot switch
-
-        {
-
-            "A" => "C",
-
-            "E" => "G",
-
-            "B" => "D",
-
-            "F#" => "A",
-
-            "C#" => "E",
-
-            "G#" => "B",
-
-            "D#" => "F#",
-
-            "A#" => "C#",
-
-            "D" => "F",
-
-            "G" => "Bb",
-
-            "C" => "Eb",
-
-            "F" => "Ab",
-
-            "Bb" => "Db",
-
-            "Eb" => "Gb",
-
-            "Ab" => "Cb",
-
-            _ => minorRoot
-
-        };
 
 
 
@@ -1174,7 +1103,7 @@ namespace musicmate.Pages
 
                 _session.SelectArpeggio(selected.Pattern, selected.RootNote, selected.DisplayLabel);
 
-                _session.Key = GetArpeggioKeySignature(selected);
+                _session.Key = selected.KeySignature;
 
             });
 

@@ -64,7 +64,7 @@
 
   <ItemGroup>
     <MauiIcon Include="Resources\AppIcon\appicon.png" />
-    <MauiSplashScreen Include="Resources\Splash\splash.png" Color="#388E3C" BaseSize="128,128" />
+    <MauiSplashScreen Include="Resources\Splash\splash.png" Color="#8CFA64" BaseSize="128,128" />
     <MauiFont Include="Resources\Fonts\*" />
     <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
     <EmbeddedResource Include="Resources\Fonts\Bravura.otf" LogicalName="musicmate.Bravura.otf" />

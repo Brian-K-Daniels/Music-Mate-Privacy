@@ -34,7 +34,7 @@
       <HorizontalStackLayout Spacing="10" VerticalOptions="Center" Grid.Column="0">
         <Button Text="←"
                 Clicked="OnNavigatePracticeClicked"
-                BackgroundColor="Transparent"
+                BackgroundColor="{DynamicResource ThemeButtonBackground}"
                 TextColor="{DynamicResource ThemeContrastingText}"
                 FontSize="18"
                 Padding="12,0"
@@ -445,7 +445,7 @@
                     </Grid.ColumnDefinitions>
 
                     <Button Text="🗑" Grid.Column="0" WidthRequest="20" HeightRequest="20" Clicked="OnDeleteSessionStatClicked"
-                            CommandParameter="{Binding Id}" BackgroundColor="#CC3333" TextColor="White" FontSize="10" Padding="0" CornerRadius="4" />
+                            CommandParameter="{Binding Id}" BackgroundColor="{DynamicResource ThemeButtonBackground}" TextColor="{DynamicResource ThemeButtonText}" FontSize="10" Padding="0" CornerRadius="4" />
                     <Label Text="{Binding Dt, StringFormat='{0:yyyy-MM-dd HH:mm}'}" Grid.Column="1" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            LineBreakMode="NoWrap" Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
                     <Label Text="{Binding Level}" Grid.Column="2" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"

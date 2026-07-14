@@ -24,8 +24,9 @@ public class ThemeServiceTests : IDisposable
         var theme = new ThemeService();
         theme.LoadFromPreferences();
 
-        Assert.Equal("#FFFFFF", theme.GetColor(AppColorTarget.PanelBackground).ToHex());
-        Assert.Equal("#8B4513", theme.GetColor(AppColorTarget.Slider).ToHex());
+        Assert.Equal("#A0FA8C", theme.GetColor(AppColorTarget.PanelBackground).ToHex());
+        Assert.Equal("#6E8CFA", theme.GetColor(AppColorTarget.Slider).ToHex());
+        Assert.Equal("#E7FFCC", theme.GetColor(AppColorTarget.ButtonBackground).ToHex());
     }
 
     [Fact]
@@ -111,5 +112,27 @@ public class ThemeServiceTests : IDisposable
         theme.LoadFromPreferences();
 
         Assert.Equal("#AABBCC", theme.GetColor(AppColorTarget.PanelBackground).ToHex());
+    }
+
+    [Fact]
+    public void LoadFromPreferences_MigratesLegacyLavenderButtonBackgroundToE7FFCC()
+    {
+        _store[ThemeService.ColorPreferencePrefix + "ButtonBackground"] = "#AAAAFA";
+
+        var theme = new ThemeService();
+        theme.LoadFromPreferences();
+
+        Assert.Equal("#E7FFCC", theme.GetColor(AppColorTarget.ButtonBackground).ToHex());
+    }
+
+    [Fact]
+    public void LoadFromPreferences_KeepsCustomButtonBackground_WhenNotLegacy()
+    {
+        _store[ThemeService.ColorPreferencePrefix + "ButtonBackground"] = "#112233";
+
+        var theme = new ThemeService();
+        theme.LoadFromPreferences();
+
+        Assert.Equal("#112233", theme.GetColor(AppColorTarget.ButtonBackground).ToHex());
     }
 }

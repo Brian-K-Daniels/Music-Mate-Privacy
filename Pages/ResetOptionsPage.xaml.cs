@@ -26,6 +26,8 @@ namespace musicmate.Pages
                     OnPropertyChanged(nameof(PanelBackgroundColor));
                     OnPropertyChanged(nameof(ContrastingTextColor));
                 }
+                if (e.PropertyName == nameof(ThemeService.ButtonBackgroundColor))
+                    UpdateActiveDefaultsButtonHighlight();
             };
         }
 
@@ -34,11 +36,32 @@ namespace musicmate.Pages
             _orientation?.ForceLandscape();
             base.OnAppearing();
             UpdateCustomDefaultsButtonState();
+            UpdateActiveDefaultsButtonHighlight();
         }
 
         private void UpdateCustomDefaultsButtonState()
         {
             RestoreCustomDefaultsButton.IsEnabled = _resetService.HasCustomDefaults;
+        }
+
+        private void UpdateActiveDefaultsButtonHighlight()
+        {
+            var normal = _themeService.ButtonBackgroundColor;
+            var active = Colors.Green;
+
+            ApplyDefaultsButtonHighlight(
+                FactoryResetButton,
+                _resetService.ActiveDefaults == ActiveDefaultsSet.Factory ? active : normal);
+            ApplyDefaultsButtonHighlight(
+                RestoreCustomDefaultsButton,
+                _resetService.ActiveDefaults == ActiveDefaultsSet.Custom ? active : normal);
+            SaveCustomDefaultsButton.BackgroundColor = normal;
+        }
+
+        private static void ApplyDefaultsButtonHighlight(Button button, Color background)
+        {
+            button.BackgroundColor = background;
+            button.TextColor = ThemeColorContrast.GetContrastingTextColor(background);
         }
 
         private async void OnNavigatePracticeClicked(object? sender, EventArgs e)
@@ -57,6 +80,7 @@ namespace musicmate.Pages
                 return;
 
             _resetService.ResetToFactoryDefaults();
+            UpdateActiveDefaultsButtonHighlight();
             await DisplayAlertAsync("Reset Complete", "Settings have been restored to factory defaults.", "OK");
         }
 
@@ -95,6 +119,7 @@ namespace musicmate.Pages
                 return;
 
             _resetService.RestoreCustomDefaults();
+            UpdateActiveDefaultsButtonHighlight();
             await DisplayAlertAsync("Restored", "Settings have been restored from your custom defaults.", "OK");
         }
     }

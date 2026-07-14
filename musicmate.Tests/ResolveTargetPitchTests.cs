@@ -76,4 +76,11 @@ public class ResolveTargetPitchTests
         Assert.Equal(68, midi);
         Assert.Equal("G#4", name);
     }
+
+    [Fact]
+    public void ResolveWrittenEvaluationMidi_PrefersWrittenNameOverStoredMidi()
+    {
+        var note = new NoteInfo { Midi = 69, Name = "B4" };
+        Assert.Equal(71, NoteSessionService.ResolveWrittenEvaluationMidi(note));
+    }
 }

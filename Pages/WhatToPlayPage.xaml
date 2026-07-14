@@ -16,7 +16,7 @@
       <HorizontalStackLayout Spacing="10" VerticalOptions="Center" Grid.Column="0">
         <Button Text="←"
                 Clicked="OnNavigatePracticeClicked"
-                BackgroundColor="Transparent"
+                BackgroundColor="{DynamicResource ThemeButtonBackground}"
                 TextColor="{DynamicResource ThemeContrastingText}"
                 FontSize="18"
                 Padding="12,0"

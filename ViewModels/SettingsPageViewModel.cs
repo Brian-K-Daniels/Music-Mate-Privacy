@@ -165,7 +165,7 @@ namespace musicmate.ViewModels
         public Color TextColor => _theme?.TextColor ?? Colors.Black;
         public Color HeadingTextColor => _theme?.HeadingTextColor ?? Color.FromArgb("#8B4513");
         public Color SliderColor => _theme?.SliderColor ?? Color.FromArgb("#8B4513");
-        public Color ButtonBackgroundColor => _theme?.ButtonBackgroundColor ?? Color.FromArgb("#8B4513");
+        public Color ButtonBackgroundColor => _theme?.ButtonBackgroundColor ?? Color.FromArgb("#E7FFCC");
         public Color ButtonTextColor => _theme?.ButtonTextColor ?? Colors.White;
         public Color PickerBackgroundColor => _theme?.PickerBackgroundColor ?? Colors.White;
         public Color PickerTextColor => _theme?.PickerTextColor ?? Colors.Black;

@@ -1,54 +1,43 @@
-from PIL import Image
+"""Rebuild splash assets from the opaque Home-page logo (no inner transparency holes)."""
+from __future__ import annotations
+
 import math
 import os
+from pathlib import Path
 
-GREEN = (56, 142, 60, 255)  # #388E3C
-SRC = r"C:\CSharp\Source Code\MusicMate\M004\Resources\AppIcon\appicon.png"
-LOGO_OUT = r"C:\CSharp\Source Code\MusicMate\M004\Resources\Splash\splash.png"
-ANDROID_SPLASH_OUT = r"C:\CSharp\Source Code\MusicMate\M004\Platforms\Android\Resources\drawable\splash_screen.png"
+from PIL import Image
 
-
-def luminance(px):
-    r, g, b, _ = px
-    return 0.299 * r + 0.587 * g + 0.114 * b
-
-
-def is_ring_artifact(px):
-    r, g, b, a = px
-    if a < 10:
-        return False
-    lum = luminance(px)
-    if lum < 55:
-        return True
-    if lum > 215 and max(r, g, b) - min(r, g, b) < 35:
-        return True
-    return False
+ROOT = Path(__file__).resolve().parents[1]
+# logo.png is the opaque circular master used on Home (TitleLogoBorder / LargeLogoBorder).
+LOGO_SRC = ROOT / "Resources" / "Images" / "logo.png"
+SPLASH_OUT = ROOT / "Resources" / "Splash" / "splash.png"
+ANDROID_SPLASH_OUT = ROOT / "Platforms" / "Android" / "Resources" / "drawable" / "splash_screen.png"
+# Match ThemeMainBackground factory default on HomePage.
+SPLASH_BG = (140, 250, 100, 255)  # #8CFA64
 
 
-def build_splash_logo(outer_radius=312, ring_inner=228):
-    im = Image.open(SRC).convert("RGBA")
-    w, h = im.size
+def build_splash_logo(outer_radius: int | None = None) -> None:
+    logo = Image.open(LOGO_SRC).convert("RGBA")
+    w, h = logo.size
     cx, cy = w // 2, h // 2
-    logo = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    src_px = im.load()
+    if outer_radius is None:
+        outer_radius = min(cx, cy) - 1
+
+    splash = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     logo_px = logo.load()
+    splash_px = splash.load()
 
     for y in range(h):
         for x in range(w):
-            dist = math.hypot(x - cx, y - cy)
-            if dist > outer_radius:
-                continue
-            px = src_px[x, y]
-            if dist > ring_inner and is_ring_artifact(px):
-                continue
-            logo_px[x, y] = px
+            if math.hypot(x - cx, y - cy) <= outer_radius:
+                splash_px[x, y] = logo_px[x, y]
 
-    logo.save(LOGO_OUT, "PNG")
-    print("Updated", LOGO_OUT)
+    splash.save(SPLASH_OUT, "PNG")
+    print("Updated", SPLASH_OUT)
 
-    os.makedirs(os.path.dirname(ANDROID_SPLASH_OUT), exist_ok=True)
-    android = Image.new("RGBA", (w, h), GREEN)
-    android.alpha_composite(logo)
+    os.makedirs(ANDROID_SPLASH_OUT.parent, exist_ok=True)
+    android = Image.new("RGBA", (w, h), SPLASH_BG)
+    android.alpha_composite(splash)
     android.save(ANDROID_SPLASH_OUT, "PNG")
     print("Updated", ANDROID_SPLASH_OUT)
 

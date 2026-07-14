@@ -13,7 +13,7 @@
       <Setter Property="VerticalOptions" Value="Center" />
     </Style>
     <Style x:Key="SliderStyle" TargetType="Slider">
-      <Setter Property="ThumbColor" Value="{DynamicResource ThemeSlider}" />
+      <Setter Property="ThumbColor" Value="{DynamicResource ThemeButtonBackground}" />
       <Setter Property="MinimumTrackColor" Value="{DynamicResource ThemeSlider}" />
       <Setter Property="MaximumTrackColor" Value="#CCCCCC" />
       <Setter Property="HorizontalOptions" Value="Fill" />
@@ -55,7 +55,7 @@
       <HorizontalStackLayout Spacing="10" VerticalOptions="Center" Grid.Column="0">
         <Button Text="←"
                 Clicked="OnNavigatePracticeClicked"
-                BackgroundColor="Transparent"
+                BackgroundColor="{DynamicResource ThemeButtonBackground}"
                 TextColor="{DynamicResource ThemeContrastingText}"
                 FontSize="18"
                 Padding="12,0"
@@ -95,13 +95,6 @@
                       ItemsSource="{Binding NoteNameDisplayOptions}"
                       SelectedItem="{Binding NoteNameDisplay, Mode=TwoWay}"
                       Style="{StaticResource SettingsPickerStyle}" />
-            </Grid>
-            <Grid ColumnDefinitions="170,*,60" ColumnSpacing="4" VerticalOptions="Center">
-              <Label Grid.Column="0" Text="Conductor" />
-              <Switch Grid.Column="2"
-                      IsToggled="{Binding ShowConductorCues, Mode=TwoWay}"
-                      OnColor="{DynamicResource ThemeSlider}"
-                      VerticalOptions="Center" />
             </Grid>
           </VerticalStackLayout>
         </Border>
@@ -262,10 +255,9 @@
             <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center"
                   IsVisible="{Binding IsPercentCorrectMethod}">
               <Label Grid.Column="0" Text="Omit below MsAvg" />
-              <Slider Grid.Column="1" Minimum="0" Maximum="5"    
+              <Slider Grid.Column="1" Minimum="0" Maximum="5000"
                       Value="{Binding OmitMsAvgThreshold, Mode=TwoWay}"
                       Style="{StaticResource SliderStyle}" />
-              <!--//  2026.07.08 1421. 5000 -> 5 -->
               <Label Grid.Column="2" Text="{Binding OmitMsAvgThreshold}"
                      HorizontalTextAlignment="End" LineBreakMode="NoWrap" />
             </Grid>

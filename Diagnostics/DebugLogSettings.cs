@@ -182,7 +182,16 @@ public static class DebugLogSettings
     {
         if (TestStore != null)
             return TestStore.TryGetValue(key, out var value) ? value : defaultValue;
-        return Preferences.Default.Get(key, defaultValue);
+
+        try
+        {
+            return Preferences.Default.Get(key, defaultValue);
+        }
+        catch
+        {
+            // Unit tests and early startup may run without a MAUI preferences host.
+            return defaultValue;
+        }
     }
 
     private static void SetPreference(string key, bool value)
@@ -192,7 +201,15 @@ public static class DebugLogSettings
             TestStore[key] = value;
             return;
         }
-        Preferences.Default.Set(key, value);
+
+        try
+        {
+            Preferences.Default.Set(key, value);
+        }
+        catch
+        {
+            // best-effort when preferences are unavailable
+        }
     }
 
     internal static void RemovePreference(string key)
@@ -202,7 +219,15 @@ public static class DebugLogSettings
             TestStore.Remove(key);
             return;
         }
-        Preferences.Default.Remove(key);
+
+        try
+        {
+            Preferences.Default.Remove(key);
+        }
+        catch
+        {
+            // best-effort when preferences are unavailable
+        }
     }
 
     private static void SyncLegacyFlags(DebugLogCategory category, bool enabled)

@@ -4613,11 +4613,13 @@ namespace musicmate.Drawables
 
             KeySignatureRules.RunDebugSelfTests();
 
-            // ── Instrument transposition: written key → concert key ────────────────
+            // ── Instrument transposition: written key ↔ concert key ────────────────
             // TransposeOffset convention (negative = instrument sounds lower than written):
             //   Bb clarinet = -2, Eb alto sax = -9, F horn = -7
             // GetConcertKey() = TransposeKey(writtenKey, offset), so
             //   TransposeKey("D", -2) should return "C"  (Bb clarinet written D → concert C)
+            // ToWrittenKey(concert, offset) = TransposeKey(concert, -offset), so
+            //   ToWrittenKey("D", -2) should return "E"  (concert D → Bb clarinet written E)
             var transposeTests = new (string Written, int Offset, string Expected, string Desc)[]
             {
                 ("D", -2, "C", "Bb clarinet: written D → concert C"),
@@ -4630,6 +4632,21 @@ namespace musicmate.Drawables
                 string concert = NoteSessionService.TransposeKey(t.Written, t.Offset);
                 bool ok = string.Equals(concert, t.Expected, StringComparison.OrdinalIgnoreCase);
                 string result = ok ? "OK" : $"FAIL: expected {t.Expected}, got {concert}";
+                Utilities.DebugTestLog.Write($"[TransposeTest] {result} | {t.Desc}");
+            }
+
+            var writtenFromConcertTests = new (string Concert, int Offset, string Expected, string Desc)[]
+            {
+                ("D", -2, "E", "Bb clarinet: concert D → written E"),
+                ("C", -2, "D", "Bb clarinet: concert C → written D"),
+                ("Eb", -2, "F", "Bb clarinet: concert Eb → written F"),
+                ("D", -9, "B", "Eb alto sax: concert D → written B"),
+            };
+            foreach (var t in writtenFromConcertTests)
+            {
+                string written = NoteSessionService.ToWrittenKey(t.Concert, t.Offset);
+                bool ok = string.Equals(written, t.Expected, StringComparison.OrdinalIgnoreCase);
+                string result = ok ? "OK" : $"FAIL: expected {t.Expected}, got {written}";
                 Utilities.DebugTestLog.Write($"[TransposeTest] {result} | {t.Desc}");
             }
 

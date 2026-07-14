@@ -1756,6 +1756,7 @@ namespace musicmate.Pages
 #endif
         }
 
+
         private static readonly Color PlayButtonGreen = Color.FromArgb("#2E8B57");
         private static readonly Color PlayButtonGreenBorder = Color.FromArgb("#1F5C3A");
         private static readonly Color PlayButtonRed = Color.FromArgb("#C62828");
@@ -1805,9 +1806,10 @@ namespace musicmate.Pages
             await Task.Delay(80);
         }
 
-        private const int TitleStartStopButtonSize = 32;
+        private const int TitleBarChromeHeight = 52;
+        private const int TitleStartStopButtonSize = TitleBarChromeHeight;
         /// <summary>Title-bar slot width — stop state expands to this so "Stop" fits.</summary>
-        private const int TitleStartStopSlotWidth = 38;
+        private const int TitleStartStopSlotWidth = 64;
         private const string TitleGoLabelText = "GO";
         private const string TitlePlayLabelText = "Play";
         private const string TitleStopLabelText = "Stop";
@@ -1940,10 +1942,12 @@ namespace musicmate.Pages
             if (isRunning)
             {
                 double width = TitleStartStopSlotWidth;
-                double height = TitleStartStopButtonSize;
+                double height = TitleBarChromeHeight;
 
                 TitleStartStopButton.WidthRequest = width;
                 TitleStartStopButton.HeightRequest = height;
+                TitleStartStopButton.MinimumWidthRequest = width;
+                TitleStartStopButton.MinimumHeightRequest = height;
                 TitleStartStopButton.BackgroundColor = Colors.Red;
                 TitleStartStopButton.StrokeShape = new RoundRectangle { CornerRadius = 6 };
                 TitleStartStopButton.Content = new Label
@@ -1972,6 +1976,8 @@ namespace musicmate.Pages
 
                 TitleStartStopButton.WidthRequest = diameter;
                 TitleStartStopButton.HeightRequest = diameter;
+                TitleStartStopButton.MinimumWidthRequest = diameter;
+                TitleStartStopButton.MinimumHeightRequest = diameter;
                 TitleStartStopButton.BackgroundColor = Color.FromArgb("#008000");
                 TitleStartStopButton.StrokeShape = new RoundRectangle { CornerRadius = diameter / 2 };
                 TitleStartStopButton.Content = new Label
@@ -3787,49 +3793,6 @@ namespace musicmate.Pages
         private static string TrimOctave(string noteName)
             => new(noteName.TakeWhile(c => !char.IsDigit(c)).ToArray());
 
-        private static string GetArpeggioKeySignature(ArpeggioPickerChoice choice)
-        {
-            var root = NormalizeMajorKeyName(TrimOctave(choice.RootNote));
-            if (UsesMinorFamilyKeySignature(choice.Pattern))
-                return RelativeMajorKeyForMinorRoot(root);
-
-            return root;
-        }
-
-        private static bool UsesMinorFamilyKeySignature(ArpeggioPattern pattern)
-            => pattern.SemitoneIntervals.Contains(3) && !pattern.SemitoneIntervals.Contains(4);
-
-        private static string RelativeMajorKeyForMinorRoot(string minorRoot) => minorRoot switch
-        {
-            "A" => "C",
-            "E" => "G",
-            "B" => "D",
-            "F#" => "A",
-            "C#" => "E",
-            "G#" => "B",
-            "D#" => "F#",
-            "A#" => "C#",
-            "D" => "F",
-            "G" => "Bb",
-            "C" => "Eb",
-            "F" => "Ab",
-            "Bb" => "Db",
-            "Eb" => "Gb",
-            "Ab" => "Cb",
-            _ => minorRoot
-        };
-
-        private static string NormalizeMajorKeyName(string key) => key switch
-        {
-            "A#" => "Bb",
-            "D#" => "Eb",
-            "G#" => "Ab",
-            "E#" => "F",
-            "B#" => "C",
-            "Fb" => "E",
-            _ => key
-        };
-
         private void UpdateScaleTunePicker()
         {
             if (ScaleTunePicker == null)
@@ -3885,7 +3848,8 @@ namespace musicmate.Pages
                 // Select arpeggio before Key so PropertyChanged picker-sync handlers
                 // see the new display name, not the previous arpeggio (e.g. Ab vs Gb loop).
                 _session.SelectArpeggio(arpeggioChoice.Pattern, arpeggioChoice.RootNote, arpeggioChoice.Label);
-                _session.Key = GetArpeggioKeySignature(arpeggioChoice);
+                _session.Key = _session.ResolveArpeggioWrittenKeySignature(
+                    arpeggioChoice.Pattern, arpeggioChoice.RootNote);
                 Preferences.Default.Set("SelectedTune", preferenceLabel);
                 IsAutoRepeatVisible = true;
                 UpdateKeyPickerSelection();

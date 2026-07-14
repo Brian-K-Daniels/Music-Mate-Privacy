@@ -14,6 +14,7 @@ namespace musicmate.Services
     {
         private const string CustomDefaultsJsonKey = "musicmate.CustomDefaults.Json";
         private const string CustomDefaultsExistsKey = "musicmate.CustomDefaults.Exists";
+        private const string ActiveDefaultsKey = "musicmate.ActiveDefaults";
 
         private readonly NoteSessionService _session;
         private readonly ThemeService _theme;
@@ -25,6 +26,15 @@ namespace musicmate.Services
         }
 
         public bool HasCustomDefaults => Preferences.Get(CustomDefaultsExistsKey, false);
+
+        public ActiveDefaultsSet ActiveDefaults => Preferences.Get(ActiveDefaultsKey, ActiveDefaultsSet.Factory.ToString()) switch
+        {
+            nameof(ActiveDefaultsSet.Custom) => ActiveDefaultsSet.Custom,
+            _ => ActiveDefaultsSet.Factory,
+        };
+
+        public void SetActiveDefaults(ActiveDefaultsSet set)
+            => Preferences.Set(ActiveDefaultsKey, set.ToString());
 
         /// <summary>Resets all settings to factory defaults (same behavior as the former Settings page button).</summary>
         public void ResetToFactoryDefaults()
@@ -55,6 +65,7 @@ namespace musicmate.Services
 
             LevelUpService.ResetCriteriaToDefaults();
             _theme.ResetAllToFactoryDefaults();
+            SetActiveDefaults(ActiveDefaultsSet.Factory);
         }
 
         /// <summary>Saves the currently active settings as the user's custom defaults.</summary>
@@ -83,6 +94,7 @@ namespace musicmate.Services
                 return;
 
             ApplySnapshot(snapshot);
+            SetActiveDefaults(ActiveDefaultsSet.Custom);
         }
 
         private AppSettingsSnapshot CaptureCurrentSnapshot()
@@ -242,5 +254,11 @@ namespace musicmate.Services
             public double LevelUpMinOverallPct { get; init; } = LevelUpService.DefaultMinOverallAccuracyPercent;
             public int LevelUpMinNotes { get; init; } = LevelUpService.DefaultMinNotesPerSession;
         }
+    }
+
+    public enum ActiveDefaultsSet
+    {
+        Factory,
+        Custom
     }
 }

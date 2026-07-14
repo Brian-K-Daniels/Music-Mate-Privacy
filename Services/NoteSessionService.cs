@@ -1274,7 +1274,8 @@ namespace musicmate.Services
                     break;
             }
 
-            string newKey = ResolveKeyForFreshGeneration(Tune ?? string.Empty, CurrentTune, newScale, keyPoolLevel, rng);
+            string newKey = ResolveKeyForFreshGeneration(
+                Tune ?? string.Empty, CurrentTune, newScale, keyPoolLevel, rng, preservedKey: oldKey);
             bool keyChanged = !string.Equals(oldKey, newKey, StringComparison.Ordinal);
             if (keyChanged)
                 Key = newKey;
@@ -1285,17 +1286,22 @@ namespace musicmate.Services
 
         /// <summary>
         /// Key for fresh generation. Practice tunes keep their authored key instead of
-        /// the By Level session key pool.
+        /// the By Level session key pool. Arpeggios keep the written key derived from the
+        /// selected concert root (instrument transposition already applied).
         /// </summary>
         internal static string ResolveKeyForFreshGeneration(
             string tuneMode,
             PracticeTune? currentTune,
             string scale,
             int keyPoolLevel,
-            Random rng)
+            Random rng,
+            string? preservedKey = null)
         {
             if (tuneMode == "Practice Tune" && !string.IsNullOrWhiteSpace(currentTune?.Key))
                 return currentTune.Key;
+            if (string.Equals(tuneMode, "Arpeggio", StringComparison.Ordinal)
+                && !string.IsNullOrWhiteSpace(preservedKey))
+                return preservedKey;
             return ChildLevelProgression.PickBalancedKeyForSignature(scale, keyPoolLevel, rng);
         }
 
@@ -1340,6 +1346,8 @@ namespace musicmate.Services
         /// <summary>
         /// Key and scale for note spelling and pitch evaluation.
         /// Practice tunes use their authored key, not the By Level session key.
+        /// Arpeggios use Major so leftover SelectedScale (e.g. Natural Minor) does not
+        /// remap the written key through relative-major rules (D + Natural Minor → F).
         /// </summary>
         public (string Key, string Scale) GetNotationKeyAndScale()
         {
@@ -1347,6 +1355,8 @@ namespace musicmate.Services
                 && CurrentTune != null
                 && !string.IsNullOrWhiteSpace(CurrentTune.Key))
                 return ResolvePracticeTuneNotation(CurrentTune);
+            if (Tune == "Arpeggio")
+                return (Key, "Major");
             return (Key, SelectedScale);
         }
 
@@ -2028,7 +2038,17 @@ namespace musicmate.Services
             }
 
             _rhythmGateMusicBpm = Math.Clamp(MusicBpm, MinTempo, MaxTempo);
-            _rhythmStartGateEnabled = NotesToDraw.Any(n => n.GateBeatsAfterPrevious > 0);
+            _rhythmStartGateEnabled = false;
+            for (int i = 1; i < NotesToDraw.Count; i++)
+            {
+                if (RhythmStartGate.HasRestGapAfter(
+                        NotesToDraw[i].GateBeatsAfterPrevious,
+                        NotesToDraw[i - 1].DurationBeats))
+                {
+                    _rhythmStartGateEnabled = true;
+                    break;
+                }
+            }
         }
         private double GetSessionElapsedMs()
             => _sessionStopwatch.Elapsed.TotalMilliseconds;
@@ -2047,7 +2067,9 @@ namespace musicmate.Services
             }
 
             double gateBeats = NotesToDraw[nextIdx].GateBeatsAfterPrevious;
-            if (gateBeats <= 0)
+            double priorDurationBeats = NotesToDraw[acceptedIdx].DurationBeats;
+            double restBeats = RhythmStartGate.RestGateBeatsAfterPrevious(gateBeats, priorDurationBeats);
+            if (restBeats <= 0)
             {
                 _rhythmGateUntilMs = 0;
                 return;
@@ -2056,8 +2078,8 @@ namespace musicmate.Services
             double nowMs = GetSessionElapsedMs();
             _rhythmGateStartMs = nowMs;
             _rhythmGateAcceptedIdx = acceptedIdx;
-            _rhythmGatePriorDurationMs = BeatToGateMs(NotesToDraw[acceptedIdx].DurationBeats);
-            _rhythmGateUntilMs = nowMs + BeatToGateMs(gateBeats);
+            _rhythmGatePriorDurationMs = 0;
+            _rhythmGateUntilMs = nowMs + BeatToGateMs(restBeats);
             _lastRestViolationLogMs = double.NegativeInfinity;
         }
         private bool IsRhythmGateBlocking()
@@ -2401,7 +2423,7 @@ namespace musicmate.Services
                 heardNote = MidiToNoteName(detMidiWrit, KeyUsesFlats(Key));
             }
             string expectedNote = (CurrentNoteIndex < NotesToDraw.Count)
-                ? ResolveWrittenNoteName(NotesToDraw[CurrentNoteIndex])
+                ? ResolveWrittenEvaluationName(NotesToDraw[CurrentNoteIndex])
                 : "-";
 
             // Only allow the current note in the sequence to be marked correct
@@ -2417,6 +2439,7 @@ namespace musicmate.Services
             }
 
             var targetNote = NotesToDraw[idx];
+            var expectedWrittenMidi = ResolveWrittenEvaluationMidi(targetNote);
             var detectedMidi = (int)Math.Round(69 + 12 * Math.Log(freq / 440.0, 2));
             var detMidiWritten = detectedMidi - GetInstrumentTransposeOffset();
             var detectedPcWritten = Mod12(detMidiWritten);
@@ -2430,7 +2453,7 @@ namespace musicmate.Services
             if (_lockedPitchClassAfterAdvance.HasValue)
             {
                 if (detectedPcWritten == _lockedPitchClassAfterAdvance.Value
-                    && Mod12(targetNote.Midi) != _lockedPitchClassAfterAdvance.Value)
+                    && Mod12(expectedWrittenMidi) != _lockedPitchClassAfterAdvance.Value)
                 {
                     return false;
                 }
@@ -2454,7 +2477,7 @@ namespace musicmate.Services
                 StatusService.Instance.StatusMessage =
                     $"Expected: {expectedNote}, Heard: {heardNote}, {result.cents}¢ (too early), Notes: {NotesToDraw.Count}";
 
-                if (Mod12(targetNote.Midi) == detectedPcWritten)
+                if (Mod12(expectedWrittenMidi) == detectedPcWritten)
                 {
                     string reason = inRestPhase ? "Early" : "EarlyDuringSustain";
                     if (TryMarkDebouncedWrong(idx, curFeedback, result.cents))
@@ -2483,7 +2506,7 @@ namespace musicmate.Services
             StatusService.Instance.StatusMessage = $"Expected: {expectedNote}, Heard: {heardNote}, {result.cents}¢, Notes: {NotesToDraw.Count}";
 
             // Only match if the detected pitch class matches the current note's pitch class
-            if (Mod12(targetNote.Midi) != detectedPcWritten)
+            if (Mod12(expectedWrittenMidi) != detectedPcWritten)
             {
                 if (TryMarkDebouncedWrong(idx, curFeedback, result.cents))
                 {
@@ -2536,7 +2559,7 @@ namespace musicmate.Services
                 {
                     ArmRhythmGateAfterAdvance(idx);
                     if (Tune == "Practice Tune"
-                             && Mod12(NotesToDraw[CurrentNoteIndex].Midi) == detectedPcWritten)
+                             && Mod12(ResolveWrittenEvaluationMidi(NotesToDraw[CurrentNoteIndex])) == detectedPcWritten)
                     {
                         // Next note has the same pitch class — require a silence gap so the
                         // sustained audio from this note cannot auto-trigger the next one.
@@ -2802,20 +2825,29 @@ namespace musicmate.Services
             bool descendingAfterAscending = true)
         {
             pattern ??= ArpeggioCatalog.MajorTriad;
-            rootNote = string.IsNullOrWhiteSpace(rootNote) ? $"{Key}4" : rootNote.Trim();
+            // SelectedArpeggioRoot is the concert-pitch name from the picker; Key is already written.
+            string writtenRootNote;
+            if (string.IsNullOrWhiteSpace(rootNote))
+            {
+                writtenRootNote = $"{Key}4";
+            }
+            else
+            {
+                writtenRootNote = ToWrittenNoteName(rootNote.Trim());
+            }
 
             var builder = new ArpeggioSequenceBuilder
             {
                 Key = Key,
-                Scale = SelectedScale,
+                Scale = "Major",
                 LowestNote = LowestNote,
                 HighestNote = HighestNote,
                 Duration = NoteDuration.Quarter
             };
 
-            var notes = builder.Build(pattern, rootNote, descendingAfterAscending);
+            var notes = builder.Build(pattern, writtenRootNote, descendingAfterAscending);
             DebugLog.WriteLine(
-                $"[Arpeggio] {pattern.DisplayName} root={rootNote} " +
+                $"[Arpeggio] {pattern.DisplayName} root={rootNote ?? "(Key)"} writtenRoot={writtenRootNote} " +
                 $"range={LowestNote}-{HighestNote}: {string.Join(" ", notes.Select(n => n.SpelledName))}");
             return notes;
         }
@@ -2885,6 +2917,7 @@ namespace musicmate.Services
         public void NotifySilence()
         {
             _requireSilenceBeforeNote = false;
+            ClearRhythmGateIfExpired();
         }
         public (string WrittenName, int CentsDeviation) MapPitch(double freq)
         {
@@ -3175,6 +3208,82 @@ namespace musicmate.Services
         {
             return TransposeKey(Key, GetInstrumentTransposeOffset());
         }
+
+        /// <summary>
+        /// Converts a concert key name to the written key for an instrument
+        /// (<c>written = TransposeKey(concert, -offset)</c>), inverse of <see cref="GetConcertKey"/>.
+        /// </summary>
+        public static string ToWrittenKey(string concertKey, int transposeOffset)
+            => NormalizeKeyNameForSignature(TransposeKey(concertKey, -transposeOffset));
+
+        /// <summary>Instance helper: concert key → written key for the active instrument.</summary>
+        public string ToWrittenKey(string concertKey)
+            => ToWrittenKey(concertKey, GetInstrumentTransposeOffset());
+
+        /// <summary>
+        /// Converts a concert note name (e.g. D4) to the written note for an instrument.
+        /// Same shift as <see cref="ApplyInstrumentTranspose"/>.
+        /// </summary>
+        public static string ToWrittenNoteName(string concertNoteName, int transposeOffset)
+        {
+            if (string.IsNullOrWhiteSpace(concertNoteName))
+                return concertNoteName;
+
+            int concertMidi = NoteNameToMidi(concertNoteName.Trim());
+            if (concertMidi < 0)
+                return concertNoteName.Trim();
+
+            int writtenMidi = concertMidi - transposeOffset;
+            bool preferFlats = KeyUsesFlats(TrimNoteOctave(concertNoteName));
+            return MidiToNoteName(writtenMidi, preferFlats);
+        }
+
+        /// <summary>Instance helper: concert note → written note for the active instrument.</summary>
+        public string ToWrittenNoteName(string concertNoteName)
+            => ToWrittenNoteName(concertNoteName, GetInstrumentTransposeOffset());
+
+        /// <summary>
+        /// Concert-pitch key signature implied by an arpeggio root + pattern
+        /// (relative major for minor-family chords; otherwise the root).
+        /// </summary>
+        public static string ResolveArpeggioConcertKeySignature(ArpeggioPattern pattern, string concertRootNote)
+        {
+            var root = NormalizeKeyNameForSignature(TrimNoteOctave(concertRootNote));
+            if (ArpeggioUsesMinorFamilyKeySignature(pattern))
+                return KeySignatureRules.RelativeMajorOf(root);
+            return root;
+        }
+
+        /// <summary>
+        /// Written key signature for an arpeggio: concert key signature transposed for the instrument.
+        /// Picker roots are concert pitch names; the staff shows written music.
+        /// </summary>
+        public static string ResolveArpeggioWrittenKeySignature(
+            ArpeggioPattern pattern,
+            string concertRootNote,
+            int transposeOffset)
+            => ToWrittenKey(ResolveArpeggioConcertKeySignature(pattern, concertRootNote), transposeOffset);
+
+        /// <summary>Instance helper using the active instrument transpose offset.</summary>
+        public string ResolveArpeggioWrittenKeySignature(ArpeggioPattern pattern, string concertRootNote)
+            => ResolveArpeggioWrittenKeySignature(pattern, concertRootNote, GetInstrumentTransposeOffset());
+
+        private static bool ArpeggioUsesMinorFamilyKeySignature(ArpeggioPattern pattern)
+            => pattern.SemitoneIntervals.Contains(3) && !pattern.SemitoneIntervals.Contains(4);
+
+        private static string TrimNoteOctave(string noteName)
+            => new(noteName.TakeWhile(c => !char.IsDigit(c)).ToArray());
+
+        private static string NormalizeKeyNameForSignature(string key) => key switch
+        {
+            "A#" => "Bb",
+            "D#" => "Eb",
+            "G#" => "Ab",
+            "E#" => "F",
+            "B#" => "C",
+            "Fb" => "E",
+            _ => key
+        };
         private static string GetNoteName(int midi, AccidentalPreference pref)
         {
             var namesSharp = new[] { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
@@ -3184,6 +3293,31 @@ namespace musicmate.Services
             var baseName = pref == AccidentalPreference.Flats ? namesFlat[pc] : namesSharp[pc];
             return $"{baseName}{oct}";
         }
+        /// <summary>
+        /// Written-pitch MIDI used for evaluation (what the player reads on the staff).
+        /// Prefers <see cref="NoteInfo.Name"/> so transposing instruments stay aligned with the score.
+        /// </summary>
+        public static int ResolveWrittenEvaluationMidi(NoteInfo note)
+        {
+            if (!string.IsNullOrWhiteSpace(note.Name))
+            {
+                try
+                {
+                    return NoteNameToMidi(note.Name.Trim());
+                }
+                catch
+                {
+                    // fall through to stored midi
+                }
+            }
+
+            return note.Midi;
+        }
+
+        /// <summary>Written note label for status display (matches staff / player expectation).</summary>
+        public string ResolveWrittenEvaluationName(NoteInfo note)
+            => ResolveWrittenNoteName(note);
+
         public (bool correct, int cents) Evaluate(double freq)
         {
             if (NotesToDraw.Count == 0 || CurrentNoteIndex >= NotesToDraw.Count || freq <= 0)
@@ -3192,6 +3326,7 @@ namespace musicmate.Services
             }
 
             var target = NotesToDraw[CurrentNoteIndex];
+            var expectedWrittenMidi = ResolveWrittenEvaluationMidi(target);
             var detMidi = (int)Math.Round(69 + 12 * Math.Log(freq / 440.0, 2));
 
             // Transpose detected MIDI to written pitch for the selected instrument
@@ -3199,7 +3334,7 @@ namespace musicmate.Services
             var detPcWritten = Mod12(detMidiWritten);
 
             // Compare to the written note's pitch class
-            var expectedPc = Mod12(target.Midi);
+            var expectedPc = Mod12(expectedWrittenMidi);
             var correctPc = detPcWritten == expectedPc;
 
             // Enharmonic check: allow E4 == Fb4, etc.
@@ -3207,7 +3342,7 @@ namespace musicmate.Services
             if (!correctPc)
             {
                 // Get all enharmonic MIDI numbers for the target note
-                var enharmonicMidis = GetEnharmonicMidis(target.Midi);
+                var enharmonicMidis = GetEnharmonicMidis(expectedWrittenMidi);
                 // enharmonicMatch = enharmonicMidis.Contains(detMidiWritten);
                 enharmonicMatch = enharmonicMidis.Any(m => Mod12(m) == detPcWritten);  //  2026.03.06 1745  
             }
@@ -3838,7 +3973,7 @@ namespace musicmate.Services
             };
         }
         /// <summary>
-        /// Resolves the sounding MIDI and evaluation label for a staff note, applying
+        /// Resolves the written MIDI and evaluation label for a staff note, applying
         /// key-signature accidentals when the score omits them (e.g. G on the G line in E major → G#).
         /// </summary>
         public static (int Midi, string Name) ResolveTargetPitch(
@@ -3853,19 +3988,17 @@ namespace musicmate.Services
                 return (naturalMidi, raw);
 
             if (HasExplicitAccidentalInName(raw))
-                return (note.MidiNumber, raw);
+                return (NoteNameToMidi(raw), raw);
 
             int keySigMidi = ApplyKeySignatureToMidi($"{letter}{octave}", naturalMidi, key, scale);
             if (keySigMidi != naturalMidi)
             {
-                return (
-                    keySigMidi,
-                    ApplyKeySignatureToSpelledName($"{letter}{octave}", key, scale));
+                var spelled = ApplyKeySignatureToSpelledName($"{letter}{octave}", key, scale);
+                return (NoteNameToMidi(spelled), spelled);
             }
 
-            return (
-                note.MidiNumber,
-                ResolveWrittenNoteName(raw, note.MidiNumber, letter, octave, key, scale));
+            var name = ResolveWrittenNoteName(raw, note.MidiNumber, letter, octave, key, scale);
+            return (NoteNameToMidi(name), name);
         }
 
         /// <summary>

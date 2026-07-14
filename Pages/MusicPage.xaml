@@ -12,26 +12,24 @@
 
   <Shell.TitleView>
     <Grid x:Name="TitleMarqueeGrid"
-          ColumnDefinitions="Auto,Auto,*,Auto" HeightRequest="44" VerticalOptions="Fill"
+          ColumnDefinitions="Auto,Auto,*,Auto" HeightRequest="52" VerticalOptions="Fill"
           BackgroundColor="#8B0000">
-      <!-- 38dp slot preserves horizontal center for the play overlay below. -->
       <Grid Grid.Column="0"
-            WidthRequest="38"
-            HeightRequest="32"
+            x:Name="TitleStartStopSlot"
+            WidthRequest="64"
+            HeightRequest="52"
             VerticalOptions="Center">
+        <Grid.GestureRecognizers>
+          <TapGestureRecognizer Tapped="OnStartStopToggleClicked" />
+        </Grid.GestureRecognizers>
         <Border x:Name="TitleStartStopButton"
                 StrokeThickness="0"
                 BackgroundColor="#008000"
-                HeightRequest="32"
-                WidthRequest="32"
                 HorizontalOptions="Center"
                 VerticalOptions="Center">
           <Border.StrokeShape>
             <RoundRectangle CornerRadius="16" />
           </Border.StrokeShape>
-          <Border.GestureRecognizers>
-            <TapGestureRecognizer Tapped="OnStartStopToggleClicked" />
-          </Border.GestureRecognizers>
         </Border>
       </Grid>
       <Label Text="  Music "
@@ -86,8 +84,8 @@
       <Setter Property="HeightRequest" Value="28" />
     </Style>
     <Style x:Key="CompactBrownButton" TargetType="Button">
-      <Setter Property="BackgroundColor" Value="#8B4513" />
-      <Setter Property="TextColor" Value="White" />
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeButtonText}" />
       <Setter Property="FontSize" Value="13" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="HeightRequest" Value="44" />
@@ -100,10 +98,8 @@
   </ContentPage.Resources>
 
   <Grid x:Name="MainPageRootGrid">
-    <ScrollView x:Name="MainScrollView" HorizontalScrollBarVisibility="Never" Padding="0,0
-                ,0,0
-                
-                " Margin="0" HorizontalOptions="Fill">
+    <ScrollView x:Name="MainScrollView" HorizontalScrollBarVisibility="Never"
+                Padding="0,0,0,0" Margin="0" HorizontalOptions="Fill">
       <VerticalStackLayout x:Name="MainPageMainLayout" Spacing="16" Padding="0" Margin="0" HorizontalOptions="Fill">
 
         <!-- Pickers row: Instrument | Key | (Concert E) | Scale+Tune picker -->
@@ -307,26 +303,23 @@
                       Text="−10"
                       FontSize="12"
                       FontAttributes="Bold"
-                      TextColor="White"
-                      BackgroundColor="#8B4513"
-                      BorderColor="#5D2F0C"
-                      BorderWidth="1"
-                      CornerRadius="6"
+                      TextColor="{DynamicResource ThemeContrastingText}"
+                      BackgroundColor="{DynamicResource ThemeButtonBackground}"                      
+                      CornerRadius="12"
                       Padding="0"
                       HeightRequest="36"
                       VerticalOptions="Center"
                       HorizontalOptions="Fill"
                       CommandParameter="-10"
                       Clicked="OnChildLevelDeltaClicked" />
+              <!--BackgroundColor="#8B4513"-->
               <Button Grid.Column="1"
                       Text="−5"
                       FontSize="12"
                       FontAttributes="Bold"
-                      TextColor="White"
-                      BackgroundColor="#8B4513"
-                      BorderColor="#5D2F0C"
-                      BorderWidth="1"
-                      CornerRadius="6"
+                      TextColor="{DynamicResource ThemeContrastingText}"
+                      BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                      CornerRadius="12"
                       Padding="0"
                       HeightRequest="36"
                       VerticalOptions="Center"
@@ -337,11 +330,9 @@
                       Text="−1"
                       FontSize="12"
                       FontAttributes="Bold"
-                      TextColor="White"
-                      BackgroundColor="#8B4513"
-                      BorderColor="#5D2F0C"
-                      BorderWidth="1"
-                      CornerRadius="6"
+                      TextColor="{DynamicResource ThemeContrastingText}"
+                      BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                      CornerRadius="12"
                       Padding="0"
                       HeightRequest="36"
                       VerticalOptions="Center"
@@ -361,7 +352,8 @@
                 <Label x:Name="ChildLevelSliderValueLabel"
                        Text="1"
                        FontSize="13"
-                       FontAttributes="Bold"
+                       FontAttributes="Bold"                       
+                       BackgroundColor="{DynamicResource ThemeButtonBackground}"
                        TextColor="#1A1A1A"
                        VerticalOptions="Center"
                        MinimumWidthRequest="24"
@@ -371,11 +363,9 @@
                       Text="+1"
                       FontSize="12"
                       FontAttributes="Bold"
-                      TextColor="White"
-                      BackgroundColor="#2E8B57"
-                      BorderColor="#1F5C3A"
-                      BorderWidth="1"
-                      CornerRadius="6"
+                      TextColor="{DynamicResource ThemeContrastingText}"                       
+                       BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                      CornerRadius="12"
                       Padding="0"
                       HeightRequest="36"
                       VerticalOptions="Center"
@@ -385,12 +375,10 @@
               <Button Grid.Column="5"
                       Text="+5"
                       FontSize="12"
-                      FontAttributes="Bold"
-                      TextColor="White"
-                      BackgroundColor="#2E8B57"
-                      BorderColor="#1F5C3A"
-                      BorderWidth="1"
-                      CornerRadius="6"
+                      FontAttributes="Bold"                       
+                      BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                      TextColor="{DynamicResource ThemeContrastingText}"
+                      CornerRadius="12"
                       Padding="0"
                       HeightRequest="36"
                       VerticalOptions="Center"
@@ -401,11 +389,9 @@
                       Text="+10"
                       FontSize="12"
                       FontAttributes="Bold"
-                      TextColor="White"
-                      BackgroundColor="#2E8B57"
-                      BorderColor="#1F5C3A"
-                      BorderWidth="1"
-                      CornerRadius="6"
+                      TextColor="{DynamicResource ThemeContrastingText}"
+                      BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                      CornerRadius="12"
                       Padding="0"
                       HeightRequest="36"
                       VerticalOptions="Center"

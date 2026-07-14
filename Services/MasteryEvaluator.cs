@@ -116,9 +116,10 @@ public static class MasteryEvaluator
 
     private static void LogMasteryDecision(string writtenName, bool mastered, string reason, NoteStat stat)
     {
-        DebugLog.WriteLine(
-            $"[Mastery] note={writtenName} mastered={mastered} reason={reason} " +
-            $"pitch={stat.PercentPitchCorrect:F1}% timing={stat.PercentTimingCorrect:F1}% " +
-            $"overall={stat.PercentOverallCorrect:F1}% attempts={stat.OverallCorrectCount + stat.OverallWrongCount}");
+        DebugLog.RunIfEnabled(DebugLogCategory.Timing, () =>
+            DebugLog.WriteLine(
+                $"[Mastery] note={writtenName} mastered={mastered} reason={reason} " +
+                $"pitch={stat.PercentPitchCorrect:F1}% timing={stat.PercentTimingCorrect:F1}% " +
+                $"overall={stat.PercentOverallCorrect:F1}% attempts={stat.OverallCorrectCount + stat.OverallWrongCount}"));
     }
 }

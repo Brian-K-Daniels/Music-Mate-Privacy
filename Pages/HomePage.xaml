@@ -5,6 +5,8 @@
              Shell.NavBarIsVisible="True"
              Title="Home"
              BackgroundColor="{DynamicResource ThemeMainBackground}">
+  <!--BackgroundColor="{DynamicResource ThemeMainBackground}-->
+  <!--BackgroundColor="LimeGreen"-->
 
     <ScrollView>
         <VerticalStackLayout Spacing="28" Padding="24,32,24,40" HorizontalOptions="Center"

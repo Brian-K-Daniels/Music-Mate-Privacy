@@ -14,6 +14,8 @@
     <Style TargetType="Button">
       <Setter Property="TextColor" Value="{DynamicResource ThemeButtonText}" />
       <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
+      <Setter Property="BorderColor" Value="Black" />
+      <Setter Property="BorderWidth" Value="2" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="FontAttributes" Value="Bold" />
       <Setter Property="Padding" Value="12,8" />
@@ -27,9 +29,8 @@
       <HorizontalStackLayout Spacing="10" VerticalOptions="Center" Grid.Column="0">
         <Button Text="←"
                 Clicked="OnNavigatePracticeClicked"
-                Style="{x:Null}"
-                BackgroundColor="Transparent"
-                TextColor ="Black"
+                BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                TextColor="{DynamicResource ThemeButtonText}"
                 FontSize="18"
                 Padding="12,0"
                 WidthRequest="56" />
@@ -51,24 +52,20 @@
   </Shell.TitleView>
 
   <ScrollView>
-    <VerticalStackLayout Padding="16,8" Spacing="8">
-      <Label Text="Use these options to restore factory settings or manage your own custom default profile."
-             FontSize="13"
-             LineBreakMode="WordWrap" />
+    <VerticalStackLayout Padding="16,8" Spacing="8">      
 
       <BoxView HeightRequest="1" Color="{DynamicResource ThemePickerBorder}" Margin="0,6,0,6" />
 
       <Button x:Name="FactoryResetButton"
-              Text="Reset to Factory Defaults"
-              BackgroundColor="Orange"
+              Text="Factory Defaults"
               Clicked="OnFactoryResetClicked" />
 
       <Button x:Name="SaveCustomDefaultsButton"
-              Text="Set Current Settings to Custom Defaults"
+              Text="Make Custom Default Settings equal to Current Settings."
               Clicked="OnSaveCustomDefaultsClicked" />
 
       <Button x:Name="RestoreCustomDefaultsButton"
-              Text="Reset Settings to Custom Defaults"
+              Text="Custom Defaults"
               Clicked="OnRestoreCustomDefaultsClicked" />
     </VerticalStackLayout>
   </ScrollView>

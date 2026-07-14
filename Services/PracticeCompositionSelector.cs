@@ -264,7 +264,7 @@ namespace musicmate.Services
             string displayName = $"{TrimOctave(rootNote)} {pattern.DisplayName.ToLowerInvariant()}";
             session.IsRandomMode = false;
             session.SelectArpeggio(pattern, rootNote, displayName);
-            session.Key = GetArpeggioKeySignature(pattern, rootNote);
+            session.Key = session.ResolveArpeggioWrittenKeySignature(pattern, rootNote);
             return true;
         }
 
@@ -297,46 +297,5 @@ namespace musicmate.Services
 
         private static string TrimOctave(string noteName)
             => new(noteName.TakeWhile(c => !char.IsDigit(c)).ToArray());
-
-        private static string GetArpeggioKeySignature(ArpeggioPattern pattern, string rootNote)
-        {
-            var root = NormalizeMajorKeyName(TrimOctave(rootNote));
-            if (UsesMinorFamilyKeySignature(pattern))
-                return RelativeMajorKeyForMinorRoot(root);
-            return root;
-        }
-
-        private static bool UsesMinorFamilyKeySignature(ArpeggioPattern pattern)
-            => pattern.SemitoneIntervals.Contains(3) && !pattern.SemitoneIntervals.Contains(4);
-
-        private static string RelativeMajorKeyForMinorRoot(string minorRoot) => minorRoot switch
-        {
-            "A" => "C",
-            "E" => "G",
-            "B" => "D",
-            "F#" => "A",
-            "C#" => "E",
-            "G#" => "B",
-            "D#" => "F#",
-            "A#" => "C#",
-            "D" => "F",
-            "G" => "Bb",
-            "C" => "Eb",
-            "F" => "Ab",
-            "Bb" => "Db",
-            "Eb" => "Gb",
-            "Ab" => "Cb",
-            _ => minorRoot
-        };
-
-        private static string NormalizeMajorKeyName(string key) => key switch
-        {
-            "A#" => "Bb",
-            "D#" => "Eb",
-            "G#" => "Ab",
-            "C#" => "Db",
-            "F#" => "Gb",
-            _ => key
-        };
     }
 }

@@ -11,8 +11,8 @@
   <Color x:Key="ThemeHeadingText">#8B4513</Color>
   <Color x:Key="ThemeContrastingText">#000000</Color>
   <Color x:Key="ThemeSlider">#8B4513</Color>
-  <Color x:Key="ThemeButtonBackground">#8B4513</Color>
-  <Color x:Key="ThemeButtonText">#FFFFFF</Color>
+  <Color x:Key="ThemeButtonBackground">#E7FFCC</Color>
+  <Color x:Key="ThemeButtonText">#000000</Color>
   <Color x:Key="ThemePickerBackground">#FFFFFF</Color>
   <Color x:Key="ThemePickerText">#000000</Color>
   <Color x:Key="ThemePickerBorder">#8B4513</Color>

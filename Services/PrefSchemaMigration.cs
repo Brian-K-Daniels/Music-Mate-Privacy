@@ -5,9 +5,12 @@ namespace musicmate.Services
     /// </summary>
     internal static class PrefSchemaMigration
     {
-        public const int CurrentSchemaVersion = 2;
+        public const int CurrentSchemaVersion = 4;
 
         private const string SchemaKey = "musicmate.PrefSchemaVersion";
+        private const string ButtonBackgroundKey = ThemeService.ColorPreferencePrefix + nameof(AppColorTarget.ButtonBackground);
+        private const string ButtonBackgroundHex = "#E7FFCC";
+        private const string OmitMsAvgThresholdKey = "musicmate.OmitMsAvgThreshold";
 
         public static void ApplyIfNeeded()
         {
@@ -15,9 +18,38 @@ namespace musicmate.Services
             if (schema >= CurrentSchemaVersion)
                 return;
 
-            Preferences.Clear();
-            ClearAppDataDatabases();
+            if (schema < 2)
+            {
+                Preferences.Clear();
+                ClearAppDataDatabases();
+            }
+
+            if (schema < 3)
+            {
+                // Older builds could persist lavender/purple as the button fill; use the designed light green.
+                Preferences.Set(ButtonBackgroundKey, ButtonBackgroundHex);
+            }
+
+            if (schema < 4)
+            {
+                MigrateOmitMsAvgThreshold();
+            }
+
             Preferences.Set(SchemaKey, CurrentSchemaVersion);
+        }
+
+        /// <summary>
+        /// Legacy default 400 ms blocked mastery at normal tempos; a 0–5 slider could also save tiny values.
+        /// 0 disables the MsAvg gate so accuracy settings alone control mastery.
+        /// </summary>
+        private static void MigrateOmitMsAvgThreshold()
+        {
+            if (!Preferences.ContainsKey(OmitMsAvgThresholdKey))
+                return;
+
+            int value = Preferences.Get(OmitMsAvgThresholdKey, 0);
+            if (value == 400 || (value > 0 && value <= 10))
+                Preferences.Set(OmitMsAvgThresholdKey, 0);
         }
 
         private static void ClearAppDataDatabases()

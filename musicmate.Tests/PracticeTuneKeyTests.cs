@@ -36,6 +36,23 @@ public class PracticeTuneKeyTests
     }
 
     [Fact]
+    public void ResolveKeyForFreshGeneration_PreservesArpeggioKeyAtLevel24()
+    {
+        for (int seed = 0; seed < 30; seed++)
+        {
+            string key = NoteSessionService.ResolveKeyForFreshGeneration(
+                "Arpeggio",
+                currentTune: null,
+                "Natural Minor",
+                keyPoolLevel: 24,
+                new Random(seed),
+                preservedKey: "E");
+
+            Assert.Equal("E", key);
+        }
+    }
+
+    [Fact]
     public void ResolveKeyForFreshGeneration_StillRandomizesForByLevelWithoutTune()
     {
         var keys = new HashSet<string>(StringComparer.Ordinal);
