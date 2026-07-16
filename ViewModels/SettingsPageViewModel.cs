@@ -471,6 +471,23 @@ namespace musicmate.ViewModels
         public List<string> SyncopationSettingOptions { get; } = new() { "None", "Simple", "Full" };
         public List<string> NoteNameDisplayOptions { get; } = new() { "Current only", "All notes", "Off" };
 
+        public List<double> AboutFontSizeOptions { get; } = new() { 6, 8, 10, 12, 14 };
+
+        private double _aboutFontSize = SessionPreferences.Get(AboutPageViewModel.FontSizePreferenceKey, 12.0);
+        public double AboutFontSize
+        {
+            get => _aboutFontSize;
+            set
+            {
+                if (_aboutFontSize == value) return;
+                if (!AboutFontSizeOptions.Contains(value)) return;
+                _aboutFontSize = value;
+                SessionPreferences.Set(AboutPageViewModel.FontSizePreferenceKey, value);
+                OnPropertyChanged(nameof(AboutFontSize));
+                NotifyFactoryDefaultsMayHaveChanged();
+            }
+        }
+
         private string _meterTimeSignature = Preferences.Get("musicmate.TimeSignature", "4/4");
         public string MeterTimeSignature
         {
@@ -606,7 +623,7 @@ namespace musicmate.ViewModels
         const string KeyCollectNote = "CollectNoteStats";
         const string KeyCollectSession = "CollectSessionStats";
 
-        private bool _collectNoteStats = Preferences.Default.Get("CollectNoteStats", true);
+        private bool _collectNoteStats = SessionPreferences.Get("CollectNoteStats", true);
         public bool CollectNoteStats
         {
             get => _collectNoteStats;
@@ -614,12 +631,13 @@ namespace musicmate.ViewModels
             {
                 if (_collectNoteStats == value) return;
                 _collectNoteStats = value;
-                Preferences.Default.Set(KeyCollectNote, value);
+                SessionPreferences.Set(KeyCollectNote, value);
                 OnPropertyChanged(nameof(CollectNoteStats));
+                NotifyFactoryDefaultsMayHaveChanged();
             }
         }
 
-        private bool _collectSessionStats = Preferences.Default.Get("CollectSessionStats", true);
+        private bool _collectSessionStats = SessionPreferences.Get("CollectSessionStats", true);
         public bool CollectSessionStats
         {
             get => _collectSessionStats;
@@ -627,8 +645,9 @@ namespace musicmate.ViewModels
             {
                 if (_collectSessionStats == value) return;
                 _collectSessionStats = value;
-                Preferences.Default.Set(KeyCollectSession, value);
+                SessionPreferences.Set(KeyCollectSession, value);
                 OnPropertyChanged(nameof(CollectSessionStats));
+                NotifyFactoryDefaultsMayHaveChanged();
             }
         }
 
@@ -636,7 +655,7 @@ namespace musicmate.ViewModels
         // ── Rolling per-note attempt history limit ────────────────────────────
         // Persisted as "MaxAttemptsPerNote" in app preferences.
         // Default = 100.  Grouping key = WrittenNoteName + Instrument.
-        private int _maxAttemptsPerNote = Preferences.Default.Get("MaxAttemptsPerNote", 100);
+        private int _maxAttemptsPerNote = SessionPreferences.Get("MaxAttemptsPerNote", 100);
         public int MaxAttemptsPerNote
         {
             get => _maxAttemptsPerNote;
@@ -645,11 +664,15 @@ namespace musicmate.ViewModels
                 var clamped = Math.Clamp(value, 0, 1000);
                 if (_maxAttemptsPerNote == clamped) return;
                 _maxAttemptsPerNote = clamped;
-                Preferences.Default.Set("MaxAttemptsPerNote", clamped);
+                SessionPreferences.Set("MaxAttemptsPerNote", clamped);
                 CollectNoteStats = clamped > 0;
                 OnPropertyChanged(nameof(MaxAttemptsPerNote));
+                NotifyFactoryDefaultsMayHaveChanged();
             }
         }
+
+        private static void NotifyFactoryDefaultsMayHaveChanged()
+            => ServiceHelper.GetService<SettingsResetService>()?.NotifySettingsChanged();
 
         /// <summary>Resets all settings to their factory defaults.</summary>
         public void ResetToDefaults()

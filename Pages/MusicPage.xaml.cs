@@ -2066,12 +2066,6 @@ namespace musicmate.Pages
             return _session.SelectedScale ?? "Selected Scale";
         }
 
-        private int GetChildLevelForSlider()
-        {
-            if (_session.ChildLevel <= 0) return 1;
-            return Math.Clamp(Preferences.Default.Get(ChildLevelPrefKey, _session.ChildLevel), 1, 100);
-        }
-
         private async Task ApplyChildLevelAndRefreshAsync(int level)
         {
             level = Math.Clamp(level, 1, 100);
@@ -2080,11 +2074,13 @@ namespace musicmate.Pages
             _suppressSessionRegenerate = true;
             try
             {
-                _session.ChildLevel = level;
-                difficulty = DifficultyLevelMapper.ApplyLevelChangeToSession(
-                    level, _session, preserveUserPracticeSettings: _session.ChildPracticeSettingsCustomized);
+                // Persist before mutating session so PropertyChanged handlers that read
+                // preferences cannot restore a stale level.
                 Preferences.Default.Set(ChildLevelPrefKey, level);
                 LevelUpService.MarkCountSinceNow();
+
+                difficulty = DifficultyLevelMapper.ApplyLevelSettings(
+                    level, _session, preserveUserPracticeSettings: _session.ChildPracticeSettingsCustomized);
 
                 _session.PrepareEffectiveScaleForGeneration(_generationSeed);
                 UpdateEffectiveScaleLabel();
@@ -2092,6 +2088,7 @@ namespace musicmate.Pages
                 UpdateScaleTunePicker();
                 UpdateConcertKeyLabel();
                 UpdateKeyPickerVisibility();
+                UpdateChildLevelSliderDisplay();
             }
             finally
             {
@@ -2099,8 +2096,6 @@ namespace musicmate.Pages
             }
 
             _repeatSameSnapshot = null;
-            if (ChildLevelSliderValueLabel != null)
-                ChildLevelSliderValueLabel.Text = level.ToString();
 
             if (_session.IsRandomMode)
                 SyncPlayItemStatusMessage();
@@ -2118,7 +2113,7 @@ namespace musicmate.Pages
                 || !int.TryParse(param, out int delta))
                 return;
 
-            int level = Math.Clamp(GetChildLevelForSlider() + delta, 1, 100);
+            int level = Math.Clamp(_session.ChildLevel + delta, 1, 100);
             if (level == _session.ChildLevel)
                 return;
 
@@ -2317,17 +2312,19 @@ namespace musicmate.Pages
             _pendingInstrumentForMarquee = null;
         }
 
+        /// <summary>
+        /// Updates Level +/- visibility and the on-screen level label from the live session.
+        /// Does not mutate <see cref="NoteSessionService.ChildLevel"/> or re-apply settings —
+        /// full apply is owned by <see cref="DifficultyLevelMapper.ApplyLevelSettings"/> /
+        /// <see cref="DifficultyLevelMapper.PickAndApplyToSession"/>.
+        /// </summary>
         private void UpdateChildLevelSliderDisplay()
         {
             OnPropertyChanged(nameof(IsChildLevelSliderVisible));
             if (_session.ChildLevel <= 0) return;
 
-            int level = GetChildLevelForSlider();
-            _session.ChildLevel = level;
-            DifficultyLevelMapper.ApplyLevelDerivedSettings(level, _session);
-
             if (ChildLevelSliderValueLabel != null)
-                ChildLevelSliderValueLabel.Text = level.ToString();
+                ChildLevelSliderValueLabel.Text = _session.ChildLevel.ToString();
         }
 
         /// <summary>

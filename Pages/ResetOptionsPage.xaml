@@ -58,6 +58,8 @@
 
       <Button x:Name="FactoryResetButton"
               Text="Factory Defaults"
+              BackgroundColor="White"
+              TextColor="Black"
               Clicked="OnFactoryResetClicked" />
 
       <Button x:Name="SaveCustomDefaultsButton"

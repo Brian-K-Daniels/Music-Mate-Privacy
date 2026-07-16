@@ -5,9 +5,14 @@ namespace musicmate.Pages
 {
     public partial class ResetOptionsPage : ContentPage
     {
+        private static readonly Color FactoryDefaultsActiveBackground = Colors.Green;
+        private static readonly Color FactoryDefaultsInactiveBackground = Colors.White;
+        private static readonly Color FactoryDefaultsInactiveText = Colors.Black;
+
         private readonly SettingsResetService _resetService;
         private readonly ThemeService _themeService;
         private readonly IOrientationService _orientation;
+        private bool _factoryDefaultsUiReady;
 
         public Color PanelBackgroundColor => _themeService.PanelBackgroundColor;
         public Color ContrastingTextColor => _themeService.ContrastingTextColor;
@@ -29,12 +34,20 @@ namespace musicmate.Pages
                 if (e.PropertyName == nameof(ThemeService.ButtonBackgroundColor))
                     UpdateActiveDefaultsButtonHighlight();
             };
+            _resetService.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(SettingsResetService.AreFactoryDefaultsApplied))
+                    UpdateActiveDefaultsButtonHighlight();
+            };
         }
 
         protected override void OnAppearing()
         {
             _orientation?.ForceLandscape();
             base.OnAppearing();
+            // Evaluate before painting so we never flash the wrong Factory Defaults color.
+            _resetService.EvaluateAreFactoryDefaultsApplied();
+            _factoryDefaultsUiReady = true;
             UpdateCustomDefaultsButtonState();
             UpdateActiveDefaultsButtonHighlight();
         }
@@ -46,22 +59,45 @@ namespace musicmate.Pages
 
         private void UpdateActiveDefaultsButtonHighlight()
         {
+            if (!_factoryDefaultsUiReady)
+                return;
+
             var normal = _themeService.ButtonBackgroundColor;
-            var active = Colors.Green;
+
+            if (_resetService.AreFactoryDefaultsApplied)
+            {
+                ApplyDefaultsButtonHighlight(
+                    FactoryResetButton,
+                    FactoryDefaultsActiveBackground,
+                    ThemeColorContrast.GetContrastingTextColor(FactoryDefaultsActiveBackground));
+            }
+            else
+            {
+                ApplyDefaultsButtonHighlight(
+                    FactoryResetButton,
+                    FactoryDefaultsInactiveBackground,
+                    FactoryDefaultsInactiveText);
+            }
 
             ApplyDefaultsButtonHighlight(
-                FactoryResetButton,
-                _resetService.ActiveDefaults == ActiveDefaultsSet.Factory ? active : normal);
-            ApplyDefaultsButtonHighlight(
                 RestoreCustomDefaultsButton,
-                _resetService.ActiveDefaults == ActiveDefaultsSet.Custom ? active : normal);
+                _resetService.ActiveDefaults == ActiveDefaultsSet.Custom
+                    ? Colors.Green
+                    : normal);
             SaveCustomDefaultsButton.BackgroundColor = normal;
+            SaveCustomDefaultsButton.TextColor = ThemeColorContrast.GetContrastingTextColor(normal);
         }
 
         private static void ApplyDefaultsButtonHighlight(Button button, Color background)
         {
+            ApplyDefaultsButtonHighlight(
+                button, background, ThemeColorContrast.GetContrastingTextColor(background));
+        }
+
+        private static void ApplyDefaultsButtonHighlight(Button button, Color background, Color text)
+        {
             button.BackgroundColor = background;
-            button.TextColor = ThemeColorContrast.GetContrastingTextColor(background);
+            button.TextColor = text;
         }
 
         private async void OnNavigatePracticeClicked(object? sender, EventArgs e)

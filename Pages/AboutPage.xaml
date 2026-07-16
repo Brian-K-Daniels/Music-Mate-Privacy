@@ -29,70 +29,20 @@
     </Style>
   </ContentPage.Resources>
 
+  <!-- Marquee: search + Next + m/n (no back arrow, no logo) -->
   <Shell.TitleView>
-    <Grid ColumnDefinitions="*,Auto" HeightRequest="44" VerticalOptions="Center">
-      <HorizontalStackLayout Spacing="10" VerticalOptions="Center" Grid.Column="0">
-        <Button Text="&#x2190;"
-                Clicked="OnNavigatePracticeClicked"
-                BackgroundColor="{DynamicResource ThemeButtonBackground}"
-                TextColor="{DynamicResource ThemeContrastingText}"
-                FontSize="18"
-                Padding="12,0"
-                WidthRequest="56" />
-        <Label Text="About"
-               FontAttributes="Bold"
-               FontSize="18"
-               TextColor="{DynamicResource ThemeContrastingText}"
-               VerticalOptions="Center" />
-      </HorizontalStackLayout>
-      <Border Style="{StaticResource TitleLogoBorder}"
-              VerticalOptions="Center"
-              HorizontalOptions="End"
-              Grid.Column="1">
-        <Image Source="logo.png" Aspect="AspectFill" />
-      </Border>
-    </Grid>
-  </Shell.TitleView>
-
-  <!-- Root: pinned toolbar at top, scrollable content fills the rest -->
-  <Grid RowDefinitions="Auto,*">
-
-    <!-- ── Pinned toolbar (never scrolls) ─────────────────────────────── -->
-    <Grid Grid.Row="0"
-          ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto"
+    <Grid ColumnDefinitions="Auto,*,Auto,Auto"
           ColumnSpacing="6"
-          Padding="8,4,8,4"
-          VerticalOptions="Center"
-          BackgroundColor="{Binding PanelBackgroundColor}">
-
-      <!-- Font label -->
+          HeightRequest="44"
+          Padding="0,0,8,0"
+          VerticalOptions="Center">
       <Label Grid.Column="0"
-             Text="Font"
-             FontSize="{Binding SelectedFontSize}"
+             Text="About"
+             FontAttributes="Bold"
+             FontSize="16"
+             TextColor="{DynamicResource ThemeContrastingText}"
              VerticalOptions="Center" />
-
-      <!-- Font picker -->
       <Border Grid.Column="1"
-              Stroke="{DynamicResource ThemePickerBorder}" StrokeThickness="2"
-              BackgroundColor="Transparent" Padding="4,2"
-              VerticalOptions="Center">
-        <Picker x:Name="FontSizePicker"
-                FontSize="{Binding SelectedFontSize}"
-                ItemsSource="{Binding FontSizeOptions}"
-                SelectedItem="{Binding SelectedFontSize, Mode=TwoWay}"
-                VerticalOptions="Center" />
-      </Border>
-
-      <!-- Search icon -->
-      <Label Grid.Column="2"
-             Text="🔍"
-             FontSize="{Binding SelectedFontSize}"
-             TextColor="{DynamicResource ThemeHeadingText}"
-             VerticalOptions="Center"
-             Margin="4,0,2,0" />
-
-      <!-- Search bar: fills remaining space -->
-      <Border Grid.Column="3"
               Stroke="{DynamicResource ThemePickerBorder}" StrokeThickness="1"
               StrokeShape="RoundRectangle 8"
               Padding="4,0"
@@ -107,9 +57,7 @@
                    TextChanged="OnAboutSearchTextChanged"
                    SearchButtonPressed="OnAboutSearchButtonPressed" />
       </Border>
-
-      <!-- Next button -->
-      <Button Grid.Column="4"
+      <Button Grid.Column="2"
               x:Name="AboutFindNextButton"
               Text="Next"
               IsEnabled="False"
@@ -117,67 +65,60 @@
               FontSize="{Binding SelectedFontSize}"
               Padding="8,4"
               VerticalOptions="Center" />
-
-      <!-- Match position label -->
-      <Label Grid.Column="5"
+      <Label Grid.Column="3"
              x:Name="AboutFindPositionLabel"
              Text=""
              FontSize="{Binding SelectedFontSize}"
              VerticalOptions="Center"
-             HorizontalOptions="Center" />
-
+             HorizontalOptions="Center"
+             MinimumWidthRequest="36" />
     </Grid>
+  </Shell.TitleView>
 
-    <!-- ── Scrollable content ──────────────────────────────────────────── -->
-    <ScrollView x:Name="AboutScrollView" Grid.Row="1">
-      <VerticalStackLayout x:Name="AboutMainLayout">
+  <ScrollView x:Name="AboutScrollView">
+    <VerticalStackLayout x:Name="AboutMainLayout">
 
-        <!-- Premium purchase controls -->
-        <Grid ColumnDefinitions="Auto,Auto,*"
-              ColumnSpacing="10"
-              VerticalOptions="Center"
-              Padding="8,6,8,4">
+      <!-- Premium purchase controls -->
+      <Grid ColumnDefinitions="Auto,Auto,*"
+            ColumnSpacing="10"
+            VerticalOptions="Center"
+            Padding="8,6,8,4">
 
-          <!-- "Get Premium" button — visible only when NOT premium -->
-          <Button Grid.Column="0"
-                  Text="Get Premium"
-                  Command="{Binding BuyPremiumCommand}"
-                  IsVisible="{Binding NotIsPremium}"
-                  TextColor="{DynamicResource ThemeContrastingText}"
-                  FontSize="{Binding SelectedFontSize}"
-                  Padding="8,4" />
+        <Button Grid.Column="0"
+                Text="Get Premium"
+                Command="{Binding BuyPremiumCommand}"
+                IsVisible="{Binding NotIsPremium}"
+                TextColor="{DynamicResource ThemeContrastingText}"
+                FontSize="{Binding SelectedFontSize}"
+                Padding="8,4" />
 
-          <!-- DEBUG-only reset button — visible only when IS premium, hidden in Release -->
-          <Button Grid.Column="2"
-                  Text="🔄 Remove Premium (debug)"
-                  Command="{Binding RestorePurchasesCommand}"
-                  IsVisible="{Binding IsDebugRestoreVisible}"
-                  BackgroundColor="{DynamicResource ThemeButtonBackground}"
-                  TextColor="#888888"
-                  BorderColor="#555555"
-                  BorderWidth="1"
-                  CornerRadius="6"
-                  FontSize="11"
-                  HorizontalOptions="End"
-                  Padding="8,4" />
+        <Button Grid.Column="2"
+                Text="🔄 Remove Premium (debug)"
+                Command="{Binding RestorePurchasesCommand}"
+                IsVisible="{Binding IsDebugRestoreVisible}"
+                BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                TextColor="#888888"
+                BorderColor="#555555"
+                BorderWidth="1"
+                CornerRadius="6"
+                FontSize="11"
+                HorizontalOptions="End"
+                Padding="8,4" />
 
-          <!-- Confirmation label — visible only when IS premium; spans cols 0-1 only -->
-          <Label Grid.Column="0"
-                 Grid.ColumnSpan="2"
-                 Text="⭐ You have all premium privileges"
-                 IsVisible="{Binding IsPremium}"
-                 FontAttributes="Bold"
-                 FontSize="{Binding SelectedFontSize}"
-                 TextColor="#FFD700"
-                 VerticalOptions="Center" />
+        <Label Grid.Column="0"
+               Grid.ColumnSpan="2"
+               Text="⭐ You have all premium privileges"
+               IsVisible="{Binding IsPremium}"
+               FontAttributes="Bold"
+               FontSize="{Binding SelectedFontSize}"
+               TextColor="#FFD700"
+               VerticalOptions="Center" />
 
-        </Grid>
+      </Grid>
 
-        <WebView x:Name="AboutWebView" Margin="0,4,0,0" />
+      <WebView x:Name="AboutWebView" Margin="0,4,0,0" />
 
-      </VerticalStackLayout>
-    </ScrollView>
-
-  </Grid>
+    </VerticalStackLayout>
+  </ScrollView>
 
 </ContentPage>

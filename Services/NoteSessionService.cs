@@ -120,12 +120,12 @@ namespace musicmate.Services
         private const string PrefSyncopationSettingKey = "musicmate.Syncopation";
         private const string PrefNoteNameDisplayKey = "musicmate.NoteNameDisplay";
         private const string PrefShowConductorCuesKey = "musicmate.ShowConductorCues";
-        private string _meterTimeSignature = Preferences.Get(PrefMeterTimeSignatureKey, "4/4");
-        private string _smallestRhythmNote = Preferences.Get(PrefSmallestRhythmNoteKey, "Quarter");
-        private string _rhythmMode = Preferences.Get(PrefRhythmModeKey, "Simple");
-        private string _syncopationSetting = Preferences.Get(PrefSyncopationSettingKey, "None");
-        private string _noteNameDisplay = Preferences.Get(PrefNoteNameDisplayKey, "Current only");
-        private bool _showConductorCues = Preferences.Get(PrefShowConductorCuesKey, false);
+        private string _meterTimeSignature = SessionPreferences.Get(PrefMeterTimeSignatureKey, "4/4");
+        private string _smallestRhythmNote = SessionPreferences.Get(PrefSmallestRhythmNoteKey, "Quarter");
+        private string _rhythmMode = SessionPreferences.Get(PrefRhythmModeKey, "Simple");
+        private string _syncopationSetting = SessionPreferences.Get(PrefSyncopationSettingKey, "None");
+        private string _noteNameDisplay = SessionPreferences.Get(PrefNoteNameDisplayKey, "Current only");
+        private bool _showConductorCues = SessionPreferences.Get(PrefShowConductorCuesKey, false);
 
         /// <summary>
         /// Time signature for rhythm generation.
@@ -138,7 +138,7 @@ namespace musicmate.Services
             {
                 if (_meterTimeSignature == value) return;
                 _meterTimeSignature = value;
-                Preferences.Set(PrefMeterTimeSignatureKey, value);
+                SessionPreferences.Set(PrefMeterTimeSignatureKey, value);
                 OnPropertyChanged(nameof(MeterTimeSignature));
             }
         }
@@ -172,7 +172,7 @@ namespace musicmate.Services
             {
                 if (_smallestRhythmNote == value) return;
                 _smallestRhythmNote = value;
-                Preferences.Set(PrefSmallestRhythmNoteKey, value);
+                SessionPreferences.Set(PrefSmallestRhythmNoteKey, value);
                 OnPropertyChanged(nameof(SmallestRhythmNote));
             }
         }
@@ -188,7 +188,7 @@ namespace musicmate.Services
             {
                 if (_rhythmMode == value) return;
                 _rhythmMode = value;
-                Preferences.Set(PrefRhythmModeKey, value);
+                SessionPreferences.Set(PrefRhythmModeKey, value);
                 OnPropertyChanged(nameof(RhythmMode));
             }
         }
@@ -204,7 +204,7 @@ namespace musicmate.Services
             {
                 if (_syncopationSetting == value) return;
                 _syncopationSetting = value;
-                Preferences.Set(PrefSyncopationSettingKey, value);
+                SessionPreferences.Set(PrefSyncopationSettingKey, value);
                 OnPropertyChanged(nameof(SyncopationSetting));
             }
         }
@@ -219,7 +219,7 @@ namespace musicmate.Services
             {
                 if (_noteNameDisplay == value) return;
                 _noteNameDisplay = value;
-                Preferences.Set(PrefNoteNameDisplayKey, value);
+                SessionPreferences.Set(PrefNoteNameDisplayKey, value);
                 OnPropertyChanged(nameof(NoteNameDisplay));
             }
         }
@@ -232,7 +232,7 @@ namespace musicmate.Services
             {
                 if (_showConductorCues == value) return;
                 _showConductorCues = value;
-                Preferences.Set(PrefShowConductorCuesKey, value);
+                SessionPreferences.Set(PrefShowConductorCuesKey, value);
                 OnPropertyChanged(nameof(ShowConductorCues));
             }
         }
@@ -244,7 +244,7 @@ namespace musicmate.Services
                 if (_accidentalPercent != value)
                 {
                     _accidentalPercent = value;
-                    Preferences.Set(PrefAccidentalPercentKey, value);
+                    SessionPreferences.Set(PrefAccidentalPercentKey, value);
                     OnPropertyChanged(nameof(AccidentalPercent));
                 }
             }
@@ -320,17 +320,17 @@ namespace musicmate.Services
         private const string PrefPitchConfidenceThresholdKey = "musicmate.PitchConfidenceThreshold";
 
         // Backing fields with persisted defaults
-        private int _audioBufferSize = Preferences.Get(PrefAudioBufferSizeKey, 1024);
-        private bool _autoStart = Preferences.Get(PrefAutoStartKey, true);
-        private bool _autoRepeat = Preferences.Get(PrefAutoRepeatKey, false);
-        private bool _repeatSameTune = Preferences.Get(PrefRepeatSameTuneKey, false);
-        private int _pitchWindowSize = Preferences.Get(PrefPitchWindowSizeKey, 4096);
-        private string _highestNote = Preferences.Get("musicmate.HighestNote", "C6") ?? "C6";
-        private string _lowestNote = Preferences.Get("musicmate.LowestNote", "E3") ?? "E3";
-        private int _minFrequency = Preferences.Get(PrefMinFrequencyKey, 60);
-        private int _maxFrequency = Preferences.Get(PrefMaxFrequencyKey, 8000);
-        private int _smoothingWindowSize = Preferences.Get(PrefSmoothingWindowSizeKey, 3);
-        private double _pitchConfidenceThreshold = Preferences.Get(PrefPitchConfidenceThresholdKey, 0.5);
+        private int _audioBufferSize = SessionPreferences.Get(PrefAudioBufferSizeKey, 1024);
+        private bool _autoStart = SessionPreferences.Get(PrefAutoStartKey, true);
+        private bool _autoRepeat = SessionPreferences.Get(PrefAutoRepeatKey, false);
+        private bool _repeatSameTune = SessionPreferences.Get(PrefRepeatSameTuneKey, false);
+        private int _pitchWindowSize = SessionPreferences.Get(PrefPitchWindowSizeKey, 4096);
+        private string _highestNote = SessionPreferences.Get("musicmate.HighestNote", "C6") ?? "C6";
+        private string _lowestNote = SessionPreferences.Get("musicmate.LowestNote", "E3") ?? "E3";
+        private int _minFrequency = SessionPreferences.Get(PrefMinFrequencyKey, 60);
+        private int _maxFrequency = SessionPreferences.Get(PrefMaxFrequencyKey, 8000);
+        private int _smoothingWindowSize = SessionPreferences.Get(PrefSmoothingWindowSizeKey, 3);
+        private double _pitchConfidenceThreshold = SessionPreferences.Get(PrefPitchConfidenceThresholdKey, 0.5);
         private string _randomSelectedNotesDisplay = string.Empty;
         public int AudioBufferSize
         {
@@ -340,7 +340,7 @@ namespace musicmate.Services
                 if (_audioBufferSize != value)
                 {
                     _audioBufferSize = value;
-                    Preferences.Set(PrefAudioBufferSizeKey, value);
+                    SessionPreferences.Set(PrefAudioBufferSizeKey, value);
                     OnPropertyChanged(nameof(AudioBufferSize));
                 }
             }
@@ -354,7 +354,7 @@ namespace musicmate.Services
                 if (_pitchWindowSize != value)
                 {
                     _pitchWindowSize = value;
-                    Preferences.Set(PrefPitchWindowSizeKey, value);
+                    SessionPreferences.Set(PrefPitchWindowSizeKey, value);
                     OnPropertyChanged(nameof(PitchWindowSize));
                 }
             }
@@ -367,7 +367,7 @@ namespace musicmate.Services
                 if (_minFrequency != value)
                 {
                     _minFrequency = value;
-                    Preferences.Set(PrefMinFrequencyKey, value);
+                    SessionPreferences.Set(PrefMinFrequencyKey, value);
                     OnPropertyChanged(nameof(MinFrequency));
                 }
             }
@@ -380,7 +380,7 @@ namespace musicmate.Services
                 if (_maxFrequency != value)
                 {
                     _maxFrequency = value;
-                    Preferences.Set(PrefMaxFrequencyKey, value);
+                    SessionPreferences.Set(PrefMaxFrequencyKey, value);
                     OnPropertyChanged(nameof(MaxFrequency));
                 }
             }
@@ -393,7 +393,7 @@ namespace musicmate.Services
                 if (_smoothingWindowSize != value)
                 {
                     _smoothingWindowSize = value;
-                    Preferences.Set(PrefSmoothingWindowSizeKey, value);
+                    SessionPreferences.Set(PrefSmoothingWindowSizeKey, value);
                     OnPropertyChanged(nameof(SmoothingWindowSize));
                 }
             }
@@ -406,24 +406,24 @@ namespace musicmate.Services
                 if (Math.Abs(_pitchConfidenceThreshold - value) > 0.0001)
                 {
                     _pitchConfidenceThreshold = value;
-                    Preferences.Set(PrefPitchConfidenceThresholdKey, value);
+                    SessionPreferences.Set(PrefPitchConfidenceThresholdKey, value);
                     OnPropertyChanged(nameof(PitchConfidenceThreshold));
                 }
             }
         }
-        private string _instrument = Preferences.Get(PrefInstrumentKey, "Bb");
-        private string _key = Preferences.Get(PrefKeySignatureKey, "C");
+        private string _instrument = SessionPreferences.Get(PrefInstrumentKey, "Bb");
+        private string _key = SessionPreferences.Get(PrefKeySignatureKey, "C");
         private string? _keyBeforePracticeTune;
-        private string _selectedScale = Preferences.Get(PrefSelectedScaleKey, "Major");
+        private string _selectedScale = SessionPreferences.Get(PrefSelectedScaleKey, "Major");
         private ScaleSelectionMode _scaleSelectionMode = ParseScaleSelectionMode(
-            Preferences.Get(PrefScaleSelectionModeKey, nameof(ScaleSelectionMode.ByLevel)));
-        private string? _tune = Preferences.Get(PrefTuneKey, "Selected Scale");
-        private string _selectedArpeggioId = Preferences.Get(PrefSelectedArpeggioIdKey, "major-triad");
-        private string _selectedArpeggioRoot = Preferences.Get(PrefSelectedArpeggioRootKey, "C4");
-        private string _selectedArpeggioDisplay = Preferences.Get(PrefSelectedArpeggioDisplayKey, "C major triad");
+            SessionPreferences.Get(PrefScaleSelectionModeKey, nameof(ScaleSelectionMode.ByLevel)));
+        private string? _tune = SessionPreferences.Get(PrefTuneKey, "Selected Scale");
+        private string _selectedArpeggioId = SessionPreferences.Get(PrefSelectedArpeggioIdKey, "major-triad");
+        private string _selectedArpeggioRoot = SessionPreferences.Get(PrefSelectedArpeggioRootKey, "C4");
+        private string _selectedArpeggioDisplay = SessionPreferences.Get(PrefSelectedArpeggioDisplayKey, "C major triad");
         private int _childLevel;
         private int _tempo = LoadUnifiedTempo();
-        private int _tolerance = Preferences.Get(PrefToleranceKey, DefaultTolerance);
+        private int _tolerance = SessionPreferences.Get(PrefToleranceKey, DefaultTolerance);
         public const int MinTempo = 30;
         public const int MaxTempo = 150;  //  2026.07.09 1658  reduce from 200 to 150 for better usability after testing play by phone.
         public const int DefaultTempo = 100;
@@ -433,11 +433,11 @@ namespace musicmate.Services
 
         private static int LoadUnifiedTempo()
         {
-            int music = Preferences.Get(PrefMusicBpmKey, DefaultTempo);
-            int playback = Preferences.Get(PrefPlaybackBpmKey, DefaultTempo);
+            int music = SessionPreferences.Get(PrefMusicBpmKey, DefaultTempo);
+            int playback = SessionPreferences.Get(PrefPlaybackBpmKey, DefaultTempo);
             int tempo = Math.Clamp(music, MinTempo, MaxTempo);
             if (playback != tempo)
-                Preferences.Set(PrefPlaybackBpmKey, tempo);
+                SessionPreferences.Set(PrefPlaybackBpmKey, tempo);
             return tempo;
         }
         public const int DefaultPcTunes = 20;
@@ -446,13 +446,13 @@ namespace musicmate.Services
         public const int DefaultPcArpeggios = 0;
         /// <summary>Scale used for key-signature notation on built-in practice tunes (all major).</summary>
         public const string PracticeTuneKeySignatureScale = "Major";
-        private int _pcTunes = Preferences.Get(PrefPcTunesKey, DefaultPcTunes);
-        private int _pcRandom = Preferences.Get(PrefPcRandomKey, DefaultPcRandom);
-        private int _pcScales = Preferences.Get(PrefPcScalesKey, DefaultPcScales);
-        private int _pcArpeggios = Preferences.Get(PrefPcArpeggiosKey, DefaultPcArpeggios);
-        private int _accidentalPercent = Preferences.Get(PrefAccidentalPercentKey, 0);
-        private int _correctThreshold = Preferences.Get(PrefCorrectThresholdKey, MasteryPreferenceDefaults.CorrectThreshold);
-        private double _pitchOffsetCents = Preferences.Get(PrefPitchOffsetCentsKey, DefaultPitchOffsetCents);
+        private int _pcTunes = SessionPreferences.Get(PrefPcTunesKey, DefaultPcTunes);
+        private int _pcRandom = SessionPreferences.Get(PrefPcRandomKey, DefaultPcRandom);
+        private int _pcScales = SessionPreferences.Get(PrefPcScalesKey, DefaultPcScales);
+        private int _pcArpeggios = SessionPreferences.Get(PrefPcArpeggiosKey, DefaultPcArpeggios);
+        private int _accidentalPercent = SessionPreferences.Get(PrefAccidentalPercentKey, 0);
+        private int _correctThreshold = SessionPreferences.Get(PrefCorrectThresholdKey, MasteryPreferenceDefaults.CorrectThreshold);
+        private double _pitchOffsetCents = SessionPreferences.Get(PrefPitchOffsetCentsKey, DefaultPitchOffsetCents);
         public const double DefaultPitchOffsetCents = 0.0;
         public double PitchOffsetCents
         {
@@ -462,7 +462,7 @@ namespace musicmate.Services
                 if (Math.Abs(_pitchOffsetCents - value) > 0.01)
                 {
                     _pitchOffsetCents = value;
-                    Preferences.Set(PrefPitchOffsetCentsKey, value);
+                    SessionPreferences.Set(PrefPitchOffsetCentsKey, value);
                     OnPropertyChanged(nameof(PitchOffsetCents));
                 }
             }
@@ -479,7 +479,7 @@ namespace musicmate.Services
                 var clamped = Math.Max(0, value);
                 if (_wrongDebounceMs == clamped) return;
                 _wrongDebounceMs = clamped;
-                Preferences.Set(PrefWrongDebounceMsKey, _wrongDebounceMs);
+                SessionPreferences.Set(PrefWrongDebounceMsKey, _wrongDebounceMs);
                 OnPropertyChanged(nameof(WrongDebounceMs));
             }
         }
@@ -490,7 +490,7 @@ namespace musicmate.Services
         private DateTime? _lastCorrectNoteUtc;
         private const string PrefWrongDebounceMsKey = "musicmate.WrongDebounceMs";
         public const int DefaultDebounceMs = 300;
-        private int _wrongDebounceMs = Preferences.Get(PrefWrongDebounceMsKey, DefaultDebounceMs);
+        private int _wrongDebounceMs = SessionPreferences.Get(PrefWrongDebounceMsKey, DefaultDebounceMs);
         // Track last wrong timestamp per note index to debounce rapid wrong increments
         private readonly Dictionary<int, DateTime> _lastWrongTimePerIndex = new();
         // Track last wrong timestamp per written name for session stats debouncing
@@ -498,8 +498,8 @@ namespace musicmate.Services
 
         private const string PrefMasteredMethodKey = "musicmate.MasteredMethod";
         private const string PrefStreakCritKey = "musicmate.StreakCrit";
-        private string _masteredMethod = Preferences.Get(PrefMasteredMethodKey, MasteryPreferenceDefaults.MasteredMethod);
-        private int _streakCrit = Preferences.Get(PrefStreakCritKey, MasteryPreferenceDefaults.StreakCrit);
+        private string _masteredMethod = SessionPreferences.Get(PrefMasteredMethodKey, MasteryPreferenceDefaults.MasteredMethod);
+        private int _streakCrit = SessionPreferences.Get(PrefStreakCritKey, MasteryPreferenceDefaults.StreakCrit);
 
         public string MasteredMethod
         {
@@ -509,7 +509,7 @@ namespace musicmate.Services
                 if (_masteredMethod != value)
                 {
                     _masteredMethod = value;
-                    Preferences.Set(PrefMasteredMethodKey, value);
+                    SessionPreferences.Set(PrefMasteredMethodKey, value);
                     OnPropertyChanged(nameof(MasteredMethod));
                     NotifyMasterySettingsChanged();
                 }
@@ -524,7 +524,7 @@ namespace musicmate.Services
                 if (_streakCrit != clamped)
                 {
                     _streakCrit = clamped;
-                    Preferences.Set(PrefStreakCritKey, clamped);
+                    SessionPreferences.Set(PrefStreakCritKey, clamped);
                     OnPropertyChanged(nameof(StreakCrit));
                     NotifyMasterySettingsChanged();
                 }
@@ -762,7 +762,7 @@ namespace musicmate.Services
             if (_lowestNote == normalized) return;
 
             _lowestNote = normalized;
-            Preferences.Set("musicmate.LowestNote", _lowestNote);
+            SessionPreferences.Set("musicmate.LowestNote", _lowestNote);
             if (fromUser && !_suppressNoteRangeCustomization)
                 NoteRangeCustomized = true;
             OnPropertyChanged(nameof(LowestNote));
@@ -777,7 +777,7 @@ namespace musicmate.Services
             if (_highestNote == normalized) return;
 
             _highestNote = normalized;
-            Preferences.Set("musicmate.HighestNote", _highestNote);
+            SessionPreferences.Set("musicmate.HighestNote", _highestNote);
             if (fromUser && !_suppressNoteRangeCustomization)
                 NoteRangeCustomized = true;
             OnPropertyChanged(nameof(HighestNote));
@@ -796,7 +796,7 @@ namespace musicmate.Services
                     return;
                 }
                 _correctThreshold = clamped;
-                Preferences.Set(PrefCorrectThresholdKey, _correctThreshold);
+                SessionPreferences.Set(PrefCorrectThresholdKey, _correctThreshold);
                 OnPropertyChanged(nameof(CorrectThreshold));
                 NotifyMasterySettingsChanged();
             }
@@ -890,7 +890,7 @@ namespace musicmate.Services
 
             int level = ChildLevel;
             if (level <= 0)
-                level = Preferences.Get("ChildPractice.Level", 0);
+                level = SessionPreferences.Get("ChildPractice.Level", 0);
 
             if (level > 0)
                 DifficultyLevelMapper.ApplyLevelDerivedSettings(level, this);
@@ -961,7 +961,7 @@ namespace musicmate.Services
             return result.ToArray();
         }
         private const string PrefNoteRangeCustomizedKey = "musicmate.NoteRangeCustomized";
-        private bool _noteRangeCustomized = Preferences.Get(PrefNoteRangeCustomizedKey, false);
+        private bool _noteRangeCustomized = SessionPreferences.Get(PrefNoteRangeCustomizedKey, false);
         private bool _suppressNoteRangeCustomization;
 
         /// <summary>When true, <see cref="LowestNote"/> / <see cref="HighestNote"/> were set manually and are not fully auto-managed.</summary>
@@ -972,7 +972,7 @@ namespace musicmate.Services
             {
                 if (_noteRangeCustomized == value) return;
                 _noteRangeCustomized = value;
-                Preferences.Set(PrefNoteRangeCustomizedKey, value);
+                SessionPreferences.Set(PrefNoteRangeCustomizedKey, value);
                 OnPropertyChanged(nameof(NoteRangeCustomized));
             }
         }
@@ -980,9 +980,9 @@ namespace musicmate.Services
         public void ClearNoteRangeCustomization() => NoteRangeCustomized = false;
 
         private const string PrefMinCorrectCountKey = "musicmate.MinCorrectCount";
-        private int _minCorrectCount = Preferences.Get(PrefMinCorrectCountKey, MasteryPreferenceDefaults.MinCorrectCount);
+        private int _minCorrectCount = SessionPreferences.Get(PrefMinCorrectCountKey, MasteryPreferenceDefaults.MinCorrectCount);
         private const string PrefOmitMsAvgThresholdKey = "musicmate.OmitMsAvgThreshold";
-        private int _omitMsAvgThreshold = Preferences.Get(PrefOmitMsAvgThresholdKey, MasteryPreferenceDefaults.OmitMsAvgThreshold);
+        private int _omitMsAvgThreshold = SessionPreferences.Get(PrefOmitMsAvgThresholdKey, MasteryPreferenceDefaults.OmitMsAvgThreshold);
         public int OmitMsAvgThreshold
         {
             get => _omitMsAvgThreshold;
@@ -992,7 +992,7 @@ namespace musicmate.Services
                 if (_omitMsAvgThreshold != clamped)
                 {
                     _omitMsAvgThreshold = clamped;
-                    Preferences.Set(PrefOmitMsAvgThresholdKey, clamped);
+                    SessionPreferences.Set(PrefOmitMsAvgThresholdKey, clamped);
                     OnPropertyChanged(nameof(OmitMsAvgThreshold));
                     NotifyMasterySettingsChanged();
                 }
@@ -1007,7 +1007,7 @@ namespace musicmate.Services
                 if (_minCorrectCount != clamped)
                 {
                     _minCorrectCount = clamped;
-                    Preferences.Set(PrefMinCorrectCountKey, clamped);
+                    SessionPreferences.Set(PrefMinCorrectCountKey, clamped);
                     OnPropertyChanged(nameof(MinCorrectCount));
                     NotifyMasterySettingsChanged();
                 }
@@ -1047,7 +1047,7 @@ namespace musicmate.Services
                 var normalized = NormalizeInstrumentOption(value);
                 if (_instrument == normalized) return;
                 _instrument = normalized;
-                Preferences.Set(PrefInstrumentKey, _instrument);
+                SessionPreferences.Set(PrefInstrumentKey, _instrument);
                 ApplyAutomaticInstrumentRange(fullReset: true);
                 OnPropertyChanged(nameof(Instrument));
                 OnPropertyChanged(nameof(InstrumentDisplayName));
@@ -1099,7 +1099,7 @@ namespace musicmate.Services
             {
                 if (_key == value) return;
                 _key = value;
-                Preferences.Set(PrefKeySignatureKey, _key);
+                SessionPreferences.Set(PrefKeySignatureKey, _key);
                 OnPropertyChanged(nameof(Key));
                 OnPropertyChanged(nameof(EffectiveScaleDisplay));
             }
@@ -1111,7 +1111,7 @@ namespace musicmate.Services
             {
                 if (_selectedScale == value || string.IsNullOrWhiteSpace(value)) return;
                 _selectedScale = value;
-                Preferences.Set(PrefSelectedScaleKey, _selectedScale);
+                SessionPreferences.Set(PrefSelectedScaleKey, _selectedScale);
                 OnPropertyChanged(nameof(SelectedScale));
                 if (ScaleSelectionMode == ScaleSelectionMode.Named && !IsRandomMode)
                     SetEffectiveScale(_selectedScale);
@@ -1494,7 +1494,7 @@ namespace musicmate.Services
         {
             if (ChildLevel > 0)
                 return ChildLevel;
-            return Preferences.Get("ChildPractice.Level", 0);
+            return SessionPreferences.Get("ChildPractice.Level", 0);
         }
 
         private void LogScaleLevel(int level, string activeScale, bool weightedRandom, string? resetReason)
@@ -1552,8 +1552,8 @@ namespace musicmate.Services
                 return;
 
             _tempo = clamped;
-            Preferences.Set(PrefMusicBpmKey, _tempo);
-            Preferences.Set(PrefPlaybackBpmKey, _tempo);
+            SessionPreferences.Set(PrefMusicBpmKey, _tempo);
+            SessionPreferences.Set(PrefPlaybackBpmKey, _tempo);
             OnPropertyChanged(nameof(Tempo));
             OnPropertyChanged(nameof(MusicBpm));
             OnPropertyChanged(nameof(PlaybackBpm));
@@ -1595,10 +1595,10 @@ namespace musicmate.Services
             _pcRandom = random;
             _pcScales = scales;
             _pcArpeggios = arpeggios;
-            Preferences.Set(PrefPcTunesKey, _pcTunes);
-            Preferences.Set(PrefPcRandomKey, _pcRandom);
-            Preferences.Set(PrefPcScalesKey, _pcScales);
-            Preferences.Set(PrefPcArpeggiosKey, _pcArpeggios);
+            SessionPreferences.Set(PrefPcTunesKey, _pcTunes);
+            SessionPreferences.Set(PrefPcRandomKey, _pcRandom);
+            SessionPreferences.Set(PrefPcScalesKey, _pcScales);
+            SessionPreferences.Set(PrefPcArpeggiosKey, _pcArpeggios);
             OnPropertyChanged(nameof(PcTunes));
             OnPropertyChanged(nameof(PcRandom));
             OnPropertyChanged(nameof(PcScales));
@@ -1666,7 +1666,7 @@ namespace musicmate.Services
             if (field == clamped)
                 return;
             field = clamped;
-            Preferences.Set(prefKey, field);
+            SessionPreferences.Set(prefKey, field);
             OnPropertyChanged(propertyName);
         }
         public int Tolerance
@@ -1680,7 +1680,7 @@ namespace musicmate.Services
                     return;
                 }
                 _tolerance = clamped;
-                Preferences.Set(PrefToleranceKey, _tolerance);
+                SessionPreferences.Set(PrefToleranceKey, _tolerance);
                 OnPropertyChanged(nameof(Tolerance));
             }
         }
@@ -1694,7 +1694,7 @@ namespace musicmate.Services
                     return;
                 }
                 _autoStart = value;
-                Preferences.Set(PrefAutoStartKey, value);
+                SessionPreferences.Set(PrefAutoStartKey, value);
                 OnPropertyChanged(nameof(AutoStart));
             }
         }
@@ -1708,7 +1708,7 @@ namespace musicmate.Services
         //            return;
         //        }
         //        _showConductorCues = value;
-        //        Preferences.Set(PrefShowConductorCuesKey, value);
+        //        SessionPreferences.Set(PrefShowConductorCuesKey, value);
         //        OnPropertyChanged(nameof(ShowConductorCues));
         //    }
         //}
@@ -1722,7 +1722,7 @@ namespace musicmate.Services
                     return;
                 }
                 _autoRepeat = value;
-                Preferences.Set(PrefAutoRepeatKey, value);
+                SessionPreferences.Set(PrefAutoRepeatKey, value);
                 OnPropertyChanged(nameof(AutoRepeat));
             }
         }
@@ -1736,7 +1736,7 @@ namespace musicmate.Services
                     return;
                 }
                 _repeatSameTune = value;
-                Preferences.Set(PrefRepeatSameTuneKey, value);
+                SessionPreferences.Set(PrefRepeatSameTuneKey, value);
                 OnPropertyChanged(nameof(RepeatSameTune));
             }
         }
@@ -1853,7 +1853,7 @@ namespace musicmate.Services
                 if (_scaleSelectionMode == value)
                     return;
                 _scaleSelectionMode = value;
-                Preferences.Set(PrefScaleSelectionModeKey, value.ToString());
+                SessionPreferences.Set(PrefScaleSelectionModeKey, value.ToString());
                 OnPropertyChanged(nameof(ScaleSelectionMode));
                 OnPropertyChanged(nameof(EffectiveScaleDisplay));
             }
@@ -1894,7 +1894,7 @@ namespace musicmate.Services
                 {
                     var leavingPracticeTune = _tune == "Practice Tune" && value != "Practice Tune";
                     _tune = value;
-                    Preferences.Set(PrefTuneKey, value);
+                    SessionPreferences.Set(PrefTuneKey, value);
                     if (leavingPracticeTune && _keyBeforePracticeTune != null)
                     {
                         Key = _keyBeforePracticeTune;
@@ -1914,7 +1914,7 @@ namespace musicmate.Services
             {
                 if (string.IsNullOrWhiteSpace(value) || _selectedArpeggioId == value) return;
                 _selectedArpeggioId = value;
-                Preferences.Set(PrefSelectedArpeggioIdKey, _selectedArpeggioId);
+                SessionPreferences.Set(PrefSelectedArpeggioIdKey, _selectedArpeggioId);
                 OnPropertyChanged(nameof(SelectedArpeggioId));
             }
         }
@@ -1925,7 +1925,7 @@ namespace musicmate.Services
             {
                 if (string.IsNullOrWhiteSpace(value) || _selectedArpeggioRoot == value) return;
                 _selectedArpeggioRoot = value;
-                Preferences.Set(PrefSelectedArpeggioRootKey, _selectedArpeggioRoot);
+                SessionPreferences.Set(PrefSelectedArpeggioRootKey, _selectedArpeggioRoot);
                 OnPropertyChanged(nameof(SelectedArpeggioRoot));
             }
         }
@@ -1936,7 +1936,7 @@ namespace musicmate.Services
             {
                 if (string.IsNullOrWhiteSpace(value) || _selectedArpeggioDisplay == value) return;
                 _selectedArpeggioDisplay = value;
-                Preferences.Set(PrefSelectedArpeggioDisplayKey, _selectedArpeggioDisplay);
+                SessionPreferences.Set(PrefSelectedArpeggioDisplayKey, _selectedArpeggioDisplay);
                 OnPropertyChanged(nameof(SelectedArpeggioDisplay));
             }
         }
@@ -2006,7 +2006,7 @@ namespace musicmate.Services
             _timingAccuracyPercent = null;
             _detectedBpm = null;
             _lastCorrectNoteUtc = null;
-            OmitMsAvgThreshold = Preferences.Get(PrefOmitMsAvgThresholdKey, MasteryPreferenceDefaults.OmitMsAvgThreshold);
+            OmitMsAvgThreshold = SessionPreferences.Get(PrefOmitMsAvgThresholdKey, MasteryPreferenceDefaults.OmitMsAvgThreshold);
             _lastWrongTimePerIndex.Clear();
             _lastRandomWrongUtc.Clear();
             _sessionNoteStats.Clear();
@@ -2014,7 +2014,7 @@ namespace musicmate.Services
             _sessionStreaks.Clear();
             _tunerPrevWrittenMidi = null;// reset direction tracking for next session
             // ensure persisted value is reloaded
-            _wrongDebounceMs = Preferences.Get(PrefWrongDebounceMsKey, DefaultDebounceMs);
+            _wrongDebounceMs = SessionPreferences.Get(PrefWrongDebounceMsKey, DefaultDebounceMs);
             _sessionStopwatch.Reset();
         }
         /// <summary>
@@ -3716,7 +3716,7 @@ namespace musicmate.Services
                 if (_appBackgroundColor != value)
                 {
                     _appBackgroundColor = value;
-                    Preferences.Set("musicmate.AppBackgroundColor", value.ToArgbHex());
+                    SessionPreferences.Set("musicmate.AppBackgroundColor", value.ToArgbHex());
                     OnPropertyChanged(nameof(AppBackgroundColor));
                 }
             }
@@ -3730,14 +3730,14 @@ namespace musicmate.Services
                 if (_panelBackgroundColor != value)
                 {
                     _panelBackgroundColor = value;
-                    Preferences.Set("musicmate.PanelBackgroundColor", value.ToArgbHex());
+                    SessionPreferences.Set("musicmate.PanelBackgroundColor", value.ToArgbHex());
                     OnPropertyChanged(nameof(PanelBackgroundColor));
                 }
             }
         }
         private static Color GetColorPreference(string key, Color fallback)
         {
-            var hex = Preferences.Get(key, fallback.ToArgbHex());
+            var hex = SessionPreferences.Get(key, fallback.ToArgbHex());
             try
             {
                 return Color.FromArgb(hex);
@@ -3772,7 +3772,7 @@ namespace musicmate.Services
             OnPropertyChanged(nameof(CurrentTune));
         }
         private const string PrefIsRandomModeKey = "musicmate.IsRandomMode";
-        private bool _isRandomMode = Preferences.Get("musicmate.IsRandomMode", false);
+        private bool _isRandomMode = SessionPreferences.Get("musicmate.IsRandomMode", false);
         /// <summary>
         /// When true, note generation draws a random sequence from the current
         /// key/scale pool instead of playing the scale or practice tune in order.
@@ -3785,7 +3785,7 @@ namespace musicmate.Services
             {
                 if (_isRandomMode == value) return;
                 _isRandomMode = value;
-                Preferences.Set(PrefIsRandomModeKey, value);
+                SessionPreferences.Set(PrefIsRandomModeKey, value);
                 OnPropertyChanged(nameof(IsRandomMode));
                 OnPropertyChanged(nameof(EffectiveScaleDisplay));
                 if (!value)

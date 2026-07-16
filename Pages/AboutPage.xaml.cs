@@ -64,11 +64,20 @@ namespace musicmate.Pages
 
         protected override void OnAppearing()
         {
-            _orientationService?.AllowAutorotate();
             base.OnAppearing();
+            _orientationService?.ForceLandscape();
+
+            // Font size lives on Settings → Display; reload when returning here.
+            if (BindingContext is AboutPageViewModel vm)
+                vm.ReloadFontSizeFromPreferences();
 
             _ = LoadAboutHtmlAsync();
             _ = CheckPremiumStatusAsync();
+        }
+        protected override void OnDisappearing()
+        {
+            _orientationService?.AllowAutorotate();
+            base.OnDisappearing();
         }
 
         private static async Task CheckPremiumStatusAsync()
@@ -483,11 +492,6 @@ namespace musicmate.Pages
             {
                 // ignore errors - best-effort
             }
-        }
-
-        private async void OnNavigatePracticeClicked(object sender, EventArgs e)
-        {
-            await Shell.Current.GoToAsync("//MusicPage");
         }
 
         /// <summary>

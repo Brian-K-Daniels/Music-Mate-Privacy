@@ -94,6 +94,23 @@ namespace musicmate.ViewModels
             }
         }
 
+        /// <summary>
+        /// Preference key shared with Settings → Display ("Font used in About page").
+        /// </summary>
+        public const string FontSizePreferenceKey = AboutFontSizeKey;
+
+        /// <summary>Re-reads the About font size after it may have been changed in Settings.</summary>
+        public void ReloadFontSizeFromPreferences()
+        {
+            var defaultSize = FontSizeOptions[3];
+            var saved = Preferences.Get(AboutFontSizeKey, defaultSize);
+            var next = FontSizeOptions.Contains(saved) ? saved : defaultSize;
+            if (_selectedFontSize == next)
+                return;
+            _selectedFontSize = next;
+            OnPropertyChanged(nameof(SelectedFontSize));
+        }
+
         private bool _isPremium;
         public bool IsPremium
         {

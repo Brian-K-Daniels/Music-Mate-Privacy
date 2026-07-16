@@ -76,9 +76,25 @@ namespace musicmate.Services
             => ChildLevelProgression.GetMainFocus(level);
 
         /// <summary>
+        /// Applies all level-dependent session settings for a child-level change that should
+        /// keep the current key/scale when still allowed (e.g. Music page Level +/-).
+        /// Sets <see cref="NoteSessionService.ChildLevel"/> then runs the full apply path.
+        /// </summary>
+        public static PracticeDifficultySettings ApplyLevelSettings(
+            int level,
+            NoteSessionService session,
+            bool preserveUserPracticeSettings = false)
+        {
+            level = Math.Clamp(level, 1, 100);
+            session.ChildLevel = level;
+            return ApplyLevelChangeToSession(level, session, preserveUserPracticeSettings);
+        }
+
+        /// <summary>
         /// Applies a programmatic child-level change: validates key/scale against the new
         /// level's pools (keeping current values when still allowed), then applies level settings.
-        /// Does not randomly re-pick key or scale.
+        /// Does not randomly re-pick key or scale. Prefer <see cref="ApplyLevelSettings"/> when
+        /// also assigning <see cref="NoteSessionService.ChildLevel"/>.
         /// </summary>
         public static PracticeDifficultySettings ApplyLevelChangeToSession(
             int level,
@@ -171,7 +187,8 @@ namespace musicmate.Services
 
             session.MaxMelodicIntervalSemitones = settings.MaxMelodicIntervalSemitones;
             session.ChildMeasureBatchSize = settings.MeasureBatchSize;
-            session.ApplyAutomaticInstrumentRange();
+            // Reset to the level's automatic range unless the user customized note limits.
+            session.ApplyAutomaticInstrumentRange(fullReset: !session.NoteRangeCustomized);
 
             if (applyPracticeSettings)
             {

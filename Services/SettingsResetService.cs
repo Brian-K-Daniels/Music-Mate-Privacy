@@ -1,71 +1,102 @@
 #nullable enable
-using musicmate.Diagnostics;
+using System.ComponentModel;
 using System.Text.Json;
 using Microsoft.Maui.Graphics;
-using Microsoft.Maui.Storage;
+using musicmate.Diagnostics;
 using musicmate.ViewModels;
 
 namespace musicmate.Services
 {
     /// <summary>
     /// Factory reset and user-defined custom default settings.
+    /// Exposes <see cref="AreFactoryDefaultsApplied"/> by comparing live Settings / Advanced
+    /// values to the defined factory defaults (not merely an "active defaults" flag).
     /// </summary>
-    public sealed class SettingsResetService
+    public sealed class SettingsResetService : INotifyPropertyChanged
     {
         private const string CustomDefaultsJsonKey = "musicmate.CustomDefaults.Json";
         private const string CustomDefaultsExistsKey = "musicmate.CustomDefaults.Exists";
         private const string ActiveDefaultsKey = "musicmate.ActiveDefaults";
+        private const string CollectNoteStatsKey = "CollectNoteStats";
+        private const string CollectSessionStatsKey = "CollectSessionStats";
+        private const string MaxSessionDbSizeMbKey = "MaxSessionDbSizeMb";
+        private const string MaxAttemptsPerNoteKey = "MaxAttemptsPerNote";
+        private const string RepeatDelaySecondsKey = "RepeatDelaySeconds";
+        private const string OmitMsAvgKey = "musicmate.OmitMsAvgThreshold";
 
         private readonly NoteSessionService _session;
         private readonly ThemeService _theme;
+        private bool _areFactoryDefaultsApplied;
+        private bool _suppressFactoryEvaluation;
+        private bool _isEvaluating;
 
         public SettingsResetService(NoteSessionService session, ThemeService theme)
         {
             _session = session;
             _theme = theme;
+
+            _session.PropertyChanged += (_, _) => EvaluateAreFactoryDefaultsApplied();
+            _theme.PropertyChanged += (_, _) => EvaluateAreFactoryDefaultsApplied();
+            _theme.ThemeColorsChanged += (_, _) => EvaluateAreFactoryDefaultsApplied();
+
+            // Initial evaluation after construction (settings already loaded into session/theme).
+            EvaluateAreFactoryDefaultsApplied();
         }
 
-        public bool HasCustomDefaults => Preferences.Get(CustomDefaultsExistsKey, false);
+        public event PropertyChangedEventHandler? PropertyChanged;
 
-        public ActiveDefaultsSet ActiveDefaults => Preferences.Get(ActiveDefaultsKey, ActiveDefaultsSet.Factory.ToString()) switch
+        public bool HasCustomDefaults => SessionPreferences.Get(CustomDefaultsExistsKey, false);
+
+        public ActiveDefaultsSet ActiveDefaults => SessionPreferences.Get(ActiveDefaultsKey, ActiveDefaultsSet.Factory.ToString()) switch
         {
             nameof(ActiveDefaultsSet.Custom) => ActiveDefaultsSet.Custom,
             _ => ActiveDefaultsSet.Factory,
         };
 
-        public void SetActiveDefaults(ActiveDefaultsSet set)
-            => Preferences.Set(ActiveDefaultsKey, set.ToString());
+        /// <summary>
+        /// True when every Settings / Advanced setting matches its factory default value.
+        /// </summary>
+        public bool AreFactoryDefaultsApplied
+        {
+            get => _areFactoryDefaultsApplied;
+            private set
+            {
+                if (_areFactoryDefaultsApplied == value)
+                    return;
+                _areFactoryDefaultsApplied = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AreFactoryDefaultsApplied)));
+            }
+        }
 
-        /// <summary>Resets all settings to factory defaults (same behavior as the former Settings page button).</summary>
+        public void SetActiveDefaults(ActiveDefaultsSet set)
+            => SessionPreferences.Set(ActiveDefaultsKey, set.ToString());
+
+        /// <summary>
+        /// Call after preference-only Settings / Advanced changes that do not raise
+        /// <see cref="NoteSessionService.PropertyChanged"/>.
+        /// </summary>
+        public void NotifySettingsChanged()
+            => EvaluateAreFactoryDefaultsApplied();
+
+        /// <summary>Resets all Settings / Advanced values to factory defaults.</summary>
         public void ResetToFactoryDefaults()
         {
             DebugLog.WriteLine("[ResetOptionsTest] ResetToFactoryDefaults called.");
-            _session.Tempo = SettingsPageViewModel.DefaultTempo;
-            _session.AccidentalPercent = SettingsPageViewModel.DefaultAccidentalPct;
-            _session.CorrectThreshold = SettingsPageViewModel.DefaultCorrectThreshold;
-            _session.MinCorrectCount = SettingsPageViewModel.DefaultMinCorrectCount;
-            Preferences.Set("musicmate.OmitMsAvgThreshold", SettingsPageViewModel.DefaultOmitMsAvg);
-            _session.OmitMsAvgThreshold = SettingsPageViewModel.DefaultOmitMsAvg;
-            _session.AutoStart = SettingsPageViewModel.DefaultAutoStart;
-            _session.MasteredMethod = "% Correct";
-            _session.StreakCrit = 3;
-            Preferences.Default.Set("CollectNoteStats", SettingsPageViewModel.DefaultCollectNote);
-            Preferences.Default.Set("CollectSessionStats", SettingsPageViewModel.DefaultCollectSession);
-            Preferences.Default.Set("MaxSessionDbSizeMb", SettingsPageViewModel.DefaultMaxSessionDbMb);
+            _suppressFactoryEvaluation = true;
+            try
+            {
+                ApplyFactoryDefaultsToLiveSettings();
+                SetActiveDefaults(ActiveDefaultsSet.Factory);
+            }
+            finally
+            {
+                _suppressFactoryEvaluation = false;
+            }
 
-            _session.SelectedScale = SettingsPageViewModel.DefaultTune;  // "Major" — correct for scale
-            _session.Instrument = SettingsPageViewModel.DefaultInstrument;
-            _session.Key = SettingsPageViewModel.DefaultKey;
-            // [ResetOptionsTest] Tune is a mode tag ("Selected Scale"), not a scale name.
-            _session.Tune = "Selected Scale";
-            DebugLog.WriteLine($"[ResetOptionsTest] After factory reset: Tune={_session.Tune} Scale={_session.SelectedScale} Key={_session.Key} AccPct={_session.AccidentalPercent}");
-            _session.ApplyAutomaticInstrumentRange(fullReset: true);
-            _session.ResetAdvancedDetectionDefaults();
-            _session.ResetPracticeCompositionDefaults();
-
-            LevelUpService.ResetCriteriaToDefaults();
-            _theme.ResetAllToFactoryDefaults();
-            SetActiveDefaults(ActiveDefaultsSet.Factory);
+            EvaluateAreFactoryDefaultsApplied();
+            DebugLog.WriteLine(
+                $"[ResetOptionsTest] After factory reset: Tune={_session.Tune} Scale={_session.SelectedScale} " +
+                $"Key={_session.Key} AccPct={_session.AccidentalPercent} AreFactory={AreFactoryDefaultsApplied}");
         }
 
         /// <summary>Saves the currently active settings as the user's custom defaults.</summary>
@@ -74,8 +105,8 @@ namespace musicmate.Services
             DebugLog.WriteLine($"[ResetOptionsTest] SaveCustomDefaults: Tune={_session.Tune} Scale={_session.SelectedScale} Key={_session.Key}");
             var snapshot = CaptureCurrentSnapshot();
             var json = JsonSerializer.Serialize(snapshot);
-            Preferences.Set(CustomDefaultsJsonKey, json);
-            Preferences.Set(CustomDefaultsExistsKey, true);
+            SessionPreferences.Set(CustomDefaultsJsonKey, json);
+            SessionPreferences.Set(CustomDefaultsExistsKey, true);
         }
 
         /// <summary>Restores settings from the saved custom defaults.</summary>
@@ -85,7 +116,7 @@ namespace musicmate.Services
             if (!HasCustomDefaults)
                 return;
 
-            var json = Preferences.Get(CustomDefaultsJsonKey, string.Empty);
+            var json = SessionPreferences.Get(CustomDefaultsJsonKey, string.Empty);
             if (string.IsNullOrWhiteSpace(json))
                 return;
 
@@ -93,15 +124,96 @@ namespace musicmate.Services
             if (snapshot == null)
                 return;
 
-            ApplySnapshot(snapshot);
-            SetActiveDefaults(ActiveDefaultsSet.Custom);
+            _suppressFactoryEvaluation = true;
+            try
+            {
+                ApplySnapshot(snapshot);
+                SetActiveDefaults(ActiveDefaultsSet.Custom);
+            }
+            finally
+            {
+                _suppressFactoryEvaluation = false;
+            }
+
+            EvaluateAreFactoryDefaultsApplied();
+        }
+
+        public void EvaluateAreFactoryDefaultsApplied()
+        {
+            if (_suppressFactoryEvaluation || _isEvaluating)
+                return;
+
+            _isEvaluating = true;
+            try
+            {
+                AreFactoryDefaultsApplied = MatchesFactoryDefaults(CaptureCurrentSnapshot());
+            }
+            finally
+            {
+                _isEvaluating = false;
+            }
+        }
+
+        /// <summary>Test / diagnostics: build the factory snapshot for the current instrument level.</summary>
+        internal AppSettingsSnapshot CreateFactoryDefaultsSnapshot()
+            => BuildFactoryDefaultsSnapshot();
+
+        /// <summary>Test / diagnostics: capture live settings.</summary>
+        internal AppSettingsSnapshot CaptureCurrentSnapshotForTests()
+            => CaptureCurrentSnapshot();
+
+        private void ApplyFactoryDefaultsToLiveSettings()
+        {
+            _session.Tempo = SettingsPageViewModel.DefaultTempo;
+            _session.AccidentalPercent = SettingsPageViewModel.DefaultAccidentalPct;
+            _session.CorrectThreshold = SettingsPageViewModel.DefaultCorrectThreshold;
+            _session.MinCorrectCount = SettingsPageViewModel.DefaultMinCorrectCount;
+            SessionPreferences.Set(OmitMsAvgKey, SettingsPageViewModel.DefaultOmitMsAvg);
+            _session.OmitMsAvgThreshold = SettingsPageViewModel.DefaultOmitMsAvg;
+            _session.AutoStart = SettingsPageViewModel.DefaultAutoStart;
+            _session.MasteredMethod = MasteryPreferenceDefaults.MasteredMethod;
+            _session.StreakCrit = MasteryPreferenceDefaults.StreakCrit;
+            _session.ShowConductorCues = false;
+            _session.NoteNameDisplay = "Current only";
+            _session.MeterTimeSignature = "4/4";
+            _session.SmallestRhythmNote = "Quarter";
+            _session.RhythmMode = "Simple";
+            _session.SyncopationSetting = "None";
+
+            SessionPreferences.Set(CollectNoteStatsKey, SettingsPageViewModel.DefaultCollectNote);
+            SessionPreferences.Set(CollectSessionStatsKey, SettingsPageViewModel.DefaultCollectSession);
+            SessionPreferences.Set(MaxSessionDbSizeMbKey, SettingsPageViewModel.DefaultMaxSessionDbMb);
+            SessionPreferences.Set(MaxAttemptsPerNoteKey, 100);
+            SessionPreferences.Set(AboutPageViewModel.FontSizePreferenceKey, 12.0);
+            SessionPreferences.Set(RepeatDelaySecondsKey, 2.0);
+
+            _session.SelectedScale = SettingsPageViewModel.DefaultTune;
+            _session.Instrument = SettingsPageViewModel.DefaultInstrument;
+            _session.Key = SettingsPageViewModel.DefaultKey;
+            _session.Tune = "Selected Scale";
+            _session.ApplyAutomaticInstrumentRange(fullReset: true);
+            _session.ResetAdvancedDetectionDefaults();
+            _session.WrongDebounceMs = NoteSessionService.DefaultDebounceMs;
+            _session.ResetPracticeCompositionDefaults();
+            _session.AudioBufferSize = 1024;
+            _session.PitchWindowSize = 4096;
+            _session.MinFrequency = 60;
+            _session.MaxFrequency = 8000;
+            _session.SmoothingWindowSize = 3;
+            _session.PitchConfidenceThreshold = 0.5;
+
+            LevelUpService.ResetCriteriaToDefaults();
+            _theme.ResetAllToFactoryDefaults();
         }
 
         private AppSettingsSnapshot CaptureCurrentSnapshot()
         {
+            var (autoLow, autoHigh) = ResolveFactoryNoteRange();
+            _ = autoLow;
+            _ = autoHigh;
+
             return new AppSettingsSnapshot
             {
-                StaffPanelColorHex = _theme.PanelBackgroundColor.ToHex(),
                 SelectedScale = _session.SelectedScale,
                 LowestNote = _session.LowestNote,
                 HighestNote = _session.HighestNote,
@@ -111,7 +223,7 @@ namespace musicmate.Services
                 MusicBpm = _session.Tempo,
                 CorrectThreshold = _session.CorrectThreshold,
                 MinCorrectCount = _session.MinCorrectCount,
-                OmitMsAvgThreshold = Preferences.Get("musicmate.OmitMsAvgThreshold", _session.OmitMsAvgThreshold),
+                OmitMsAvgThreshold = SessionPreferences.Get(OmitMsAvgKey, _session.OmitMsAvgThreshold),
                 AutoStart = _session.AutoStart,
                 MasteredMethod = _session.MasteredMethod,
                 StreakCrit = _session.StreakCrit,
@@ -120,11 +232,13 @@ namespace musicmate.Services
                 RhythmMode = _session.RhythmMode,
                 SyncopationSetting = _session.SyncopationSetting,
                 NoteNameDisplay = _session.NoteNameDisplay,
-                CollectNoteStats = Preferences.Default.Get("CollectNoteStats", true),
-                CollectSessionStats = Preferences.Default.Get("CollectSessionStats", true),
-                MaxSessionDbSizeMb = Preferences.Default.Get("MaxSessionDbSizeMb", 50),
-                MaxAttemptsPerNote = Preferences.Default.Get("MaxAttemptsPerNote", 100),
-                Instrument = _session.Instrument,
+                ShowConductorCues = _session.ShowConductorCues,
+                AboutFontSize = SessionPreferences.Get(AboutPageViewModel.FontSizePreferenceKey, 12.0),
+                CollectNoteStats = SessionPreferences.Get(CollectNoteStatsKey, true),
+                CollectSessionStats = SessionPreferences.Get(CollectSessionStatsKey, true),
+                MaxSessionDbSizeMb = SessionPreferences.Get(MaxSessionDbSizeMbKey, 50),
+                MaxAttemptsPerNote = SessionPreferences.Get(MaxAttemptsPerNoteKey, 100),
+                Instrument = NoteSessionService.NormalizeInstrumentOption(_session.Instrument),
                 Key = _session.Key,
                 Tune = _session.Tune ?? "Selected Scale",
                 Tolerance = _session.Tolerance,
@@ -142,19 +256,119 @@ namespace musicmate.Services
                 MaxFrequency = _session.MaxFrequency,
                 SmoothingWindowSize = _session.SmoothingWindowSize,
                 PitchConfidenceThreshold = _session.PitchConfidenceThreshold,
-                RepeatDelaySeconds = Preferences.Default.Get("RepeatDelaySeconds", 2.0),
-                LevelUpSessionCount = Preferences.Default.Get("LevelUp.SessionCount", LevelUpService.DefaultSessionCount),
-                LevelUpMinPitchPct = Preferences.Default.Get("LevelUp.MinPitchPct", LevelUpService.DefaultMinPitchAccuracyPercent),
-                LevelUpMinTimingPct = Preferences.Default.Get("LevelUp.MinTimingPct", LevelUpService.DefaultMinTimingAccuracyPercent),
-                LevelUpMinOverallPct = Preferences.Default.Get("LevelUp.MinOverallPct", LevelUpService.DefaultMinOverallAccuracyPercent),
-                LevelUpMinNotes = Preferences.Default.Get("LevelUp.MinNotes", LevelUpService.DefaultMinNotesPerSession),
+                RepeatDelaySeconds = SessionPreferences.Get(RepeatDelaySecondsKey, 2.0),
+                LevelUpSessionCount = SessionPreferences.Get("LevelUp.SessionCount", LevelUpService.DefaultSessionCount),
+                LevelUpMinPitchPct = SessionPreferences.Get("LevelUp.MinPitchPct", LevelUpService.DefaultMinPitchAccuracyPercent),
+                LevelUpMinTimingPct = SessionPreferences.Get("LevelUp.MinTimingPct", LevelUpService.DefaultMinTimingAccuracyPercent),
+                LevelUpMinOverallPct = SessionPreferences.Get("LevelUp.MinOverallPct", LevelUpService.DefaultMinOverallAccuracyPercent),
+                LevelUpMinNotes = SessionPreferences.Get("LevelUp.MinNotes", LevelUpService.DefaultMinNotesPerSession),
+                ThemeColorsHex = CaptureThemeColors(),
             };
         }
 
+        private AppSettingsSnapshot BuildFactoryDefaultsSnapshot()
+        {
+            var (low, high) = ResolveFactoryNoteRange();
+            return new AppSettingsSnapshot
+            {
+                SelectedScale = SettingsPageViewModel.DefaultTune,
+                LowestNote = low,
+                HighestNote = high,
+                AccidentalPercent = SettingsPageViewModel.DefaultAccidentalPct,
+                Tempo = SettingsPageViewModel.DefaultTempo,
+                PlaybackBpm = SettingsPageViewModel.DefaultTempo,
+                MusicBpm = SettingsPageViewModel.DefaultTempo,
+                CorrectThreshold = SettingsPageViewModel.DefaultCorrectThreshold,
+                MinCorrectCount = SettingsPageViewModel.DefaultMinCorrectCount,
+                OmitMsAvgThreshold = SettingsPageViewModel.DefaultOmitMsAvg,
+                AutoStart = SettingsPageViewModel.DefaultAutoStart,
+                MasteredMethod = MasteryPreferenceDefaults.MasteredMethod,
+                StreakCrit = MasteryPreferenceDefaults.StreakCrit,
+                MeterTimeSignature = "4/4",
+                SmallestRhythmNote = "Quarter",
+                RhythmMode = "Simple",
+                SyncopationSetting = "None",
+                NoteNameDisplay = "Current only",
+                ShowConductorCues = false,
+                AboutFontSize = 12.0,
+                CollectNoteStats = SettingsPageViewModel.DefaultCollectNote,
+                CollectSessionStats = SettingsPageViewModel.DefaultCollectSession,
+                MaxSessionDbSizeMb = SettingsPageViewModel.DefaultMaxSessionDbMb,
+                MaxAttemptsPerNote = 100,
+                Instrument = NoteSessionService.NormalizeInstrumentOption(SettingsPageViewModel.DefaultInstrument),
+                Key = SettingsPageViewModel.DefaultKey,
+                Tune = "Selected Scale",
+                Tolerance = NoteSessionService.DefaultTolerance,
+                PitchOffsetCents = NoteSessionService.DefaultPitchOffsetCents,
+                RmsThreshold = NoteSessionService.DefaultRmsThreshold,
+                CooldownMs = NoteSessionService.DefaultCooldownMs,
+                WrongDebounceMs = NoteSessionService.DefaultDebounceMs,
+                PcTunes = NoteSessionService.DefaultPcTunes,
+                PcRandom = NoteSessionService.DefaultPcRandom,
+                PcScales = NoteSessionService.DefaultPcScales,
+                PcArpeggios = NoteSessionService.DefaultPcArpeggios,
+                AudioBufferSize = 1024,
+                PitchWindowSize = 4096,
+                MinFrequency = 60,
+                MaxFrequency = 8000,
+                SmoothingWindowSize = 3,
+                PitchConfidenceThreshold = 0.5,
+                RepeatDelaySeconds = 2.0,
+                LevelUpSessionCount = LevelUpService.DefaultSessionCount,
+                LevelUpMinPitchPct = LevelUpService.DefaultMinPitchAccuracyPercent,
+                LevelUpMinTimingPct = LevelUpService.DefaultMinTimingAccuracyPercent,
+                LevelUpMinOverallPct = LevelUpService.DefaultMinOverallAccuracyPercent,
+                LevelUpMinNotes = LevelUpService.DefaultMinNotesPerSession,
+                ThemeColorsHex = CaptureFactoryThemeColors(),
+            };
+        }
+
+        private (string Low, string High) ResolveFactoryNoteRange()
+        {
+            var profile = InstrumentCatalog.Resolve(SettingsPageViewModel.DefaultInstrument);
+            int level = _session.ChildLevel > 0 ? _session.ChildLevel : 0;
+            return InstrumentCatalog.GetAutomaticRange(profile, level);
+        }
+
+        private Dictionary<string, string> CaptureThemeColors()
+        {
+            var map = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (AppColorTarget target in Enum.GetValues<AppColorTarget>())
+                map[target.ToString()] = NormalizeHex(_theme.GetColor(target).ToHex());
+            return map;
+        }
+
+        private Dictionary<string, string> CaptureFactoryThemeColors()
+        {
+            var map = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (AppColorTarget target in Enum.GetValues<AppColorTarget>())
+                map[target.ToString()] = NormalizeHex(_theme.GetFactoryDefaultColor(target).ToHex());
+            return map;
+        }
+
+        private bool MatchesFactoryDefaults(AppSettingsSnapshot current)
+        {
+            var factory = BuildFactoryDefaultsSnapshot();
+            return current.EqualsFactory(factory);
+        }
+
+        private static string NormalizeHex(string hex)
+            => (hex ?? string.Empty).Trim().ToUpperInvariant();
+
         private void ApplySnapshot(AppSettingsSnapshot snapshot)
         {
-            if (!string.IsNullOrWhiteSpace(snapshot.StaffPanelColorHex))
+            if (snapshot.ThemeColorsHex != null)
+            {
+                foreach (var pair in snapshot.ThemeColorsHex)
+                {
+                    if (Enum.TryParse<AppColorTarget>(pair.Key, out var target))
+                        _theme.SetColor(target, Color.FromArgb(pair.Value));
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(snapshot.StaffPanelColorHex))
+            {
                 _theme.SetColor(AppColorTarget.PanelBackground, Color.FromArgb(snapshot.StaffPanelColorHex));
+            }
 
             _session.SelectedScale = snapshot.SelectedScale;
             _session.LowestNote = snapshot.LowestNote;
@@ -172,11 +386,13 @@ namespace musicmate.Services
             _session.RhythmMode = snapshot.RhythmMode;
             _session.SyncopationSetting = snapshot.SyncopationSetting;
             _session.NoteNameDisplay = snapshot.NoteNameDisplay;
+            _session.ShowConductorCues = snapshot.ShowConductorCues;
 
-            Preferences.Default.Set("CollectNoteStats", snapshot.CollectNoteStats);
-            Preferences.Default.Set("CollectSessionStats", snapshot.CollectSessionStats);
-            Preferences.Default.Set("MaxSessionDbSizeMb", snapshot.MaxSessionDbSizeMb);
-            Preferences.Default.Set("MaxAttemptsPerNote", snapshot.MaxAttemptsPerNote);
+            SessionPreferences.Set(CollectNoteStatsKey, snapshot.CollectNoteStats);
+            SessionPreferences.Set(CollectSessionStatsKey, snapshot.CollectSessionStats);
+            SessionPreferences.Set(MaxSessionDbSizeMbKey, snapshot.MaxSessionDbSizeMb);
+            SessionPreferences.Set(MaxAttemptsPerNoteKey, snapshot.MaxAttemptsPerNote);
+            SessionPreferences.Set(AboutPageViewModel.FontSizePreferenceKey, snapshot.AboutFontSize);
 
             _session.Instrument = snapshot.Instrument;
             _session.Key = snapshot.Key;
@@ -196,17 +412,18 @@ namespace musicmate.Services
             _session.SmoothingWindowSize = snapshot.SmoothingWindowSize;
             _session.PitchConfidenceThreshold = snapshot.PitchConfidenceThreshold;
 
-            Preferences.Default.Set("RepeatDelaySeconds", snapshot.RepeatDelaySeconds);
-            Preferences.Default.Set("LevelUp.SessionCount", snapshot.LevelUpSessionCount);
-            Preferences.Default.Set("LevelUp.MinPitchPct", snapshot.LevelUpMinPitchPct);
-            Preferences.Default.Set("LevelUp.MinTimingPct", snapshot.LevelUpMinTimingPct);
-            Preferences.Default.Set("LevelUp.MinOverallPct", snapshot.LevelUpMinOverallPct);
-            Preferences.Default.Set("LevelUp.MinNotes", snapshot.LevelUpMinNotes);
+            SessionPreferences.Set(RepeatDelaySecondsKey, snapshot.RepeatDelaySeconds);
+            SessionPreferences.Set("LevelUp.SessionCount", snapshot.LevelUpSessionCount);
+            SessionPreferences.Set("LevelUp.MinPitchPct", snapshot.LevelUpMinPitchPct);
+            SessionPreferences.Set("LevelUp.MinTimingPct", snapshot.LevelUpMinTimingPct);
+            SessionPreferences.Set("LevelUp.MinOverallPct", snapshot.LevelUpMinOverallPct);
+            SessionPreferences.Set("LevelUp.MinNotes", snapshot.LevelUpMinNotes);
         }
 
-        private sealed class AppSettingsSnapshot
+        internal sealed class AppSettingsSnapshot
         {
-            public string StaffPanelColorHex { get; init; } = "#FFFFFF";
+            public string StaffPanelColorHex { get; init; } = "#A0FA8C";
+            public Dictionary<string, string>? ThemeColorsHex { get; init; }
             public string SelectedScale { get; init; } = "Major";
             public string LowestNote { get; init; } = "C4";
             public string HighestNote { get; init; } = "F5";
@@ -214,33 +431,35 @@ namespace musicmate.Services
             public int Tempo { get; init; } = 100;
             public int PlaybackBpm { get; init; } = 100;
             public int MusicBpm { get; init; } = 100;
-            public int CorrectThreshold { get; init; }
-            public int MinCorrectCount { get; init; } = 3;
-            public int OmitMsAvgThreshold { get; init; }
-            public bool AutoStart { get; init; }
-            public string MasteredMethod { get; init; } = "% Correct";
-            public int StreakCrit { get; init; } = 3;
+            public int CorrectThreshold { get; init; } = MasteryPreferenceDefaults.CorrectThreshold;
+            public int MinCorrectCount { get; init; } = MasteryPreferenceDefaults.MinCorrectCount;
+            public int OmitMsAvgThreshold { get; init; } = MasteryPreferenceDefaults.OmitMsAvgThreshold;
+            public bool AutoStart { get; init; } = true;
+            public string MasteredMethod { get; init; } = MasteryPreferenceDefaults.MasteredMethod;
+            public int StreakCrit { get; init; } = MasteryPreferenceDefaults.StreakCrit;
             public string MeterTimeSignature { get; init; } = "4/4";
             public string SmallestRhythmNote { get; init; } = "Quarter";
             public string RhythmMode { get; init; } = "Simple";
             public string SyncopationSetting { get; init; } = "None";
             public string NoteNameDisplay { get; init; } = "Current only";
+            public bool ShowConductorCues { get; init; }
+            public double AboutFontSize { get; init; } = 12;
             public bool CollectNoteStats { get; init; } = true;
             public bool CollectSessionStats { get; init; } = true;
             public int MaxSessionDbSizeMb { get; init; } = 50;
             public int MaxAttemptsPerNote { get; init; } = 100;
-            public string Instrument { get; init; } = "C";
+            public string Instrument { get; init; } = "concert-pitch";
             public string Key { get; init; } = "C";
-            public string Tune { get; init; } = "Major";
-            public int Tolerance { get; init; }
+            public string Tune { get; init; } = "Selected Scale";
+            public int Tolerance { get; init; } = NoteSessionService.DefaultTolerance;
             public double PitchOffsetCents { get; init; }
-            public float RmsThreshold { get; init; }
-            public int CooldownMs { get; init; }
-            public int WrongDebounceMs { get; init; }
-            public int PcTunes { get; init; }
-            public int PcRandom { get; init; }
-            public int PcScales { get; init; }
-            public int PcArpeggios { get; init; }
+            public float RmsThreshold { get; init; } = NoteSessionService.DefaultRmsThreshold;
+            public int CooldownMs { get; init; } = NoteSessionService.DefaultCooldownMs;
+            public int WrongDebounceMs { get; init; } = NoteSessionService.DefaultDebounceMs;
+            public int PcTunes { get; init; } = NoteSessionService.DefaultPcTunes;
+            public int PcRandom { get; init; } = NoteSessionService.DefaultPcRandom;
+            public int PcScales { get; init; } = NoteSessionService.DefaultPcScales;
+            public int PcArpeggios { get; init; } = NoteSessionService.DefaultPcArpeggios;
             public int AudioBufferSize { get; init; } = 1024;
             public int PitchWindowSize { get; init; } = 4096;
             public int MinFrequency { get; init; } = 60;
@@ -253,6 +472,84 @@ namespace musicmate.Services
             public double LevelUpMinTimingPct { get; init; } = LevelUpService.DefaultMinTimingAccuracyPercent;
             public double LevelUpMinOverallPct { get; init; } = LevelUpService.DefaultMinOverallAccuracyPercent;
             public int LevelUpMinNotes { get; init; } = LevelUpService.DefaultMinNotesPerSession;
+
+            public bool EqualsFactory(AppSettingsSnapshot other)
+            {
+                if (other == null) return false;
+                return StringEq(SelectedScale, other.SelectedScale)
+                    && StringEq(LowestNote, other.LowestNote)
+                    && StringEq(HighestNote, other.HighestNote)
+                    && AccidentalPercent == other.AccidentalPercent
+                    && Tempo == other.Tempo
+                    && CorrectThreshold == other.CorrectThreshold
+                    && MinCorrectCount == other.MinCorrectCount
+                    && OmitMsAvgThreshold == other.OmitMsAvgThreshold
+                    && AutoStart == other.AutoStart
+                    && StringEq(MasteredMethod, other.MasteredMethod)
+                    && StreakCrit == other.StreakCrit
+                    && StringEq(MeterTimeSignature, other.MeterTimeSignature)
+                    && StringEq(SmallestRhythmNote, other.SmallestRhythmNote)
+                    && StringEq(RhythmMode, other.RhythmMode)
+                    && StringEq(SyncopationSetting, other.SyncopationSetting)
+                    && StringEq(NoteNameDisplay, other.NoteNameDisplay)
+                    && ShowConductorCues == other.ShowConductorCues
+                    && NearlyEqual(AboutFontSize, other.AboutFontSize)
+                    && CollectNoteStats == other.CollectNoteStats
+                    && CollectSessionStats == other.CollectSessionStats
+                    && MaxSessionDbSizeMb == other.MaxSessionDbSizeMb
+                    && MaxAttemptsPerNote == other.MaxAttemptsPerNote
+                    && StringEq(Instrument, other.Instrument)
+                    && StringEq(Key, other.Key)
+                    && StringEq(Tune, other.Tune)
+                    && Tolerance == other.Tolerance
+                    && NearlyEqual(PitchOffsetCents, other.PitchOffsetCents)
+                    && NearlyEqual(RmsThreshold, other.RmsThreshold)
+                    && CooldownMs == other.CooldownMs
+                    && WrongDebounceMs == other.WrongDebounceMs
+                    && PcTunes == other.PcTunes
+                    && PcRandom == other.PcRandom
+                    && PcScales == other.PcScales
+                    && PcArpeggios == other.PcArpeggios
+                    && AudioBufferSize == other.AudioBufferSize
+                    && PitchWindowSize == other.PitchWindowSize
+                    && MinFrequency == other.MinFrequency
+                    && MaxFrequency == other.MaxFrequency
+                    && SmoothingWindowSize == other.SmoothingWindowSize
+                    && NearlyEqual(PitchConfidenceThreshold, other.PitchConfidenceThreshold)
+                    && NearlyEqual(RepeatDelaySeconds, other.RepeatDelaySeconds)
+                    && LevelUpSessionCount == other.LevelUpSessionCount
+                    && NearlyEqual(LevelUpMinPitchPct, other.LevelUpMinPitchPct)
+                    && NearlyEqual(LevelUpMinTimingPct, other.LevelUpMinTimingPct)
+                    && NearlyEqual(LevelUpMinOverallPct, other.LevelUpMinOverallPct)
+                    && LevelUpMinNotes == other.LevelUpMinNotes
+                    && ThemeColorsMatch(ThemeColorsHex, other.ThemeColorsHex);
+            }
+
+            private static bool StringEq(string? a, string? b)
+                => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+            private static bool NearlyEqual(double a, double b)
+                => Math.Abs(a - b) < 0.0001;
+
+            private static bool NearlyEqual(float a, float b)
+                => Math.Abs(a - b) < 0.0001f;
+
+            private static bool ThemeColorsMatch(Dictionary<string, string>? a, Dictionary<string, string>? b)
+            {
+                if (a == null || b == null) return a == b;
+                if (a.Count != b.Count) return false;
+                foreach (var pair in a)
+                {
+                    if (!b.TryGetValue(pair.Key, out var other))
+                        return false;
+                    if (!string.Equals(
+                            Normalize(pair.Value), Normalize(other), StringComparison.OrdinalIgnoreCase))
+                        return false;
+                }
+                return true;
+            }
+
+            private static string Normalize(string hex) => (hex ?? string.Empty).Trim();
         }
     }
 

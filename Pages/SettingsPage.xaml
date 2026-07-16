@@ -96,6 +96,13 @@
                       SelectedItem="{Binding NoteNameDisplay, Mode=TwoWay}"
                       Style="{StaticResource SettingsPickerStyle}" />
             </Grid>
+            <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Font used in About page" />
+              <Picker Grid.Column="1"
+                      ItemsSource="{Binding AboutFontSizeOptions}"
+                      SelectedItem="{Binding AboutFontSize, Mode=TwoWay}"
+                      Style="{StaticResource SettingsPickerStyle}" />
+            </Grid>
           </VerticalStackLayout>
         </Border>
 

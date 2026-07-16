@@ -212,36 +212,70 @@ namespace musicmate.ViewModels
 
         public double RepeatDelaySeconds
         {
-            get => Preferences.Default.Get("RepeatDelaySeconds", 2.0);
-            set { Preferences.Default.Set("RepeatDelaySeconds", value); OnPropertyChanged(nameof(RepeatDelaySeconds)); }
+            get => SessionPreferences.Get("RepeatDelaySeconds", 2.0);
+            set
+            {
+                SessionPreferences.Set("RepeatDelaySeconds", value);
+                OnPropertyChanged(nameof(RepeatDelaySeconds));
+                NotifyFactoryDefaultsMayHaveChanged();
+            }
         }
 
         // LevelUp Criteria Properties
         public int SessionCount
         {
-            get => Preferences.Default.Get("LevelUp.SessionCount", LevelUpService.DefaultSessionCount);
-            set { Preferences.Default.Set("LevelUp.SessionCount", value); OnPropertyChanged(nameof(SessionCount)); }
+            get => SessionPreferences.Get("LevelUp.SessionCount", LevelUpService.DefaultSessionCount);
+            set
+            {
+                SessionPreferences.Set("LevelUp.SessionCount", value);
+                OnPropertyChanged(nameof(SessionCount));
+                NotifyFactoryDefaultsMayHaveChanged();
+            }
         }
         public double MinPitchAccuracyPercent
         {
-            get => Preferences.Default.Get("LevelUp.MinPitchPct", LevelUpService.DefaultMinPitchAccuracyPercent);
-            set { Preferences.Default.Set("LevelUp.MinPitchPct", value); OnPropertyChanged(nameof(MinPitchAccuracyPercent)); }
+            get => SessionPreferences.Get("LevelUp.MinPitchPct", LevelUpService.DefaultMinPitchAccuracyPercent);
+            set
+            {
+                SessionPreferences.Set("LevelUp.MinPitchPct", value);
+                OnPropertyChanged(nameof(MinPitchAccuracyPercent));
+                NotifyFactoryDefaultsMayHaveChanged();
+            }
         }
         public double MinTimingAccuracyPercent
         {
-            get => Preferences.Default.Get("LevelUp.MinTimingPct", LevelUpService.DefaultMinTimingAccuracyPercent);
-            set { Preferences.Default.Set("LevelUp.MinTimingPct", value); OnPropertyChanged(nameof(MinTimingAccuracyPercent)); }
+            get => SessionPreferences.Get("LevelUp.MinTimingPct", LevelUpService.DefaultMinTimingAccuracyPercent);
+            set
+            {
+                SessionPreferences.Set("LevelUp.MinTimingPct", value);
+                OnPropertyChanged(nameof(MinTimingAccuracyPercent));
+                NotifyFactoryDefaultsMayHaveChanged();
+            }
         }
         public double MinOverallAccuracyPercent
         {
-            get => Preferences.Default.Get("LevelUp.MinOverallPct", LevelUpService.DefaultMinOverallAccuracyPercent);
-            set { Preferences.Default.Set("LevelUp.MinOverallPct", value); OnPropertyChanged(nameof(MinOverallAccuracyPercent)); }
+            get => SessionPreferences.Get("LevelUp.MinOverallPct", LevelUpService.DefaultMinOverallAccuracyPercent);
+            set
+            {
+                SessionPreferences.Set("LevelUp.MinOverallPct", value);
+                OnPropertyChanged(nameof(MinOverallAccuracyPercent));
+                NotifyFactoryDefaultsMayHaveChanged();
+            }
         }
         public int MinNotesPerSession
         {
-            get => Preferences.Default.Get("LevelUp.MinNotes", LevelUpService.DefaultMinNotesPerSession);
-            set { Preferences.Default.Set("LevelUp.MinNotes", value); OnPropertyChanged(nameof(MinNotesPerSession)); }
+            get => SessionPreferences.Get("LevelUp.MinNotes", LevelUpService.DefaultMinNotesPerSession);
+            set
+            {
+                SessionPreferences.Set("LevelUp.MinNotes", value);
+                OnPropertyChanged(nameof(MinNotesPerSession));
+                NotifyFactoryDefaultsMayHaveChanged();
+            }
         }
+
+        private static void NotifyFactoryDefaultsMayHaveChanged()
+            => ServiceHelper.GetService<SettingsResetService>()?.NotifySettingsChanged();
+
 
         public int PcTunesDraft
         {

@@ -76,11 +76,11 @@ namespace musicmate.Services
         /// <summary>Restores level-up criteria preferences to <see cref="DefaultSessionCount"/> and related defaults.</summary>
         public static void ResetCriteriaToDefaults()
         {
-            Preferences.Default.Set("LevelUp.SessionCount", DefaultSessionCount);
-            Preferences.Default.Set("LevelUp.MinPitchPct", DefaultMinPitchAccuracyPercent);
-            Preferences.Default.Set("LevelUp.MinTimingPct", DefaultMinTimingAccuracyPercent);
-            Preferences.Default.Set("LevelUp.MinOverallPct", DefaultMinOverallAccuracyPercent);
-            Preferences.Default.Set("LevelUp.MinNotes", DefaultMinNotesPerSession);
+            SessionPreferences.Set("LevelUp.SessionCount", DefaultSessionCount);
+            SessionPreferences.Set("LevelUp.MinPitchPct", DefaultMinPitchAccuracyPercent);
+            SessionPreferences.Set("LevelUp.MinTimingPct", DefaultMinTimingAccuracyPercent);
+            SessionPreferences.Set("LevelUp.MinOverallPct", DefaultMinOverallAccuracyPercent);
+            SessionPreferences.Set("LevelUp.MinNotes", DefaultMinNotesPerSession);
         }
 
         // ── Preference keys ────────────────────────────────────────────────────
@@ -109,14 +109,15 @@ namespace musicmate.Services
         /// accuracy thresholds before a level-up is awarded.  Default = 3.
         /// </summary>
         public static int SessionCount
-            => Preferences.Default.Get("LevelUp.SessionCount", DefaultSessionCount);
+            => SessionPreferences.Get("LevelUp.SessionCount", DefaultSessionCount);
+
 
         /// <summary>
         /// Minimum pitch accuracy (%) required in every qualifying session.
         /// Default = 55.
         /// </summary>
         public static double MinPitchAccuracyPercent
-            => Preferences.Default.Get("LevelUp.MinPitchPct", DefaultMinPitchAccuracyPercent);
+            => SessionPreferences.Get("LevelUp.MinPitchPct", DefaultMinPitchAccuracyPercent);
 
         /// <summary>
         /// Minimum timing accuracy (%) required when timing data is available.
@@ -125,7 +126,7 @@ namespace musicmate.Services
         /// Default = 75.
         /// </summary>
         public static double MinTimingAccuracyPercent
-            => Preferences.Default.Get("LevelUp.MinTimingPct", DefaultMinTimingAccuracyPercent);
+            => SessionPreferences.Get("LevelUp.MinTimingPct", DefaultMinTimingAccuracyPercent);
 
         /// <summary>
         /// Minimum overall accuracy (%) required in every qualifying session.
@@ -133,7 +134,7 @@ namespace musicmate.Services
         /// calibrated.  Default = 80.
         /// </summary>
         public static double MinOverallAccuracyPercent
-            => Preferences.Default.Get("LevelUp.MinOverallPct", DefaultMinOverallAccuracyPercent);
+            => SessionPreferences.Get("LevelUp.MinOverallPct", DefaultMinOverallAccuracyPercent);
 
         /// <summary>
         /// Minimum number of non-rest note slots a session must contain to be
@@ -142,7 +143,7 @@ namespace musicmate.Services
         /// Default = 4.
         /// </summary>
         public static int MinNotesPerSession
-            => Preferences.Default.Get("LevelUp.MinNotes", DefaultMinNotesPerSession);
+            => SessionPreferences.Get("LevelUp.MinNotes", DefaultMinNotesPerSession);
 
         /// <summary>
         /// Minimum overall accuracy (%) required for any session in the rolling group (floor).
