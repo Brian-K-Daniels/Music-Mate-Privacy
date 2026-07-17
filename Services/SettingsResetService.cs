@@ -173,6 +173,7 @@ namespace musicmate.Services
             _session.AutoStart = SettingsPageViewModel.DefaultAutoStart;
             _session.MasteredMethod = MasteryPreferenceDefaults.MasteredMethod;
             _session.StreakCrit = MasteryPreferenceDefaults.StreakCrit;
+            _session.UseNoteMasteryForGeneration = MasteryPreferenceDefaults.UseNoteMasteryForGeneration;
             _session.ShowConductorCues = false;
             _session.NoteNameDisplay = "Current only";
             _session.MeterTimeSignature = "4/4";
@@ -227,6 +228,7 @@ namespace musicmate.Services
                 AutoStart = _session.AutoStart,
                 MasteredMethod = _session.MasteredMethod,
                 StreakCrit = _session.StreakCrit,
+                UseNoteMasteryForGeneration = _session.UseNoteMasteryForGeneration,
                 MeterTimeSignature = _session.MeterTimeSignature,
                 SmallestRhythmNote = _session.SmallestRhythmNote,
                 RhythmMode = _session.RhythmMode,
@@ -284,6 +286,7 @@ namespace musicmate.Services
                 AutoStart = SettingsPageViewModel.DefaultAutoStart,
                 MasteredMethod = MasteryPreferenceDefaults.MasteredMethod,
                 StreakCrit = MasteryPreferenceDefaults.StreakCrit,
+                UseNoteMasteryForGeneration = MasteryPreferenceDefaults.UseNoteMasteryForGeneration,
                 MeterTimeSignature = "4/4",
                 SmallestRhythmNote = "Quarter",
                 RhythmMode = "Simple",
@@ -381,6 +384,7 @@ namespace musicmate.Services
             _session.AutoStart = snapshot.AutoStart;
             _session.MasteredMethod = snapshot.MasteredMethod;
             _session.StreakCrit = snapshot.StreakCrit;
+            _session.UseNoteMasteryForGeneration = snapshot.UseNoteMasteryForGeneration;
             _session.MeterTimeSignature = snapshot.MeterTimeSignature;
             _session.SmallestRhythmNote = snapshot.SmallestRhythmNote;
             _session.RhythmMode = snapshot.RhythmMode;
@@ -437,6 +441,7 @@ namespace musicmate.Services
             public bool AutoStart { get; init; } = true;
             public string MasteredMethod { get; init; } = MasteryPreferenceDefaults.MasteredMethod;
             public int StreakCrit { get; init; } = MasteryPreferenceDefaults.StreakCrit;
+            public bool UseNoteMasteryForGeneration { get; init; } = MasteryPreferenceDefaults.UseNoteMasteryForGeneration;
             public string MeterTimeSignature { get; init; } = "4/4";
             public string SmallestRhythmNote { get; init; } = "Quarter";
             public string RhythmMode { get; init; } = "Simple";
@@ -487,6 +492,7 @@ namespace musicmate.Services
                     && AutoStart == other.AutoStart
                     && StringEq(MasteredMethod, other.MasteredMethod)
                     && StreakCrit == other.StreakCrit
+                    && UseNoteMasteryForGeneration == other.UseNoteMasteryForGeneration
                     && StringEq(MeterTimeSignature, other.MeterTimeSignature)
                     && StringEq(SmallestRhythmNote, other.SmallestRhythmNote)
                     && StringEq(RhythmMode, other.RhythmMode)

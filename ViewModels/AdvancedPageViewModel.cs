@@ -75,6 +75,9 @@ namespace musicmate.ViewModels
                     case nameof(NoteSessionService.WrongDebounceMs):
                         OnPropertyChanged(nameof(WrongDebounceMs));
                         break;
+                    case nameof(NoteSessionService.UseNoteMasteryForGeneration):
+                        OnPropertyChanged(nameof(UseNoteMasteryForGeneration));
+                        break;
                     case nameof(NoteSessionService.PcTunes):
                     case nameof(NoteSessionService.PcRandom):
                     case nameof(NoteSessionService.PcScales):
@@ -202,6 +205,18 @@ namespace musicmate.ViewModels
         {
             get => _session.WrongDebounceMs;
             set { _session.WrongDebounceMs = value; OnPropertyChanged(nameof(WrongDebounceMs)); }
+        }
+
+        public bool UseNoteMasteryForGeneration
+        {
+            get => _session.UseNoteMasteryForGeneration;
+            set
+            {
+                if (_session.UseNoteMasteryForGeneration == value) return;
+                _session.UseNoteMasteryForGeneration = value;
+                OnPropertyChanged(nameof(UseNoteMasteryForGeneration));
+                NotifyFactoryDefaultsMayHaveChanged();
+            }
         }
 
         public double PitchOffsetCents

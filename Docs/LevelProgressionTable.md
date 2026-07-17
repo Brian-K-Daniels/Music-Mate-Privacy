@@ -1,6 +1,6 @@
 # Child Practice Level Progression Settings (1–100)
 
-This document provides a complete reference for how difficulty settings change across child practice levels in MusicMate.
+This document provides a complete reference for how difficulty settings change across levels in MusicMate.
 
 ## Overview by Stage
 
@@ -277,7 +277,7 @@ The system uses **balanced key selection** that maintains 50% flat vs. sharp dis
 - **L11–30:** 4 measures
 - **L31–100:** 8 measures
 
-This determines how many measures are generated at once during child practice sessions.
+This determines how many measures are generated at once during level practice sessions.
 
 ---
 
@@ -308,7 +308,7 @@ When reset to factory defaults (via Settings → Reset to Factory Defaults), the
 ## Implementation Notes
 
 **Source Files:**
-- `Services/ChildLevelProgression.cs` - Core level progression logic
+- `Services/LevelProgression.cs` - Core level progression logic
 - `Services/DifficultyLevelMapper.cs` - Applies level settings to sessions
 - `Services/KeyDifficultyRules.cs` - Key progression and validation
 - `ViewModels/SettingsPageViewModel.cs` - Factory defaults
@@ -323,4 +323,4 @@ When reset to factory defaults (via Settings → Reset to Factory Defaults), the
 
 ---
 
-*Document generated from codebase analysis of MusicMate Child Practice system.*
+*Document generated from codebase analysis of MusicMate Level Practice system.*

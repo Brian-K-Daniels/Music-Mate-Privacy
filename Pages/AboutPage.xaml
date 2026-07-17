@@ -1,124 +1,188 @@
 ﻿<?xml version="1.0" encoding="utf-8" ?>
-<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             xmlns:conv="clr-namespace:musicmate.Converters"
-             x:Class="musicmate.Pages.AboutPage"
-             x:Name="AboutPageRoot"
-             Title="About"
-             Shell.NavBarIsVisible="True"
-             BackgroundColor="{DynamicResource ThemePanelBackground}">
+
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:conv="clr-namespace:musicmate.Converters"
+    x:Class="musicmate.Pages.AboutPage"
+    x:Name="AboutPageRoot"
+    Title="About"
+    Shell.NavBarIsVisible="True"
+    BackgroundColor="{DynamicResource ThemePanelBackground}">
 
   <ContentPage.Resources>
-    <conv:BoolToYesNoConverter x:Key="BoolToYesNoConverter" />
+
+    <conv:BoolToYesNoConverter
+            x:Key="BoolToYesNoConverter" />
+
     <Style TargetType="Label">
-      <Setter Property="TextColor" Value="{DynamicResource ThemeContrastingText}" />
-      <Setter Property="FontSize" Value="13" />
+      <Setter
+                Property="TextColor"
+                Value="{DynamicResource ThemeContrastingText}" />
+      <Setter
+                Property="FontSize"
+                Value="13" />
     </Style>
+
     <Style TargetType="Button">
-      <Setter Property="TextColor" Value="{DynamicResource ThemeButtonText}" />
-      <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
-      <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="FontAttributes" Value="Bold" />
-      <Setter Property="Padding" Value="12,4" />
-      <Setter Property="FontSize" Value="13" />
+      <Setter
+                Property="TextColor"
+                Value="{DynamicResource ThemeButtonText}" />
+      <Setter
+                Property="BackgroundColor"
+                Value="{DynamicResource ThemeButtonBackground}" />
+      <Setter
+                Property="CornerRadius"
+                Value="8" />
+      <Setter
+                Property="FontAttributes"
+                Value="Bold" />
+      <Setter
+                Property="Padding"
+                Value="12,4" />
+      <Setter
+                Property="FontSize"
+                Value="13" />
     </Style>
+
     <Style TargetType="Picker">
-      <Setter Property="TextColor" Value="{DynamicResource ThemePickerText}" />
-      <Setter Property="BackgroundColor" Value="{DynamicResource ThemePickerBackground}" />
-      <Setter Property="FontSize" Value="13" />
+      <Setter
+                Property="TextColor"
+                Value="{DynamicResource ThemePickerText}" />
+      <Setter
+                Property="BackgroundColor"
+                Value="{DynamicResource ThemePickerBackground}" />
+      <Setter
+                Property="FontSize"
+                Value="13" />
     </Style>
+
   </ContentPage.Resources>
 
-  <!-- Marquee: search + Next + m/n (no back arrow, no logo) -->
+  <!--
+        Title bar:
+        About title, search Entry, Next button and match-position label.
+    -->
   <Shell.TitleView>
-    <Grid ColumnDefinitions="Auto,*,Auto,Auto"
-          ColumnSpacing="6"
-          HeightRequest="44"
-          Padding="0,0,8,0"
-          VerticalOptions="Center">
-      <Label Grid.Column="0"
-             Text="About"
-             FontAttributes="Bold"
-             FontSize="16"
-             TextColor="{DynamicResource ThemeContrastingText}"
-             VerticalOptions="Center" />
-      <Border Grid.Column="1"
-              Stroke="{DynamicResource ThemePickerBorder}" StrokeThickness="1"
-              StrokeShape="RoundRectangle 8"
-              Padding="4,0"
-              VerticalOptions="Center">
-        <SearchBar x:Name="AboutSearchBar"
-                   Placeholder="Search About…"
-                   TextColor="{DynamicResource ThemeEntryText}"
-                   PlaceholderColor="{DynamicResource ThemeContrastingText}"
-                   BackgroundColor="{DynamicResource ThemeEntryBackground}"
-                   HorizontalOptions="Fill"
-                   FontSize="{Binding SelectedFontSize}"
-                   TextChanged="OnAboutSearchTextChanged"
-                   SearchButtonPressed="OnAboutSearchButtonPressed" />
+
+    <Grid
+            ColumnDefinitions="Auto,*,Auto,Auto"
+            ColumnSpacing="6"
+            HeightRequest="44"
+            Padding="0,0,8,0"
+            VerticalOptions="Center">
+
+      <Label
+                Grid.Column="0"
+                Text="About"
+                FontAttributes="Bold"
+                FontSize="16"
+                TextColor="{DynamicResource ThemeContrastingText}"
+                VerticalOptions="Center" />
+
+      <Border
+                Grid.Column="1"
+                Stroke="{DynamicResource ThemePickerBorder}"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 8"
+                Padding="4,0"
+                VerticalOptions="Center"
+                HorizontalOptions="Fill">
+
+        <Entry
+                    x:Name="AboutSearchEntry"
+                    Placeholder="Search"
+                    ReturnType="Search"
+                    ClearButtonVisibility="WhileEditing"
+                    IsSpellCheckEnabled="False"
+                    IsTextPredictionEnabled="False"
+                    Focused="OnAboutSearchEntryFocused"
+                    TextChanged="OnAboutSearchEntryTextChanged"
+                    Completed="OnAboutSearchEntryCompleted"
+                    TextColor="{DynamicResource ThemeEntryText}"
+                    PlaceholderColor="{DynamicResource ThemeContrastingText}"
+                    BackgroundColor="{DynamicResource ThemeEntryBackground}"
+                    HorizontalOptions="Fill"
+                    VerticalOptions="Center"
+                    FontSize="{Binding SelectedFontSize}" />
+
       </Border>
-      <Button Grid.Column="2"
-              x:Name="AboutFindNextButton"
-              Text="Next"
-              IsEnabled="False"
-              Clicked="OnAboutFindNextClicked"
-              FontSize="{Binding SelectedFontSize}"
-              Padding="8,4"
-              VerticalOptions="Center" />
-      <Label Grid.Column="3"
-             x:Name="AboutFindPositionLabel"
-             Text=""
-             FontSize="{Binding SelectedFontSize}"
-             VerticalOptions="Center"
-             HorizontalOptions="Center"
-             MinimumWidthRequest="36" />
+
+      <Button
+                x:Name="AboutFindNextButton"
+                Grid.Column="2"
+                Text="Next"
+                IsEnabled="False"
+                Clicked="OnAboutFindNextClicked"
+                FontSize="{Binding SelectedFontSize}"
+                Padding="8,4"
+                VerticalOptions="Center" />
+
+      <Label
+                x:Name="AboutFindPositionLabel"
+                Grid.Column="3"
+                Text=""
+                FontSize="{Binding SelectedFontSize}"
+                VerticalOptions="Center"
+                HorizontalOptions="Center"
+                MinimumWidthRequest="36" />
+
     </Grid>
+
   </Shell.TitleView>
 
-  <ScrollView x:Name="AboutScrollView">
-    <VerticalStackLayout x:Name="AboutMainLayout">
+  <Grid RowDefinitions="Auto,*">
 
-      <!-- Premium purchase controls -->
-      <Grid ColumnDefinitions="Auto,Auto,*"
-            ColumnSpacing="10"
-            VerticalOptions="Center"
-            Padding="8,6,8,4">
+    <!-- Premium purchase controls -->
+    <Grid
+        Grid.Row="0"
+        ColumnDefinitions="Auto,Auto,*"
+        ColumnSpacing="10"
+        VerticalOptions="Center"
+        Padding="8,6,8,4">
 
-        <Button Grid.Column="0"
-                Text="Get Premium"
-                Command="{Binding BuyPremiumCommand}"
-                IsVisible="{Binding NotIsPremium}"
-                TextColor="{DynamicResource ThemeContrastingText}"
-                FontSize="{Binding SelectedFontSize}"
-                Padding="8,4" />
+      <Button
+            Grid.Column="0"
+            Text="Get Premium"
+            Command="{Binding BuyPremiumCommand}"
+            IsVisible="{Binding NotIsPremium}"
+            TextColor="{DynamicResource ThemeContrastingText}"
+            FontSize="{Binding SelectedFontSize}"
+            Padding="8,4" />
 
-        <Button Grid.Column="2"
-                Text="🔄 Remove Premium (debug)"
-                Command="{Binding RestorePurchasesCommand}"
-                IsVisible="{Binding IsDebugRestoreVisible}"
-                BackgroundColor="{DynamicResource ThemeButtonBackground}"
-                TextColor="#888888"
-                BorderColor="#555555"
-                BorderWidth="1"
-                CornerRadius="6"
-                FontSize="11"
-                HorizontalOptions="End"
-                Padding="8,4" />
+      <Button
+            Grid.Column="2"
+            Text="🔄 Remove Premium (debug)"
+            Command="{Binding RestorePurchasesCommand}"
+            IsVisible="{Binding IsDebugRestoreVisible}"
+            BackgroundColor="{DynamicResource ThemeButtonBackground}"
+            TextColor="#888888"
+            BorderColor="#555555"
+            BorderWidth="1"
+            CornerRadius="6"
+            FontSize="11"
+            HorizontalOptions="End"
+            Padding="8,4" />
 
-        <Label Grid.Column="0"
-               Grid.ColumnSpan="2"
-               Text="⭐ You have all premium privileges"
-               IsVisible="{Binding IsPremium}"
-               FontAttributes="Bold"
-               FontSize="{Binding SelectedFontSize}"
-               TextColor="#FFD700"
-               VerticalOptions="Center" />
+      <Label
+            Grid.Column="0"
+            Grid.ColumnSpan="2"
+            Text="⭐ You have all premium privileges"
+            IsVisible="{Binding IsPremium}"
+            FontAttributes="Bold"
+            FontSize="{Binding SelectedFontSize}"
+            TextColor="#FFD700"
+            VerticalOptions="Center" />
 
-      </Grid>
+    </Grid>
 
-      <WebView x:Name="AboutWebView" Margin="0,4,0,0" />
+    <WebView
+        x:Name="AboutWebView"
+        Grid.Row="1"
+        Margin="0,4,0,0"
+        HorizontalOptions="Fill"
+        VerticalOptions="Fill" />
 
-    </VerticalStackLayout>
-  </ScrollView>
+  </Grid>
 
 </ContentPage>

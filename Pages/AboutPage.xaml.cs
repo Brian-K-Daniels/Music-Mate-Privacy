@@ -9,11 +9,14 @@ using System.Text;
 using System.Text.Json;
 using System.IO;
 using Microsoft.Maui.Storage;
+using Microsoft.Maui.ApplicationModel;
+using Microsoft.Maui.Controls;
 
 namespace musicmate.Pages
 {
     public partial class AboutPage : ContentPage
     {
+        private CancellationTokenSource? _aboutSearchDebounceCts;
         private const double DefaultFontSize = 12;
         private readonly ThemeService _themeService;
         private readonly IOrientationService _orientationService;
@@ -25,6 +28,7 @@ namespace musicmate.Pages
 
         // Track whether we've asked the app to pause listening while searching
         private bool _aboutPausedListening = false;
+
 
         public AboutPage()
         {
@@ -38,16 +42,7 @@ namespace musicmate.Pages
             //if (mainLayout != null)
             //    musicmate.Utilities.MarginUtils.SetLeftMarginMM(mainLayout, 9, 0, 0, 0);  //  2026.04.02 1719   out
 
-            // Auto-size WebView to its content height so the outer ScrollView handles scrolling
-            var web = this.FindByName<Microsoft.Maui.Controls.WebView>("AboutWebView");
-            if (web != null)
-            {
-                web.Navigated += async (s, e) =>
-                {
-                    await Task.Delay(200);
-                    await AutoSizeWebViewAsync((Microsoft.Maui.Controls.WebView)s!);
-                };
-            }
+           
 
             // Reload WebView when font size or theme changes
             vm.PropertyChanged += async (_, __) => await LoadAboutHtmlAsync();
@@ -76,6 +71,9 @@ namespace musicmate.Pages
         }
         protected override void OnDisappearing()
         {
+            _aboutSearchDebounceCts?.Cancel();
+            _aboutSearchDebounceCts?.Dispose();
+            _aboutSearchDebounceCts = null;
             _orientationService?.AllowAutorotate();
             base.OnDisappearing();
         }
@@ -164,7 +162,24 @@ namespace musicmate.Pages
                 var fg = vm?.ContrastingTextColor ?? Colors.Black;
                 var fontSize = vm?.SelectedFontSize ?? DefaultFontSize;
                 var fontFamily = "-apple-system, BlinkMacSystemFont, \"Segoe UI Symbol\", \"Segoe UI Emoji\", \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, \"Times New Roman\", serif";
-                var css = $"html, body {{ background: {ColorToHex(bg)} !important; color: {ColorToHex(fg)} !important; font-size: {fontSize}px !important; margin:0; padding:8px; font-family: {fontFamily}; overflow: hidden !important; }} ";
+                var css =    $"html, body {{ " +
+                             $"background: {ColorToHex(bg)} !important; " +
+                             $"color: {ColorToHex(fg)} !important; " +
+                             $"font-size: {fontSize}px !important; " +
+                             $"margin: 0; " +
+                             $"padding: 8px; " +
+                             $"font-family: {fontFamily}; " +
+                             $"box-sizing: border-box; " +
+                             $"}} " +
+                             $"html {{ " +
+                             $"height: 100%; " +
+                             $"overflow-x: hidden; " +
+                             $"overflow-y: auto; " +
+                             $"}} " +
+                             $"body {{ " +
+                             $"min-height: 100%; " +
+                             $"overflow-x: hidden; " +
+                             $"}} ";
                 // Force ALL elements to inherit fg color so inline style="color:#000000" from
                 // Word-generated HTML cannot make text invisible against a dark background.
                 css += $"*, *::before, *::after {{ color: {ColorToHex(fg)} !important; }} ";
@@ -226,273 +241,54 @@ namespace musicmate.Pages
             return $"<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><style>{css}</style></head><body>{html}</body></html>";
         }
 
-        private async Task AutoSizeWebViewAsync(Microsoft.Maui.Controls.WebView webView)
+        private async void OnAboutSearchEntryCompleted( object? sender, EventArgs e)
         {
+            if (sender is not Entry entry)
+                return;
+
+            _aboutSearchDebounceCts?.Cancel();
+
+            var query = entry.Text?.Trim() ?? string.Empty;
+
             try
             {
-                var heightStr = await webView.EvaluateJavaScriptAsync("document.body.scrollHeight");
-                if (double.TryParse(heightStr, System.Globalization.NumberStyles.Any,
-                    System.Globalization.CultureInfo.InvariantCulture, out var height) && height > 0)
+                var isNewQuery = !string.Equals(
+                    query,
+                    _aboutSearchQuery,
+                    StringComparison.Ordinal);
+
+                if (isNewQuery)
                 {
-                    webView.HeightRequest = height + 20;
+                    await SearchAboutPageAsync(query);
+
+                    if (_aboutMatchCount > 0)
+                        await ScrollToAboutMatchAsync(0);
                 }
+                else if (_aboutMatchCount > 0)
+                {
+                    await MoveToNextAboutMatchAsync();
+                }
+
+                entry.Unfocus();
             }
             catch
             {
-                // ignore measurement failures
+                await ShowAboutSearchErrorAsync();
             }
         }
 
-        private async void OnAboutSearchTextChanged(object sender, TextChangedEventArgs e)
+        private async void OnAboutFindNextClicked( object? sender, EventArgs e)
         {
             try
             {
-                var query = e.NewTextValue ?? string.Empty;
-                var web = this.FindByName<Microsoft.Maui.Controls.WebView>("AboutWebView");
-                if (web == null) return;
-
-                // Pause audio capture once when user starts searching. No automatic restart required.
-                if (!string.IsNullOrEmpty(query) && !_aboutPausedListening)
-                {
-                    try
-                    {
-                        var audio = ServiceHelper.GetService<IAudioCaptureService>();
-                        audio?.StopCapture();
-                        _aboutPausedListening = true;
-                    }
-                    catch
-                    {
-                        // best-effort
-                    }
-                }
-
-                _aboutSearchQuery = query;
-                _aboutCurrentIndex = -1;
-                _aboutMatchCount = 0;
-
-                // Serialize query safely for JS string literal
-                var jsQuery = JsonSerializer.Serialize(query);
-
-                // JS highlights all matches in text nodes only (never inside tag attributes).
-                // Using TreeWalker avoids the innerHTML regex approach which was corrupting
-                // HTML attributes (e.g. list-style-type:disc) and leaking tag markup as visible text.
-                var js = $@"(function(){{
-                        var q = {jsQuery};
-                        // Remove existing highlights, restoring original text nodes
-                        var olds = document.querySelectorAll('.about-search-highlight');
-                        for (var i = olds.length - 1; i >= 0; i--) {{
-                            var el = olds[i];
-                            var p = el.parentNode;
-                            if (!p) continue;
-                            while (el.firstChild) p.insertBefore(el.firstChild, el);
-                            p.removeChild(el);
-                            p.normalize();
-                        }}
-                        if (!q) {{ window.scrollTo(0,0); return 0; }}
-                        function escapeRegExp(s) {{ return s.replace(/[.*+?^{{}}()|[\]\\\\]/g, '\\\\$&'); }}
-                        var re = new RegExp(escapeRegExp(q), 'gi');
-                        var count = 0;
-                        try {{
-                            var walker = document.createTreeWalker(
-                                document.body,
-                                NodeFilter.SHOW_TEXT,
-                                {{ acceptNode: function(n) {{
-                                    var tag = n.parentNode ? n.parentNode.nodeName.toUpperCase() : '';
-                                    if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return NodeFilter.FILTER_REJECT;
-                                    if (n.parentNode && n.parentNode.classList && n.parentNode.classList.contains('about-search-highlight')) return NodeFilter.FILTER_REJECT;
-                                    return NodeFilter.FILTER_ACCEPT;
-                                }} }}
-                            );
-                            var nodes = [];
-                            var n;
-                            while ((n = walker.nextNode())) nodes.push(n);
-                            for (var i = 0; i < nodes.length; i++) {{
-                                var tn = nodes[i];
-                                var text = tn.textContent;
-                                re.lastIndex = 0;
-                                if (!re.test(text)) continue;
-                                re.lastIndex = 0;
-                                var frag = document.createDocumentFragment();
-                                var last = 0, m;
-                                while ((m = re.exec(text)) !== null) {{
-                                    if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
-                                    var span = document.createElement('span');
-                                    span.className = 'about-search-highlight';
-                                    span.setAttribute('data-about-index', String(count));
-                                    span.textContent = m[0];
-                                    frag.appendChild(span);
-                                    count++;
-                                    last = m.index + m[0].length;
-                                }}
-                                if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
-                                tn.parentNode.replaceChild(frag, tn);
-                            }}
-                            if (count > 0) {{
-                                var first = document.querySelector('.about-search-highlight[data-about-index=""0""]');
-                                if (first) {{ try {{ first.scrollIntoView({{behavior:'smooth',block:'center'}}); }} catch(e) {{}} }}
-                            }}
-                        }} catch(e) {{ return 0; }}
-                        return count;
-                    }})();";
-
-                var result = await web.EvaluateJavaScriptAsync(js);
-                if (int.TryParse(result?.Trim('"'), out var cnt))
-                {
-                    _aboutMatchCount = cnt;
-                    if (cnt > 0)
-                    {
-                        _aboutCurrentIndex = 0;
-                        // Ensure the highlighted match is centered vertically in the outer ScrollView
-                        var sv = this.FindByName<ScrollView>("AboutScrollView");
-                        if (sv != null)
-                        {
-                            await CenterHighlightedInScrollViewAsync(_aboutCurrentIndex);
-                        }
-                    }
-                }
-                else
-                {
-                    _aboutMatchCount = 0;
-                    _aboutCurrentIndex = -1;
-                }
-
-                // Update UI controls: Next button and position label
-                var nextBtn = this.FindByName<Button>("AboutFindNextButton");
-                var posLbl = this.FindByName<Label>("AboutFindPositionLabel");
-                if (nextBtn != null)
-                    nextBtn.IsEnabled = _aboutMatchCount > 1;
-                if (posLbl != null)
-                    posLbl.Text = _aboutMatchCount > 0 ? $"{(_aboutCurrentIndex + 1)}/{_aboutMatchCount}" : string.Empty;
+                await MoveToNextAboutMatchAsync();
             }
             catch
             {
-                // best-effort; ignore errors
-                await MainThread.InvokeOnMainThreadAsync(async () =>
-                    await Toast.Make("Search unavailable.", ToastDuration.Short).Show());
+                await ShowAboutSearchErrorAsync();
             }
         }
 
-        private void OnAboutSearchButtonPressed(object sender, EventArgs e)
-        {
-            // Dismiss the software keyboard
-            AboutSearchBar.Unfocus();
-
-            // Advance to the next match — same behaviour as tapping "Next".
-            // TextChanged already ran the search as the user typed, so results
-            // are ready; pressing the keyboard search key should cycle through them.
-            if (_aboutMatchCount > 0)
-                OnAboutFindNextClicked(sender, e);
-        }
-
-        private async void OnAboutFindNextClicked(object sender, EventArgs e)
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(_aboutSearchQuery) || _aboutMatchCount <= 0)
-                    return;
-
-                _aboutCurrentIndex++;
-                if (_aboutCurrentIndex >= _aboutMatchCount)
-                    _aboutCurrentIndex = 0;
-
-                var web = this.FindByName<Microsoft.Maui.Controls.WebView>("AboutWebView");
-                if (web == null) return;
-
-                // JS: just confirm the element exists; outer ScrollView handles scrolling
-                var js = $@"(function(idx) {{
-                        try {{
-                            var el = document.querySelector('.about-search-highlight[data-about-index=""' + idx + '""]');
-                            return el ? 'ok' : 'missing';
-                        }} catch(e) {{ return 'err'; }}
-                    }})({_aboutCurrentIndex});";
-
-                await web.EvaluateJavaScriptAsync(js);
-
-                // Center the highlighted element in the outer ScrollView vertically
-                var sv = this.FindByName<ScrollView>("AboutScrollView");
-                if (sv != null)
-                {
-                    await CenterHighlightedInScrollViewAsync(_aboutCurrentIndex);
-                }
-
-                // Update position label
-                var posLbl = this.FindByName<Label>("AboutFindPositionLabel");
-                if (posLbl != null)
-                    posLbl.Text = _aboutMatchCount > 0 ? $"{(_aboutCurrentIndex + 1)}/{_aboutMatchCount}" : string.Empty;
-            }
-            catch
-            {
-                // ignore
-            }
-        }
-
-        private async Task CenterHighlightedInScrollViewAsync(int index)
-        {
-            try
-            {
-                var web = this.FindByName<Microsoft.Maui.Controls.WebView>("AboutWebView");
-                var sv = this.FindByName<ScrollView>("AboutScrollView");
-                if (web == null || sv == null) return;
-
-                // Wait for the ScrollView to have a measured height
-                int retries = 5;
-                while (retries-- > 0 && sv.Height <= 0)
-                    await Task.Delay(50);
-
-                // Return element top (offsetParent walk), element height, and total body scroll height.
-                // We scale JS coordinates to MAUI dp via the fraction: (jsOffset / bodyScrollHeight) * webViewHeightDp.
-                // This eliminates any mismatch when Android WebView renders without a viewport meta tag,
-                // which causes JS layout values to be in a ~980px virtual space rather than device dp.
-                var infoJs = $@"(function(idx){{
-                    var el = document.querySelector('.about-search-highlight[data-about-index=""' + idx + '""]');
-                    if (!el) return '';
-                    var top = 0, h = el.offsetHeight, cur = el;
-                    while (cur) {{ top += cur.offsetTop; cur = cur.offsetParent; }}
-                    var totalH = document.body.scrollHeight;
-                    return top + '|' + h + '|' + totalH;
-                }})({index});";
-
-                var infoRes = await web.EvaluateJavaScriptAsync(infoJs);
-                var trimmed = infoRes?.Trim('"');
-                if (string.IsNullOrEmpty(trimmed))
-                {
-                    await sv.ScrollToAsync(AboutWebView, ScrollToPosition.Center, true);
-                    return;
-                }
-
-                var parts = trimmed.Split('|');
-                if (parts.Length >= 3
-                    && double.TryParse(parts[0], NumberStyles.Any, CultureInfo.InvariantCulture, out var elTop)
-                    && double.TryParse(parts[1], NumberStyles.Any, CultureInfo.InvariantCulture, out var elHeight)
-                    && double.TryParse(parts[2], NumberStyles.Any, CultureInfo.InvariantCulture, out var bodyScrollHeight)
-                    && bodyScrollHeight > 0)
-                {
-                    var svHeight = sv.Height > 0 ? sv.Height
-                        : Application.Current?.Windows?.FirstOrDefault()?.Page?.Height ?? 600;
-
-                    // Convert JS coordinate space to MAUI dp.
-                    // AboutWebView.HeightRequest is set from bodyScrollHeight+20 by AutoSizeWebViewAsync,
-                    // so (HeightRequest - 20) / bodyScrollHeight ≈ 1.0 when viewport is correct,
-                    // but corrects for any scale difference when viewport is absent.
-                    var webHeightDp = AboutWebView.HeightRequest > 20 ? AboutWebView.HeightRequest - 20 : bodyScrollHeight;
-                    var scale = webHeightDp / bodyScrollHeight;
-                    var webTop = AboutWebView.Y;
-
-                    var target = webTop + (elTop + elHeight / 2.0) * scale - svHeight / 2.0;
-                    if (target < 0) target = 0;
-
-                    await sv.ScrollToAsync(0, target, true);
-                }
-                else
-                {
-                    await sv.ScrollToAsync(AboutWebView, ScrollToPosition.Center, true);
-                }
-            }
-            catch
-            {
-                // ignore errors - best-effort
-            }
-        }
 
         /// <summary>
         /// Removes Word-specific conditional comments and XML blobs that non-IE browsers
@@ -535,6 +331,450 @@ namespace musicmate.Pages
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
             return html;
+        }
+        private async void OnAboutSearchEntryFocused(object? sender, FocusEventArgs e)
+        {
+            if (sender is not Entry entry)
+                return;
+
+            // Allow the native Entry to finish receiving focus.
+            await Task.Delay(100);
+
+            entry.CursorPosition = 0;
+            entry.SelectionLength = entry.Text?.Length ?? 0;
+        }
+        private async void OnAboutSearchEntryTextChanged(object? sender, TextChangedEventArgs e)
+        {
+            _aboutSearchDebounceCts?.Cancel();
+            _aboutSearchDebounceCts?.Dispose();
+
+            var cts = new CancellationTokenSource();
+            _aboutSearchDebounceCts = cts;
+
+            try
+            {
+                // Avoid rebuilding the highlights after every individual keystroke.
+                await Task.Delay(250, cts.Token);
+
+                await SearchAboutPageAsync(
+                    e.NewTextValue,
+                    cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // A later TextChanged event replaced this search.
+            }
+            catch
+            {
+                await ShowAboutSearchErrorAsync();
+            }
+        }
+        private async Task SearchAboutPageAsync( string? searchText,  CancellationToken cancellationToken = default)
+        {
+            var query = searchText?.Trim() ?? string.Empty;
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var web = AboutWebView;
+            if (web == null)
+                return;
+
+            /*
+             * Pause audio capture once when the user begins searching.
+             * Clearing the search does not restart audio capture.
+             */
+            if (!string.IsNullOrEmpty(query) &&
+                !_aboutPausedListening)
+            {
+                try
+                {
+                    var audio =
+                        ServiceHelper.GetService<IAudioCaptureService>();
+
+                    audio?.StopCapture();
+                    _aboutPausedListening = true;
+                }
+                catch
+                {
+                    // Best effort only.
+                }
+            }
+
+            /*
+             * JsonSerializer creates a safe JavaScript string literal,
+             * including the surrounding quotation marks.
+             */
+            var jsQuery = JsonSerializer.Serialize(query);
+
+            var js = $@"(function(){{
+        var q = {jsQuery};
+
+        /*
+         * Remove existing highlights while retaining their text.
+         */
+        var oldHighlights =
+            document.querySelectorAll('.about-search-highlight');
+
+        for (var i = oldHighlights.length - 1; i >= 0; i--) {{
+            var element = oldHighlights[i];
+            var parent = element.parentNode;
+
+            if (!parent)
+                continue;
+
+            while (element.firstChild)
+                parent.insertBefore(element.firstChild, element);
+
+            parent.removeChild(element);
+            parent.normalize();
+        }}
+
+        /*
+         * An empty query clears the search and returns to the top.
+         */
+        if (!q) {{
+            window.scrollTo(0, 0);
+            return 0;
+        }}
+
+        function escapeRegExp(value) {{
+            return value.replace(
+                /[.*+?^{{}}()|[\]\\]/g,
+                '\\$&'
+            );
+        }}
+
+        var expression =
+            new RegExp(escapeRegExp(q), 'gi');
+
+        var count = 0;
+
+        try {{
+            /*
+             * Search text nodes only. This avoids changing HTML
+             * tags, attributes, scripts or styles.
+             */
+            var walker = document.createTreeWalker(
+                document.body,
+                NodeFilter.SHOW_TEXT,
+                {{
+                    acceptNode: function(node) {{
+                        var parent = node.parentNode;
+
+                        var tag = parent
+                            ? parent.nodeName.toUpperCase()
+                            : '';
+
+                        if (
+                            tag === 'SCRIPT' ||
+                            tag === 'STYLE' ||
+                            tag === 'NOSCRIPT'
+                        ) {{
+                            return NodeFilter.FILTER_REJECT;
+                        }}
+
+                        if (
+                            parent &&
+                            parent.classList &&
+                            parent.classList.contains(
+                                'about-search-highlight'
+                            )
+                        ) {{
+                            return NodeFilter.FILTER_REJECT;
+                        }}
+
+                        return NodeFilter.FILTER_ACCEPT;
+                    }}
+                }}
+            );
+
+            /*
+             * Collect the text nodes before changing the document.
+             */
+            var nodes = [];
+            var node;
+
+            while ((node = walker.nextNode()))
+                nodes.push(node);
+
+            for (var nodeIndex = 0;
+                 nodeIndex < nodes.length;
+                 nodeIndex++) {{
+
+                var textNode = nodes[nodeIndex];
+                var text = textNode.textContent;
+
+                expression.lastIndex = 0;
+
+                if (!expression.test(text))
+                    continue;
+
+                expression.lastIndex = 0;
+
+                var fragment =
+                    document.createDocumentFragment();
+
+                var previousIndex = 0;
+                var match;
+
+                while ((match = expression.exec(text)) !== null) {{
+                    if (match.index > previousIndex) {{
+                        fragment.appendChild(
+                            document.createTextNode(
+                                text.slice(
+                                    previousIndex,
+                                    match.index
+                                )
+                            )
+                        );
+                    }}
+
+                    var span =
+                        document.createElement('span');
+
+                    span.className =
+                        'about-search-highlight';
+
+                    span.setAttribute(
+                        'data-about-index',
+                        String(count)
+                    );
+
+                    span.textContent = match[0];
+
+                    fragment.appendChild(span);
+
+                    count++;
+
+                    previousIndex =
+                        match.index + match[0].length;
+
+                    /*
+                     * Defensive protection against an accidental
+                     * zero-length regular-expression match.
+                     */
+                    if (match[0].length === 0)
+                        expression.lastIndex++;
+                }}
+
+                if (previousIndex < text.length) {{
+                    fragment.appendChild(
+                        document.createTextNode(
+                            text.slice(previousIndex)
+                        )
+                    );
+                }}
+
+                if (textNode.parentNode) {{
+                    textNode.parentNode.replaceChild(
+                        fragment,
+                        textNode
+                    );
+                }}
+            }}
+
+            /*
+             * Mark and display the first result.
+             */
+            if (count > 0) {{
+            var first = document.querySelector(
+                '.about-search-highlight' +
+                '[data-about-index=""0""]'
+            );
+
+            if (first) {{
+                first.classList.add(
+                    'about-search-current'
+                    );
+        }}
+                 }}
+            }}
+        }}
+        catch (error) {{
+            return 0;
+        }}
+
+        return count;
+    }})();";
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var result =
+                await web.EvaluateJavaScriptAsync(js);
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            /*
+             * Record the query only after its search has completed.
+             */
+            _aboutSearchQuery = query;
+
+            if (TryParseJavaScriptInteger(result, out var count))
+            {
+                _aboutMatchCount = count;
+                _aboutCurrentIndex = count > 0 ? 0 : -1;
+
+                //if (count > 0)
+                //{
+                //    await CenterHighlightedInScrollViewAsync(
+                //        _aboutCurrentIndex);
+                //}
+            }
+            else
+            {
+                _aboutMatchCount = 0;
+                _aboutCurrentIndex = -1;
+            }
+
+            UpdateAboutSearchControls();
+        }
+        private async Task ScrollToAboutMatchAsync(int matchIndex)
+        {
+            if (_aboutMatchCount <= 0)
+                return;
+
+            if (matchIndex < 0 || matchIndex >= _aboutMatchCount)
+                return;
+
+            var web = AboutWebView;
+            if (web == null)
+                return;
+
+            _aboutCurrentIndex = matchIndex;
+
+            var js = $@"(function(){{
+        var matches =
+            document.querySelectorAll(
+                '.about-search-highlight'
+            );
+
+        for (var i = 0; i < matches.length; i++) {{
+            matches[i].classList.remove(
+                'about-search-current'
+            );
+        }}
+
+        var current = document.querySelector(
+            '.about-search-highlight' +
+            '[data-about-index=""{matchIndex}""]'
+        );
+
+        if (!current)
+            return false;
+
+        current.classList.add(
+            'about-search-current'
+        );
+
+        try {{
+            current.scrollIntoView({{
+                behavior: 'auto',
+                block: 'center',
+                inline: 'nearest'
+            }});
+        }}
+        catch (error) {{
+            return false;
+        }}
+
+        return true;
+    }})();";
+
+            await web.EvaluateJavaScriptAsync(js);
+
+            UpdateAboutSearchControls();
+        }
+        private async Task MoveToNextAboutMatchAsync()
+        {
+            if (_aboutMatchCount <= 0)
+                return;
+
+            var web = AboutWebView;
+            if (web == null)
+                return;
+
+            _aboutCurrentIndex++;
+
+            if (_aboutCurrentIndex >= _aboutMatchCount)
+                _aboutCurrentIndex = 0;
+
+            var js = $@"(function(){{
+        var matches =
+            document.querySelectorAll(
+                '.about-search-highlight'
+            );
+
+        for (var i = 0; i < matches.length; i++) {{
+            matches[i].classList.remove(
+                'about-search-current'
+            );
+        }}
+
+        var current = document.querySelector(
+            '.about-search-highlight' +
+            '[data-about-index=""{_aboutCurrentIndex}""]'
+        );
+
+        if (!current)
+            return false;
+
+        current.classList.add(
+            'about-search-current'
+        );
+
+        try {{
+            current.scrollIntoView({{
+                behavior: 'auto',
+                block: 'center'
+            }});
+        }}
+        catch (error) {{
+        }}
+
+        return true;
+    }})();";
+
+            await web.EvaluateJavaScriptAsync(js);
+
+            //await CenterHighlightedInScrollViewAsync(
+            //    _aboutCurrentIndex);
+
+            UpdateAboutSearchControls();
+        }
+        private void UpdateAboutSearchControls()
+        {
+            AboutFindNextButton.IsEnabled =
+                _aboutMatchCount > 1;
+
+            AboutFindPositionLabel.Text =
+                _aboutMatchCount > 0
+                    ? $"{_aboutCurrentIndex + 1}/{_aboutMatchCount}"
+                    : string.Empty;
+        }
+        private static bool TryParseJavaScriptInteger( string? result, out int value)
+        {
+            value = 0;
+
+            if (string.IsNullOrWhiteSpace(result))
+                return false;
+
+            var cleaned = result
+                .Trim()
+                .Trim('"');
+
+            return int.TryParse(cleaned, out value);
+        }
+        private static async Task ShowAboutSearchErrorAsync()
+        {
+            await MainThread.InvokeOnMainThreadAsync(
+                async () =>
+                {
+                    await Toast
+                        .Make(
+                            "Search unavailable.",
+                            ToastDuration.Short)
+                        .Show();
+                });
         }
     }
 }

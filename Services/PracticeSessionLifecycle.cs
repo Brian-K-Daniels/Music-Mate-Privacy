@@ -122,7 +122,7 @@ namespace musicmate.Services
             NoteDatabase? db)
         {
             var list = notes.ToList();
-            if (db == null)
+            if (!session.UseNoteMasteryForGeneration || db == null)
                 return list;
 
             await db.InitializeAsync();

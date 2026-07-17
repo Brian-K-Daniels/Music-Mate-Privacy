@@ -395,7 +395,7 @@ namespace musicmate.ViewModels
             }
         }
 
-        public List<string> MasteredMethodOptions { get; } = new() { "% Correct", "Streak" };
+        public List<string> MasteredMethodOptions { get; } = new() { "% Correct", "Streak", "None" };  //  2026.07.16 1136  
 
         private string _masteredMethod = Preferences.Get("musicmate.MasteredMethod", MasteryPreferenceDefaults.MasteredMethod);
         public string MasteredMethod

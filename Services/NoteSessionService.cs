@@ -498,8 +498,28 @@ namespace musicmate.Services
 
         private const string PrefMasteredMethodKey = "musicmate.MasteredMethod";
         private const string PrefStreakCritKey = "musicmate.StreakCrit";
+        private const string PrefUseNoteMasteryForGenerationKey = "musicmate.UseNoteMasteryForGeneration";
         private string _masteredMethod = SessionPreferences.Get(PrefMasteredMethodKey, MasteryPreferenceDefaults.MasteredMethod);
         private int _streakCrit = SessionPreferences.Get(PrefStreakCritKey, MasteryPreferenceDefaults.StreakCrit);
+        private bool _useNoteMasteryForGeneration = SessionPreferences.Get(
+            PrefUseNoteMasteryForGenerationKey, MasteryPreferenceDefaults.UseNoteMasteryForGeneration);
+
+        /// <summary>
+        /// When true (factory default), Random / Repeat-Same generation may omit mastered
+        /// notes and bias toward weaker ones. When false, generation ignores mastery data
+        /// entirely without changing stored NoteStat / NoteAttempt records.
+        /// </summary>
+        public bool UseNoteMasteryForGeneration
+        {
+            get => _useNoteMasteryForGeneration;
+            set
+            {
+                if (_useNoteMasteryForGeneration == value) return;
+                _useNoteMasteryForGeneration = value;
+                SessionPreferences.Set(PrefUseNoteMasteryForGenerationKey, value);
+                OnPropertyChanged(nameof(UseNoteMasteryForGeneration));
+            }
+        }
 
         public string MasteredMethod
         {
@@ -651,10 +671,14 @@ namespace musicmate.Services
         /// Returns the set of written-pitch MIDI numbers that the player has mastered,
         /// using the same criteria as v1 Random mode mastery filtering.
         /// Used by v2 sequence generation to exclude mastered notes.
+        /// Returns an empty set when <see cref="UseNoteMasteryForGeneration"/> is false.
         /// </summary>
         public async Task<HashSet<int>> GetMasteredMidiNumbersAsync()
         {
             var result = new HashSet<int>();
+            if (!UseNoteMasteryForGeneration)
+                return result;
+
             try
             {
                 var db = ServiceHelper.GetService<NoteDatabase>();
@@ -1890,7 +1914,7 @@ namespace musicmate.Services
             get => _tune;
             set
             {
-                if (_tune != value)
+                if (value != null &&_tune != value)
                 {
                     var leavingPracticeTune = _tune == "Practice Tune" && value != "Practice Tune";
                     _tune = value;
@@ -2588,53 +2612,54 @@ namespace musicmate.Services
             if (availableNotes.Count < 2)
                 return availableNotes.ToArray();
 
-            // Get stats from database asynchronously
-            var db = ServiceHelper.GetService<NoteDatabase>();
-            if (db == null)
+            if (UseNoteMasteryForGeneration)
             {
-                Utils.Log("NoteDatabase service is not registered.");
-                return Array.Empty<string>();
-            }
-            await db.InitializeAsync();
-
-            var statsList = await db.GetAllAsync();
-            var stats = (statsList ?? Enumerable.Empty<NoteStat>())
-                .Where(s => !string.IsNullOrWhiteSpace(s.WrittenName))
-                .GroupBy(s => s.WrittenName)
-                .ToDictionary(g => g.Key, g => g.First());
-
-            // Exclude mastered notes based on MasteredMethod
-            availableNotes = availableNotes
-                .Where(note =>
+                // Get stats from database asynchronously
+                var db = ServiceHelper.GetService<NoteDatabase>();
+                if (db == null)
                 {
-                    if (!stats.TryGetValue(note, out var stat)) return true;
-                    return !MasteryEvaluator.IsFullyMastered(stat, this);
-                })
-                .ToList();
-
-            // If filtering removed all notes or left only one, keep what we have if possible,
-            // otherwise fall back to the full unfiltered pool (all notes need more practice)
-            if (availableNotes.Count < 2)
-            {
-                var fullPool = BuildAvailableNotesForCurrentInstrumentAndScale();
-
-                if (fullPool.Count >= 2)
-                {
-                    // Pick the least-mastered notes: sort by streak ascending (or percent correct)
-                    // so we review the weakest notes rather than including fully mastered ones
-                    availableNotes = fullPool
-                        .OrderBy(note =>
-                        {
-                            if (stats.TryGetValue(note, out var s))
-                                return MasteredMethod == "Streak" ? s.Streak : (int)s.PercentOverallCorrect;
-                            return 0;
-                        })
-                        .Take(Math.Max(2, fullPool.Count / 2))
-                        .ToList();
+                    Utils.Log("NoteDatabase service is not registered.");
+                    return Array.Empty<string>();
                 }
-                else
+                await db.InitializeAsync();
+
+                var statsList = await db.GetAllAsync();
+                var stats = (statsList ?? Enumerable.Empty<NoteStat>())
+                    .Where(s => !string.IsNullOrWhiteSpace(s.WrittenName))
+                    .GroupBy(s => s.WrittenName)
+                    .ToDictionary(g => g.Key, g => g.First());
+
+                // Exclude mastered notes based on MasteredMethod
+                availableNotes = availableNotes
+                    .Where(note =>
+                    {
+                        if (!stats.TryGetValue(note, out var stat)) return true;
+                        return !MasteryEvaluator.IsFullyMastered(stat, this);
+                    })
+                    .ToList();
+
+                // If filtering removed all notes or left only one, keep what we have if possible,
+                // otherwise fall back to reviewing the weakest notes from the full pool.
+                if (availableNotes.Count < 2)
                 {
-                    availableNotes = fullPool;
+                    var fullPool = BuildAvailableNotesForCurrentInstrumentAndScale();
+
+                    if (fullPool.Count >= 2)
+                    {
+                        availableNotes = fullPool
+                            .OrderBy(note =>
+                            {
+                                if (stats.TryGetValue(note, out var s))
+                                    return MasteredMethod == "Streak" ? s.Streak : (int)s.PercentOverallCorrect;
+                                return 0;
+                            })
+                            .Take(Math.Max(2, fullPool.Count / 2))
+                            .ToList();
+                    }
+                    else
+                    {
+                        availableNotes = fullPool;
+                    }
                 }
             }
 
