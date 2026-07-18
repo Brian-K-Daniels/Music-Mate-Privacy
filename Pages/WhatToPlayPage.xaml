@@ -75,8 +75,9 @@
       <Setter Property="Stroke" Value="Black" />
       <Setter Property="StrokeThickness" Value="2" />
       <Setter Property="Padding" Value="6,4" />
-      <Setter Property="MinimumHeightRequest" Value="56" />
+      <Setter Property="MinimumHeightRequest" Value="36" />
       <Setter Property="HorizontalOptions" Value="Fill" />
+      <Setter Property="HeightRequest" Value="44" />
       <Setter Property="StrokeShape">
         <Setter.Value>
           <RoundRectangle CornerRadius="8" />
@@ -91,7 +92,8 @@
       <Setter Property="HorizontalOptions" Value="Fill" />
       <Setter Property="HorizontalTextAlignment" Value="Center" />
       <Setter Property="Margin" Value="2,0" />
-      <Setter Property="MinimumHeightRequest" Value="40" />
+      <Setter Property="HeightRequest" Value="42" />
+      <Setter Property="MinimumHeightRequest" Value="0" />
     </Style>
   </ContentPage.Resources>
 
@@ -99,13 +101,13 @@
   <Grid>
 
     <ScrollView Orientation="Vertical">
-      <VerticalStackLayout Spacing="12"
+      <VerticalStackLayout Spacing="10"
                           Padding="0,4,0,32">
 
       <!-- Tunes | Scales | Arpeggios | Other -->
       <VerticalStackLayout Spacing="8"
                            HorizontalOptions="Fill"
-                           Margin="12,8,12,0">
+                           Margin="8,8,8,0">
         <Grid ColumnDefinitions="*,*"
               RowDefinitions="Auto,Auto"
               ColumnSpacing="10"
@@ -192,7 +194,8 @@
         <Button x:Name="AutoRepeatScaleButton"
                 Text="Repeat"
                 Style="{StaticResource WtpBrownButton}"
-                HeightRequest="44"
+                TextColor="Ivory"
+                HeightRequest="36"
                 HorizontalOptions="Fill"
                 Clicked="OnAutoRepeatScaleClicked"
                 IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsScaleRepeatButtonVisible}" />
@@ -203,15 +206,17 @@
               IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsRandomRepeatButtonsVisible}">
           <Button x:Name="AutoRepeatNewButton"
                   Grid.Column="0"
-                  Text="New Each Time"
+                  Text="Repeat New Each Time"
                   Style="{StaticResource WtpBrownButton}"
+                  TextColor="Ivory"
                   HeightRequest="44"
                   HorizontalOptions="Fill"
                   Clicked="OnAutoRepeatNewClicked" />
           <Button x:Name="AutoRepeatSameButton"
                   Grid.Column="1"
                   Text="Repeat Same"
-                  Style="{StaticResource WtpBrownButton}"
+                  Style="{StaticResource WtpBrownButton}"                  
+                  TextColor="Ivory"
                   HeightRequest="44"
                   HorizontalOptions="Fill"
                   Clicked="OnAutoRepeatSameClicked" />

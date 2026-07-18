@@ -82,10 +82,16 @@ namespace musicmate.Services
 
         /// <summary>
         /// Optional set of MIDI numbers (written pitch) to exclude from pitch selection.
-        /// Used to skip notes the player has already mastered.  When all pool notes are
-        /// excluded the full pool is used as fallback so the sequence never runs dry.
+        /// Used to skip notes the player has already mastered.  When too few notes remain
+        /// after exclusion the full pool is used so generation keeps melodic variety.
         /// </summary>
         public HashSet<int> ExcludedMidiNumbers { get; set; } = new();
+
+        /// <summary>
+        /// After mastery exclusions, fewer than this many pitches triggers fallback to the
+        /// full pool so interval caps do not lock generation into a two-note oscillation.
+        /// </summary>
+        public const int MinPitchPoolAfterMasteryExclusion = 4;
 
         /// <summary>
         /// When <c>true</c>, notes are drawn in ascending then descending scale order
@@ -209,18 +215,19 @@ namespace musicmate.Services
             }
 
             // 4. Fill measures — motif phrases for random fresh sequences, else slot-by-slot.
-            if (ShouldUseMotifPhrases())
+            if (ShouldUseMotifPhrases(pool))
                 return GenerateMotifPhraseSequence(rng, pool, durationWeights);
 
             return GenerateSlotBySlotSequence(rng, pool, durationWeights, scaleQueue);
         }
 
-        private bool ShouldUseMotifPhrases()
+        private bool ShouldUseMotifPhrases(List<int> pool)
             => UseMotifPhrases
                && !UseScaleOrder
                && StartMeasureIndex == 0
                && StartGlobalNoteIndex == 0
-               && SyncopationLevel != SyncopationLevel.Full;
+               && SyncopationLevel != SyncopationLevel.Full
+               && pool.Count >= MinPitchPoolAfterMasteryExclusion;
 
         /// <summary>
         /// Legacy slot-by-slot fill (scale walk, append batches, syncopation, and fallback).
@@ -344,7 +351,9 @@ namespace musicmate.Services
             int pitchedSlotCount = measureRhythms.Sum(m => m.Count(s => !s.IsRest));
             bool canReuse = contourToReuse != null
                             && pitchedSlotCount > 0
-                            && contourToReuse.SemitoneDeltas.Count == pitchedSlotCount - 1;
+                            && contourToReuse.SemitoneDeltas.Count == pitchedSlotCount - 1
+                            && MaxMelodicIntervalSemitones > 2
+                            && pool.Count >= MinPitchPoolAfterMasteryExclusion;
 
             var pitchedMidis = new List<int>(pitchedSlotCount);
             double globalBeatCursor = globalBeatStart;
@@ -812,9 +821,9 @@ namespace musicmate.Services
             }
 
             // Remove mastered notes; fall back to the full pool when too few remain
-            // so the sequence never runs dry.
+            // so tight interval caps cannot trap generation in a two-note oscillation.
             var filtered = fullPool.Where(m => !ExcludedMidiNumbers.Contains(m)).ToList();
-            return filtered.Count >= 2 ? filtered : fullPool;
+            return filtered.Count >= MinPitchPoolAfterMasteryExclusion ? filtered : fullPool;
         }
 
         /// <summary>
@@ -1063,7 +1072,12 @@ namespace musicmate.Services
                 if (MaxMelodicIntervalSemitones > 0)
                 {
                     int center = (pool.Min() + pool.Max()) / 2;
-                    return pool.OrderBy(m => Math.Abs(m - center)).ThenBy(m => m).First();
+                    var nearCenter = pool
+                        .Where(m => Math.Abs(m - center) <= MaxMelodicIntervalSemitones * 2)
+                        .ToList();
+                    if (nearCenter.Count == 0)
+                        nearCenter = pool;
+                    return nearCenter[rng.Next(nearCenter.Count)];
                 }
 
                 return pool[rng.Next(pool.Count)];

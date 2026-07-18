@@ -41,6 +41,7 @@ namespace musicmate.Pages
         private bool _localPlayModeChange = false;
 
         private bool _isPageVisible = false;
+        private readonly IOrientationService _orientation = null!;
 
 
 
@@ -125,6 +126,10 @@ namespace musicmate.Pages
                 _theme = ServiceHelper.GetService<ThemeService>()!;
 
 
+                _orientation = ServiceHelper.GetService<IOrientationService>()!;
+
+                _orientation.AllowAutorotate();
+
 
                 BindingContext = _session;
 
@@ -177,6 +182,8 @@ namespace musicmate.Pages
             base.OnAppearing();
 
             _isPageVisible = true;
+
+            _orientation?.ForceLandscape();
 
             SyncPickersFromSession();
 

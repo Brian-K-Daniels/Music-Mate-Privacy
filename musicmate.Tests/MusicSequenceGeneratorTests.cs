@@ -48,6 +48,82 @@ public class MusicSequenceGeneratorTests
         }
     }
 
+    [Fact]
+    public void MasteryExclusion_FallsBackToFullPool_WhenTooFewNotesRemain()
+    {
+        int g4 = NoteSessionService.NoteNameToMidi("G4");
+        int a4 = NoteSessionService.NoteNameToMidi("A4");
+        var excludeAllButGa = new HashSet<int>();
+        for (int midi = NoteSessionService.NoteNameToMidi("C4"); midi <= NoteSessionService.NoteNameToMidi("B4"); midi++)
+        {
+            if (midi != g4 && midi != a4)
+                excludeAllButGa.Add(midi);
+        }
+
+        var gen = CreateRandomGenerator(4242, excludeAllButGa, maxIntervalSemitones: 2);
+        var pitches = FlattenPitches(gen);
+
+        Assert.True(
+            pitches.Distinct().Count() >= 3,
+            "Two-note mastery pool must fall back to the full range for variety.");
+    }
+
+    [Fact]
+    public void EarlyLevelIntervalCap_ProducesVariedSequencesAcrossSeeds()
+    {
+        var signatures = new HashSet<string>();
+        for (int seed = 0; seed < 24; seed++)
+        {
+            var gen = CreateRandomGenerator(seed, new HashSet<int>(), maxIntervalSemitones: 2);
+            signatures.Add(string.Join(',', FlattenPitches(gen)));
+        }
+
+        Assert.True(signatures.Count > 1, "Identical output across seeds indicates a locked oscillation.");
+    }
+
+    [Fact]
+    public void EarlyLevelMotif_DoesNotRepeatIdenticalContourAcrossPhrases()
+    {
+        var gen = CreateRandomGenerator(9001, new HashSet<int>(), maxIntervalSemitones: 2);
+        gen.MeasureCount = 8;
+        var flat = MusicSequenceGenerator.Flatten(gen.GenerateSequence())
+            .Where(n => !n.IsRest)
+            .Select(n => n.MidiNumber)
+            .ToList();
+
+        Assert.True(flat.Count >= 8);
+        var firstFour = flat.Take(4).ToList();
+        var nextFour = flat.Skip(4).Take(4).ToList();
+        Assert.NotEqual(firstFour, nextFour);
+    }
+
+    private static List<int> FlattenPitches(MusicSequenceGenerator gen)
+        => MusicSequenceGenerator.Flatten(gen.GenerateSequence())
+            .Where(n => !n.IsRest)
+            .Select(n => n.MidiNumber)
+            .ToList();
+
+    private static MusicSequenceGenerator CreateRandomGenerator(
+        int seed, HashSet<int> excluded, int maxIntervalSemitones = 0)
+        => new()
+        {
+            Key = "C",
+            Scale = "Major",
+            LowestNote = "C4",
+            HighestNote = "B4",
+            TimeSignature = TimeSignature.FourFour,
+            MeasureCount = 8,
+            RhythmVarietyPercent = 0,
+            SmallestDuration = NoteDuration.Quarter,
+            UseScaleOrder = false,
+            UseMotifPhrases = true,
+            AccidentalPercent = 0,
+            RestChancePercent = 0,
+            ExcludedMidiNumbers = excluded,
+            MaxMelodicIntervalSemitones = maxIntervalSemitones,
+            RandomSeed = seed,
+        };
+
     private static MusicSequenceGenerator CreateLevelGenerator(int level, int seed)
     {
         int variety = ChildLevelProgression.RhythmVarietyPercentForLevel(level);

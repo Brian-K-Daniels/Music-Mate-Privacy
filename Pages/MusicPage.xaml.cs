@@ -803,7 +803,7 @@ namespace musicmate.Pages
         /// Builds a <see cref="MusicSequenceGenerator"/> configured with the current
         /// session parameters, append offsets, and mastery exclusions.
         /// </summary>
-        private MusicSequenceGenerator BuildSequenceGenerator(int measureCount, int startPrevPitch = -1)
+        private MusicSequenceGenerator BuildSequenceGenerator(int measureCount, int startPrevPitch = -1, int seedSalt = 0)
         {
             // Translate persisted string settings to model types.
             var timeSig = _session.MeterTimeSignature switch
@@ -856,6 +856,7 @@ namespace musicmate.Pages
                 RandomSeed = Environment.TickCount
                                            ^ _generationSeed
                                            ^ (_session.ChildLevel * 7919)
+                                           ^ seedSalt
             };
             DebugLog.WriteLine($"[StaffGen] Tune={_session.Tune} Random={_session.IsRandomMode} SimpleScale={simpleSelectedScale} AccPct={_session.AccidentalPercent} EffectiveAccPct={(_session.IsRandomMode ? _session.AccidentalPercent : 0)}");
             return gen;
@@ -900,7 +901,7 @@ namespace musicmate.Pages
             if (lowerMc > 0)
             {
                 int lowerStartPitch = MusicSequenceGenerator.LastPitchedMidi(upperFlat);
-                var genLower = BuildSequenceGenerator(lowerMc, lowerStartPitch);
+                var genLower = BuildSequenceGenerator(lowerMc, lowerStartPitch, seedSalt: 0x5A5A5A5A);
                 var lowerMeasures = genLower.GenerateSequence();
                 lowerFlat = MusicSequenceGenerator.Flatten(lowerMeasures);
 

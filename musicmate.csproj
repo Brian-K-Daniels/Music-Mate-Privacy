@@ -118,10 +118,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="Services\NoteAttemptDatabase.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <MauiImage Include="Resources\Images\logo.png" />
   </ItemGroup>
 

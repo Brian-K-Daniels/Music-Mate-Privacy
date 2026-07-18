@@ -2638,12 +2638,18 @@ namespace musicmate.Services
                     })
                     .ToList();
 
-                // If filtering removed all notes or left only one, keep what we have if possible,
-                // otherwise fall back to reviewing the weakest notes from the full pool.
-                if (availableNotes.Count < 2)
-                {
-                    var fullPool = BuildAvailableNotesForCurrentInstrumentAndScale();
+                var fullPool = BuildAvailableNotesForCurrentInstrumentAndScale();
 
+                // When mastery leaves too few candidates, keep the full pool so generation
+                // does not collapse into a repeating two-note pattern (e.g. G–A–G–A).
+                if (availableNotes.Count < MusicSequenceGenerator.MinPitchPoolAfterMasteryExclusion
+                    && fullPool.Count >= 2)
+                {
+                    availableNotes = fullPool;
+                }
+                // If filtering removed all notes or left only one, fall back to weakest notes.
+                else if (availableNotes.Count < 2)
+                {
                     if (fullPool.Count >= 2)
                     {
                         availableNotes = fullPool
