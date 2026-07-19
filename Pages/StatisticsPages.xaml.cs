@@ -1,5 +1,7 @@
 using System;
 using System.Diagnostics;
+using musicmate.Drawables;
+using musicmate.Models;
 using musicmate.Utilities;
 using Microsoft.Maui.Controls;
 using musicmate.Services;
@@ -17,6 +19,8 @@ namespace musicmate.Pages
         private readonly NoteSessionService _session;
         private readonly ThemeService _themeService;
         private readonly StatisticsCacheService _statisticsCache;
+        private readonly NoteMasteryService _noteMasteryService;
+        private readonly MasteryStaffDrawable _masteryDrawable = new();
 
         public StatisticsPages()
         {
@@ -30,10 +34,20 @@ namespace musicmate.Pages
             _session = ServiceHelper.GetService<NoteSessionService>()!;
             _themeService = ServiceHelper.GetService<ThemeService>()!;
             _statisticsCache = ServiceHelper.GetService<StatisticsCacheService>()!;
+            _noteMasteryService = ServiceHelper.GetService<NoteMasteryService>()!;
 
             _viewModel = new NoteStatisticsViewModel(
-                _noteDatabase, _sessionDatabase, _themeService, _session, _statisticsCache);
+                _noteDatabase, _sessionDatabase, _themeService, _session,
+                _statisticsCache, _noteMasteryService);
             BindingContext = _viewModel;
+            _viewModel.MasteryNotesChanged += OnMasteryNotesChanged;
+            _themeService.PropertyChanged += OnThemeServicePropertyChanged;
+        }
+
+        private void OnThemeServicePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (_viewModel.IsMasteryDatabase)
+                RefreshMasteryStaff();
         }
 
         private async void OnDeleteSessionStatClicked(object sender, EventArgs e)
@@ -223,5 +237,104 @@ namespace musicmate.Pages
         {
             await Shell.Current.GoToAsync("//MusicPage");
         }
+
+        private void OnMasteryNotesChanged(object? sender, EventArgs e)
+            => RefreshMasteryStaff();
+
+        private void RefreshMasteryStaff()
+        {
+            if (MasteryStaffView is null)
+                return;
+
+            Color panelBg = _themeService.PanelBackgroundColor;
+            Color mastered = NoteMasteryStatusColors.ForState(NoteMasteryState.Mastered, panelBg);
+            Color improving = NoteMasteryStatusColors.ForState(NoteMasteryState.Improving, panelBg);
+            Color needsPractice = NoteMasteryStatusColors.ForState(NoteMasteryState.NeedsPractice, panelBg);
+            Color notTried = NoteMasteryStatusColors.ForState(NoteMasteryState.NotYetAttempted, panelBg);
+
+            ApplyMasteryStatusLabelColors(
+                mastered, improving, needsPractice, notTried);
+
+            _masteryDrawable.Notes = _viewModel.MasteryNotes.ToList();
+            _masteryDrawable.PreferBassClef = _viewModel.PreferBassClef;
+            _masteryDrawable.StaffInk = _themeService.ContrastingTextColor;
+            _masteryDrawable.MasteredColor = mastered;
+            _masteryDrawable.ImprovingColor = improving;
+            _masteryDrawable.NeedsPracticeColor = needsPractice;
+            _masteryDrawable.NotAttemptedColor = notTried;
+            _masteryDrawable.SelectedHaloColor = _themeService.PickerBorderColor;
+            float width = (float)(MasteryStaffView.Width > 0 ? MasteryStaffView.Width : 640);
+            MasteryStaffView.Drawable = _masteryDrawable;
+            MasteryStaffView.HeightRequest = Math.Max(120, _masteryDrawable.ComputeDesiredHeight(width) + 8);
+            MasteryStaffView.Invalidate();
+        }
+
+        private void ApplyMasteryStatusLabelColors(
+            Color mastered, Color improving, Color needsPractice, Color notTried)
+        {
+            ApplyStatusChrome(
+                MasteryLegendMastered, MasteryCountMastered,
+                mastered, NoteMasteryState.Mastered);
+            ApplyStatusChrome(
+                MasteryLegendImproving, MasteryCountImproving,
+                improving, NoteMasteryState.Improving);
+            ApplyStatusChrome(
+                MasteryLegendPracticeNext, MasteryCountPracticeNext,
+                needsPractice, NoteMasteryState.NeedsPractice);
+            ApplyStatusChrome(
+                MasteryLegendNotTried, MasteryCountNotTried,
+                notTried, NoteMasteryState.NotYetAttempted);
+
+            Color detailBg = _themeService.SecondPanelBackgroundColor;
+            Color detailStatus = _viewModel.SelectedMasteryNote is null
+                ? notTried
+                : NoteMasteryStatusColors.ForState(
+                    _viewModel.SelectedMasteryNote.MasteryState, detailBg);
+            if (MasteryDetailNoteName is not null)
+                MasteryDetailNoteName.TextColor = detailStatus;
+            if (MasteryDetailState is not null)
+            {
+                MasteryDetailState.TextColor = detailStatus;
+                string tip = _viewModel.SelectedMasteryStateDescription;
+                ToolTipProperties.SetText(MasteryDetailState, tip);
+                SemanticProperties.SetHint(MasteryDetailState, tip);
+            }
+        }
+
+        private static void ApplyStatusChrome(
+            Label? legend,
+            Label? count,
+            Color color,
+            NoteMasteryState state)
+        {
+            string tip = NoteMasteryStateLabels.Description(state);
+            if (legend is not null)
+            {
+                legend.TextColor = color;
+                ToolTipProperties.SetText(legend, tip);
+                SemanticProperties.SetHint(legend, tip);
+            }
+
+            if (count is not null)
+            {
+                count.TextColor = color;
+                ToolTipProperties.SetText(count, tip);
+                SemanticProperties.SetHint(count, tip);
+            }
+        }
+
+        private void OnMasteryStaffStartInteraction(object? sender, TouchEventArgs e)
+        {
+            if (e.Touches.Length == 0)
+                return;
+            var touch = e.Touches[0];
+            var hit = _masteryDrawable.HitTest((float)touch.X, (float)touch.Y);
+            if (hit is not null)
+            {
+                _viewModel.SelectMasteryNoteCommand.Execute(hit);
+                RefreshMasteryStaff();
+            }
+        }
+
     }
 }

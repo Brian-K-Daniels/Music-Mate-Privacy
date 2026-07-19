@@ -207,6 +207,26 @@
                  Margin="8,2,8,0"
                  HorizontalOptions="Start" />
 
+          <Grid x:Name="NoteEmphasisBanner"
+                IsVisible="False"
+                ColumnDefinitions="*,Auto"
+                Margin="8,2,8,0"
+                ColumnSpacing="8">
+            <Label Grid.Column="0"
+                   x:Name="NoteEmphasisLabel"
+                   FontSize="13"
+                   FontAttributes="Bold"
+                   TextColor="{DynamicResource ThemeHeadingText}"
+                   VerticalOptions="Center"
+                   LineBreakMode="WordWrap" />
+            <Button Grid.Column="1"
+                    Text="Clear emphasis"
+                    Clicked="OnClearNoteEmphasisClicked"
+                    FontSize="11"
+                    Padding="10,4"
+                    VerticalOptions="Center" />
+          </Grid>
+
           </VerticalStackLayout>
 
           <!-- Session result banner: shown after a session completes, hidden while playing -->

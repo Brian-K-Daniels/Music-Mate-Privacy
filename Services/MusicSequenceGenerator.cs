@@ -143,6 +143,18 @@ namespace musicmate.Services
         /// </summary>
         public bool UseMotifPhrases { get; set; } = true;
 
+        /// <summary>
+        /// Optional written-pitch MIDI to emphasize in random selection.
+        /// Weight is <see cref="EmphasizedNoteSelectionPercent"/> (default from
+        /// <see cref="NoteMasteryPreferenceDefaults.EmphasizedNoteSelectionPercent"/>).
+        /// Still obeys same-pitch-class and interval rules.
+        /// </summary>
+        public int? EmphasizedMidiNumber { get; set; }
+
+        /// <summary>0–100 target share of selections for <see cref="EmphasizedMidiNumber"/>.</summary>
+        public int EmphasizedNoteSelectionPercent { get; set; } =
+            NoteMasteryPreferenceDefaults.EmphasizedNoteSelectionPercent;
+
         private readonly record struct RhythmSlot(NoteDuration Duration, bool IsRest);
 
         private enum PhraseRole { A, APrime, B, AReturn }
@@ -719,8 +731,7 @@ namespace musicmate.Services
             if (minMidi < 0 || maxMidi < 0 || minMidi > maxMidi)
                 return new List<int>();
 
-            bool preferFlats = KeyUsesFlats(Key, Scale);
-            var scalePcs = GetScalePitchClasses(Key, Scale);
+            var scalePcs = NoteSessionService.GetScalePitchClasses(Key, Scale);
 
             if (UseScaleOrder)
             {
@@ -822,7 +833,18 @@ namespace musicmate.Services
 
             // Remove mastered notes; fall back to the full pool when too few remain
             // so tight interval caps cannot trap generation in a two-note oscillation.
-            var filtered = fullPool.Where(m => !ExcludedMidiNumbers.Contains(m)).ToList();
+            // Keep an emphasized pitch even if it would otherwise be excluded.
+            var filtered = fullPool
+                .Where(m => !ExcludedMidiNumbers.Contains(m)
+                            || (EmphasizedMidiNumber.HasValue && m == EmphasizedMidiNumber.Value))
+                .ToList();
+            if (EmphasizedMidiNumber.HasValue
+                && fullPool.Contains(EmphasizedMidiNumber.Value)
+                && !filtered.Contains(EmphasizedMidiNumber.Value))
+            {
+                filtered.Add(EmphasizedMidiNumber.Value);
+            }
+
             return filtered.Count >= MinPitchPoolAfterMasteryExclusion ? filtered : fullPool;
         }
 
@@ -1067,6 +1089,9 @@ namespace musicmate.Services
 
             if (prevMidi < 0)
             {
+                if (TryPickEmphasizedOpening(rng, pool, out int emphasizedOpen))
+                    return emphasizedOpen;
+
                 // Start near the middle of the allowed range so the first note is not
                 // an extreme ledger-line pitch when an interval cap is active.
                 if (MaxMelodicIntervalSemitones > 0)
@@ -1084,11 +1109,11 @@ namespace musicmate.Services
             }
 
             int prevPc = prevMidi % 12;
-            var scalePcs = GetScalePitchClasses(Key, Scale);
+            var scalePcs = NoteSessionService.GetScalePitchClasses(Key, Scale);
             int tonicPc = ((NoteSessionService.NoteNameToMidi($"{Key}4") % 12) + 12) % 12;
 
             // Determine chord tones: tonic (1), third (3), fifth (5) of the scale
-            var degreeIntervals = GetScaleDegreeIntervals(Scale);
+            var degreeIntervals = NoteSessionService.GetSevenNoteScaleDegreeIntervals(Scale);
             HashSet<int> chordTonePcs = new HashSet<int>();
             if (degreeIntervals != null && degreeIntervals.Length >= 5)
             {
@@ -1158,6 +1183,8 @@ namespace musicmate.Services
             if (weighted.Count == 0)
                 return PickFallbackPitch(rng, pool, prevMidi);
 
+            ApplyEmphasizedNoteWeight(ref weighted, ref totalWeight);
+
             int roll = rng.Next(totalWeight);
             int cumulative = 0;
             foreach (var (midi, weight) in weighted)
@@ -1169,57 +1196,58 @@ namespace musicmate.Services
             return weighted[weighted.Count - 1].midi;
         }
 
+        private bool TryPickEmphasizedOpening(Random rng, List<int> pool, out int midi)
+        {
+            midi = 0;
+            if (!EmphasizedMidiNumber.HasValue || !pool.Contains(EmphasizedMidiNumber.Value))
+                return false;
+
+            int pct = Math.Clamp(EmphasizedNoteSelectionPercent, 1, 95);
+            if (rng.Next(100) < pct)
+            {
+                midi = EmphasizedMidiNumber.Value;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Rebalances weights so the emphasized MIDI receives approximately
+        /// <see cref="EmphasizedNoteSelectionPercent"/> of selection probability among
+        /// currently eligible candidates (already filtered by interval / pitch-class rules).
+        /// </summary>
+        private void ApplyEmphasizedNoteWeight(
+            ref List<(int midi, int weight)> weighted,
+            ref int totalWeight)
+        {
+            if (!EmphasizedMidiNumber.HasValue || weighted.Count == 0)
+                return;
+
+            int targetMidi = EmphasizedMidiNumber.Value;
+            int idx = weighted.FindIndex(w => w.midi == targetMidi);
+            if (idx < 0)
+                return;
+
+            int pct = Math.Clamp(EmphasizedNoteSelectionPercent, 1, 95);
+            int otherWeight = totalWeight - weighted[idx].weight;
+            if (otherWeight <= 0)
+                return;
+
+            int emphasizeWeight = Math.Max(
+                1,
+                (int)Math.Round(otherWeight * (double)pct / (100 - pct)));
+            totalWeight = otherWeight + emphasizeWeight;
+            weighted[idx] = (targetMidi, emphasizeWeight);
+        }
+
         /// <summary>
         /// Constructs a <see cref="GeneratedNote"/> from a raw MIDI number.
         /// Derives letter, octave, accidental, spelled name, and frequency.
         /// </summary>
         private GeneratedNote BuildNote(int midi, NoteDuration dur, int measureIndex, double beatPos, int globalIndex, int prevMidi = -1)
         {
-            bool preferFlats = KeyUsesFlats(Key, Scale);
-
-            // For C major (and other keys with no key signature), choose sharp/flat for
-            // chromatic notes based on melodic direction: ascending → sharp, descending → flat.
-            // This matches standard music-theory enharmonic spelling practice.
-            if (!preferFlats && GetKeySigAccidentalCount(Key, Scale) == 0 && prevMidi >= 0)
-            {
-                bool isChromatic = !GetScalePitchClasses(Key, Scale).Contains(((midi % 12) + 12) % 12);
-                if (isChromatic)
-                    preferFlats = midi < prevMidi;  // descending → flat; ascending → sharp
-            }
-
-            // Use key-signature-aware letter assignment for 7-note scales so that
-            // notes like E# appear instead of F♮ in sharp keys (e.g. F# major).
-            string spelledName;
-            var scaleDegreeIntervals = GetScaleDegreeIntervals(Scale);
-            if (scaleDegreeIntervals != null)
-            {
-                int pc = ((midi % 12) + 12) % 12;
-                int tonicPc = ((NoteSessionService.NoteNameToMidi($"{Key}4") % 12) + 12) % 12;
-                int degree = -1;
-                for (int i = 0; i < scaleDegreeIntervals.Length; i++)
-                {
-                    if (((tonicPc + scaleDegreeIntervals[i]) % 12) == pc)
-                    { degree = i; break; }
-                }
-                if (degree >= 0)
-                {
-                    // Determine the correct letter from the tonic letter + degree offset.
-                    char[] scaleLetters = { 'A', 'B', 'C', 'D', 'E', 'F', 'G' };
-                    char tonicLetter = char.ToUpperInvariant(Key[0]);
-                    int tonicLetterIdx = Array.IndexOf(scaleLetters, tonicLetter);
-                    char degLetter = scaleLetters[(tonicLetterIdx + degree) % 7];
-                    spelledName = NoteSessionService.SpellNote(degLetter, midi);
-                }
-                else
-                {
-                    // Chromatic (non-scale) note: direction-based spelling.
-                    spelledName = NoteSessionService.MidiToNoteName(midi, preferFlats);
-                }
-            }
-            else
-            {
-                spelledName = NoteSessionService.MidiToNoteName(midi, preferFlats);
-            }
+            string spelledName = NoteSessionService.SpellWrittenPitch(midi, Key, Scale, prevMidi);
             double freq = MidiToFreq(midi);
 
             // Parse letter, accidental, octave from the spelled name.
@@ -1245,81 +1273,6 @@ namespace musicmate.Services
                 IsPlayedCorrectly = false
             };
         }
-
-        // ── Static pitch-class helpers ────────────────────────────────────────────
-
-        /// <summary>
-        /// Returns the set of chromatic pitch classes (0–11) that belong to the
-        /// given key and scale.  Uses the same interval patterns as v1.
-        /// </summary>
-        private static HashSet<int> GetScalePitchClasses(string key, string scale)
-        {
-            // Semitone intervals from tonic for common scales.
-            int[] intervals = scale switch
-            {
-                "Major" or "Ionian" => new[] { 0, 2, 4, 5, 7, 9, 11 },
-                "Natural Minor" or
-                "Aeolian" => new[] { 0, 2, 3, 5, 7, 8, 10 },
-                "Harmonic Minor" => new[] { 0, 2, 3, 5, 7, 8, 11 },
-                "Melodic Minor" or
-                "Jazz Melodic Minor" => new[] { 0, 2, 3, 5, 7, 9, 11 },
-                "Dorian" => new[] { 0, 2, 3, 5, 7, 9, 10 },
-                "Phrygian" => new[] { 0, 1, 3, 5, 7, 8, 10 },
-                "Lydian" => new[] { 0, 2, 4, 6, 7, 9, 11 },
-                "Mixolydian" => new[] { 0, 2, 4, 5, 7, 9, 10 },
-                "Locrian" => new[] { 0, 1, 3, 5, 6, 8, 10 },
-                "Major Pentatonic" => new[] { 0, 2, 4, 7, 9 },
-                "Minor Pentatonic" => new[] { 0, 3, 5, 7, 10 },
-                "Blues" or "Minor Blues" => new[] { 0, 3, 5, 6, 7, 10 },
-                "Major Blues" => new[] { 0, 2, 3, 4, 7, 9 },
-                "Chromatic" => new[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 },
-                "Lydian Dominant" => new[] { 0, 2, 4, 6, 7, 9, 10 },
-                "Harmonic Major" => new[] { 0, 2, 4, 5, 7, 8, 11 },
-                "Phrygian Dominant" => new[] { 0, 1, 4, 5, 7, 8, 10 },
-                "Hungarian Minor" => new[] { 0, 2, 3, 6, 7, 8, 11 },
-                "Double Harmonic" => new[] { 0, 1, 4, 5, 7, 8, 11 },
-                "Bebop" => new[] { 0, 2, 4, 5, 7, 9, 10, 11 },
-                _ => new[] { 0, 2, 4, 5, 7, 9, 11 }  // default to Major
-            };
-
-            int tonicPc = ((NoteSessionService.NoteNameToMidi($"{key}4") % 12) + 12) % 12;
-
-            var pcs = new HashSet<int>();
-            foreach (var interval in intervals)
-                pcs.Add((tonicPc + interval) % 12);
-
-            return pcs;
-        }
-
-        /// <summary>
-        /// Returns the 7 semitone intervals from the tonic (excluding the octave repeat) for
-        /// standard 7-note scales, or null for pentatonic/chromatic/non-standard scales.
-        /// Used to assign the correct letter to each scale degree so notes like E# are
-        /// spelled properly instead of F♮ in keys like F# major.
-        /// </summary>
-        private static int[]? GetScaleDegreeIntervals(string scale) => scale switch
-        {
-            "Major" or "Ionian" => new[] { 0, 2, 4, 5, 7, 9, 11 },
-            "Natural Minor" or "Aeolian" => new[] { 0, 2, 3, 5, 7, 8, 10 },
-            "Harmonic Minor" => new[] { 0, 2, 3, 5, 7, 8, 11 },
-            "Melodic Minor" or "Jazz Melodic Minor" => new[] { 0, 2, 3, 5, 7, 9, 11 },
-            "Dorian" => new[] { 0, 2, 3, 5, 7, 9, 10 },
-            "Phrygian" => new[] { 0, 1, 3, 5, 7, 8, 10 },
-            "Lydian" => new[] { 0, 2, 4, 6, 7, 9, 11 },
-            "Mixolydian" => new[] { 0, 2, 4, 5, 7, 9, 10 },
-            "Locrian" => new[] { 0, 1, 3, 5, 6, 8, 10 },
-            "Harmonic Major" => new[] { 0, 2, 4, 5, 7, 8, 11 },
-            "Phrygian Dominant" => new[] { 0, 1, 4, 5, 7, 8, 10 },
-            "Double Harmonic" => new[] { 0, 1, 4, 5, 7, 8, 11 },
-            _ => null
-        };
-
-        /// <summary>Circle-of-fifths accidental count — delegates to KeySignatureRules.</summary>
-        private static int GetKeySigAccidentalCount(string key, string scale)
-            => KeySignatureRules.GetSignedAccidentalCount(key, scale);
-
-        private static bool KeyUsesFlats(string key, string scale)
-            => KeySignatureRules.KeySignatureUsesFlats(key, scale);
 
         private static double MidiToFreq(int midi)
             => 440.0 * Math.Pow(2.0, (midi - 69) / 12.0);

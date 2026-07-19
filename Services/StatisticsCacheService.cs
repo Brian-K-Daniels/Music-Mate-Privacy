@@ -65,7 +65,11 @@ public sealed class StatisticsCacheService
         Utils.Log($"[StatisticsCacheService] Invalidated {(kind?.ToString() ?? "all")}");
     }
 
-    public void InvalidateNoteStats() => Invalidate(StatisticsDatabaseKind.Note);
+    public void InvalidateNoteStats()
+    {
+        Invalidate(StatisticsDatabaseKind.Note);
+        ServiceHelper.GetService<NoteMasteryService>()?.Invalidate();
+    }
 
     public void InvalidateSessionStats() => Invalidate(StatisticsDatabaseKind.Session);
 

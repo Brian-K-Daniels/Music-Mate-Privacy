@@ -57,7 +57,7 @@ namespace musicmate.Services
             await _db.InsertAsync(attempt);
 
             // Rolling limit: keep only the most recent N attempts per note+instrument.
-            int maxKeep = Microsoft.Maui.Storage.Preferences.Default.Get("MaxAttemptsPerNote", 100);
+            int maxKeep = SessionPreferences.Get("MaxAttemptsPerNote", 100);
             await PruneAttemptsForNoteAsync(attempt.WrittenNoteName, attempt.Instrument, maxKeep);
         }
 

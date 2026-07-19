@@ -183,6 +183,22 @@ namespace musicmate.Pages
             }
         }
 
+        private void UpdateNoteEmphasisBanner()
+        {
+            bool show = _session.HasTemporaryNoteEmphasis;
+            if (NoteEmphasisBanner is not null)
+                NoteEmphasisBanner.IsVisible = show;
+            if (NoteEmphasisLabel is not null)
+                NoteEmphasisLabel.Text = _session.TemporaryNoteEmphasisBannerText;
+        }
+
+        private async void OnClearNoteEmphasisClicked(object? sender, EventArgs e)
+        {
+            _session.ClearTemporaryNoteEmphasis("user-clear");
+            UpdateNoteEmphasisBanner();
+            await RegenerateNotesAsync();
+        }
+
         /// <summary>
         /// Keeps the title status bar aligned with the random-mode picker label
         /// without clobbering live pitch-feedback messages.
@@ -688,6 +704,7 @@ namespace musicmate.Pages
 
                 _session.PrepareEffectiveScaleForGeneration(_generationSeed);
                 UpdateEffectiveScaleLabel();
+                UpdateNoteEmphasisBanner();
 
                 // While showing post-autoplay results, do not overwrite the staff.
                 if (_freezeStaff)
@@ -815,7 +832,12 @@ namespace musicmate.Pages
 
             // Selected-scale practice (Major, etc. from What to Play) is a straight
             // quarter-note scale walk — no rests, halves, or mixed rhythm.
-            bool simpleSelectedScale = _session.Tune == "Selected Scale" && !_session.IsRandomMode;
+            // Temporary Note Mastery emphasis uses random melodic generation without
+            // permanently changing the user's What to Play mode.
+            bool emphasizeActive = _session.HasTemporaryNoteEmphasis;
+            bool simpleSelectedScale =
+                _session.Tune == "Selected Scale" && !_session.IsRandomMode && !emphasizeActive;
+            bool randomStyle = _session.IsRandomMode || emphasizeActive;
 
             int rhythmVariety = simpleSelectedScale
                 ? 0
@@ -845,14 +867,16 @@ namespace musicmate.Pages
                 StartGlobalNoteIndex = _seqNextGlobalNoteIndex,
                 StartPrevPitch = startPrevPitch,
                 ExcludedMidiNumbers = _excludedMidis,
-                UseScaleOrder = !_session.IsRandomMode,
+                UseScaleOrder = !randomStyle,
                 ScaleWalkOffset = _seqNextGlobalNoteIndex,
-                AccidentalPercent = _session.IsRandomMode ? _session.AccidentalPercent : 0,
-                MaxMelodicIntervalSemitones = _session.IsRandomMode ? _session.MaxMelodicIntervalSemitones : 0,
+                AccidentalPercent = randomStyle ? _session.AccidentalPercent : 0,
+                MaxMelodicIntervalSemitones = randomStyle ? _session.MaxMelodicIntervalSemitones : 0,
                 SyncopationLevel = simpleSelectedScale
                     ? SyncopationLevel.None
                     : SyncopationLevelHelper.Parse(_session.SyncopationSetting),
                 RestChancePercent = simpleSelectedScale ? 0 : _session.PracticeRestChancePercent,
+                EmphasizedMidiNumber = _session.GetTemporaryEmphasizedMidi(),
+                EmphasizedNoteSelectionPercent = _session.TemporaryEmphasizedSelectionPercent,
                 RandomSeed = Environment.TickCount
                                            ^ _generationSeed
                                            ^ (_session.ChildLevel * 7919)
@@ -2392,8 +2416,15 @@ namespace musicmate.Pages
             IsAutoRepeatVisible = _session.Tune != "Tuner";
             UpdateAutoRepeatButtons();
             UpdateEffectiveScaleLabel();
+            UpdateNoteEmphasisBanner();
             UpdateTunerVisibility();
             DeviceDisplay.Current.KeepScreenOn = true;
+
+            if (_session.PendingMasteryPracticeNavigation)
+            {
+                _session.PendingMasteryPracticeNavigation = false;
+                _session.IsDirty = true;
+            }
 
             EnsurePracticePickersReady();
 
@@ -3438,6 +3469,12 @@ namespace musicmate.Pages
                 }
                 else if (!_session.RepeatSameTune)
                     _repeatSameSnapshot = null;
+            }
+
+            if (e.PropertyName == nameof(NoteSessionService.TemporaryEmphasizedWrittenNote)
+                || e.PropertyName == nameof(NoteSessionService.HasTemporaryNoteEmphasis))
+            {
+                UpdateNoteEmphasisBanner();
             }
 
             if (e.PropertyName == nameof(NoteSessionService.Tempo)

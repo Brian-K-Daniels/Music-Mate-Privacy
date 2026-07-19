@@ -1,5 +1,6 @@
 using musicmate.Services;
 using musicmate.Diagnostics;
+using musicmate.Models;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using musicmate.Utilities;
@@ -15,18 +16,22 @@ namespace musicmate.ViewModels
         private readonly ThemeService _themeService;
         private readonly NoteSessionService _session;
         private readonly StatisticsCacheService _statisticsCache;
+        private readonly NoteMasteryService _noteMasteryService;
         private int _loadGeneration;
         public Color PanelBackgroundColor => _themeService.PanelBackgroundColor;
         public Color ContrastingTextColor => _themeService.ContrastingTextColor;
         public bool IsNoteDatabase => SelectedDatabase == "Note";
         public bool IsSessionDatabase => SelectedDatabase == "Session";
         public bool IsChildResultsDatabase => SelectedDatabase == "Child Results";
-        public ObservableCollection<string> DatabaseOptions { get; } = new() { "Note", "Session", "Child Results" };
+        public bool IsMasteryDatabase => SelectedDatabase == "Mastery";
+        public ObservableCollection<string> DatabaseOptions { get; } =
+            new() { "Note", "Mastery", "Session", "Child Results" };
         // Remove color properties from here; use ThemeService for colors in the view.
         public event PropertyChangedEventHandler? PropertyChanged;
 
         public ObservableCollection<NoteStat> NoteStats { get; } = new();
         public ObservableCollection<SessionStat> SessionStats { get; } = new();
+        public ObservableCollection<NoteMasteryItemViewModel> MasteryNotes { get; } = new();
 
         // Sorting state for Note Stats
         private string _noteCurrentSortColumn = "";
@@ -40,6 +45,10 @@ namespace musicmate.ViewModels
         public ICommand SortNoteStatsCommand { get; }
         public ICommand SortSessionStatsCommand { get; }
         public ICommand RefreshCommand { get; }
+        public ICommand SelectMasteryNoteCommand { get; }
+        public ICommand PracticeThisNoteCommand { get; }
+        public ICommand EmphasizeNoteCommand { get; }
+        public ICommand CloseMasteryDetailCommand { get; }
 
         private bool _isLoading = false;
         public bool IsLoading
@@ -83,18 +92,150 @@ namespace musicmate.ViewModels
             SessionDatabase sessionDatabase,
             ThemeService themeService,
             NoteSessionService session,
-            StatisticsCacheService statisticsCache)
+            StatisticsCacheService statisticsCache,
+            NoteMasteryService noteMasteryService)
         {
             _noteDatabase = noteDatabase;
             _sessionDatabase = sessionDatabase;
             _themeService = themeService;
             _session = session;
             _statisticsCache = statisticsCache;
+            _noteMasteryService = noteMasteryService;
             _session.PropertyChanged += OnSessionPropertyChanged;
 
             SortNoteStatsCommand = new Command<string>(SortNoteStatsByColumn);
             SortSessionStatsCommand = new Command<string>(SortSessionStatsByColumn);
             RefreshCommand = new Command(() => _ = LoadAsync(forceRefresh: true));
+            SelectMasteryNoteCommand = new Command<NoteMasteryItemViewModel>(SelectMasteryNote);
+            PracticeThisNoteCommand = new Command(async () => await NavigatePracticeAsync(practiceThisNote: true));
+            EmphasizeNoteCommand = new Command(async () => await NavigatePracticeAsync(practiceThisNote: false));
+            CloseMasteryDetailCommand = new Command(() => SelectedMasteryNote = null);
+        }
+
+        private NoteMasterySnapshot? _masterySnapshot;
+        private NoteMasteryItemViewModel? _selectedMasteryNote;
+
+        public string MasterySummaryText => _masterySnapshot?.SummaryText ?? string.Empty;
+
+        public string MasteryMasteredCountText =>
+            $"★ {_masterySnapshot?.MasteredCount ?? 0}";
+        public string MasteryImprovingCountText =>
+            $"▲ {_masterySnapshot?.ImprovingCount ?? 0}";
+        public string MasteryNeedsPracticeCountText =>
+            $"● {_masterySnapshot?.NeedsPracticeCount ?? 0}";
+        public string MasteryNotTriedCountText =>
+            $"○ {_masterySnapshot?.NotYetAttemptedCount ?? 0}";
+
+        public bool PreferBassClef => _masterySnapshot?.PreferBassClef ?? false;
+
+        public NoteMasteryItemViewModel? SelectedMasteryNote
+        {
+            get => _selectedMasteryNote;
+            set
+            {
+                if (_selectedMasteryNote == value) return;
+                if (_selectedMasteryNote is not null)
+                    _selectedMasteryNote.IsSelected = false;
+                _selectedMasteryNote = value;
+                if (_selectedMasteryNote is not null)
+                    _selectedMasteryNote.IsSelected = true;
+                OnPropertyChanged(nameof(SelectedMasteryNote));
+                OnPropertyChanged(nameof(HasSelectedMasteryNote));
+                OnPropertyChanged(nameof(SelectedMasteryDetailText));
+                OnPropertyChanged(nameof(SelectedMasteryNoteNameText));
+                OnPropertyChanged(nameof(SelectedMasteryStateText));
+                OnPropertyChanged(nameof(SelectedMasteryStateDescription));
+            }
+        }
+
+        public bool HasSelectedMasteryNote => SelectedMasteryNote is not null;
+
+        public string SelectedMasteryNoteNameText =>
+            SelectedMasteryNote is null
+                ? string.Empty
+                : SelectedMasteryNote.WrittenNoteName;
+
+        public string SelectedMasteryStateText =>
+            SelectedMasteryNote is null
+                ? string.Empty
+                : $"{SelectedMasteryNote.StateMarker} {SelectedMasteryNote.StateDisplayName}";
+
+        public string SelectedMasteryStateDescription =>
+            SelectedMasteryNote is null
+                ? string.Empty
+                : NoteMasteryStateLabels.Description(SelectedMasteryNote.MasteryState);
+
+        public string SelectedMasteryDetailText
+        {
+            get
+            {
+                var n = SelectedMasteryNote;
+                if (n is null) return string.Empty;
+
+                var lines = new List<string>
+                {
+                    $"Instrument: {n.InstrumentDisplayName}",
+                };
+
+                if (n.AttemptCount > 0)
+                {
+                    lines.Add($"Attempts: {n.AttemptCount}");
+                    lines.Add($"Correct: {n.CorrectAttempts}");
+                    lines.Add($"Incorrect: {n.IncorrectAttempts}");
+                    if (n.PitchAccuracyPercent.HasValue)
+                        lines.Add($"Pitch accuracy: {n.PitchAccuracyPercent.Value:0}%");
+                    else
+                        lines.Add("Pitch accuracy: Not available");
+                    if (n.TimingAccuracyPercent.HasValue)
+                        lines.Add($"Timing accuracy: {n.TimingAccuracyPercent.Value:0}%");
+                    if (n.LongestStreak.HasValue)
+                        lines.Add($"Longest streak: {n.LongestStreak.Value}");
+                }
+                else
+                {
+                    lines.Add("Attempts: Not tried yet");
+                }
+
+                lines.Add(n.LastPracticedUtc.HasValue
+                    ? $"Last practiced: {n.LastPracticedUtc.Value.ToLocalTime():g}"
+                    : "Last practiced: Not available");
+
+                return string.Join(Environment.NewLine, lines);
+            }
+        }
+
+        private void SelectMasteryNote(NoteMasteryItemViewModel? note)
+        {
+            if (note is null) return;
+            SelectedMasteryNote = note;
+            DebugLog.WriteLine(
+                DebugLogCategory.Statistics,
+                $"[NoteMastery] Selected note={note.WrittenNoteName} state={note.MasteryState}");
+        }
+
+        private async Task NavigatePracticeAsync(bool practiceThisNote)
+        {
+            var note = SelectedMasteryNote;
+            if (note is null) return;
+
+            if (practiceThisNote)
+            {
+                DebugLog.WriteLine(
+                    DebugLogCategory.Statistics,
+                    $"[NoteMastery] Practice This Note={note.WrittenNoteName}");
+                _session.BeginPracticeThisNote(note.WrittenNoteName);
+            }
+            else
+            {
+                DebugLog.WriteLine(
+                    DebugLogCategory.Statistics,
+                    $"[NoteMastery] Emphasize note={note.WrittenNoteName}");
+                _session.BeginEmphasizedNotePractice(
+                    note.WrittenNoteName,
+                    NoteMasteryPreferenceDefaults.EmphasizedNoteSelectionPercent);
+            }
+
+            await Shell.Current.GoToAsync("//MusicPage");
         }
 
         // Expose a debug flag to the view so debug-only UI can be shown/hidden via binding
@@ -113,6 +254,38 @@ namespace musicmate.ViewModels
         public async Task LoadAsync(bool forceRefresh = false)
         {
             int loadGeneration = Interlocked.Increment(ref _loadGeneration);
+
+            if (IsMasteryDatabase)
+            {
+                Utils.Log("[NoteStatisticsViewModel] LoadAsync Note Mastery");
+                DebugLog.WriteLine(DebugLogCategory.Statistics, "[NoteMastery] Opening Note Mastery");
+                IsLoading = true;
+                try
+                {
+                    var snapshot = await _noteMasteryService.GetSnapshotAsync(forceRefresh);
+                    if (loadGeneration != Volatile.Read(ref _loadGeneration))
+                        return;
+
+                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    {
+                        if (loadGeneration != Volatile.Read(ref _loadGeneration))
+                            return;
+                        ApplyMasterySnapshot(snapshot);
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Utils.Log($"[NoteStatisticsViewModel] Mastery load error: {ex}");
+                }
+                finally
+                {
+                    if (loadGeneration == Volatile.Read(ref _loadGeneration))
+                        IsLoading = false;
+                }
+
+                return;
+            }
+
             var kind = StatisticsCacheService.MapSelectedDatabase(SelectedDatabase);
             Utils.Log($"[NoteStatisticsViewModel] LoadAsync started. Kind={kind}, forceRefresh={forceRefresh}");
 
@@ -120,6 +293,7 @@ namespace musicmate.ViewModels
             {
                 NoteStats.Clear();
                 SessionStats.Clear();
+                MasteryNotes.Clear();
                 LastUpdatedUtc = null;
                 IsLoading = false;
                 return;
@@ -226,6 +400,19 @@ namespace musicmate.ViewModels
 
         private void OnSessionPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
+            if (e.PropertyName is nameof(NoteSessionService.LowestNote)
+                or nameof(NoteSessionService.HighestNote)
+                or nameof(NoteSessionService.Key)
+                or nameof(NoteSessionService.Instrument)
+                or nameof(NoteSessionService.SelectedScale)
+                or nameof(NoteSessionService.EffectiveScale)
+                or nameof(NoteSessionService.GenerationScale))
+            {
+                if (IsMasteryDatabase)
+                    _ = LoadAsync(forceRefresh: true);
+                return;
+            }
+
             if (e.PropertyName is not (nameof(NoteSessionService.MasteredMethod)
                 or nameof(NoteSessionService.StreakCrit)
                 or nameof(NoteSessionService.CorrectThreshold)
@@ -235,6 +422,8 @@ namespace musicmate.ViewModels
                 return;
 
             RedecorateMasteredColumn();
+            if (IsMasteryDatabase)
+                _ = LoadAsync(forceRefresh: true);
         }
 
         private void RedecorateMasteredColumn()
@@ -251,6 +440,32 @@ namespace musicmate.ViewModels
             else
                 OnPropertyChanged(nameof(MasteredSortIndicator));
         }
+
+        private void ApplyMasterySnapshot(NoteMasterySnapshot snapshot)
+        {
+            _masterySnapshot = snapshot;
+            string? selectedName = SelectedMasteryNote?.WrittenNoteName;
+            MasteryNotes.Clear();
+            foreach (var note in snapshot.Notes)
+                MasteryNotes.Add(note);
+
+            SelectedMasteryNote = selectedName is null
+                ? null
+                : MasteryNotes.FirstOrDefault(n =>
+                    string.Equals(n.WrittenNoteName, selectedName, StringComparison.OrdinalIgnoreCase));
+
+            LastUpdatedUtc = snapshot.ComputedUtc;
+            OnPropertyChanged(nameof(MasterySummaryText));
+            OnPropertyChanged(nameof(MasteryMasteredCountText));
+            OnPropertyChanged(nameof(MasteryImprovingCountText));
+            OnPropertyChanged(nameof(MasteryNeedsPracticeCountText));
+            OnPropertyChanged(nameof(MasteryNotTriedCountText));
+            OnPropertyChanged(nameof(PreferBassClef));
+            MasteryNotesChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>Raised when mastery staff notes should be redrawn.</summary>
+        public event EventHandler? MasteryNotesChanged;
 
         private void ApplyCacheEntry(StatisticsCacheEntry entry)
         {
@@ -303,10 +518,18 @@ namespace musicmate.ViewModels
                     OnPropertyChanged(nameof(IsNoteDatabase));
                     OnPropertyChanged(nameof(IsSessionDatabase));
                     OnPropertyChanged(nameof(IsChildResultsDatabase));
+                    OnPropertyChanged(nameof(IsMasteryDatabase));
+                    OnPropertyChanged(nameof(ShowDatabaseClearButtons));
                     _ = LoadAsyncOnMainThread();
                 }
             }
         }
+
+        /// <summary>
+        /// Clear/Delete apply to Note, Session, and Child Results databases — not Mastery
+        /// (Mastery is a derived view over note stats, not its own clearable store).
+        /// </summary>
+        public bool ShowDatabaseClearButtons => !IsMasteryDatabase;
 
         private async Task LoadAsyncOnMainThread()
         {

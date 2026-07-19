@@ -286,6 +286,7 @@ namespace musicmate.Services
             Action<string>? persistSelectedTune = null)
         {
             persistSelectedTune ??= value => Preferences.Default.Set("SelectedTune", value);
+            session.ClearTemporaryNoteEmphasis("what-to-play-changed");
 
             if (selected == NoteSessionService.ScaleSelectionByLevel)
             {

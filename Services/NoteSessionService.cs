@@ -521,6 +521,97 @@ namespace musicmate.Services
             }
         }
 
+        /// <summary>
+        /// Temporary written-note emphasis from Note Mastery (not persisted).
+        /// Does not change the user's What to Play mode.
+        /// </summary>
+        private string? _temporaryEmphasizedWrittenNote;
+        private int _temporaryEmphasizedSelectionPercent =
+            NoteMasteryPreferenceDefaults.EmphasizedNoteSelectionPercent;
+        private bool _pendingMasteryPracticeNavigation;
+
+        public string? TemporaryEmphasizedWrittenNote
+        {
+            get => _temporaryEmphasizedWrittenNote;
+            private set
+            {
+                if (_temporaryEmphasizedWrittenNote == value) return;
+                _temporaryEmphasizedWrittenNote = value;
+                OnPropertyChanged(nameof(TemporaryEmphasizedWrittenNote));
+                OnPropertyChanged(nameof(HasTemporaryNoteEmphasis));
+                OnPropertyChanged(nameof(TemporaryNoteEmphasisBannerText));
+            }
+        }
+
+        public int TemporaryEmphasizedSelectionPercent
+        {
+            get => _temporaryEmphasizedSelectionPercent;
+            private set => _temporaryEmphasizedSelectionPercent = Math.Clamp(value, 1, 95);
+        }
+
+        public bool HasTemporaryNoteEmphasis =>
+            !string.IsNullOrWhiteSpace(TemporaryEmphasizedWrittenNote);
+
+        public string TemporaryNoteEmphasisBannerText =>
+            HasTemporaryNoteEmphasis
+                ? $"Emphasizing {TemporaryEmphasizedWrittenNote}"
+                : string.Empty;
+
+        /// <summary>
+        /// When true, MusicPage should regenerate with temporary note focus after navigation
+        /// from Note Mastery, then clear this flag.
+        /// </summary>
+        public bool PendingMasteryPracticeNavigation
+        {
+            get => _pendingMasteryPracticeNavigation;
+            set
+            {
+                if (_pendingMasteryPracticeNavigation == value) return;
+                _pendingMasteryPracticeNavigation = value;
+                OnPropertyChanged(nameof(PendingMasteryPracticeNavigation));
+            }
+        }
+
+        public void BeginEmphasizedNotePractice(string writtenNoteName, int selectionPercent)
+        {
+            TemporaryEmphasizedWrittenNote = writtenNoteName?.Trim();
+            TemporaryEmphasizedSelectionPercent = selectionPercent;
+            PendingMasteryPracticeNavigation = true;
+            IsDirty = true;
+            DebugLog.WriteLine(
+                DebugLogCategory.Statistics,
+                $"[NoteMastery] Emphasize note={TemporaryEmphasizedWrittenNote} weight={TemporaryEmphasizedSelectionPercent}%");
+            OnPropertyChanged(nameof(TemporaryEmphasizedSelectionPercent));
+        }
+
+        public void BeginPracticeThisNote(string writtenNoteName)
+            => BeginEmphasizedNotePractice(
+                writtenNoteName, NoteMasteryPreferenceDefaults.PracticeThisNoteSelectionPercent);
+
+        public void ClearTemporaryNoteEmphasis(string reason = "cleared")
+        {
+            if (!HasTemporaryNoteEmphasis && !PendingMasteryPracticeNavigation)
+                return;
+
+            DebugLog.WriteLine(
+                DebugLogCategory.Statistics,
+                $"[NoteMastery] Clear emphasis note={TemporaryEmphasizedWrittenNote} reason={reason}");
+            TemporaryEmphasizedWrittenNote = null;
+            TemporaryEmphasizedSelectionPercent =
+                NoteMasteryPreferenceDefaults.EmphasizedNoteSelectionPercent;
+            PendingMasteryPracticeNavigation = false;
+            IsDirty = true;
+            OnPropertyChanged(nameof(TemporaryEmphasizedSelectionPercent));
+        }
+
+        public int? GetTemporaryEmphasizedMidi()
+        {
+            if (!HasTemporaryNoteEmphasis)
+                return null;
+            int midi = NoteNameToMidi(TemporaryEmphasizedWrittenNote!);
+            return midi > 0 ? midi : null;
+        }
+
         public string MasteredMethod
         {
             get => _masteredMethod;
@@ -666,6 +757,7 @@ namespace musicmate.Services
         private static void NotifyMasterySettingsChanged()
         {
             ServiceHelper.GetService<StatisticsCacheService>()?.InvalidateNoteStats();
+            ServiceHelper.GetService<NoteMasteryService>()?.Invalidate();
         }
         /// <summary>
         /// Returns the set of written-pitch MIDI numbers that the player has mastered,
@@ -3485,6 +3577,113 @@ namespace musicmate.Services
             var oct = (midi / 12) - 1;
             return $"{(flats ? namesFlat : namesSharp)[pc]}{oct}";
         }
+
+        /// <summary>
+        /// Semitone intervals from the tonic (excluding the octave) for standard 7-note scales,
+        /// or null for pentatonic/chromatic/non-standard scales. Used for letter-aware spelling
+        /// so notes like E# appear instead of F♮ in F# major.
+        /// </summary>
+        public static int[]? GetSevenNoteScaleDegreeIntervals(string scale) => scale switch
+        {
+            "Major" or "Ionian" => new[] { 0, 2, 4, 5, 7, 9, 11 },
+            "Natural Minor" or "Aeolian" => new[] { 0, 2, 3, 5, 7, 8, 10 },
+            "Harmonic Minor" => new[] { 0, 2, 3, 5, 7, 8, 11 },
+            "Melodic Minor" or "Jazz Melodic Minor" => new[] { 0, 2, 3, 5, 7, 9, 11 },
+            "Dorian" => new[] { 0, 2, 3, 5, 7, 9, 10 },
+            "Phrygian" => new[] { 0, 1, 3, 5, 7, 8, 10 },
+            "Lydian" => new[] { 0, 2, 4, 6, 7, 9, 11 },
+            "Mixolydian" => new[] { 0, 2, 4, 5, 7, 9, 10 },
+            "Locrian" => new[] { 0, 1, 3, 5, 6, 8, 10 },
+            "Harmonic Major" => new[] { 0, 2, 4, 5, 7, 8, 11 },
+            "Phrygian Dominant" => new[] { 0, 1, 4, 5, 7, 8, 10 },
+            "Double Harmonic" => new[] { 0, 1, 4, 5, 7, 8, 11 },
+            _ => null
+        };
+
+        /// <summary>
+        /// Chromatic pitch classes (0–11) belonging to <paramref name="key"/> / <paramref name="scale"/>.
+        /// </summary>
+        public static HashSet<int> GetScalePitchClasses(string key, string scale)
+        {
+            int[] intervals = GetSevenNoteScaleDegreeIntervals(scale)
+                ?? GetNonSevenNoteScaleDegreeIntervals(scale);
+
+            int tonicPc = ((NoteNameToMidi($"{key}4") % 12) + 12) % 12;
+            var pcs = new HashSet<int>();
+            foreach (var interval in intervals)
+                pcs.Add((tonicPc + interval) % 12);
+            return pcs;
+        }
+
+        /// <summary>Intervals for scales that are not letter-sequential 7-note spellings.</summary>
+        private static int[] GetNonSevenNoteScaleDegreeIntervals(string scale) => scale switch
+        {
+            "Major Pentatonic" => new[] { 0, 2, 4, 7, 9 },
+            "Minor Pentatonic" => new[] { 0, 3, 5, 7, 10 },
+            "Blues" or "Minor Blues" => new[] { 0, 3, 5, 6, 7, 10 },
+            "Major Blues" => new[] { 0, 2, 3, 4, 7, 9 },
+            "Chromatic" => new[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 },
+            "Lydian Dominant" => new[] { 0, 2, 4, 6, 7, 9, 10 },
+            "Hungarian Minor" => new[] { 0, 2, 3, 6, 7, 8, 11 },
+            "Bebop" => new[] { 0, 2, 4, 5, 7, 9, 10, 11 },
+            _ => new[] { 0, 2, 4, 5, 7, 9, 11 }
+        };
+
+        /// <summary>
+        /// Spells a written MIDI pitch for <paramref name="key"/> / <paramref name="scale"/>
+        /// using the same letter-aware rules as music generation.
+        /// When <paramref name="prevMidi"/> is non-negative and the signature is empty,
+        /// non-scale chromatics use melodic direction (ascending → sharp, descending → flat).
+        /// Catalogs should omit <paramref name="prevMidi"/> for a deterministic spelling.
+        /// </summary>
+        public static string SpellWrittenPitch(int midi, string key, string scale, int prevMidi = -1)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+                key = "C";
+            if (string.IsNullOrWhiteSpace(scale))
+                scale = "Major";
+
+            bool preferFlats = KeySignatureRules.KeySignatureUsesFlats(key, scale);
+
+            if (!preferFlats
+                && KeySignatureRules.GetSignedAccidentalCount(key, scale) == 0
+                && prevMidi >= 0)
+            {
+                bool isChromatic = !GetScalePitchClasses(key, scale)
+                    .Contains(((midi % 12) + 12) % 12);
+                if (isChromatic)
+                    preferFlats = midi < prevMidi;
+            }
+
+            var scaleDegreeIntervals = GetSevenNoteScaleDegreeIntervals(scale);
+            if (scaleDegreeIntervals != null)
+            {
+                int pc = ((midi % 12) + 12) % 12;
+                int tonicPc = ((NoteNameToMidi($"{key}4") % 12) + 12) % 12;
+                int degree = -1;
+                for (int i = 0; i < scaleDegreeIntervals.Length; i++)
+                {
+                    if (((tonicPc + scaleDegreeIntervals[i]) % 12) == pc)
+                    {
+                        degree = i;
+                        break;
+                    }
+                }
+
+                if (degree >= 0)
+                {
+                    char tonicLetter = char.ToUpperInvariant(key.Trim()[0]);
+                    int tonicLetterIdx = Array.IndexOf(Letters, tonicLetter);
+                    if (tonicLetterIdx < 0)
+                        tonicLetterIdx = 0;
+                    char degLetter = Letters[(tonicLetterIdx + degree) % 7];
+                    return SpellNote(degLetter, midi);
+                }
+            }
+
+            return MidiToNoteName(midi, preferFlats);
+        }
+
         private static bool KeyUsesFlats(string key)
             => KeySignatureRules.IsFlatKeyName(key);
         private int ApplyInstrumentTranspose(int concertMidi)
@@ -4106,8 +4305,10 @@ namespace musicmate.Services
             while (start >= 0 && char.IsDigit(raw[start])) start--;
             return start < end ? raw.Substring(start + 1) : "4";
         }
-        private static int ParseOctaveFromSpelledName(string raw)
+        public static int ParseOctaveFromSpelledName(string raw)
         {
+            if (string.IsNullOrWhiteSpace(raw))
+                return 4;
             int end = raw.Length - 1;
             int start = end;
             while (start >= 0 && char.IsDigit(raw[start])) start--;
