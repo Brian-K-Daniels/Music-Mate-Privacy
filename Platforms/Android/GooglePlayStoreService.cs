@@ -11,9 +11,6 @@ namespace musicmate.Platforms.Android
     /// </summary>
     public class GooglePlayStoreService : Java.Lang.Object, IStoreService, IPurchasesUpdatedListener
     {
-        private const string PremiumKey = "IsPremium";
-        private const string PremiumProductId = "music_mate_premium";
-
         private BillingClient? _billingClient;
         private TaskCompletionSource<bool>? _purchaseTcs;
 
@@ -23,23 +20,28 @@ namespace musicmate.Platforms.Android
         {
             _billingClient = BuildClient();
             await ConnectAsync();
-
-            // Sync premium flag from the Play store on every cold start
-            await SyncPurchasesAsync();
+            // Do not write StatusService here. App.InitializePremiumStatus clears any
+            // backup-restored local flag, then calls IsPurchasedAsync as the single source of truth.
         }
 
         public async Task<bool> IsPurchasedAsync(string productId)
         {
-            // Always verify with Google Play — never trust the local cache alone.
+            // VS / adb sideloads must not auto-inherit Play ownership (license testers,
+            // prior purchases). Production Play Store installs still restore normally.
+            if (!IsInstalledFromGooglePlay())
+                return false;
+
             await EnsureConnectedAsync();
-            return await QueryPurchasedAsync(productId);
+            string id = NormalizeProductId(productId);
+            return await QueryPurchasedAsync(id);
         }
 
         public async Task<bool> PurchaseAsync(string productId)
         {
             await EnsureConnectedAsync();
+            string id = NormalizeProductId(productId);
 
-            var products = await QueryProductDetailsAsync(new[] { productId });
+            var products = await QueryProductDetailsAsync(new[] { id });
             if (products.Count == 0)
                 return false;
 
@@ -75,32 +77,39 @@ namespace musicmate.Platforms.Android
         public async Task<bool> RestorePurchasesAsync()
         {
             await EnsureConnectedAsync();
-            bool owned = await QueryPurchasedAsync(PremiumProductId);
+            bool owned = await QueryPurchasedAsync(PremiumProduct.Id);
             MainThread.BeginInvokeOnMainThread(() =>
                 StatusService.Instance.IsPremiumUser = owned);
+            if (!owned)
+                Preferences.Remove(PremiumProduct.PreferenceKey);
             return owned;
         }
 
         public async Task<bool> CheckPremiumStatusAsync()
         {
-            // Non-destructive: if already known locally, trust it; also sync from Play.
+            if (!IsInstalledFromGooglePlay())
+            {
+                // Sideload: do not pull Play ownership into the session. Leave whatever
+                // Buy/Restore already set; App cold-start clears premium for a clean slate.
+                return StatusService.Instance.IsPremiumUser;
+            }
+
             await EnsureConnectedAsync();
-            bool owned = await QueryPurchasedAsync(PremiumProductId);
+            bool owned = await QueryPurchasedAsync(PremiumProduct.Id);
             if (owned)
             {
-                Preferences.Set(PremiumKey, true);
+                Preferences.Set(PremiumProduct.PreferenceKey, true);
                 MainThread.BeginInvokeOnMainThread(() =>
                     StatusService.Instance.IsPremiumUser = true);
             }
             else
             {
-                // Only clear if Play explicitly says not owned (not a connectivity failure).
-                // Keep any existing local flag so offline users aren't locked out.
-                var local = Preferences.Get(PremiumKey, false);
+                // Play says not owned — clear any backup-/DEBUG-restored local flag.
+                Preferences.Remove(PremiumProduct.PreferenceKey);
                 MainThread.BeginInvokeOnMainThread(() =>
-                    StatusService.Instance.IsPremiumUser = local);
+                    StatusService.Instance.IsPremiumUser = false);
             }
-            return StatusService.Instance.IsPremiumUser;
+            return owned;
         }
 
         // ── IPurchasesUpdatedListener ────────────────────────────────────────
@@ -112,10 +121,10 @@ namespace musicmate.Platforms.Android
                 foreach (var purchase in purchases)
                 {
                     if (purchase.PurchaseState == 1 /* Purchased */ &&
-                        purchase.Products.Contains(PremiumProductId))
+                        purchase.Products.Contains(PremiumProduct.Id))
                     {
                         // Persist entitlement before acknowledging so it survives a crash
-                        Preferences.Set(PremiumKey, true);
+                        Preferences.Set(PremiumProduct.PreferenceKey, true);
                         MainThread.BeginInvokeOnMainThread(() =>
                             StatusService.Instance.IsPremiumUser = true);
                         AcknowledgePurchase(purchase);
@@ -128,6 +137,46 @@ namespace musicmate.Platforms.Android
         }
 
         // ── private helpers ──────────────────────────────────────────────────
+
+        /// <summary>
+        /// True when the APK was installed from the Play Store. Visual Studio / adb
+        /// deployments report a different installer and are treated as sideloads.
+        /// </summary>
+        internal static bool IsInstalledFromGooglePlay()
+        {
+            try
+            {
+                var context = global::Android.App.Application.Context;
+                var pm = context.PackageManager;
+                if (pm == null)
+                    return false;
+
+                const string playStore = "com.android.vending";
+                if (OperatingSystem.IsAndroidVersionAtLeast(30))
+                {
+                    var info = pm.GetInstallSourceInfo(context.PackageName!);
+                    return string.Equals(info?.InstallingPackageName, playStore, StringComparison.Ordinal)
+                        || string.Equals(info?.InitiatingPackageName, playStore, StringComparison.Ordinal);
+                }
+
+#pragma warning disable CS0618
+                var installer = pm.GetInstallerPackageName(context.PackageName!);
+#pragma warning restore CS0618
+                return string.Equals(installer, playStore, StringComparison.Ordinal);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string NormalizeProductId(string productId)
+            => string.Equals(productId, PremiumProduct.Id, StringComparison.Ordinal)
+                ? PremiumProduct.Id
+                // Legacy callers passed "premium" — map to the Play Console id.
+                : string.Equals(productId, "premium", StringComparison.OrdinalIgnoreCase)
+                    ? PremiumProduct.Id
+                    : productId;
 
         private BillingClient BuildClient()
         {
@@ -196,14 +245,6 @@ namespace musicmate.Platforms.Android
                 }));
 
             return await tcs.Task;
-        }
-
-        private async Task SyncPurchasesAsync()
-        {
-            bool owned = await QueryPurchasedAsync(PremiumProductId);
-            // Update via StatusService so PropertyChanged fires and all bound ViewModels update.
-            MainThread.BeginInvokeOnMainThread(() =>
-                StatusService.Instance.IsPremiumUser = owned);
         }
 
         private void AcknowledgePurchase(Purchase purchase)

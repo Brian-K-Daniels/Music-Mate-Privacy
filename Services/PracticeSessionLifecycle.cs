@@ -125,13 +125,18 @@ namespace musicmate.Services
             if (!session.UseNoteMasteryForGeneration || db == null)
                 return list;
 
-            await db.InitializeAsync();
-            var stats = (await db.GetAllAsync()).ToDictionary(s => s.WrittenName, s => s);
+            var masteredMidis = await session.GetMasteredMidiNumbersAsync();
+            if (masteredMidis.Count == 0)
+                return list;
+
             return list.Where(n =>
             {
-                if (!stats.TryGetValue(n.Name, out var stat))
+                int midi = n.Midi > 0
+                    ? n.Midi
+                    : NoteSessionService.NoteNameToMidi(n.Name ?? string.Empty);
+                if (midi < 0)
                     return true;
-                return !MasteryEvaluator.IsFullyMastered(stat, session);
+                return !masteredMidis.Contains(midi);
             }).ToList();
         }
 

@@ -322,7 +322,7 @@ namespace musicmate.Services
         // Backing fields with persisted defaults
         private int _audioBufferSize = SessionPreferences.Get(PrefAudioBufferSizeKey, 1024);
         private bool _autoStart = SessionPreferences.Get(PrefAutoStartKey, true);
-        private bool _autoRepeat = SessionPreferences.Get(PrefAutoRepeatKey, false);
+        private bool _autoRepeat = SessionPreferences.Get(PrefAutoRepeatKey, true);
         private bool _repeatSameTune = SessionPreferences.Get(PrefRepeatSameTuneKey, false);
         private int _pitchWindowSize = SessionPreferences.Get(PrefPitchWindowSizeKey, 4096);
         private string _highestNote = SessionPreferences.Get("musicmate.HighestNote", "C6") ?? "C6";
@@ -769,7 +769,12 @@ namespace musicmate.Services
         {
             var result = new HashSet<int>();
             if (!UseNoteMasteryForGeneration)
+            {
+                DebugLog.WriteLine(
+                    DebugLogCategory.StaffAndSequence,
+                    "[MasteryOmit] GetMasteredMidiNumbersAsync: omission OFF → empty exclusion set");
                 return result;
+            }
 
             try
             {
@@ -780,11 +785,20 @@ namespace musicmate.Services
                 var statsList = await db.GetAllAsync();
                 foreach (var stat in statsList)
                 {
+                    if (stat is null || string.IsNullOrWhiteSpace(stat.WrittenName))
+                        continue;
                     if (!MasteryEvaluator.IsFullyMastered(stat, this)) continue;
 
+                    // Written-pitch MIDI (octave-specific). Display spelling is not compared.
                     int midi = NoteNameToMidi(stat.WrittenName);
-                    if (midi > 0) result.Add(midi);
+                    if (midi >= 0) result.Add(midi);
                 }
+
+                DebugLog.WriteLine(
+                    DebugLogCategory.StaffAndSequence,
+                    $"[MasteryOmit] GetMasteredMidiNumbersAsync: found {result.Count} mastered " +
+                    $"written midis [{MasteredNoteOmission.FormatMidiSample(result)}] " +
+                    $"instrument={Instrument} method={MasteredMethod}");
             }
             catch (Exception ex)
             {
@@ -1392,6 +1406,15 @@ namespace musicmate.Services
 
             string newKey = ResolveKeyForFreshGeneration(
                 Tune ?? string.Empty, CurrentTune, newScale, keyPoolLevel, rng, preservedKey: oldKey);
+
+            // Final validation before generation: never keep a key above the level's
+            // permitted difficulty (Practice Tune authored keys are exempt).
+            if (!string.Equals(Tune, "Practice Tune", StringComparison.Ordinal))
+            {
+                newKey = KeyDifficultyRules.EnsureKeyAllowedAtLevel(
+                    newKey, newScale, keyPoolLevel, rng);
+            }
+
             bool keyChanged = !string.Equals(oldKey, newKey, StringComparison.Ordinal);
             if (keyChanged)
                 Key = newKey;
@@ -1857,6 +1880,17 @@ namespace musicmate.Services
             }
         }
 
+        /// <summary>
+        /// Turns on AutoStart with Repeat New Each Time (not Repeat Same).
+        /// Used on first-run defaults, Home → Start, and manual level changes.
+        /// </summary>
+        public void EnableAutoStartWithRepeatNew()
+        {
+            AutoStart = true;
+            AutoRepeat = true;
+            RepeatSameTune = false;
+        }
+
         private float _rmsThreshold = 0.025f;
         public const float DefaultRmsThreshold = 0.025f;
         public float RmsThreshold
@@ -1928,11 +1962,40 @@ namespace musicmate.Services
         public DateTime IgnoreAudioUntilUtc { get; private set; } = DateTime.MinValue;
         private int? _lockedPitchClassAfterAdvance;
         /// <summary>
-        /// When two consecutive practice-tune notes share the same pitch class, require
-        /// a silence gap between them so the sustained audio from the first note cannot
-        /// immediately trigger the second.
+        /// After a note is accepted as correct, require a fresh note-on before the next
+        /// displayed note can match. Cleared by silence (RMS below threshold), lost pitch,
+        /// or a clearly detected new attack — so one sustained tone cannot green-chain.
         /// </summary>
-        private bool _requireSilenceBeforeNote;
+        private bool _awaitingNoteOn;
+        /// <summary>
+        /// Next target shares the accepted pitch class — amplitude wobble must not count
+        /// as a new attack; only a debounced silence plus a fresh onset may unlock.
+        /// </summary>
+        private bool _awaitingSamePitchRetrigger;
+        /// <summary>
+        /// After silence for a same-pitch re-trigger, wait for a new onset (sound after
+        /// silence) before the repeated note can match.
+        /// </summary>
+        private bool _requirePostSilenceAttack;
+        private DateTime? _silenceSinceUtc;
+        private float _awaitingRmsTrough = float.MaxValue;
+        private float _awaitingRmsAtStart;
+        private const float NoteOnAttackRiseFactor = 1.8f;
+        private const float NoteOnAttackMinAbsoluteRise = 0.012f;
+        private const float NoteOnAttackDipFraction = 0.55f;
+        private const float NoteOnAttackMinDip = 0.015f;
+        public const int DefaultSamePitchSilenceMs = 100;
+        private int _samePitchSilenceMs = DefaultSamePitchSilenceMs;
+        /// <summary>
+        /// Continuous below-threshold time required before a repeated same pitch may unlock.
+        /// </summary>
+        public int SamePitchSilenceMs
+        {
+            get => _samePitchSilenceMs;
+            set => _samePitchSilenceMs = Math.Clamp(value, 0, 500);
+        }
+        /// <summary>True when the next displayed note still needs a new note-on before it can match.</summary>
+        public bool IsAwaitingNoteOn => _awaitingNoteOn || _requirePostSilenceAttack;
         // Sustain/rest earliest-start gate (uses MusicBpm as written tempo)
         private bool _rhythmStartGateEnabled;
         private int _rhythmGateMusicBpm;
@@ -2106,7 +2169,7 @@ namespace musicmate.Services
             CurrentNoteIndex = 0;
             IgnoreAudioUntilUtc = DateTime.MinValue;
             _lockedPitchClassAfterAdvance = null;
-            _requireSilenceBeforeNote = false;
+            ClearNoteOnWait();
             _rhythmStartGateEnabled = false;
             _rhythmGateMusicBpm = 0;
             _rhythmGateUntilMs = 0;
@@ -2531,6 +2594,15 @@ namespace musicmate.Services
                 return false;
             }
 
+            // One accepted note per detection pass: honor cooldown and note-on gate here so
+            // queued MainThread callbacks cannot burst-advance through a sequence.
+            if (ShouldIgnoreAudio(DateTime.UtcNow))
+                return false;
+
+            // Block until silence / new attack (includes same-pitch post-silence onset).
+            if (IsAwaitingNoteOn)
+                return false;
+
             string heardNote = "-";
             if (freq > 0)
             {
@@ -2560,20 +2632,25 @@ namespace musicmate.Services
             var detMidiWritten = detectedMidi - GetInstrumentTransposeOffset();
             var detectedPcWritten = Mod12(detMidiWritten);
 
-            // After a note advances, ignore tail detections that still match
-            // the previous note's pitch class — they are residual audio, not
-            // genuine wrong answers for the new target note.
-            // Exception: if the current target has the same pitch class (consecutive
-            // identical notes in Random mode), allow through — the cooldown already
-            // debounces residual audio.
+            // After a note advances, ignore continuing detections of the previous pitch
+            // class so residual audio is not scored as WrongPitch for the new target.
+            // Same-pitch consecutive notes: once note-on wait is cleared, allow the
+            // locked class through as a genuine new attack of that pitch.
             if (_lockedPitchClassAfterAdvance.HasValue)
             {
-                if (detectedPcWritten == _lockedPitchClassAfterAdvance.Value
-                    && Mod12(expectedWrittenMidi) != _lockedPitchClassAfterAdvance.Value)
+                if (detectedPcWritten == _lockedPitchClassAfterAdvance.Value)
                 {
-                    return false;
+                    if (Mod12(expectedWrittenMidi) != _lockedPitchClassAfterAdvance.Value)
+                        return false;
+
+                    // Next target is the same pitch class and note-on wait is already
+                    // clear — treat this as a new attack, not residual.
+                    _lockedPitchClassAfterAdvance = null;
                 }
-                _lockedPitchClassAfterAdvance = null;
+                else
+                {
+                    _lockedPitchClassAfterAdvance = null;
+                }
             }
 
             ClearRhythmGateIfExpired();
@@ -2614,11 +2691,6 @@ namespace musicmate.Services
                 return false;
             }
 
-            // If a silence gap is required (consecutive same-pitch notes), block until
-            // silence clears the flag via NotifySilence().
-            if (_requireSilenceBeforeNote)
-                return false;
-
             StatusService.Instance.StatusMessage = $"Expected: {expectedNote}, Heard: {heardNote}, {result.cents}¢, Notes: {NotesToDraw.Count}";
 
             // Only match if the detected pitch class matches the current note's pitch class
@@ -2649,7 +2721,7 @@ namespace musicmate.Services
                 CorrectNoteIndices.Add(idx);
                 FeedbackViewModels[idx] = new FeedbackItem(idx, curFeedback.Wrong, result.cents, true);
 
-                // Lock advancement and move to next note
+                // Lock the accepted pitch until a fresh note-on; move to next note once.
                 _lockedPitchClassAfterAdvance = detectedPcWritten;
 
                 // Clear smoothing history so the next note starts with fresh data
@@ -2661,12 +2733,13 @@ namespace musicmate.Services
                 // Clear wrong-debounce for this index on correct
                 _lastWrongTimePerIndex.Remove(idx);
 
-                // Move CurrentNoteIndex to the next note (in order)
+                // Move CurrentNoteIndex to the next note (in order) — at most one advance per call
                 CurrentNoteIndex = idx + 1;
                 if (CurrentNoteIndex >= NotesToDraw.Count)
                 {
                     CurrentNoteIndex = NotesToDraw.Count; // Stay at the end
-                    _requireSilenceBeforeNote = false;
+                    ClearNoteOnWait();
+                    _lockedPitchClassAfterAdvance = null;
                     _rhythmGateUntilMs = 0;
                     FinalizeSessionStats();
                     _ = SessionCompletedAsync?.Invoke();
@@ -2674,13 +2747,8 @@ namespace musicmate.Services
                 else
                 {
                     ArmRhythmGateAfterAdvance(idx);
-                    if (Tune == "Practice Tune"
-                             && Mod12(ResolveWrittenEvaluationMidi(NotesToDraw[CurrentNoteIndex])) == detectedPcWritten)
-                    {
-                        // Next note has the same pitch class — require a silence gap so the
-                        // sustained audio from this note cannot auto-trigger the next one.
-                        _requireSilenceBeforeNote = true;
-                    }
+                    // Every subsequent displayed note needs its own note-on event.
+                    BeginAwaitingNoteOn();
                 }
                 return true;
             }
@@ -2706,59 +2774,46 @@ namespace musicmate.Services
 
             if (UseNoteMasteryForGeneration)
             {
-                // Get stats from database asynchronously
-                var db = ServiceHelper.GetService<NoteDatabase>();
-                if (db == null)
-                {
-                    Utils.Log("NoteDatabase service is not registered.");
-                    return Array.Empty<string>();
-                }
-                await db.InitializeAsync();
-
-                var statsList = await db.GetAllAsync();
-                var stats = (statsList ?? Enumerable.Empty<NoteStat>())
-                    .Where(s => !string.IsNullOrWhiteSpace(s.WrittenName))
-                    .GroupBy(s => s.WrittenName)
-                    .ToDictionary(g => g.Key, g => g.First());
-
-                // Exclude mastered notes based on MasteredMethod
-                availableNotes = availableNotes
-                    .Where(note =>
-                    {
-                        if (!stats.TryGetValue(note, out var stat)) return true;
-                        return !MasteryEvaluator.IsFullyMastered(stat, this);
-                    })
+                var fullPool = availableNotes.ToList();
+                var masteredMidis = await GetMasteredMidiNumbersAsync();
+                var fullMidis = fullPool
+                    .Select(n => (Name: n, Midi: NoteNameToMidi(n)))
+                    .Where(x => x.Midi >= 0)
                     .ToList();
 
-                var fullPool = BuildAvailableNotesForCurrentInstrumentAndScale();
+                var omission = MasteredNoteOmission.ApplyForLevel(
+                    fullMidis.Select(x => x.Midi).ToList(),
+                    masteredMidis,
+                    ChildLevel);
 
-                // When mastery leaves too few candidates, keep the full pool so generation
-                // does not collapse into a repeating two-note pattern (e.g. G–A–G–A).
-                if (availableNotes.Count < MusicSequenceGenerator.MinPitchPoolAfterMasteryExclusion
-                    && fullPool.Count >= 2)
+                if (omission.Fallback is MasteredNoteOmission.FallbackKind.AllowedMasteredAllEligibleMastered
+                    or MasteredNoteOmission.FallbackKind.RelaxedOmissionForDistinctPitches)
                 {
-                    availableNotes = fullPool;
+                    var allowed = new HashSet<int>(omission.Pool);
+                    availableNotes = fullMidis
+                        .Where(x => allowed.Contains(x.Midi))
+                        .Select(x => x.Name)
+                        .ToList();
+                    DebugLog.WriteLine(
+                        DebugLogCategory.StaffAndSequence,
+                        $"[MasteryOmit] BuildRandomSequenceAsync fallback={omission.Fallback}: {omission.Reason}");
                 }
-                // If filtering removed all notes or left only one, fall back to weakest notes.
-                else if (availableNotes.Count < 2)
+                else
                 {
-                    if (fullPool.Count >= 2)
-                    {
-                        availableNotes = fullPool
-                            .OrderBy(note =>
-                            {
-                                if (stats.TryGetValue(note, out var s))
-                                    return MasteredMethod == "Streak" ? s.Streak : (int)s.PercentOverallCorrect;
-                                return 0;
-                            })
-                            .Take(Math.Max(2, fullPool.Count / 2))
-                            .ToList();
-                    }
-                    else
-                    {
-                        availableNotes = fullPool;
-                    }
+                    var allowed = new HashSet<int>(omission.Pool);
+                    availableNotes = fullMidis
+                        .Where(x => allowed.Contains(x.Midi))
+                        .Select(x => x.Name)
+                        .ToList();
                 }
+
+                MasteredNoteOmission.LogFilter(
+                    "LegacyRandomSequence",
+                    true,
+                    fullMidis.Select(x => x.Midi),
+                    masteredMidis,
+                    omission,
+                    availableNotes.Select(NoteNameToMidi));
             }
 
             // Remove enharmonic boundary notes that would be out of range when respelled
@@ -3032,15 +3087,144 @@ namespace musicmate.Services
         {
             return utcNow < IgnoreAudioUntilUtc;
         }
+        private void BeginAwaitingNoteOn()
+        {
+            _awaitingNoteOn = true;
+            _requirePostSilenceAttack = false;
+            _awaitingRmsTrough = float.MaxValue;
+            _awaitingRmsAtStart = 0;
+            _silenceSinceUtc = null;
+            _awaitingSamePitchRetrigger =
+                CurrentNoteIndex < NotesToDraw.Count
+                && _lockedPitchClassAfterAdvance.HasValue
+                && Mod12(ResolveWrittenEvaluationMidi(NotesToDraw[CurrentNoteIndex]))
+                   == _lockedPitchClassAfterAdvance.Value;
+        }
+        private void ClearNoteOnWait()
+        {
+            _awaitingNoteOn = false;
+            _requirePostSilenceAttack = false;
+            _awaitingSamePitchRetrigger = false;
+            _awaitingRmsTrough = float.MaxValue;
+            _awaitingRmsAtStart = 0;
+            _silenceSinceUtc = null;
+            // Keep _lockedPitchClassAfterAdvance so residual previous pitch is ignored
+            // (not scored WrongPitch) until the detected pitch class changes.
+        }
+        private void TryClearNoteOnWaitFromSilence(DateTime utcNow)
+        {
+            if (!_awaitingNoteOn && !_requirePostSilenceAttack)
+                return;
+
+            // Different pitch next: silence immediately unlocks (pitch lock blocks residual).
+            if (!_awaitingSamePitchRetrigger)
+            {
+                ClearNoteOnWait();
+                ClearRhythmGateIfExpired();
+                return;
+            }
+
+            // Same pitch next: require sustained silence, then a fresh onset.
+            _silenceSinceUtc ??= utcNow;
+            if ((utcNow - _silenceSinceUtc.Value).TotalMilliseconds < SamePitchSilenceMs)
+                return;
+
+            _awaitingNoteOn = false;
+            _requirePostSilenceAttack = true;
+            _silenceSinceUtc = null;
+            ClearRhythmGateIfExpired();
+        }
         /// <summary>
-        /// Called by the audio pipeline when RMS drops below the silence threshold.
-        /// Clears the consecutive-same-pitch silence requirement so the next note
-        /// can be matched as soon as the player plays it.
+        /// Called by the audio pipeline when RMS drops below the note-on / silence threshold.
+        /// Unlocks the next displayed note (same-pitch repeats need sustained silence + attack).
         /// </summary>
         public void NotifySilence()
+            => TryClearNoteOnWaitFromSilence(DateTime.UtcNow);
+        /// <summary>
+        /// Test helper: advance the same-pitch silence debounce as if
+        /// <paramref name="silenceMs"/> of continuous silence had elapsed.
+        /// </summary>
+        public void NotifySilenceFor(int silenceMs)
         {
-            _requireSilenceBeforeNote = false;
-            ClearRhythmGateIfExpired();
+            var started = DateTime.UtcNow.AddMilliseconds(-Math.Max(0, silenceMs));
+            _silenceSinceUtc = started;
+            TryClearNoteOnWaitFromSilence(DateTime.UtcNow);
+        }
+        /// <summary>
+        /// Called when pitch detection loses the tone (freq == 0). For different-pitch
+        /// targets this unlocks immediately; for same-pitch repeats it counts toward silence.
+        /// </summary>
+        public void NotifyPitchStopped()
+        {
+            if (_awaitingSamePitchRetrigger)
+                TryClearNoteOnWaitFromSilence(DateTime.UtcNow);
+            else if (_awaitingNoteOn)
+                ClearNoteOnWait();
+        }
+        /// <summary>
+        /// Called on a clear new onset (sound after silence, or amplitude attack for
+        /// different-pitch targets). Completes same-pitch re-trigger arming.
+        /// </summary>
+        public void NotifyNoteAttack()
+        {
+            if (_requirePostSilenceAttack)
+            {
+                _requirePostSilenceAttack = false;
+                _awaitingSamePitchRetrigger = false;
+                return;
+            }
+
+            // Amplitude attacks never unlock repeated same-pitch notes (too easy to false-trigger).
+            if (_awaitingSamePitchRetrigger)
+                return;
+
+            if (_awaitingNoteOn)
+                ClearNoteOnWait();
+        }
+        /// <summary>
+        /// Tracks loudness while awaiting a note-on. Volume below <see cref="RmsThreshold"/>
+        /// unlocks (with debounce for same-pitch repeats). Amplitude dip/rise attacks unlock
+        /// only when the next note is a different pitch.
+        /// </summary>
+        public void ObserveLoudness(float rms)
+        {
+            if (!_awaitingNoteOn && !_requirePostSilenceAttack)
+            {
+                _silenceSinceUtc = null;
+                return;
+            }
+
+            if (rms < RmsThreshold)
+            {
+                TryClearNoteOnWaitFromSilence(DateTime.UtcNow);
+                return;
+            }
+
+            _silenceSinceUtc = null;
+
+            // Same-pitch repeats: ignore amplitude wobble; wait for silence + new onset.
+            if (_awaitingSamePitchRetrigger || _requirePostSilenceAttack)
+                return;
+
+            if (!_awaitingNoteOn)
+                return;
+
+            if (_awaitingRmsAtStart <= 0)
+                _awaitingRmsAtStart = rms;
+
+            if (rms < _awaitingRmsTrough)
+                _awaitingRmsTrough = rms;
+
+            bool hadMeaningfulDip =
+                _awaitingRmsTrough <= _awaitingRmsAtStart * NoteOnAttackDipFraction
+                || _awaitingRmsAtStart - _awaitingRmsTrough >= NoteOnAttackMinDip;
+
+            if (hadMeaningfulDip
+                && rms >= _awaitingRmsTrough + NoteOnAttackMinAbsoluteRise
+                && rms >= _awaitingRmsTrough * NoteOnAttackRiseFactor)
+            {
+                ClearNoteOnWait();
+            }
         }
         public (string WrittenName, int CentsDeviation) MapPitch(double freq)
         {
@@ -3216,6 +3400,7 @@ namespace musicmate.Services
             RestDurations.Clear();
             CurrentNoteIndex = 0;
             _lockedPitchClassAfterAdvance = null;
+            ClearNoteOnWait();
             IgnoreAudioUntilUtc = DateTime.MinValue;
 
             // ── Practice Tune mode ──────────────────────────────────────────────

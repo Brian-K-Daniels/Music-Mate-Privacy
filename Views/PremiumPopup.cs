@@ -148,7 +148,7 @@ public class PremiumPopup : Popup
     {
         if (_storeService != null)
         {
-            var purchased = await _storeService.PurchaseAsync("music_mate_premium");
+            var purchased = await _storeService.PurchaseAsync(PremiumProduct.Id);
             if (purchased)
             {
                 StatusService.Instance.IsPremiumUser = true;

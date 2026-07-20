@@ -259,21 +259,42 @@ namespace musicmate.Services
                 return false;
 
             var pattern = patterns[rng.Next(patterns.Count)];
-            string rootKey = PickArpeggioRootKey(session, level, rng);
+            string rootKey = PickArpeggioRootKey(session, level, rng, pattern);
             string rootNote = ChooseArpeggioRootInRange(session, rootKey);
             string displayName = $"{TrimOctave(rootNote)} {pattern.DisplayName.ToLowerInvariant()}";
             session.IsRandomMode = false;
             session.SelectArpeggio(pattern, rootNote, displayName);
-            session.Key = session.ResolveArpeggioWrittenKeySignature(pattern, rootNote);
+            string writtenKey = session.ResolveArpeggioWrittenKeySignature(pattern, rootNote);
+            session.Key = KeyDifficultyRules.EnsureKeyAllowedAtLevel(
+                writtenKey, "Major", level, rng);
             return true;
         }
 
-        private static string PickArpeggioRootKey(NoteSessionService session, int level, Random rng)
+        /// <summary>
+        /// Picks a concert root whose resulting written key signature is permitted at
+        /// <paramref name="level"/> for the active instrument (no post-hoc downgrade).
+        /// </summary>
+        private static string PickArpeggioRootKey(
+            NoteSessionService session,
+            int level,
+            Random rng,
+            ArpeggioPattern pattern)
         {
-            var keys = ChildLevelProgression.GetAllowedKeys(level).ToList();
-            if (keys.Count == 0)
-                keys.Add(session.Key);
-            return keys[rng.Next(keys.Count)];
+            var permittedRoots = ChildLevelProgression.GetAllowedKeys(level)
+                .Where(rootKey =>
+                {
+                    string written = session.ResolveArpeggioWrittenKeySignature(pattern, $"{rootKey}4");
+                    return KeyDifficultyRules.IsKeyAllowedAtLevel(written, "Major", level);
+                })
+                .ToList();
+
+            if (permittedRoots.Count == 0)
+            {
+                // Fall back to roots that stay within the level after transpose, else C.
+                permittedRoots = ["C"];
+            }
+
+            return permittedRoots[rng.Next(permittedRoots.Count)];
         }
 
         private static string ChooseArpeggioRootInRange(NoteSessionService session, string rootKey)

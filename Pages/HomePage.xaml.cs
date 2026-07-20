@@ -126,6 +126,9 @@ namespace musicmate.Pages
 
                 LevelUpService.MarkCountSinceNow();
 
+                // Fresh practice from Home: listen immediately with Repeat New Each Time.
+                _session.EnableAutoStartWithRepeatNew();
+
                 // FUTURE: level-up / congratulations logic will be triggered from
                 //   MusicPage after a session completes successfully, then navigate
                 //   back here with a celebratory overlay.

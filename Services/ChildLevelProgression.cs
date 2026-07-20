@@ -62,7 +62,10 @@ namespace musicmate.Services
             };
         }
 
-        /// <summary>Pick one scale and one key from the level's weighted pools.</summary>
+        /// <summary>
+        /// Pick one scale, then one key from the permitted list for that scale at this level.
+        /// Key selection never precedes scale finalization.
+        /// </summary>
         public static (string Scale, string Key) PickScaleAndKey(
             ChildLevelDifficultyProfile profile, Random? rng = null)
         {

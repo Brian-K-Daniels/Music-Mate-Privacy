@@ -811,9 +811,36 @@ namespace musicmate.Pages
         /// </summary>
         private async Task LoadExcludedMidisAsync()
         {
-            _excludedMidis = _session.IsRandomMode
+            // Omit mastered written pitches for random / candidate-selection generation
+            // (including By Level composition Random and temporary note emphasis).
+            // Fixed tunes, scales, and arpeggios leave exclusions empty so required notes remain.
+            bool candidateSelection =
+                _session.IsRandomMode || _session.HasTemporaryNoteEmphasis;
+
+            _excludedMidis = candidateSelection
                 ? await _session.GetMasteredMidiNumbersAsync()
                 : new HashSet<int>();
+
+            DebugLog.WriteLine(
+                $"[MasteryOmit] LoadExcludedMidis activity={DescribeMasteryOmitActivity()} " +
+                $"omissionOn={_session.UseNoteMasteryForGeneration} candidateSelection={candidateSelection} " +
+                $"excludedCount={_excludedMidis.Count} " +
+                $"excluded=[{MasteredNoteOmission.FormatMidiSample(_excludedMidis)}]");
+        }
+
+        private string DescribeMasteryOmitActivity()
+        {
+            if (_session.HasTemporaryNoteEmphasis)
+                return "EmphasizedNote";
+            if (_session.ScaleSelectionMode == ScaleSelectionMode.ByLevel && _session.IsRandomMode)
+                return "ByLevel-Random";
+            if (_session.IsRandomMode)
+                return "Random";
+            if (_session.Tune == "Practice Tune")
+                return "FixedTune";
+            if (_session.Tune == "Arpeggio")
+                return "Arpeggio";
+            return _session.IsRandomMode ? "Random" : "Scale";
         }
 
         /// <summary>
@@ -877,13 +904,35 @@ namespace musicmate.Pages
                 RestChancePercent = simpleSelectedScale ? 0 : _session.PracticeRestChancePercent,
                 EmphasizedMidiNumber = _session.GetTemporaryEmphasizedMidi(),
                 EmphasizedNoteSelectionPercent = _session.TemporaryEmphasizedSelectionPercent,
+                ActivityType = DescribeMasteryOmitActivity(),
+                ChildLevel = _session.ChildLevel,
+                MinDistinctPitches = MelodicVarietyRules.GetMinimumDistinctPitchesForLevel(
+                    _session.ChildLevel),
                 RandomSeed = Environment.TickCount
                                            ^ _generationSeed
                                            ^ (_session.ChildLevel * 7919)
                                            ^ seedSalt
             };
-            DebugLog.WriteLine($"[StaffGen] Tune={_session.Tune} Random={_session.IsRandomMode} SimpleScale={simpleSelectedScale} AccPct={_session.AccidentalPercent} EffectiveAccPct={(_session.IsRandomMode ? _session.AccidentalPercent : 0)}");
+            DebugLog.WriteLine($"[StaffGen] Tune={_session.Tune} Random={_session.IsRandomMode} SimpleScale={simpleSelectedScale} AccPct={_session.AccidentalPercent} EffectiveAccPct={(_session.IsRandomMode ? _session.AccidentalPercent : 0)} Activity={gen.ActivityType} Excluded={_excludedMidis.Count}");
             return gen;
+        }
+
+        private void ReportMasteryOmissionFallback(MusicSequenceGenerator gen)
+        {
+            if (gen.LastMasteryFallback == MasteredNoteOmission.FallbackKind.None)
+                return;
+
+            DebugLog.WriteLine(
+                $"[MasteryOmit] fallback ({gen.ActivityType}/{gen.LastMasteryFallback}): " +
+                $"{gen.LastMasteryFallbackReason}");
+
+            // Only surface the all-mastered case — small unmastered pools are expected.
+            if (gen.LastMasteryFallback
+                    == MasteredNoteOmission.FallbackKind.AllowedMasteredAllEligibleMastered
+                && !string.IsNullOrWhiteSpace(gen.LastMasteryFallbackReason))
+            {
+                StatusService.Instance.StatusMessage = gen.LastMasteryFallbackReason;
+            }
         }
 
         private sealed class StandardStaffGenResult
@@ -908,6 +957,7 @@ namespace musicmate.Pages
 
             var genUpper = BuildSequenceGenerator(upperMc);
             var upperMeasures = genUpper.GenerateSequence();
+            ReportMasteryOmissionFallback(genUpper);
             var upperFlat = MusicSequenceGenerator.Flatten(upperMeasures);
             double measureBeats = genUpper.TimeSignature.TotalBeats;
             var upperBarBeats = ComputeStaffBarBeats(upperFlat, measureBeats, existingUpper);
@@ -927,6 +977,7 @@ namespace musicmate.Pages
                 int lowerStartPitch = MusicSequenceGenerator.LastPitchedMidi(upperFlat);
                 var genLower = BuildSequenceGenerator(lowerMc, lowerStartPitch, seedSalt: 0x5A5A5A5A);
                 var lowerMeasures = genLower.GenerateSequence();
+                ReportMasteryOmissionFallback(genLower);
                 lowerFlat = MusicSequenceGenerator.Flatten(lowerMeasures);
 
                 double lowerBeatShift = lowerFlat.Count > 0 ? (lowerFlat[0].BeatPosition ?? 0.0) : 0.0;
@@ -1390,6 +1441,7 @@ namespace musicmate.Pages
                         // at most (2*37−2)=72 quarter notes = 18 bars of 4/4.  Cap at 24 to be safe.
                         var genAll = BuildSequenceGenerator(24);
                         var allMeasures = genAll.GenerateSequence();
+                        ReportMasteryOmissionFallback(genAll);
                         var allNotes = MusicSequenceGenerator.Flatten(allMeasures);
                         double measureBeats = genAll.TimeSignature.TotalBeats;
                         var allBarBeats = ComputeStaffBarBeats(allNotes, measureBeats, new HashSet<double>());
@@ -2122,6 +2174,9 @@ namespace musicmate.Pages
 
             _repeatSameSnapshot = null;
 
+            // Manual level change: resume listening with Repeat New Each Time on.
+            _session.EnableAutoStartWithRepeatNew();
+
             if (_session.IsRandomMode)
                 SyncPlayItemStatusMessage();
             else
@@ -2129,6 +2184,13 @@ namespace musicmate.Pages
                     $"Level {level}: {difficulty.StageLabel} — {difficulty.SuggestedKey} {difficulty.SuggestedScale}";
 
             await RefreshDisplayForLevelChangeAsync();
+
+            if (!_isPlaying)
+            {
+                await StartListeningAndEvaluatingAsync(
+                    forceNewNotes: true,
+                    scaleKeyTrigger: "AutoStart");
+            }
         }
 
         private async void OnChildLevelDeltaClicked(object? sender, EventArgs e)
@@ -2356,17 +2418,19 @@ namespace musicmate.Pages
         /// Adopts the saved Home-page level when Music is opened without Home → Start
         /// (e.g. via the flyout menu). Applies range/batch settings only — does not
         /// overwrite the user's current tune, key, or scale selection.
+        /// Missing preference defaults to 1 (same as Home), so the level controls
+        /// appear on a fresh install without requiring Home → Start first.
         /// </summary>
         private void EnsureChildLevelFromPreferences()
         {
             if (_session.ChildLevel > 0)
                 return;
 
-            int saved = Preferences.Default.Get(ChildLevelPrefKey, 0);
-            if (saved <= 0)
-                return;
+            // Home uses default 1; do not treat "key missing" as ChildLevel 0 or the
+            // slider stays invisible until the user taps Start on Home.
+            int saved = Math.Clamp(Preferences.Default.Get(ChildLevelPrefKey, 1), 1, 100);
+            Preferences.Default.Set(ChildLevelPrefKey, saved);
 
-            saved = Math.Clamp(saved, 1, 100);
             _session.ChildLevel = saved;
             if (_session.ScaleSelectionMode == ScaleSelectionMode.ByLevel)
                 _session.SelectedScale = ChildLevelProgression.GetDefaultScaleForLevel(saved);
@@ -2433,13 +2497,6 @@ namespace musicmate.Pages
             // Android may lay out the slider row after OnAppearing; refresh once more.
             Dispatcher.Dispatch(UpdateChildLevelSliderDisplay);
             Dispatcher.Dispatch(UpdateTitlePlayButtonPosition);
-
-#if DEBUG
-            if (_session.AutoStart && _session.Tune != "Tuner" && _session.ChildLevel == 0)
-            {
-                AutoRepeat = true;
-            }
-#endif
 
             // Regenerate before AutoStart so random→scale changes refresh the staff.
             // When Repeat Same is on, restore the saved snapshot instead of re-randomizing key.
@@ -2576,6 +2633,7 @@ namespace musicmate.Pages
             }
 
             var rms = PitchDetectionService.ComputeRms(buf);
+            _session.ObserveLoudness(rms);
 
             if (rms < _session.RmsThreshold)
             {
@@ -2583,7 +2641,7 @@ namespace musicmate.Pages
                 {
                     DebugLog.WriteLine("[Audio] Below RMS threshold, ignoring");
                     _isBelowThreshold = true;
-                    // Notify session so consecutive same-pitch notes can be distinguished
+                    // Unlock next note: volume fell below the note-on threshold
                     _session.NotifySilence();
                 }
                 _pitchBufferPos = 0;
@@ -2593,13 +2651,18 @@ namespace musicmate.Pages
             bool firstSoundAfterSilence = _isBelowThreshold;
             _isBelowThreshold = false;
 
-            if (firstSoundAfterSilence
-                && _isRunning
-                && !_dismissedResultBannerForFirstSound
-                && SessionResultBanner?.IsVisible == true)
+            if (firstSoundAfterSilence)
             {
-                MainThread.BeginInvokeOnMainThread(() =>
-                    _ = DismissSessionResultBannerAndScrollToStaffAsync());
+                // Fresh onset after silence — completes same-pitch re-trigger arming.
+                _session.NotifyNoteAttack();
+
+                if (_isRunning
+                    && !_dismissedResultBannerForFirstSound
+                    && SessionResultBanner?.IsVisible == true)
+                {
+                    MainThread.BeginInvokeOnMainThread(() =>
+                        _ = DismissSessionResultBannerAndScrollToStaffAsync());
+                }
             }
 
             // Don't accumulate audio during ignore period — ensures the first
@@ -2649,7 +2712,12 @@ namespace musicmate.Pages
                 freq = freq * Math.Pow(2, _session.PitchOffsetCents / 1200.0);
 
                 if (freq == 0)
+                {
+                    // Pitch lost while still above the RMS gate is usually a detector
+                    // dropout, not a real note-off. Unlock via NotifySilence /
+                    // ObserveLoudness when volume actually falls.
                     return;
+                }
 
                 freq = _session.SmoothPitch(freq);
 
@@ -2672,6 +2740,11 @@ namespace musicmate.Pages
                 {
                     // Don't interfere with PlayDisplayedAsync's direct feedback updates
                     if (_isPlaying)
+                        return;
+
+                    // Re-check gates on the UI thread so queued callbacks cannot
+                    // advance more than one note from a single sustained tone.
+                    if (_session.ShouldIgnoreAudio(DateTime.UtcNow) || _session.IsAwaitingNoteOn)
                         return;
 
                     // Only accept the note as correct if it matches the expected note (including octave) at the current index

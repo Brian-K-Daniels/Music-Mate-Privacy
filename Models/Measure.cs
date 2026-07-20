@@ -88,6 +88,13 @@ namespace musicmate.Models
             _generatedNotes.Add(note);
         }
 
+        /// <summary>Replaces a v2 generated note at <paramref name="index"/>.</summary>
+        public void ReplaceGeneratedNote(int index, GeneratedNote note)
+        {
+            if (note is null) throw new ArgumentNullException(nameof(note));
+            _generatedNotes[index] = note;
+        }
+
         /// <summary>
         /// Returns true when adding <paramref name="note"/> would push <see cref="BeatsUsed"/>
         /// beyond <see cref="BeatsAvailable"/>.

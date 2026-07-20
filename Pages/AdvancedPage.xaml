@@ -190,7 +190,7 @@
           <Label Text="Note mastery" Style="{StaticResource AdvancedPanelTitle}"/>
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" VerticalOptions="Center">
             <Label Grid.Column="0"
-                   Text="Use note mastery when generating music"
+                   Text="Do not use mastered notes in Random music"
                    VerticalOptions="Center"
                    LineBreakMode="WordWrap" />
             <Switch Grid.Column="1"

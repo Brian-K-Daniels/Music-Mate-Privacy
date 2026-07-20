@@ -103,9 +103,10 @@ namespace musicmate.Services
         {
             level = Math.Clamp(level, 1, 100);
             var profile = ChildLevelProgression.GetProfile(level);
-            string key = ChildLevelProgression.ValidateKeyForLevel(level, session.Key);
+            // Finalize scale first, then validate the key against that scale's permitted list.
             session.ApplyScaleSelectionOnLevelChange(level);
             string scale = session.SelectedScale;
+            string key = ChildLevelProgression.ValidateKeyForLevel(level, scale, session.Key);
             bool preserve = preserveUserPracticeSettings && session.ChildPracticeSettingsCustomized;
             var settings = BuildSettings(level, profile, scale, key);
             ApplyToSession(settings, session, applyKeyAndScale: true, applyPracticeSettings: !preserve);
@@ -129,18 +130,29 @@ namespace musicmate.Services
         {
             level = Math.Clamp(level, 1, 100);
             var profile = ChildLevelProgression.GetProfile(level);
-            var (_, key) = ChildLevelProgression.PickScaleAndKey(profile, rng);
             bool preserve = preserveUserPracticeSettings && session.ChildPracticeSettingsCustomized;
 
             if (!preserve)
             {
                 session.ScaleSelectionMode = ScaleSelectionMode.ByLevel;
-                session.Key = key;
                 session.IsRandomMode = true;
                 session.Tune = "Selected Scale";
             }
 
+            // Finalize scale before picking a key so balancing never runs on a temporary scale.
             session.ApplyScaleSelectionOnLevelChange(level, rng);
+
+            if (!preserve)
+            {
+                session.Key = ChildLevelProgression.PickBalancedKeyForSignature(
+                    session.SelectedScale, level, rng);
+            }
+            else
+            {
+                session.Key = ChildLevelProgression.ValidateKeyForLevel(
+                    level, session.SelectedScale, session.Key);
+            }
+
             var settings = BuildSettings(level, profile, session.SelectedScale, session.Key);
             ApplyToSession(settings, session,
                 applyKeyAndScale: false,

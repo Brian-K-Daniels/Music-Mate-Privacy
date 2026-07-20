@@ -19,6 +19,10 @@
     <Style TargetType="Button">
       <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
       <Setter Property="TextColor" Value="{DynamicResource ThemeButtonText}" />
+      <!-- Override app Button Padding (14,10) so compact dialog buttons are not clipped -->
+      <Setter Property="Padding" Value="10,6" />
+      <Setter Property="MinimumHeightRequest" Value="40" />
+      <Setter Property="MinimumWidthRequest" Value="40" />
     </Style>
   </ContentView.Resources>
 
@@ -92,39 +96,43 @@
                                  Spacing="8">
             <Button x:Name="UpArrowButton"
                     Text="▲"
-                    FontSize="12"
-                    WidthRequest="40" HeightRequest="40"
+                    FontSize="14"
+                    Padding="0"
+                    WidthRequest="48" HeightRequest="48"
                     Pressed="OnUpArrowPressed"
                     Released="OnArrowReleased"/>
             <Button x:Name="LeftArrowButton"
                     Text="◀"
-                    FontSize="12"
-                    WidthRequest="40" HeightRequest="40"
+                    FontSize="14"
+                    Padding="0"
+                    WidthRequest="48" HeightRequest="48"
                     Pressed="OnLeftArrowPressed"
                     Released="OnArrowReleased"/>
             <Button x:Name="RightArrowButton"
                     Text="▶"
-                    FontSize="12"
-                    WidthRequest="40" HeightRequest="40"
+                    FontSize="14"
+                    Padding="0"
+                    WidthRequest="48" HeightRequest="48"
                     Pressed="OnRightArrowPressed"
                     Released="OnArrowReleased"/>
             <Button x:Name="DownArrowButton"
                     Text="▼"
-                    FontSize="12"
-                    WidthRequest="40" HeightRequest="40"
+                    FontSize="14"
+                    Padding="0"
+                    WidthRequest="48" HeightRequest="48"
                     Pressed="OnDownArrowPressed"
                     Released="OnArrowReleased"/>
             <Button x:Name="OkButton"
                     Text="OK"
                     Clicked="OnOkClicked"
-                    WidthRequest="80"
-                    HeightRequest="40"
+                    MinimumWidthRequest="80"
+                    HeightRequest="48"
                     HorizontalOptions="Center"
                     VerticalOptions="Center"/>
             <Button Text="Close"
                     Clicked="OnCloseClicked"
-                    WidthRequest="80"
-                    HeightRequest="40"
+                    MinimumWidthRequest="90"
+                    HeightRequest="48"
                     HorizontalOptions="Center"
                     VerticalOptions="Center"/>
           </HorizontalStackLayout>

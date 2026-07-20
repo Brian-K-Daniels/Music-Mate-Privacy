@@ -150,7 +150,7 @@ namespace musicmate.ViewModels
             System.Diagnostics.Debug.WriteLine($"BuyPremiumAsync called. StoreService={_storeService?.GetType().Name}");
             if (_storeService != null)
             {
-                var ok = await _storeService.PurchaseAsync("premium");
+                var ok = await _storeService.PurchaseAsync(PremiumProduct.Id);
                 System.Diagnostics.Debug.WriteLine($"PurchaseAsync returned: {ok}");
                 if (ok)
                 {
@@ -159,7 +159,13 @@ namespace musicmate.ViewModels
             }
             else
             {
+#if DEBUG
+                // Debug-only stub when no store is registered.
                 MainThread.BeginInvokeOnMainThread(() => IsPremium = true);
+#else
+                // Release: never grant premium without a store confirmation.
+                System.Diagnostics.Debug.WriteLine("BuyPremiumAsync: no store service — leaving non-premium.");
+#endif
             }
         }
 

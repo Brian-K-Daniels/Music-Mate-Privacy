@@ -39,6 +39,8 @@ namespace musicmate.ViewModels
         public const int DefaultMinCorrectCount = MasteryPreferenceDefaults.MinCorrectCount;
         public const int DefaultOmitMsAvg = MasteryPreferenceDefaults.OmitMsAvgThreshold;
         public const bool DefaultAutoStart = true;
+        public const bool DefaultAutoRepeat = true;
+        public const bool DefaultRepeatSameTune = false;
         public const bool DefaultCollectNote = true;
         public const bool DefaultCollectSession = true;
         public const int DefaultMaxSessionDbMb = 50;

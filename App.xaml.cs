@@ -1,5 +1,7 @@
 using Application = Microsoft.Maui.Controls.Application;
 using Microsoft.Maui.ApplicationModel;
+using Microsoft.Maui.Storage;
+using musicmate.Services;
 #if WINDOWS
 using Microsoft.Maui.Platform;
 using Microsoft.UI.Windowing;
@@ -38,17 +40,11 @@ namespace musicmate
         private async void InitializePremiumStatus()
         {
 #if !DEBUG
-            // One-time migration: clear any stale IsPremium preference left by a DEBUG install.
-            // The sentinel key records the last app version that ran this wipe, so it only
-            // fires once per version upgrade rather than on every cold start.
-            const string WipeSentinelKey = "PremiumWipedForVersion";
-            string currentVersion = AppInfo.Current.VersionString;
-            string lastWipedVersion = Microsoft.Maui.Storage.Preferences.Get(WipeSentinelKey, "");
-            if (lastWipedVersion != currentVersion)
-            {
-                Microsoft.Maui.Storage.Preferences.Remove("IsPremium");
-                Microsoft.Maui.Storage.Preferences.Set(WipeSentinelKey, currentVersion);
-            }
+            // Release: always start non-premium. Clear backup-/DEBUG-restored local flags.
+            // Play Store installs may then restore ownership; VS/adb sideloads will not
+            // (see GooglePlayStoreService.IsPurchasedAsync).
+            ClearLocalPremiumCache();
+            ForceNonPremium();
 #endif
 
             var storeService = Services.ServiceHelper.GetService<Services.IStoreService>();
@@ -57,31 +53,56 @@ namespace musicmate
                 try
                 {
                     await storeService.InitializeAsync();
-                    var purchased = await storeService.IsPurchasedAsync("premium");
+#if !DEBUG
+                    var purchased = await storeService.IsPurchasedAsync(PremiumProduct.Id);
+                    if (purchased)
+                        Services.StatusService.Instance.IsPremiumUser = true;
+                    else
+                        ForceNonPremium();
+#else
+                    var purchased = await storeService.IsPurchasedAsync(PremiumProduct.Id);
                     Services.StatusService.Instance.IsPremiumUser = purchased;
+#endif
                 }
                 catch
                 {
 #if DEBUG
                     // Debug: restore persisted state so testers don't lose premium on restart.
-                    var val = Microsoft.Maui.Storage.Preferences.Get("IsPremium", false);
+                    var val = Preferences.Get(PremiumProduct.PreferenceKey, false);
                     Services.StatusService.Instance.IsPremiumUser = val;
 #else
-                    // Release: store failed — default to non-premium; user can restore purchase.
-                    Services.StatusService.Instance.IsPremiumUser = false;
+                    ForceNonPremium();
 #endif
                 }
             }
             else
             {
 #if DEBUG
-                var val = Microsoft.Maui.Storage.Preferences.Get("IsPremium", false);
+                var val = Preferences.Get(PremiumProduct.PreferenceKey, false);
                 Services.StatusService.Instance.IsPremiumUser = val;
 #else
-                Services.StatusService.Instance.IsPremiumUser = false;
+                ForceNonPremium();
 #endif
             }
         }
+
+#if !DEBUG
+        private static void ForceNonPremium()
+        {
+            ClearLocalPremiumCache();
+            // Setter no-ops when already false — clear the field directly too.
+            if (StatusService.Instance.IsPremiumUser)
+                StatusService.Instance.IsPremiumUser = false;
+        }
+#endif
+
+#if !DEBUG
+        private static void ClearLocalPremiumCache()
+        {
+            try { Preferences.Remove(PremiumProduct.PreferenceKey); } catch { }
+            try { SessionPreferences.Remove(PremiumProduct.PreferenceKey); } catch { }
+        }
+#endif
 
         protected override Window CreateWindow(IActivationState? activationState)
         {

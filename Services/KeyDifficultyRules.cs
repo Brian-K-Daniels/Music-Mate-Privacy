@@ -1,15 +1,18 @@
+using musicmate.Diagnostics;
+
 namespace musicmate.Services
 {
     /// <summary>
     /// Level-gated key-signature difficulty and frequency-weighted key selection.
-    /// Filters by accidental count first, then applies musical-frequency weights.
+    /// Builds the permitted key list for the level first, then applies sharp/flat balance
+    /// and frequency weights only within that list.
     /// </summary>
     public static class KeyDifficultyRules
     {
         /// <summary>Root key names the app may assign (after filtering by level).</summary>
         public static readonly IReadOnlySet<string> SupportedKeys = new HashSet<string>(StringComparer.Ordinal)
         {
-            "C", "G", "F", "D", "Bb", "A", "Eb", "E", "Ab", "B", "Db", "F#", "C#", "Cb", "G#", "A#"
+            "C", "G", "F", "D", "Bb", "A", "Eb", "E", "Ab", "B", "Db", "F#", "Gb", "C#", "Cb", "G#", "A#"
         };
 
         /// <summary>Valid major-family signature roots (major, pentatonic, modes).</summary>
@@ -41,6 +44,7 @@ namespace musicmate.Services
             new("B", 1),
             new("Db", 1),
             new("F#", 1),
+            new("Gb", 1),
             new("C#", 1),
             new("Cb", 1),
             new("G#", 1),
@@ -64,16 +68,39 @@ namespace musicmate.Services
             };
         }
 
+        /// <summary>
+        /// Lowest child level at which a signature with <paramref name="difficulty"/> accidentals is permitted.
+        /// </summary>
+        public static int GetMinimumLevelForKeySignatureDifficulty(int difficulty)
+        {
+            difficulty = Math.Clamp(difficulty, 0, 7);
+            for (int level = 1; level <= 100; level++)
+            {
+                if (GetMaxKeySignatureDifficulty(level) >= difficulty)
+                    return level;
+            }
+
+            return 100;
+        }
+
+        /// <summary>
+        /// Lowest child level at which <paramref name="key"/> + <paramref name="scale"/> is permitted,
+        /// based on displayed accidental count (covers enharmonics such as F♯ / G♭).
+        /// </summary>
+        public static int GetMinimumLevelForKey(string key, string scale)
+            => GetMinimumLevelForKeySignatureDifficulty(GetKeySignatureDifficulty(key, scale));
+
         /// <summary>Absolute sharps/flats in the displayed signature for key + scale.</summary>
         public static int GetKeySignatureDifficulty(string key, string scale)
             => KeySignatureRules.GetAccidentalCount(key, scale);
 
         public static bool IsKeyAllowedAtLevel(string key, string scale, int level)
         {
-            if (!SupportedKeys.Contains(key) || !IsKeyValidForScale(key, scale))
+            if (string.IsNullOrWhiteSpace(key) || !SupportedKeys.Contains(key) || !IsKeyValidForScale(key, scale))
                 return false;
 
-            return GetKeySignatureDifficulty(key, scale) <= GetMaxKeySignatureDifficulty(level);
+            level = Math.Clamp(level, 1, 100);
+            return GetMinimumLevelForKey(key, scale) <= level;
         }
 
         /// <summary>True when <paramref name="key"/> is a sensible root for <paramref name="scale"/>.</summary>
@@ -90,18 +117,18 @@ namespace musicmate.Services
             => MasterKeyFrequencyWeights;
 
         /// <summary>
-        /// Keys from the master table that are allowed for <paramref name="scale"/> at
-        /// <paramref name="level"/>, preserving frequency weights.
+        /// Permitted keys for <paramref name="scale"/> at <paramref name="level"/>, with frequency weights.
+        /// This is the only pool sharp/flat balancing may draw from.
         /// </summary>
         public static IReadOnlyList<WeightedKeyOption> GetWeightedKeysForScale(int level, string scale)
         {
             level = Math.Clamp(level, 1, 100);
-            var filtered = MasterKeyFrequencyWeights
+            var permitted = MasterKeyFrequencyWeights
                 .Where(o => o.Weight > 0 && IsKeyAllowedAtLevel(o.Key, scale, level))
                 .ToArray();
 
-            return filtered.Length > 0
-                ? filtered
+            return permitted.Length > 0
+                ? permitted
                 : [GetFallbackKeyOption(level, scale)];
         }
 
@@ -140,19 +167,23 @@ namespace musicmate.Services
                 .ToHashSet(StringComparer.Ordinal);
 
         /// <summary>
-        /// Picks a key with 50% flat vs sharp displayed signature, using frequency weights
-        /// within the level-allowed pool for <paramref name="scale"/>.
+        /// Picks a key from the level-permitted list only, with 50% flat vs sharp balance
+        /// applied inside that list (never picks first and downgrades afterward).
         /// </summary>
         public static string PickBalancedKeyForSignature(string scale, int level, Random? rng = null)
         {
             level = Math.Clamp(level, 1, 100);
             rng ??= Random.Shared;
 
+            // 1) Permitted keys for this level + scale — only source for selection.
+            var permitted = GetWeightedKeysForScale(level, scale);
+
+            // 2) Sharp/flat balance only within the permitted list.
             var flatOptions = new List<WeightedKeyOption>();
             var sharpOptions = new List<WeightedKeyOption>();
             var naturalOptions = new List<WeightedKeyOption>();
 
-            foreach (var option in GetWeightedKeysForScale(level, scale))
+            foreach (var option in permitted)
             {
                 int signed = KeySignatureRules.GetSignedAccidentalCount(option.Key, scale);
                 if (signed < 0)
@@ -167,14 +198,21 @@ namespace musicmate.Services
             var primary = wantFlat ? flatOptions : sharpOptions;
             var fallback = wantFlat ? sharpOptions : flatOptions;
 
+            string picked;
             if (primary.Count > 0)
-                return WeightedChoice.Pick(primary, o => o.Weight, rng).Key;
-            if (fallback.Count > 0)
-                return WeightedChoice.Pick(fallback, o => o.Weight, rng).Key;
-            if (naturalOptions.Count > 0)
-                return WeightedChoice.Pick(naturalOptions, o => o.Weight, rng).Key;
+                picked = WeightedChoice.Pick(primary, o => o.Weight, rng).Key;
+            else if (fallback.Count > 0)
+                picked = WeightedChoice.Pick(fallback, o => o.Weight, rng).Key;
+            else if (naturalOptions.Count > 0)
+                picked = WeightedChoice.Pick(naturalOptions, o => o.Weight, rng).Key;
+            else
+                picked = GetFallbackKeyOption(level, scale).Key;
 
-            return GetFallbackKeyOption(level, scale).Key;
+            // Safety: never return a key outside the permitted list.
+            if (!IsKeyAllowedAtLevel(picked, scale, level))
+                return GetFallbackKeyOption(level, scale).Key;
+
+            return picked;
         }
 
         public static string PickWeightedRandomKey(int level, string scale, Random? rng = null)
@@ -191,6 +229,28 @@ namespace musicmate.Services
             return GetDefaultKey(level, scale);
         }
 
+        /// <summary>
+        /// Final gate before music generation: if <paramref name="key"/> is not allowed at
+        /// <paramref name="level"/>, replace it with a permitted key and log the rejection.
+        /// </summary>
+        public static string EnsureKeyAllowedAtLevel(
+            string key,
+            string scale,
+            int level,
+            Random? rng = null)
+        {
+            level = Math.Clamp(level, 1, 100);
+            if (IsKeyAllowedAtLevel(key, scale, level))
+                return key;
+
+            string replacement = PickBalancedKeyForSignature(scale, level, rng);
+            DebugLog.WriteLine(
+                $"[KeyDifficulty] Rejected key '{key}' for {scale} at L{level} " +
+                $"(difficulty={GetKeySignatureDifficulty(key, scale)}, " +
+                $"minLevel={GetMinimumLevelForKey(key, scale)}); using '{replacement}'");
+            return replacement;
+        }
+
         private static WeightedKeyOption GetFallbackKeyOption(int level, string scale)
         {
             if (IsKeyAllowedAtLevel("C", scale, level))
@@ -198,8 +258,14 @@ namespace musicmate.Services
             if (IsKeyAllowedAtLevel("A", scale, level))
                 return new WeightedKeyOption("A", 1);
 
-            var first = GetWeightedKeysForScale(level, scale).FirstOrDefault();
-            return first.Key is not null ? first : new WeightedKeyOption("C", 1);
+            // Avoid recursion through GetWeightedKeysForScale when the pool is empty.
+            foreach (var option in MasterKeyFrequencyWeights)
+            {
+                if (option.Weight > 0 && IsKeyAllowedAtLevel(option.Key, scale, level))
+                    return option;
+            }
+
+            return new WeightedKeyOption("C", 1);
         }
     }
 }

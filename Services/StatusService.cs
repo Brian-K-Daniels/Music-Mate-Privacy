@@ -7,8 +7,6 @@ namespace musicmate.Services
 {
     public class StatusService : INotifyPropertyChanged
     {
-        private const string PremiumKey = "IsPremium";
-
         // Singleton instance
         public static StatusService Instance { get; } = new StatusService();
 
@@ -18,10 +16,10 @@ namespace musicmate.Services
         {
 #if DEBUG
             // In debug, restore persisted state so testers don't lose premium on restart.
-            _isPremiumUser = SessionPreferences.Get(PremiumKey, false);
+            _isPremiumUser = SessionPreferences.Get(PremiumProduct.PreferenceKey, false);
 #else
-            // In release, always start as non-premium. The store sync in App.xaml.cs
-            // will set the real value from Google Play after startup.
+            // In release, always start as non-premium. App.InitializePremiumStatus clears any
+            // backup-restored flag, then grants premium only if the store confirms ownership.
             _isPremiumUser = false;
 #endif
         }
@@ -34,7 +32,10 @@ namespace musicmate.Services
                 if (_isPremiumUser != value)
                 {
                     _isPremiumUser = value;
-                    SessionPreferences.Set(PremiumKey, value);   // persist immediately
+                    if (value)
+                        SessionPreferences.Set(PremiumProduct.PreferenceKey, true);
+                    else
+                        SessionPreferences.Remove(PremiumProduct.PreferenceKey);
                     OnPropertyChanged(nameof(IsPremiumUser));
                 }
             }

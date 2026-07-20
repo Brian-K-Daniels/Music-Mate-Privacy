@@ -82,16 +82,45 @@ namespace musicmate.Services
 
         /// <summary>
         /// Optional set of MIDI numbers (written pitch) to exclude from pitch selection.
-        /// Used to skip notes the player has already mastered.  When too few notes remain
-        /// after exclusion the full pool is used so generation keeps melodic variety.
+        /// Used to skip notes the player has already mastered. Identity is written MIDI
+        /// (octave-specific), not display spelling.
         /// </summary>
         public HashSet<int> ExcludedMidiNumbers { get; set; } = new();
 
         /// <summary>
-        /// After mastery exclusions, fewer than this many pitches triggers fallback to the
-        /// full pool so interval caps do not lock generation into a two-note oscillation.
+        /// Preferred minimum unmastered pitches after omission (motif / contour heuristics).
+        /// Distinct-pitch melodic variety uses <see cref="MelodicVarietyRules"/> instead.
         /// </summary>
         public const int MinPitchPoolAfterMasteryExclusion = 4;
+
+        /// <summary>Last mastery-omission decision from <see cref="BuildPitchPool"/>.</summary>
+        public MasteredNoteOmission.FallbackKind LastMasteryFallback { get; private set; }
+            = MasteredNoteOmission.FallbackKind.None;
+
+        /// <summary>Human-readable reason when a mastery omission fallback was used.</summary>
+        public string LastMasteryFallbackReason { get; private set; } = string.Empty;
+
+        /// <summary>Mastered midis temporarily restored for distinct-pitch variety (last build).</summary>
+        public IReadOnlyList<int> LastTemporarilyRestoredMidis { get; private set; } = Array.Empty<int>();
+
+        /// <summary>
+        /// Child practice level (1–100). Drives minimum distinct-pitch requirements.
+        /// 0 = treat as beginner (2 distinct pitches).
+        /// </summary>
+        public int ChildLevel { get; set; }
+
+        /// <summary>
+        /// Override for minimum distinct pitched MIDI values. When 0, derived from
+        /// <see cref="ChildLevel"/> via <see cref="MelodicVarietyRules"/>.
+        /// </summary>
+        public int MinDistinctPitches { get; set; }
+
+        /// <summary>Optional label for debug logs (Random, ByLevel-Random, etc.).</summary>
+        public string ActivityType { get; set; } = "Random";
+
+        private MasteredNoteOmission.Result _lastOmissionResult
+            = new(Array.Empty<int>(), MasteredNoteOmission.FallbackKind.None, string.Empty, 0, 0, 0);
+        private List<int> _lastCandidatesBefore = new();
 
         /// <summary>
         /// When <c>true</c>, notes are drawn in ascending then descending scale order
@@ -195,13 +224,97 @@ namespace musicmate.Services
         /// </returns>
         public List<Measure> GenerateSequence()
         {
+            ExcludedMidiNumbers ??= new HashSet<int>();
+
+            // Scale walks / fixed patterns: single pass, no distinct-pitch regenerate loop.
+            if (UseScaleOrder)
+                return GenerateSequenceOnce();
+
+            int requiredDistinct = ResolveMinDistinctPitches();
+            int baseSeed = RandomSeed ?? Environment.TickCount;
+            List<Measure>? best = null;
+            int bestDistinct = -1;
+            bool bestConsecutiveOk = false;
+
+            for (int attempt = 0; attempt < MelodicVarietyRules.MaxRegenerationAttempts; attempt++)
+            {
+                if (attempt > 0)
+                    RandomSeed = unchecked(baseSeed + attempt * 9973);
+
+                var measures = GenerateSequenceOnce();
+                var pitches = Flatten(measures)
+                    .Where(n => !n.IsRest)
+                    .Select(n => n.MidiNumber)
+                    .ToList();
+
+                if (pitches.Count == 0)
+                    return measures;
+
+                int eligibleDistinct = _lastCandidatesBefore.Count > 0
+                    ? _lastCandidatesBefore.Distinct().Count()
+                    : pitches.Distinct().Count();
+                int effectiveRequired = MinDistinctPitches > 0
+                    ? Math.Min(MinDistinctPitches, Math.Max(1, eligibleDistinct))
+                    : MelodicVarietyRules.GetEffectiveMinimumDistinct(ChildLevel, eligibleDistinct);
+
+                int distinct = MelodicVarietyRules.CountDistinctPitches(pitches);
+                bool consecutiveOk = !MelodicVarietyRules.HasExcessiveConsecutiveIdentical(pitches);
+                bool varietyOk = distinct >= effectiveRequired;
+
+                if (varietyOk && consecutiveOk)
+                {
+                    if (LastMasteryFallback == MasteredNoteOmission.FallbackKind.RelaxedOmissionForDistinctPitches)
+                    {
+                        DebugLog.WriteLine(
+                            DebugLogCategory.StaffAndSequence,
+                            $"[MasteryOmit] Relaxed omission final: " +
+                            $"eligibleBefore={_lastCandidatesBefore.Distinct().Count() - LastTemporarilyRestoredMidis.Count} " +
+                            $"restored=[{MasteredNoteOmission.FormatMidiSample(LastTemporarilyRestoredMidis)}] " +
+                            $"finalDistinct={distinct}");
+                    }
+
+                    return measures;
+                }
+
+                bool better = best is null
+                    || (consecutiveOk && !bestConsecutiveOk)
+                    || (consecutiveOk == bestConsecutiveOk && distinct > bestDistinct);
+                if (better)
+                {
+                    best = measures;
+                    bestDistinct = distinct;
+                    bestConsecutiveOk = consecutiveOk;
+                }
+            }
+
+            DebugLog.WriteLine(
+                DebugLogCategory.StaffAndSequence,
+                $"[MelodicVariety] Gave up after {MelodicVarietyRules.MaxRegenerationAttempts} attempts; " +
+                $"bestDistinct={bestDistinct} consecutiveOk={bestConsecutiveOk} required≈{requiredDistinct}");
+
+            return best ?? new List<Measure>();
+        }
+
+        private int ResolveMinDistinctPitches()
+        {
+            if (MinDistinctPitches > 0)
+                return MinDistinctPitches;
+            return MelodicVarietyRules.GetMinimumDistinctPitchesForLevel(ChildLevel);
+        }
+
+        private List<Measure> GenerateSequenceOnce()
+        {
             var rng = RandomSeed.HasValue ? new Random(RandomSeed.Value) : new Random();
-            ExcludedMidiNumbers ??= new HashSet<int>();   //  2026.07.08 1757  Mastered notes in the table.
+            ExcludedMidiNumbers ??= new HashSet<int>();
 
             // 1. Build the allowed pitch pool from the scale + range settings.
             var pool = BuildPitchPool();
             if (pool.Count == 0)
                 return new List<Measure>();
+
+            // Scale ordered walks keep required degrees — do not post-strip.
+            // Random candidate selection validates that mastered midis did not re-enter.
+            bool validateOmission = !UseScaleOrder && ExcludedMidiNumbers.Count > 0;
 
             // 2. Decide which durations are available and with what weights.
             var durationWeights = BuildDurationWeights();
@@ -227,10 +340,84 @@ namespace musicmate.Services
             }
 
             // 4. Fill measures — motif phrases for random fresh sequences, else slot-by-slot.
-            if (ShouldUseMotifPhrases(pool))
-                return GenerateMotifPhraseSequence(rng, pool, durationWeights);
+            List<Measure> measures = ShouldUseMotifPhrases(pool)
+                ? GenerateMotifPhraseSequence(rng, pool, durationWeights)
+                : GenerateSlotBySlotSequence(rng, pool, durationWeights, scaleQueue);
 
-            return GenerateSlotBySlotSequence(rng, pool, durationWeights, scaleQueue);
+            return FinishGeneration(measures, pool, validateOmission, rng);
+        }
+
+        private List<Measure> FinishGeneration(
+            List<Measure> measures, List<int> pool, bool validateOmission, Random rng)
+        {
+            if (validateOmission)
+                EnsureNoUnexpectedMasteredPitches(measures, pool, rng);
+
+            var finalMidis = Flatten(measures)
+                .Where(n => !n.IsRest)
+                .Select(n => n.MidiNumber);
+
+            MasteredNoteOmission.LogFilter(
+                ActivityType,
+                ExcludedMidiNumbers.Count > 0,
+                _lastCandidatesBefore,
+                ExcludedMidiNumbers,
+                _lastOmissionResult,
+                finalMidis);
+
+            return measures;
+        }
+
+        /// <summary>
+        /// Replaces any mastered written MIDI that slipped into the final sequence
+        /// (unless the all-mastered fallback deliberately allowed them).
+        /// </summary>
+        private void EnsureNoUnexpectedMasteredPitches(
+            List<Measure> measures, List<int> pool, Random rng)
+        {
+            if (pool.Count == 0)
+                return;
+
+            int prev = StartPrevPitch;
+            int globalIndex = StartGlobalNoteIndex;
+            foreach (var measure in measures)
+            {
+                for (int i = 0; i < measure.GeneratedNotes.Count; i++)
+                {
+                    var note = measure.GeneratedNotes[i];
+                    if (note.IsRest)
+                        continue;
+
+                    if (!MasteredNoteOmission.IsUnexpectedMasteredPitch(
+                            note.MidiNumber,
+                            ExcludedMidiNumbers,
+                            LastMasteryFallback,
+                            EmphasizedMidiNumber))
+                    {
+                        prev = note.MidiNumber;
+                        globalIndex++;
+                        continue;
+                    }
+
+                    int replacement = PickPitch(rng, pool, prev, isPhraseEnding: false);
+                    measure.ReplaceGeneratedNote(
+                        i,
+                        BuildNote(
+                            replacement,
+                            note.Duration,
+                            note.MeasureIndex ?? 0,
+                            note.BeatPosition ?? 0,
+                            globalIndex,
+                            prev));
+                    prev = replacement;
+                    globalIndex++;
+
+                    DebugLog.WriteLine(
+                        DebugLogCategory.StaffAndSequence,
+                        $"[MasteryOmit] replaced unexpected mastered MIDI {note.MidiNumber} " +
+                        $"with {replacement} in final sequence");
+                }
+            }
         }
 
         private bool ShouldUseMotifPhrases(List<int> pool)
@@ -824,28 +1011,44 @@ namespace musicmate.Services
                 }
             }
 
+            _lastCandidatesBefore = fullPool.ToList();
+
             if (ExcludedMidiNumbers.Count == 0)
             {
+                LastMasteryFallback = MasteredNoteOmission.FallbackKind.None;
+                LastMasteryFallbackReason = string.Empty;
+                LastTemporarilyRestoredMidis = Array.Empty<int>();
+                _lastOmissionResult = new MasteredNoteOmission.Result(
+                    fullPool,
+                    MasteredNoteOmission.FallbackKind.None,
+                    string.Empty,
+                    fullPool.Count,
+                    0,
+                    fullPool.Count);
                 DebugLog.WriteLine(DebugLogCategory.StaffAndSequence,
                     $"[StaffPool] AccPct={AccidentalPercent} diatonic={fullPool.Count(m => { int p = ((m % 12) + 12) % 12; return scalePcs.Contains(p); })} chromatic={fullPool.Count(m => { int p = ((m % 12) + 12) % 12; return !scalePcs.Contains(p); })} total={fullPool.Count}");
                 return fullPool;
             }
 
-            // Remove mastered notes; fall back to the full pool when too few remain
-            // so tight interval caps cannot trap generation in a two-note oscillation.
-            // Keep an emphasized pitch even if it would otherwise be excluded.
-            var filtered = fullPool
-                .Where(m => !ExcludedMidiNumbers.Contains(m)
-                            || (EmphasizedMidiNumber.HasValue && m == EmphasizedMidiNumber.Value))
-                .ToList();
-            if (EmphasizedMidiNumber.HasValue
-                && fullPool.Contains(EmphasizedMidiNumber.Value)
-                && !filtered.Contains(EmphasizedMidiNumber.Value))
+            // Scale walks must keep every degree — callers leave ExcludedMidiNumbers empty
+            // for scales/tunes/arpeggios. Random selection omits mastered midis, then
+            // may temporarily restore the minimum needed for distinct-pitch variety.
+            int minDistinct = ResolveMinDistinctPitches();
+            var omission = MasteredNoteOmission.Apply(
+                fullPool, ExcludedMidiNumbers, EmphasizedMidiNumber, minDistinct);
+            _lastOmissionResult = omission;
+            LastMasteryFallback = omission.Fallback;
+            LastMasteryFallbackReason = omission.Reason;
+            LastTemporarilyRestoredMidis = omission.RestoredMidis;
+
+            if (omission.Fallback != MasteredNoteOmission.FallbackKind.None)
             {
-                filtered.Add(EmphasizedMidiNumber.Value);
+                DebugLog.WriteLine(
+                    DebugLogCategory.StaffAndSequence,
+                    $"[MasteryOmit] BuildPitchPool fallback={omission.Fallback}: {omission.Reason}");
             }
 
-            return filtered.Count >= MinPitchPoolAfterMasteryExclusion ? filtered : fullPool;
+            return omission.Pool.ToList();
         }
 
         /// <summary>

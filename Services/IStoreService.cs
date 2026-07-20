@@ -9,8 +9,8 @@ namespace musicmate.Services
         Task<bool> PurchaseAsync(string productId);
         Task<bool> RestorePurchasesAsync();
         /// <summary>
-        /// Non-destructive check: queries the store (or local cache) and updates
-        /// <see cref="musicmate.Services.StatusService.Instance"/> without clearing any flag.
+        /// Queries the store and updates <see cref="StatusService.Instance"/>.
+        /// In Release, a "not owned" result clears any stale local premium flag.
         /// Call this on page appearing to keep premium UI in sync.
         /// </summary>
         Task<bool> CheckPremiumStatusAsync();

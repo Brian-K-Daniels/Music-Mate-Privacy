@@ -49,7 +49,7 @@ public class MusicSequenceGeneratorTests
     }
 
     [Fact]
-    public void MasteryExclusion_FallsBackToFullPool_WhenTooFewNotesRemain()
+    public void MasteryExclusion_KeepsSmallUnmasteredPool_WithoutReintroducingMastered()
     {
         int g4 = NoteSessionService.NoteNameToMidi("G4");
         int a4 = NoteSessionService.NoteNameToMidi("A4");
@@ -63,9 +63,11 @@ public class MusicSequenceGeneratorTests
         var gen = CreateRandomGenerator(4242, excludeAllButGa, maxIntervalSemitones: 2);
         var pitches = FlattenPitches(gen);
 
-        Assert.True(
-            pitches.Distinct().Count() >= 3,
-            "Two-note mastery pool must fall back to the full range for variety.");
+        Assert.Equal(
+            MasteredNoteOmission.FallbackKind.UsedSmallUnmasteredPool,
+            gen.LastMasteryFallback);
+        Assert.All(pitches, m => Assert.True(m == g4 || m == a4));
+        Assert.DoesNotContain(NoteSessionService.NoteNameToMidi("C4"), pitches);
     }
 
     [Fact]

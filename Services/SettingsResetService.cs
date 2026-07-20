@@ -171,6 +171,8 @@ namespace musicmate.Services
             SessionPreferences.Set(OmitMsAvgKey, SettingsPageViewModel.DefaultOmitMsAvg);
             _session.OmitMsAvgThreshold = SettingsPageViewModel.DefaultOmitMsAvg;
             _session.AutoStart = SettingsPageViewModel.DefaultAutoStart;
+            _session.AutoRepeat = SettingsPageViewModel.DefaultAutoRepeat;
+            _session.RepeatSameTune = SettingsPageViewModel.DefaultRepeatSameTune;
             _session.MasteredMethod = MasteryPreferenceDefaults.MasteredMethod;
             _session.StreakCrit = MasteryPreferenceDefaults.StreakCrit;
             _session.UseNoteMasteryForGeneration = MasteryPreferenceDefaults.UseNoteMasteryForGeneration;
@@ -426,7 +428,7 @@ namespace musicmate.Services
 
         internal sealed class AppSettingsSnapshot
         {
-            public string StaffPanelColorHex { get; init; } = "#A0FA8C";
+            public string StaffPanelColorHex { get; init; } = "#CFFACD";  //  2026.07.19 1604  
             public Dictionary<string, string>? ThemeColorsHex { get; init; }
             public string SelectedScale { get; init; } = "Major";
             public string LowestNote { get; init; } = "C4";
