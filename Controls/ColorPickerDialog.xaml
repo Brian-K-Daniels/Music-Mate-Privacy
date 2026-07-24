@@ -3,7 +3,9 @@
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:mcp="clr-namespace:Maui.ColorPicker;assembly=Maui.ColorPicker"
+    xmlns:controls="clr-namespace:musicmate.Controls"
     x:Class="musicmate.Controls.ColorPickerDialog"
+    x:DataType="controls:ColorPickerDialog"
     x:Name="ColorPickerDialogRoot"
     IsVisible="False"
     BackgroundColor="#80000000"
@@ -86,7 +88,7 @@
                      HeightRequest="60"
                      HorizontalOptions="Start"
                      VerticalOptions="Center"
-                     BackgroundColor="{Binding PreviewColor, Source={x:Reference ColorPickerDialogRoot}}"/>
+                     BackgroundColor="{Binding PreviewColor, Source={x:Reference ColorPickerDialogRoot}, x:DataType=controls:ColorPickerDialog}"/>
           </HorizontalStackLayout>
 
           <!-- Row 3: Arrow buttons + OK button -->

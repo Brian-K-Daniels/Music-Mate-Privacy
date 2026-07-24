@@ -86,10 +86,12 @@ namespace musicmate.ViewModels
                 case nameof(NoteSessionService.LowestNote):
                     OnPropertyChanged(nameof(LowestNote));
                     OnPropertyChanged(nameof(AutomaticNoteRangeDisplay));
+                    OnPropertyChanged(nameof(AvailableInstrumentNoteNames));
                     break;
                 case nameof(NoteSessionService.HighestNote):
                     OnPropertyChanged(nameof(HighestNote));
                     OnPropertyChanged(nameof(AutomaticNoteRangeDisplay));
+                    OnPropertyChanged(nameof(AvailableInstrumentNoteNames));
                     break;
                 case nameof(NoteSessionService.AccidentalPercent):
                     OnPropertyChanged(nameof(AccidentalPercent)); break;
@@ -133,6 +135,11 @@ namespace musicmate.ViewModels
                     OnPropertyChanged(nameof(NoteNameDisplay)); break;
                 case nameof(NoteSessionService.WhiteKeyNoteNames):
                     OnPropertyChanged(nameof(WhiteKeyNoteNames)); break;
+                case nameof(NoteSessionService.AvailableInstrumentNoteNames):
+                case nameof(NoteSessionService.AvailableInstrumentMidis):
+                case nameof(NoteSessionService.Instrument):
+                    OnPropertyChanged(nameof(AvailableInstrumentNoteNames));
+                    break;
                 case nameof(NoteSessionService.AvailableScalesForBinding):
                     OnPropertyChanged(nameof(AvailableScalesForBinding)); break;
                 default:
@@ -187,6 +194,26 @@ namespace musicmate.ViewModels
                 .Select(midi => MidiToNoteName(midi, false))
                 .Where(name => !name.Contains('#') && !name.Contains('b'))
                 .ToArray()).Reverse().ToArray();
+
+        /// <summary>
+        /// Low/high picker list spanning every instrument and voice practical extreme.
+        /// </summary>
+        public string[] NoteRangePickerNoteNames => InstrumentCatalog.BuildNoteRangePickerNames();
+
+        /// <summary>
+        /// Notes available for the current instrument (and child level), high→low.
+        /// Prefer <see cref="NoteRangePickerNoteNames"/> for Settings low/high pickers.
+        /// </summary>
+        public string[] AvailableInstrumentNoteNames
+        {
+            get
+            {
+                var names = _session?.AvailableInstrumentNoteNames;
+                if (names == null || names.Count == 0)
+                    return NoteRangePickerNoteNames;
+                return names.Reverse().ToArray();
+            }
+        }
 
         private string _selectedScale = Preferences.Get("musicmate.SelectedScale", "Major");
         public string SelectedScale

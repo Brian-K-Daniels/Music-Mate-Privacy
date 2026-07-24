@@ -40,9 +40,9 @@ namespace musicmate
         private async void InitializePremiumStatus()
         {
 #if !DEBUG
-            // Release: always start non-premium. Clear backup-/DEBUG-restored local flags.
-            // Play Store installs may then restore ownership; VS/adb sideloads will not
-            // (see GooglePlayStoreService.IsPurchasedAsync).
+            // Release: clear backup-/DEBUG-restored local flags, then start non-premium.
+            // A successful Play purchase query may then grant or keep false; a failed
+            // query must not be treated as proof of non-ownership (leave false + retry later).
             ClearLocalPremiumCache();
             ForceNonPremium();
 #endif
@@ -53,15 +53,16 @@ namespace musicmate
                 try
                 {
                     await storeService.InitializeAsync();
-#if !DEBUG
                     var purchased = await storeService.IsPurchasedAsync(PremiumProduct.Id);
-                    if (purchased)
+#if !DEBUG
+                    // null = billing query failed/disconnected — do not change entitlement.
+                    if (purchased is true)
                         Services.StatusService.Instance.IsPremiumUser = true;
-                    else
+                    else if (purchased is false)
                         ForceNonPremium();
 #else
-                    var purchased = await storeService.IsPurchasedAsync(PremiumProduct.Id);
-                    Services.StatusService.Instance.IsPremiumUser = purchased;
+                    if (purchased is bool known)
+                        Services.StatusService.Instance.IsPremiumUser = known;
 #endif
                 }
                 catch
@@ -71,7 +72,8 @@ namespace musicmate
                     var val = Preferences.Get(PremiumProduct.PreferenceKey, false);
                     Services.StatusService.Instance.IsPremiumUser = val;
 #else
-                    ForceNonPremium();
+                    // Exception during billing setup — leave the cleared non-premium state;
+                    // page OnAppearing CheckPremiumStatusAsync will retry.
 #endif
                 }
             }

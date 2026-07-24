@@ -951,7 +951,10 @@ namespace musicmate.Services
             => AvailableInstrumentMidis
                 .Select(midi => MidiToNoteName(midi, KeyUsesFlats(Key)))
                 .ToArray();
-        public void ApplyAutomaticInstrumentRange(int? levelOverride = null, bool fullReset = false)
+        public void ApplyAutomaticInstrumentRange(
+            int? levelOverride = null,
+            bool fullReset = false,
+            bool clampToInstrument = false)
         {
             int level = levelOverride ?? ChildLevel;
             var (autoLowest, autoHighest) = InstrumentCatalog.GetAutomaticRange(CurrentInstrumentProfile, level);
@@ -967,6 +970,27 @@ namespace musicmate.Services
             {
                 newLow = autoLow;
                 newHigh = autoHigh;
+            }
+            else if (clampToInstrument)
+            {
+                // Keep the current range when it fits the new instrument; otherwise clamp
+                // each end to the nearest note inside the instrument (× level) limits.
+                int autoLowMidi = NoteNameToMidi(autoLow);
+                int autoHighMidi = NoteNameToMidi(autoHigh);
+                int curLowMidi = NoteNameToMidi(LowestNote);
+                int curHighMidi = NoteNameToMidi(HighestNote);
+                bool preferFlats = KeyUsesFlats(Key);
+
+                int newLowMidi = Math.Clamp(curLowMidi, autoLowMidi, autoHighMidi);
+                int newHighMidi = Math.Clamp(curHighMidi, autoLowMidi, autoHighMidi);
+                if (newLowMidi > newHighMidi)
+                {
+                    newLowMidi = autoLowMidi;
+                    newHighMidi = autoHighMidi;
+                }
+
+                newLow = MidiToNoteName(newLowMidi, preferFlats);
+                newHigh = MidiToNoteName(newHighMidi, preferFlats);
             }
             else
             {
@@ -1176,9 +1200,14 @@ namespace musicmate.Services
             {
                 var normalized = NormalizeInstrumentOption(value);
                 if (_instrument == normalized) return;
+                // Preserve a customized range when it still fits the new instrument;
+                // otherwise clamp. Uncustomized ranges adopt the new instrument defaults.
+                bool clampCustomRange = NoteRangeCustomized;
                 _instrument = normalized;
                 SessionPreferences.Set(PrefInstrumentKey, _instrument);
-                ApplyAutomaticInstrumentRange(fullReset: true);
+                ApplyAutomaticInstrumentRange(
+                    fullReset: !clampCustomRange,
+                    clampToInstrument: clampCustomRange);
                 OnPropertyChanged(nameof(Instrument));
                 OnPropertyChanged(nameof(InstrumentDisplayName));
                 OnPropertyChanged(nameof(InstrumentKey));

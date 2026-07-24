@@ -243,5 +243,8 @@ public sealed class NoteMasteryService
     }
 
     private static bool PrefersBassClef(string instrumentId)
-        => instrumentId is "double-bass";
+        => instrumentId is "double-bass"
+            or "voice-baritone"
+            or "voice-bass-baritone"
+            or "voice-bass";
 }

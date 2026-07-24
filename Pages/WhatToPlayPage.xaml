@@ -4,6 +4,7 @@
              xmlns:services="clr-namespace:musicmate.Services"
              xmlns:controls="clr-namespace:musicmate.Controls"
              xmlns:converters="clr-namespace:musicmate.Converters"
+             xmlns:pages="clr-namespace:musicmate.Pages"
              x:Class="musicmate.Pages.WhatToPlayPage"
              x:Name="whatToPlayPage"
              Shell.NavBarIsVisible="True"
@@ -27,7 +28,7 @@
                FontSize="18"
                VerticalOptions="Center" />
         <Label x:Name="StatusLabel"
-               Text="{Binding Source={x:Static services:StatusService.Instance}, Path=StatusMessage}"
+               Text="{Binding Source={x:Static services:StatusService.Instance}, Path=StatusMessage, x:DataType=services:StatusService}"
                TextColor="Yellow"
                FontAttributes="Bold"
                FontSize="10"
@@ -198,12 +199,12 @@
                 HeightRequest="36"
                 HorizontalOptions="Fill"
                 Clicked="OnAutoRepeatScaleClicked"
-                IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsScaleRepeatButtonVisible}" />
+                IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsScaleRepeatButtonVisible, x:DataType=pages:WhatToPlayPage}" />
 
         <!-- Random mode: New Each Time + Repeat Same side by side -->
         <Grid ColumnDefinitions="*,*"
               ColumnSpacing="8"
-              IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsRandomRepeatButtonsVisible}">
+              IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsRandomRepeatButtonsVisible, x:DataType=pages:WhatToPlayPage}">
           <Button x:Name="AutoRepeatNewButton"
                   Grid.Column="0"
                   Text="Repeat New Each Time"

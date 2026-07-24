@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:services="clr-namespace:musicmate.Services"
              xmlns:controls="clr-namespace:musicmate.Controls"
+             xmlns:pages="clr-namespace:musicmate.Pages"
              x:Class="musicmate.Pages.MusicPage"
              x:DataType="services:NoteSessionService"
              x:Name="musicPage"
@@ -40,7 +41,7 @@
              HorizontalOptions="Start"
              Grid.Column="1" />
       <Label x:Name="StatusLabelShell"
-             Text="{Binding Source={x:Static services:StatusService.Instance}, Path=StatusMessage}"
+             Text="{Binding Source={x:Static services:StatusService.Instance}, Path=StatusMessage, x:DataType=services:StatusService}"
              TextColor="Yellow"
              FontAttributes="Bold"
              FontSize="10"
@@ -110,7 +111,7 @@
               <On Platform="Android" Value="0,0,0,0" />
             </OnPlatform>
           </VerticalStackLayout.Margin>
-          <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*"
+          <Grid ColumnDefinitions="Auto,190,Auto,40,Auto,*"
                 ColumnSpacing="6"
                 VerticalOptions="Center"
                 Margin="0,4,0,4"
@@ -136,14 +137,14 @@
                         HorizontalOptions="Fill"
                         IsEnabled="True"
                         InputTransparent="False"
-                        IsVisible="{Binding Source={x:Reference musicPage}, Path=IsInstrumentPickerVisible}" />
+                        IsVisible="{Binding Source={x:Reference musicPage}, Path=IsInstrumentPickerVisible, x:DataType=pages:MusicPage}" />
                 <Border BackgroundColor="White" Stroke="#8B4513" StrokeThickness="2"
                         StrokeShape="RoundRectangle 8"
                         Padding="8,2" HeightRequest="28"
                         VerticalOptions="Center" HorizontalOptions="Fill"
-                        IsVisible="{Binding Source={x:Reference musicPage}, Path=IsInstrumentLabelVisible}">
+                        IsVisible="{Binding Source={x:Reference musicPage}, Path=IsInstrumentLabelVisible, x:DataType=pages:MusicPage}">
                   <Label x:Name="InstrumentPickerOverlay"
-                         Text="{Binding SelectedInstrumentShort, Source={x:Reference musicPage}}"
+                         Text="{Binding SelectedInstrumentShort, Source={x:Reference musicPage}, x:DataType=pages:MusicPage}"
                          VerticalOptions="Center"
                          HorizontalOptions="Fill"
                          Padding="10,0"
@@ -166,7 +167,6 @@
                    VerticalOptions="Center" />
             <Border x:Name="KeyBorder" Grid.Column="3" Style="{StaticResource CompactBrownBox}">
               <Picker x:Name="KeyPicker"
-                      WidthRequest="50"
                       HeightRequest="28"
                       FontSize="11"
                       TextColor="#000000"
@@ -199,8 +199,8 @@
           </Grid>
 
           <Label x:Name="EffectiveScaleLabel"
-                 Text="{Binding Source={x:Reference musicPage}, Path=EffectiveScaleLabelText}"
-                 IsVisible="{Binding Source={x:Reference musicPage}, Path=IsEffectiveScaleLabelVisible}"
+                 Text="{Binding Source={x:Reference musicPage}, Path=EffectiveScaleLabelText, x:DataType=pages:MusicPage}"
+                 IsVisible="{Binding Source={x:Reference musicPage}, Path=IsEffectiveScaleLabelVisible, x:DataType=pages:MusicPage}"
                  FontSize="13"
                  FontAttributes="Bold"
                  TextColor="#8B4513"
@@ -313,7 +313,7 @@
                   StrokeThickness="1"
                   StrokeShape="RoundRectangle 8"
                   HorizontalOptions="Fill"
-                  IsVisible="{Binding Source={x:Reference musicPage}, Path=IsChildLevelSliderVisible}">
+                  IsVisible="{Binding Source={x:Reference musicPage}, Path=IsChildLevelSliderVisible, x:DataType=pages:MusicPage}">
             <Grid ColumnDefinitions="*,*,*,Auto,*,*,*"
                   ColumnSpacing="4"
                   HeightRequest="40"
@@ -426,14 +426,14 @@
                 Margin="8,8,8,8"
                 ColumnSpacing="0"
                 HorizontalOptions="Fill"
-                IsVisible="{Binding Source={x:Reference musicPage}, Path=IsBottomButtonRowVisible}">
+                IsVisible="{Binding Source={x:Reference musicPage}, Path=IsBottomButtonRowVisible, x:DataType=pages:MusicPage}">
 
             <Grid x:Name="BottomPickersLayout"
-                  ColumnDefinitions="Auto,84,Auto,48,Auto,*"
+                  ColumnDefinitions="Auto,180,Auto,55,Auto,*"
                   ColumnSpacing="4"
                   VerticalOptions="Center"
                   HorizontalOptions="Fill"
-                  IsVisible="{Binding Source={x:Reference musicPage}, Path=IsBottomPickersVisible}">
+                  IsVisible="{Binding Source={x:Reference musicPage}, Path=IsBottomPickersVisible, x:DataType=pages:MusicPage}">
               <Label Grid.Column="0"
                      Text="Inst."
                      FontSize="10"
@@ -496,7 +496,7 @@
             HorizontalOptions="Start"
             VerticalOptions="Start"
             ZIndex="10"
-            IsVisible="{Binding Source={x:Reference musicPage}, Path=IsTitlePlayButtonVisible}">
+            IsVisible="{Binding Source={x:Reference musicPage}, Path=IsTitlePlayButtonVisible, x:DataType=pages:MusicPage}">
       <Border.StrokeShape>
         <RoundRectangle CornerRadius="2" />
       </Border.StrokeShape>

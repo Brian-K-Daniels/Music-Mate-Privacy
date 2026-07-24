@@ -14,10 +14,10 @@ namespace musicmate.Services
             return Task.CompletedTask;
         }
 
-        public Task<bool> IsPurchasedAsync(string productId)
+        public Task<bool?> IsPurchasedAsync(string productId)
         {
             var val = Preferences.Get(PremiumProduct.PreferenceKey, false);
-            return Task.FromResult(val);
+            return Task.FromResult<bool?>(val);
         }
 
         public Task<bool> PurchaseAsync(string productId)

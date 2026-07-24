@@ -1,4 +1,6 @@
 #if ANDROID
+using System.Diagnostics;
+using System.Text;
 using Android.BillingClient.Api;
 using Microsoft.Maui.Storage;
 using musicmate.Services;
@@ -11,6 +13,11 @@ namespace musicmate.Platforms.Android
     /// </summary>
     public class GooglePlayStoreService : Java.Lang.Object, IStoreService, IPurchasesUpdatedListener
     {
+        private const string LogTag = "MusicMate.Billing";
+        // BillingClient.BillingResponseCode values (numeric — binding name casing varies).
+        private const int BillingResponseOk = 0;
+        private const int BillingResponseServiceDisconnected = -1;
+
         private BillingClient? _billingClient;
         private TaskCompletionSource<bool>? _purchaseTcs;
 
@@ -24,16 +31,19 @@ namespace musicmate.Platforms.Android
             // backup-restored local flag, then calls IsPurchasedAsync as the single source of truth.
         }
 
-        public async Task<bool> IsPurchasedAsync(string productId)
+        public async Task<bool?> IsPurchasedAsync(string productId)
         {
             // VS / adb sideloads must not auto-inherit Play ownership (license testers,
             // prior purchases). Production Play Store installs still restore normally.
             if (!IsInstalledFromGooglePlay())
+            {
+                Log("IsPurchasedAsync: not installed from Play Store — returning false (no auto-restore).");
                 return false;
+            }
 
-            await EnsureConnectedAsync();
             string id = NormalizeProductId(productId);
-            return await QueryPurchasedAsync(id);
+            var result = await QueryCurrentPurchasesAsync(id);
+            return result.Entitlement;
         }
 
         public async Task<bool> PurchaseAsync(string productId)
@@ -67,8 +77,7 @@ namespace musicmate.Platforms.Android
                                                Task.Delay(TimeSpan.FromMinutes(5)));
             if (completed == _purchaseTcs.Task && _purchaseTcs.Task.Result)
             {
-                MainThread.BeginInvokeOnMainThread(() =>
-                    StatusService.Instance.IsPremiumUser = true);
+                ApplyPremiumEntitlement(true);
                 return true;
             }
             return false;
@@ -76,13 +85,15 @@ namespace musicmate.Platforms.Android
 
         public async Task<bool> RestorePurchasesAsync()
         {
-            await EnsureConnectedAsync();
-            bool owned = await QueryPurchasedAsync(PremiumProduct.Id);
-            MainThread.BeginInvokeOnMainThread(() =>
-                StatusService.Instance.IsPremiumUser = owned);
-            if (!owned)
-                Preferences.Remove(PremiumProduct.PreferenceKey);
-            return owned;
+            var result = await QueryCurrentPurchasesAsync(PremiumProduct.Id);
+            if (result.Entitlement is bool owned)
+            {
+                ApplyPremiumEntitlement(owned);
+                return owned;
+            }
+
+            Log("RestorePurchasesAsync: query did not succeed — leaving entitlement unchanged.");
+            return StatusService.Instance.IsPremiumUser;
         }
 
         public async Task<bool> CheckPremiumStatusAsync()
@@ -91,47 +102,48 @@ namespace musicmate.Platforms.Android
             {
                 // Sideload: do not pull Play ownership into the session. Leave whatever
                 // Buy/Restore already set; App cold-start clears premium for a clean slate.
+                Log("CheckPremiumStatusAsync: sideload — leaving entitlement unchanged "
+                    + $"(IsPremiumUser={StatusService.Instance.IsPremiumUser}).");
                 return StatusService.Instance.IsPremiumUser;
             }
 
-            await EnsureConnectedAsync();
-            bool owned = await QueryPurchasedAsync(PremiumProduct.Id);
-            if (owned)
+            var result = await QueryCurrentPurchasesAsync(PremiumProduct.Id);
+            if (result.Entitlement is bool owned)
             {
-                Preferences.Set(PremiumProduct.PreferenceKey, true);
-                MainThread.BeginInvokeOnMainThread(() =>
-                    StatusService.Instance.IsPremiumUser = true);
+                ApplyPremiumEntitlement(owned);
+                return owned;
             }
-            else
-            {
-                // Play says not owned — clear any backup-/DEBUG-restored local flag.
-                Preferences.Remove(PremiumProduct.PreferenceKey);
-                MainThread.BeginInvokeOnMainThread(() =>
-                    StatusService.Instance.IsPremiumUser = false);
-            }
-            return owned;
+
+            Log("CheckPremiumStatusAsync: query did not succeed — leaving entitlement unchanged "
+                + $"(IsPremiumUser={StatusService.Instance.IsPremiumUser}).");
+            return StatusService.Instance.IsPremiumUser;
         }
 
         // ── IPurchasesUpdatedListener ────────────────────────────────────────
 
         public void OnPurchasesUpdated(BillingResult billingResult, IList<Purchase>? purchases)
         {
-            if (billingResult.ResponseCode == 0 && purchases != null)
+            int code = billingResult.ResponseCode;
+            if (code == BillingResponseOk && purchases != null)
             {
                 foreach (var purchase in purchases)
                 {
-                    if (purchase.PurchaseState == 1 /* Purchased */ &&
+                    if (purchase.PurchaseState == PremiumEntitlement.PurchaseStatePurchased &&
                         purchase.Products.Contains(PremiumProduct.Id))
                     {
                         // Persist entitlement before acknowledging so it survives a crash
-                        Preferences.Set(PremiumProduct.PreferenceKey, true);
-                        MainThread.BeginInvokeOnMainThread(() =>
-                            StatusService.Instance.IsPremiumUser = true);
+                        ApplyPremiumEntitlement(true);
                         AcknowledgePurchase(purchase);
                         _purchaseTcs?.TrySetResult(true);
+                        Log($"OnPurchasesUpdated: Premium purchased (responseCode={code}).");
                         return;
                     }
                 }
+            }
+            else
+            {
+                Log($"OnPurchasesUpdated: no Premium grant (responseCode={code}, "
+                    + $"purchases={(purchases == null ? "null" : purchases.Count.ToString())}).");
             }
             _purchaseTcs?.TrySetResult(false);
         }
@@ -193,8 +205,16 @@ namespace musicmate.Platforms.Android
         {
             var tcs = new TaskCompletionSource<bool>();
             _billingClient!.StartConnection(new BillingStateListener(
-                result => tcs.TrySetResult(result.ResponseCode == 0),
-                () => tcs.TrySetResult(false)));
+                result =>
+                {
+                    Log($"Billing setup finished: responseCode={result.ResponseCode}");
+                    tcs.TrySetResult(result.ResponseCode == BillingResponseOk);
+                },
+                () =>
+                {
+                    Log("Billing service disconnected.");
+                    tcs.TrySetResult(false);
+                }));
             return tcs.Task;
         }
 
@@ -205,6 +225,14 @@ namespace musicmate.Platforms.Android
 
             if (!_billingClient.IsReady)
                 await ConnectAsync();
+
+            // One reconnect attempt if still not ready.
+            if (!_billingClient.IsReady)
+            {
+                Log("Billing client not ready after connect — rebuilding and retrying once.");
+                _billingClient = BuildClient();
+                await ConnectAsync();
+            }
         }
 
         private Task<IList<ProductDetails>> QueryProductDetailsAsync(IEnumerable<string> productIds)
@@ -228,23 +256,87 @@ namespace musicmate.Platforms.Android
             return tcs.Task;
         }
 
-        private async Task<bool> QueryPurchasedAsync(string productId)
+        /// <summary>
+        /// Current in-app purchases via <c>queryPurchasesAsync</c> (not purchase history).
+        /// </summary>
+        private async Task<PurchaseQueryResult> QueryCurrentPurchasesAsync(string productId)
         {
-            var tcs = new TaskCompletionSource<bool>();
+            await EnsureConnectedAsync();
+
+            if (_billingClient == null || !_billingClient.IsReady)
+            {
+                Log("QueryCurrentPurchasesAsync: billing not ready — querySucceeded=false, entitlement unchanged.");
+                return PurchaseQueryResult.Failed(BillingResponseServiceDisconnected);
+            }
+
+            var tcs = new TaskCompletionSource<PurchaseQueryResult>();
             var queryParams = QueryPurchasesParams.NewBuilder()
                 .SetProductType(BillingClient.IProductType.Inapp)
                 .Build();
 
-            _billingClient!.QueryPurchasesAsync(queryParams,
+            _billingClient.QueryPurchasesAsync(queryParams,
                 new PurchasesListener((result, purchases) =>
                 {
-                    bool found = purchases?.Any(p =>
-                        p.Products.Contains(productId) &&
-                        p.PurchaseState == 1 /* Purchased */) ?? false;
-                    tcs.TrySetResult(found);
+                    int code = result.ResponseCode;
+                    bool succeeded = code == BillingResponseOk;
+
+                    var infos = new List<PremiumEntitlement.PurchaseInfo>();
+                    if (purchases != null)
+                    {
+                        foreach (var p in purchases)
+                        {
+                            infos.Add(new PremiumEntitlement.PurchaseInfo(
+                                p.Products?.ToList() ?? new List<string>(),
+                                p.PurchaseState));
+                        }
+                    }
+
+                    bool? entitlement = PremiumEntitlement.Resolve(succeeded, infos, productId);
+                    LogPurchaseQuery(code, succeeded, infos, entitlement);
+                    tcs.TrySetResult(new PurchaseQueryResult(succeeded, code, entitlement));
                 }));
 
             return await tcs.Task;
+        }
+
+        private static void ApplyPremiumEntitlement(bool owned)
+        {
+            // Update StatusService first (setter may Remove the pref when false), then
+            // write the authoritative value so a successful empty query persists false.
+            MainThread.BeginInvokeOnMainThread(() =>
+                StatusService.Instance.IsPremiumUser = owned);
+            Preferences.Set(PremiumProduct.PreferenceKey, owned);
+            Log($"ApplyPremiumEntitlement: IsPremium={owned}");
+        }
+
+        private static void LogPurchaseQuery(
+            int responseCode,
+            bool querySucceeded,
+            IReadOnlyList<PremiumEntitlement.PurchaseInfo> purchases,
+            bool? entitlement)
+        {
+            var sb = new StringBuilder();
+            sb.Append("QueryCurrentPurchasesAsync: responseCode=").Append(responseCode);
+            sb.Append(", querySucceeded=").Append(querySucceeded);
+            sb.Append(", purchaseCount=").Append(purchases.Count);
+            sb.Append(", products=[");
+            for (int i = 0; i < purchases.Count; i++)
+            {
+                if (i > 0) sb.Append("; ");
+                var p = purchases[i];
+                sb.Append("state=").Append(p.PurchaseState);
+                sb.Append(" ids=").Append(string.Join(',', p.ProductIds ?? Array.Empty<string>()));
+            }
+            sb.Append("], entitlementDecision=");
+            sb.Append(entitlement is null ? "unchanged (query failed)" : entitlement.Value.ToString());
+            Log(sb.ToString());
+        }
+
+        private static void Log(string message)
+        {
+            string line = $"[{LogTag}] {message}";
+            Debug.WriteLine(line);
+            try { global::Android.Util.Log.Info(LogTag, message); } catch { /* ignore */ }
         }
 
         private void AcknowledgePurchase(Purchase purchase)
@@ -257,6 +349,15 @@ namespace musicmate.Platforms.Android
                 .Build();
 
             _billingClient?.AcknowledgePurchase(ackParams, new AckListener());
+        }
+
+        private readonly record struct PurchaseQueryResult(
+            bool QuerySucceeded,
+            int ResponseCode,
+            bool? Entitlement)
+        {
+            public static PurchaseQueryResult Failed(int responseCode)
+                => new(false, responseCode, null);
         }
 
         // ── inner listener shims ─────────────────────────────────────────────

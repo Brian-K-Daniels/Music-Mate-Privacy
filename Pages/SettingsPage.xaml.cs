@@ -20,6 +20,17 @@ namespace musicmate.Pages
         public Color                            PanelBackgroundColor => _themeService.PanelBackgroundColor;
         public NoteSessionService               Session => _session;
 
+        private static int                      FreeRangeLowMidi => NoteSessionService.NoteNameToMidi("C4");
+        private static int                      FreeRangeHighMidi => NoteSessionService.NoteNameToMidi("F5");
+
+        private static bool                     IsOutsideFreeNoteRange(string? noteName)
+        {
+            if (string.IsNullOrWhiteSpace(noteName))
+                return false;
+            int midi = NoteSessionService.NoteNameToMidi(noteName);
+            return midi < FreeRangeLowMidi || midi > FreeRangeHighMidi;
+        }
+
         private static async Task               CheckPremiumStatusAsync()
         {
             try
@@ -65,11 +76,9 @@ namespace musicmate.Pages
 
             if (!StatusService.Instance.IsPremiumUser)
             {
-                int minIdx = _viewModel.WhiteKeyNoteNames.ToList().IndexOf("C4");
-                int maxIdx = _viewModel.WhiteKeyNoteNames.ToList().IndexOf("F5");
                 int selIdx = picker.SelectedIndex;
 
-                if (selIdx < minIdx || selIdx > maxIdx)
+                if (IsOutsideFreeNoteRange(selectedNote))
                 {
                     var purchased = await PremiumPromptHelper.ShowAsync(this,
                         onDecline: () => picker.SelectedIndex = _lastFreeHighestIndex);
@@ -97,11 +106,9 @@ namespace musicmate.Pages
 
             if (!StatusService.Instance.IsPremiumUser)
             {
-                int minIdx = _viewModel.WhiteKeyNoteNames.ToList().IndexOf("C4");
-                int maxIdx = _viewModel.WhiteKeyNoteNames.ToList().IndexOf("F5");
                 int selIdx = picker.SelectedIndex;
 
-                if (selIdx < minIdx || selIdx > maxIdx)
+                if (IsOutsideFreeNoteRange(selectedNote))
                 {
                     var purchased = await PremiumPromptHelper.ShowAsync(this,
                         onDecline: () => picker.SelectedIndex = _lastFreeLowestIndex);
@@ -157,11 +164,13 @@ namespace musicmate.Pages
                 _themeService.SetColor(e.Target, e.Color);
             };
 
-            var notes = _viewModel.WhiteKeyNoteNames?.ToList();
-            if (notes != null)
+            var notes = _viewModel.NoteRangePickerNoteNames?.ToList();
+            if (notes != null && notes.Count > 0)
             {
-                _lastFreeLowestIndex = notes.IndexOf("C4");
-                _lastFreeHighestIndex = notes.IndexOf("F5");
+                int c4 = notes.IndexOf("C4");
+                int f5 = notes.IndexOf("F5");
+                _lastFreeLowestIndex = c4 >= 0 ? c4 : notes.Count - 1;
+                _lastFreeHighestIndex = f5 >= 0 ? f5 : 0;
             }
 
             LowestNotePicker.SelectedIndexChanged += OnLowestNotePickerChangedWithPrompt;

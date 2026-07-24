@@ -292,7 +292,10 @@ namespace musicmate.Services
             if (level <= 40) return ("A3", "E5");
             if (level <= 55) return ("A3", "G5");
             if (level <= 70) return ("G3", "A5");
-            return ("E3", "C6");
+            if (level <= 85) return ("E3", "C6");
+            // Top levels: span catalog extremes so bass E2 and glockenspiel C8
+            // are not clipped when intersected with instrument practical ranges.
+            return ("E2", "C8");
         }
 
         public static string SmallestNoteForLevel(int level)

@@ -9,6 +9,10 @@
     <SingleProject>true</SingleProject>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Compile bindings that set Source (x:Reference / x:Static) for better runtime perf. -->
+    <MauiEnableXamlCBindingWithSourceCompilation>true</MauiEnableXamlCBindingWithSourceCompilation>
+    <!-- SDK only excludes the project-root obj/bin; ignore nested leftovers (e.g. Views/obj). -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);**\bin\**;**\obj\**</DefaultItemExcludes>
 
     <!-- Display name -->
     <ApplicationTitle>Music Mate</ApplicationTitle>
@@ -17,9 +21,9 @@
     <ApplicationId>com.bkdaniels.musicmate</ApplicationId>
 
     <!-- Versions -->
-    <ApplicationDisplayVersion>1.14</ApplicationDisplayVersion>
-    <ApplicationVersion>14</ApplicationVersion>
-    <PackageVersion>1.14</PackageVersion>
+    <ApplicationDisplayVersion>1.18</ApplicationDisplayVersion>
+    <ApplicationVersion>18</ApplicationVersion>
+    <PackageVersion>1.18</PackageVersion>
 
     <WindowsPackageType>None</WindowsPackageType>
 
@@ -34,6 +38,12 @@
     <AndroidSigningKeyStore>musicmate.keystore</AndroidSigningKeyStore>
     <AndroidSigningKeyAlias>musicmatekey</AndroidSigningKeyAlias>
     <AndroidPackageFormat>aab</AndroidPackageFormat>
+    <!-- Required for Archive / Play Store: disable Fast Deployment & shared runtime. -->
+    <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
+    <AndroidUseSharedRuntime>false</AndroidUseSharedRuntime>
+    <AndroidLinkMode>SdkOnly</AndroidLinkMode>
+    <DebugSymbols>false</DebugSymbols>
+    <AndroidIncludeDebugSymbols>false</AndroidIncludeDebugSymbols>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-android'">

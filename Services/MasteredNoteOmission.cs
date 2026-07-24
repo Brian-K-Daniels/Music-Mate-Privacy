@@ -165,7 +165,7 @@ public static class MasteredNoteOmission
     }
 
     /// <summary>
-    /// Convenience overload: derives <paramref name="minDistinctPitches"/> from child level.
+    /// Convenience overload: derives the minimum distinct-pitch requirement from child level.
     /// </summary>
     public static Result ApplyForLevel(
         IReadOnlyList<int> fullPool,
