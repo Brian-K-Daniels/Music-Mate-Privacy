@@ -18,7 +18,7 @@
   </assembly>
 
   <!-- Preserve Google Play Billing types used via reflection/JNI -->
-  <assembly fullname="Anjoxam.BillingClient.Droid">
+  <assembly fullname="Xamarin.Android.Google.BillingClient">
     <type fullname="*" preserve="all" />
   </assembly>
 

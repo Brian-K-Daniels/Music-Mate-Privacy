@@ -146,11 +146,6 @@ namespace musicmate.Pages
                     _statisticsCache.InvalidateSessionStats();
                     LevelUpService.MarkCountSinceNow();
                 }
-                else if (vm.IsChildResultsDatabase)
-                {
-                    await _sessionResultDatabase.ClearAllAsync();
-                    LevelUpService.MarkCountSinceNow();
-                }
                 await _viewModel.LoadAsync(forceRefresh: true);
                 await DisplayAlertAsync("Success", "All data cleared.", "OK");
             }
@@ -208,12 +203,6 @@ namespace musicmate.Pages
                     await _sessionDatabase.InitializeAsync(); // recreate tables
                     await _sessionResultDatabase.ClearAllAsync();
                     _statisticsCache.InvalidateSessionStats();
-                    LevelUpService.MarkCountSinceNow();
-                }
-                else if (vm.IsChildResultsDatabase)
-                {
-                    await _sessionResultDatabase.DeleteDatabaseAsync();
-                    await _sessionResultDatabase.InitializeAsync();
                     LevelUpService.MarkCountSinceNow();
                 }
                 await _viewModel.LoadAsync(forceRefresh: true);

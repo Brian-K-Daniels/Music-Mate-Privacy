@@ -2019,8 +2019,18 @@ namespace musicmate.Drawables
                 hasEndSingleBar: UpperHasEndBar && LowerNotes.Count > 0);
             float upperPlanInkGap = _planInkGap;
 
+            // Keep lower-staff note spacing matched to the upper staff when the lower
+            // staff has fewer beats (e.g. one short bar under a multi-bar upper staff).
+            // Planning against the full canvas width stretches those notes across the staff.
+            float lowerPlanUsableWidth = ComputeMatchedStaffUsableWidth(
+                peerContentWidth: Math.Max(1f, upperTotalWidth - upperStaffMargin),
+                peerTotalBeats: ComputeStaffTotalBeats(UpperNotes, UpperBarBeats),
+                selfTotalBeats: ComputeStaffTotalBeats(LowerNotes, LowerBarBeats),
+                selfUsableWidth: lowerUsableWidth);
+            bool lowerFillsWidth = lowerPlanUsableWidth >= lowerUsableWidth - 0.5f;
+
             var (lowerNoteLayouts, lowerBarLayouts, lowerTotalWidth) = PlanHorizontalLayout(
-                LowerNotes, LowerBarBeats, lowerUsableWidth,
+                LowerNotes, LowerBarBeats, lowerPlanUsableWidth,
                 lowerStaffMargin, useFullHeaderAnchor: !lowerClefOnlyStart,
                 isFinalStaff: true,
                 hasEndSingleBar: false);
@@ -2041,7 +2051,8 @@ namespace musicmate.Drawables
                     UpperNotes, upperNoteLayouts, upperBarLayouts, upperTotalWidth, upperUsableWidth,
                     LowerNotes, lowerNoteLayouts, lowerBarLayouts, lowerTotalWidth, lowerUsableWidth,
                     safeLeft, upperStaffMargin, lowerStaffMargin, layoutRightLimit,
-                    upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot);
+                    upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
+                    expandLowerToFill: lowerFillsWidth);
 
                 SanitizeLayoutPositions(upperNoteLayouts, upperBarLayouts);
                 SanitizeLayoutPositions(lowerNoteLayouts, lowerBarLayouts);
@@ -2143,7 +2154,8 @@ namespace musicmate.Drawables
             if (!compressed)
             {
                 ExpandLayoutToFillSafeRight(upperNoteLayouts, upperBarLayouts, layoutRightLimit, safeLeft, upperStaffMargin);
-                ExpandLayoutToFillSafeRight(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit, safeLeft, lowerStaffMargin);
+                if (lowerFillsWidth)
+                    ExpandLayoutToFillSafeRight(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit, safeLeft, lowerStaffMargin);
                 _planInkGap = upperPlanInkGap;
                 EnforceGlobalBeatOrderSpacing(UpperNotes, upperNoteLayouts, upperBeatOrigin, upperPlanInkGap, UpperBarBeats);
                 _planInkGap = lowerPlanInkGap;
@@ -2153,7 +2165,8 @@ namespace musicmate.Drawables
             ReconcileFinalBarLayout(upperNoteLayouts, upperBarLayouts);
             ReconcileFinalBarLayout(lowerNoteLayouts, lowerBarLayouts);
             PadLayoutGutterToLimit(upperNoteLayouts, upperBarLayouts, layoutRightLimit);
-            PadLayoutGutterToLimit(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit);
+            if (lowerFillsWidth)
+                PadLayoutGutterToLimit(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit);
             ReconcileFinalBarLayout(upperNoteLayouts, upperBarLayouts);
             ReconcileFinalBarLayout(lowerNoteLayouts, lowerBarLayouts);
             AlignIndependentStaffEndBars(upperBarLayouts, upperNoteLayouts, lowerBarLayouts, lowerNoteLayouts, layoutRightLimit);
@@ -2281,7 +2294,8 @@ namespace musicmate.Drawables
             float upperBot,
             float lowerTop,
             float lowerMid,
-            float lowerBot)
+            float lowerBot,
+            bool expandLowerToFill)
         {
             ApplyBeginnerStaffToScreen(upperNoteLayouts, upperBarLayouts, safeLeft, upperStaffMargin,
                 upperTotalWidth, upperUsableWidth);
@@ -2289,9 +2303,11 @@ namespace musicmate.Drawables
                 lowerTotalWidth, lowerUsableWidth);
 
             ExpandLayoutToFillSafeRight(upperNoteLayouts, upperBarLayouts, layoutRightLimit, safeLeft, upperStaffMargin);
-            ExpandLayoutToFillSafeRight(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit, safeLeft, lowerStaffMargin);
+            if (expandLowerToFill)
+                ExpandLayoutToFillSafeRight(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit, safeLeft, lowerStaffMargin);
             PadLayoutGutterToLimit(upperNoteLayouts, upperBarLayouts, layoutRightLimit);
-            PadLayoutGutterToLimit(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit);
+            if (expandLowerToFill)
+                PadLayoutGutterToLimit(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit);
 
             ReconcileFinalBarLayout(upperNoteLayouts, upperBarLayouts);
             ReconcileFinalBarLayout(lowerNoteLayouts, lowerBarLayouts);
@@ -2671,6 +2687,46 @@ namespace musicmate.Drawables
             }
 
             return double.IsPositiveInfinity(origin) ? 0.0 : origin;
+        }
+
+        /// <summary>Total beat span of notes on one staff (relative to that staff's beat origin).</summary>
+        private static double ComputeStaffTotalBeats(
+            IReadOnlyList<GeneratedNote> notes,
+            IReadOnlyList<double> barBeats)
+        {
+            if (notes == null || notes.Count == 0)
+                return 0.0;
+
+            double beatOrigin = GetStaffBeatOrigin(notes, barBeats ?? Array.Empty<double>());
+            double totalBeats = 0.0;
+            for (int i = 0; i < notes.Count; i++)
+            {
+                var note = notes[i];
+                double relBeat = (note.BeatPosition ?? 0.0) - beatOrigin;
+                totalBeats = Math.Max(totalBeats, relBeat + note.BeatDuration);
+            }
+
+            return totalBeats;
+        }
+
+        /// <summary>
+        /// When this staff has fewer beats than its peer, size it so px-per-beat matches the peer
+        /// instead of stretching across the full canvas width.
+        /// </summary>
+        private static float ComputeMatchedStaffUsableWidth(
+            float peerContentWidth,
+            double peerTotalBeats,
+            double selfTotalBeats,
+            float selfUsableWidth)
+        {
+            if (peerTotalBeats < 1e-6 || selfTotalBeats < 1e-6)
+                return selfUsableWidth;
+            if (selfTotalBeats >= peerTotalBeats - 1e-6)
+                return selfUsableWidth;
+
+            float pxPerBeat = peerContentWidth / (float)peerTotalBeats;
+            float matched = (float)selfTotalBeats * pxPerBeat;
+            return Math.Clamp(matched, 64f, selfUsableWidth);
         }
 
         /// <summary>
@@ -3925,7 +3981,7 @@ namespace musicmate.Drawables
             string scale = ActiveKeySignatureScale();
             bool suppressKeySig = _session.Tune == "Tuner"
                 || _session.Tune == "Practice Tune"
-                || (_session.Tune != "Arpeggio" && _session.SelectedScale == "Chromatic");
+                || (_session.Tune != "Arpeggio" && scale == "Chromatic");
             int accCount = suppressKeySig ? 0 : KeySignatureRules.GetAccidentalCount(key, scale);
 
             float clefX = safeLeft + clefPad;
@@ -4486,14 +4542,14 @@ namespace musicmate.Drawables
 
             if (_session.Tune == "Tuner"
                 || _session.Tune == "Practice Tune"
-                || (_session.Tune != "Arpeggio" && _session.SelectedScale == "Chromatic"))
+                || (_session.Tune != "Arpeggio" && ActiveKeySignatureScale() == "Chromatic"))
                 return _headerMetrics.KeySigStartX;
 
             int accCount = KeySignatureRules.GetAccidentalCount(_session.Key, ActiveKeySignatureScale());
             if (accCount == 0)
                 return _headerMetrics.KeySigStartX;
 
-            StaffLog($"[Staff] KeySig key={_session.Key} scale={_session.SelectedScale} count={accCount}");
+            StaffLog($"[Staff] KeySig key={_session.Key} scale={ActiveKeySignatureScale()} count={accCount}");
 
             bool useFlats = KeySignatureRules.KeySignatureUsesFlats(_session.Key, ActiveKeySignatureScale());
             string glyph = useFlats ? "\uE260" : "\uE262";
@@ -4585,7 +4641,7 @@ namespace musicmate.Drawables
         /// cancelling the key sig within the bar.
         /// </summary>
         private bool IsNoteInKeySig(GeneratedNote note)
-            => KeySignatureRules.IsLetterInKeySignature(note.Letter, _session.Key, _session.SelectedScale);
+            => KeySignatureRules.IsLetterInKeySignature(note.Letter, _session.Key, ActiveKeySignatureScale());
 
 #if DEBUG
         private static void StaffLog(string message)

@@ -149,7 +149,8 @@
             Command="{Binding BuyPremiumCommand}"
             IsVisible="{Binding NotIsPremium}"
             TextColor="{DynamicResource ThemeContrastingText}"
-            FontSize="{Binding SelectedFontSize}"
+            FontSize="13"
+            FontAutoScalingEnabled="False"
             Padding="8,4" />
 
       <Button
@@ -163,6 +164,7 @@
             BorderWidth="1"
             CornerRadius="6"
             FontSize="11"
+            FontAutoScalingEnabled="False"
             HorizontalOptions="End"
             Padding="8,4" />
 
@@ -172,7 +174,8 @@
             Text="⭐ You have all premium privileges"
             IsVisible="{Binding IsPremium}"
             FontAttributes="Bold"
-            FontSize="{Binding SelectedFontSize}"
+            FontSize="13"
+            FontAutoScalingEnabled="False"
             TextColor="#FFD700"
             VerticalOptions="Center" />
 

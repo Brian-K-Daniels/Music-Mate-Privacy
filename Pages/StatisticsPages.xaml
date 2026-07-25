@@ -224,12 +224,6 @@
         </VerticalStackLayout>
       </ScrollView>
 
-      <Label Text="Child Results (level-up / ssns). Use Clear All to reset progress."
-             FontSize="12"
-             Margin="8,4,0,0"
-             TextColor="{DynamicResource ThemeContrastingText}"
-             IsVisible="{Binding IsChildResultsDatabase}" />
-
       <!-- Session Stats Table -->
       <!-- Column widths chosen to accommodate headings and data; header and data use identical definitions -->
       <ScrollView Orientation="Horizontal"

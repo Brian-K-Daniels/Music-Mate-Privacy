@@ -22,10 +22,9 @@ namespace musicmate.ViewModels
         public Color ContrastingTextColor => _themeService.ContrastingTextColor;
         public bool IsNoteDatabase => SelectedDatabase == "Note";
         public bool IsSessionDatabase => SelectedDatabase == "Session";
-        public bool IsChildResultsDatabase => SelectedDatabase == "Child Results";
         public bool IsMasteryDatabase => SelectedDatabase == "Mastery";
         public ObservableCollection<string> DatabaseOptions { get; } =
-            new() { "Note", "Mastery", "Session", "Child Results" };
+            new() { "Note", "Mastery", "Session" };
         // Remove color properties from here; use ThemeService for colors in the view.
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -289,16 +288,6 @@ namespace musicmate.ViewModels
             var kind = StatisticsCacheService.MapSelectedDatabase(SelectedDatabase);
             Utils.Log($"[NoteStatisticsViewModel] LoadAsync started. Kind={kind}, forceRefresh={forceRefresh}");
 
-            if (kind == StatisticsDatabaseKind.ChildResults)
-            {
-                NoteStats.Clear();
-                SessionStats.Clear();
-                MasteryNotes.Clear();
-                LastUpdatedUtc = null;
-                IsLoading = false;
-                return;
-            }
-
             StatisticsDbFingerprint fingerprint;
             try
             {
@@ -503,13 +492,15 @@ namespace musicmate.ViewModels
             }
         }
 
-        private string _selectedDatabase = Preferences.Get("musicmate.SelectedStatsDb", "Note");
+        private string _selectedDatabase = NormalizeSelectedDatabase(
+            Preferences.Get("musicmate.SelectedStatsDb", "Note"));
 
         public string SelectedDatabase
         {
             get => _selectedDatabase;
             set
             {
+                value = NormalizeSelectedDatabase(value);
                 if (_selectedDatabase != value)
                 {
                     _selectedDatabase = value;
@@ -517,7 +508,6 @@ namespace musicmate.ViewModels
                     OnPropertyChanged(nameof(SelectedDatabase));
                     OnPropertyChanged(nameof(IsNoteDatabase));
                     OnPropertyChanged(nameof(IsSessionDatabase));
-                    OnPropertyChanged(nameof(IsChildResultsDatabase));
                     OnPropertyChanged(nameof(IsMasteryDatabase));
                     OnPropertyChanged(nameof(ShowDatabaseClearButtons));
                     _ = LoadAsyncOnMainThread();
@@ -526,10 +516,13 @@ namespace musicmate.ViewModels
         }
 
         /// <summary>
-        /// Clear/Delete apply to Note, Session, and Child Results databases — not Mastery
+        /// Clear/Delete apply to Note and Session databases — not Mastery
         /// (Mastery is a derived view over note stats, not its own clearable store).
         /// </summary>
         public bool ShowDatabaseClearButtons => !IsMasteryDatabase;
+
+        private static string NormalizeSelectedDatabase(string? value) =>
+            value is "Note" or "Mastery" or "Session" ? value : "Note";
 
         private async Task LoadAsyncOnMainThread()
         {

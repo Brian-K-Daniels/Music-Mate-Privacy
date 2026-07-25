@@ -166,6 +166,8 @@ namespace musicmate.Pages
                              $"background: {ColorToHex(bg)} !important; " +
                              $"color: {ColorToHex(fg)} !important; " +
                              $"font-size: {fontSize}px !important; " +
+                             $"-webkit-text-size-adjust: 100% !important; " +
+                             $"text-size-adjust: 100% !important; " +
                              $"margin: 0; " +
                              $"padding: 8px; " +
                              $"font-family: {fontFamily}; " +
@@ -199,6 +201,11 @@ namespace musicmate.Pages
                 css += ".about-search-highlight { background: rgba(255,255,0,0.6) !important; color: inherit !important; padding: 0 0.05em !important; border-radius: 2px !important; } ";
                 var styled = InjectCssIntoHtml(html, css);
                 web.Source = new HtmlWebViewSource { Html = styled };
+#if ANDROID
+                // Android accessibility font scale otherwise inflates WebView text far beyond the
+                // Settings "Font used in About page" size (email/contact text looked huge).
+                ApplyAboutWebViewTextZoom(web);
+#endif
             }
             catch (Exception ex)
             {
@@ -209,6 +216,29 @@ namespace musicmate.Pages
                 }
             }
         }
+
+#if ANDROID
+        private static void ApplyAboutWebViewTextZoom(Microsoft.Maui.Controls.WebView web)
+        {
+            void Apply()
+            {
+                try
+                {
+                    if (web.Handler?.PlatformView is Android.Webkit.WebView native)
+                        native.Settings.TextZoom = 100;
+                }
+                catch
+                {
+                    // Best effort — CSS text-size-adjust still helps.
+                }
+            }
+
+            if (web.Handler?.PlatformView is Android.Webkit.WebView)
+                Apply();
+            else
+                web.HandlerChanged += (_, _) => Apply();
+        }
+#endif
 
         private static string ColorToHex(Color c)
         {

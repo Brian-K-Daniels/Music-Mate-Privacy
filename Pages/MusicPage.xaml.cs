@@ -69,6 +69,8 @@ namespace musicmate.Pages
         private string? _pendingInstrumentForMarquee;
         private CancellationTokenSource? _autoStartCts;
         private CancellationTokenSource? _sessionStartCts;
+        private CancellationTokenSource? _childLevelApplyCts;
+        private int? _pendingChildLevel;
         private bool _suppressSessionRegenerate;
         private const string ChildLevelPrefKey = "ChildPractice.Level";
         private readonly Dictionary<string, ArpeggioPickerChoice> _arpeggioPickerChoices = new(StringComparer.Ordinal);
@@ -1620,7 +1622,7 @@ namespace musicmate.Pages
             for (int i = 0; i < _staffDrawable.UpperNotes.Count; i++)
             {
                 if (_staffDrawable.UpperNotes[i].IsRest) { upperStates[i] = StaffNoteState.Pending; continue; }
-                if (si < currentSession)
+                if (si < currentSession || _session.CorrectNoteIndices.Contains(si))
                     upperStates[i] = _session.CorrectNoteIndices.Contains(si) ? StaffNoteState.Correct : StaffNoteState.Wrong;
                 else if (si == currentSession && isUpperActive)
                 {
@@ -1639,7 +1641,7 @@ namespace musicmate.Pages
             {
                 if (_staffDrawable.LowerNotes[i].IsRest) { lowerStates[i] = StaffNoteState.Pending; continue; }
                 int globalIdx = upperPitchCount + li;
-                if (globalIdx < currentSession)
+                if (globalIdx < currentSession || _session.CorrectNoteIndices.Contains(globalIdx))
                     lowerStates[i] = _session.CorrectNoteIndices.Contains(globalIdx) ? StaffNoteState.Correct : StaffNoteState.Wrong;
                 else if (globalIdx == currentSession && !isUpperActive)
                 {
@@ -2204,7 +2206,25 @@ namespace musicmate.Pages
             if (level == _session.ChildLevel)
                 return;
 
-            await ApplyChildLevelAndRefreshAsync(level);
+            // Holding +/- queues many clicks; coalesce so the last level wins and
+            // StartListening is not cancelled mid-microphone start (left on GO).
+            _pendingChildLevel = level;
+            _childLevelApplyCts?.Cancel();
+            _childLevelApplyCts = new CancellationTokenSource();
+            var ct = _childLevelApplyCts.Token;
+            try
+            {
+                await Task.Delay(120, ct);
+                if (_pendingChildLevel is int pending)
+                {
+                    _pendingChildLevel = null;
+                    await ApplyChildLevelAndRefreshAsync(pending);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Newer +/- click replaced this apply.
+            }
         }
 
         private async Task RefreshDisplayForLevelChangeAsync()
@@ -2713,11 +2733,16 @@ namespace musicmate.Pages
 
                 if (freq == 0)
                 {
-                    // Pitch lost while still above the RMS gate is usually a detector
-                    // dropout, not a real note-off. Unlock via NotifySilence /
-                    // ObserveLoudness when volume actually falls.
+                    // Detector often drops during tonguing while RMS stays loud (clarinet/voice).
+                    // Count that as silence toward unlocking a repeated same pitch.
+                    if (_session.IsAwaitingNoteOn)
+                        _session.NotifyPitchStopped();
                     return;
                 }
+
+                // Pitch returned after a pitch-dropout silence arm — completes same-pitch
+                // re-trigger when RMS never dipped (so NotifyNoteAttack from onset did not fire).
+                _session.NotifyPitchResumed();
 
                 freq = _session.SmoothPitch(freq);
 
@@ -2744,8 +2769,23 @@ namespace musicmate.Pages
 
                     // Re-check gates on the UI thread so queued callbacks cannot
                     // advance more than one note from a single sustained tone.
-                    if (_session.ShouldIgnoreAudio(DateTime.UtcNow) || _session.IsAwaitingNoteOn)
+                    if (_session.ShouldIgnoreAudio(DateTime.UtcNow))
                         return;
+
+                    if (_session.IsAwaitingNoteOn)
+                    {
+                        // Keep the status bar honest during same-pitch repeats (E-E-E): the
+                        // previous note already matched; we are waiting for re-articulation.
+                        if (_session.IsAwaitingSamePitchRetrigger
+                            && _session.CurrentNoteIndex < _session.NotesToDraw.Count)
+                        {
+                            var expected = _session.ResolveWrittenEvaluationName(
+                                _session.NotesToDraw[_session.CurrentNoteIndex]);
+                            StatusService.Instance.StatusMessage =
+                                $"Expected: {expected} — tongue/re-attack for repeated note";
+                        }
+                        return;
+                    }
 
                     // Only accept the note as correct if it matches the expected note (including octave) at the current index
                     var result = _session.Evaluate(freq);
@@ -2910,7 +2950,9 @@ namespace musicmate.Pages
                 var sessionId = _currentSessionId;
                 var concertKey = _session.GetConcertKey();
 
-                foreach (var outcome in _session.GetSessionAttemptOutcomes())
+                // Snapshot: RecordAttemptOutcome can mutate the live list while we save.
+                var outcomes = _session.GetSessionAttemptOutcomes().ToList();
+                foreach (var outcome in outcomes)
                 {
                     string concertName = concertKey != _session.Key ? concertKey : string.Empty;
                     double? durationBeats = null;
@@ -3057,6 +3099,10 @@ namespace musicmate.Pages
 
                 using (PracticeSessionStartProfiler.Scope("SessionReset"))
                 {
+                    // Stop the old capture before Reset so OnAudioBlock cannot race
+                    // against an empty/rebuilding NotesToDraw (missed first-note greens).
+                    try { _audio.StopCapture(); } catch { }
+
                     _lastProcess = DateTime.MinValue;
                     _isBelowThreshold = true;
                     _dismissedResultBannerForFirstSound = false;

@@ -455,7 +455,7 @@ namespace musicmate.Services
             public bool CollectSessionStats { get; init; } = true;
             public int MaxSessionDbSizeMb { get; init; } = 50;
             public int MaxAttemptsPerNote { get; init; } = 100;
-            public string Instrument { get; init; } = "concert-pitch";
+            public string Instrument { get; init; } = "bb-clarinet";
             public string Key { get; init; } = "C";
             public string Tune { get; init; } = "Selected Scale";
             public int Tolerance { get; init; } = NoteSessionService.DefaultTolerance;

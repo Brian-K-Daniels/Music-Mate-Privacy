@@ -10,13 +10,11 @@ namespace musicmate.Platforms.Android
 {
     /// <summary>
     /// Production IStoreService backed by Google Play Billing (used in Release builds).
+    /// Targets Xamarin.Android.Google.BillingClient 8.x.
     /// </summary>
     public class GooglePlayStoreService : Java.Lang.Object, IStoreService, IPurchasesUpdatedListener
     {
         private const string LogTag = "MusicMate.Billing";
-        // BillingClient.BillingResponseCode values (numeric — binding name casing varies).
-        private const int BillingResponseOk = 0;
-        private const int BillingResponseServiceDisconnected = -1;
 
         private BillingClient? _billingClient;
         private TaskCompletionSource<bool>? _purchaseTcs;
@@ -123,12 +121,12 @@ namespace musicmate.Platforms.Android
 
         public void OnPurchasesUpdated(BillingResult billingResult, IList<Purchase>? purchases)
         {
-            int code = billingResult.ResponseCode;
-            if (code == BillingResponseOk && purchases != null)
+            var code = billingResult.ResponseCode;
+            if (code == BillingResponseCode.Ok && purchases != null)
             {
                 foreach (var purchase in purchases)
                 {
-                    if (purchase.PurchaseState == PremiumEntitlement.PurchaseStatePurchased &&
+                    if (purchase.PurchaseState == PurchaseState.Purchased &&
                         purchase.Products.Contains(PremiumProduct.Id))
                     {
                         // Persist entitlement before acknowledging so it survives a crash
@@ -193,12 +191,14 @@ namespace musicmate.Platforms.Android
         private BillingClient BuildClient()
         {
             var context = global::Android.App.Application.Context;
-#pragma warning disable CS0618
+            var pendingParams = PendingPurchasesParams.NewBuilder()
+                .EnableOneTimeProducts()
+                .Build();
+
             return BillingClient.NewBuilder(context)
-                .EnablePendingPurchases()
+                .EnablePendingPurchases(pendingParams)
                 .SetListener(this)
                 .Build();
-#pragma warning restore CS0618
         }
 
         private Task ConnectAsync()
@@ -208,7 +208,7 @@ namespace musicmate.Platforms.Android
                 result =>
                 {
                     Log($"Billing setup finished: responseCode={result.ResponseCode}");
-                    tcs.TrySetResult(result.ResponseCode == BillingResponseOk);
+                    tcs.TrySetResult(result.ResponseCode == BillingResponseCode.Ok);
                 },
                 () =>
                 {
@@ -235,13 +235,12 @@ namespace musicmate.Platforms.Android
             }
         }
 
-        private Task<IList<ProductDetails>> QueryProductDetailsAsync(IEnumerable<string> productIds)
+        private async Task<IList<ProductDetails>> QueryProductDetailsAsync(IEnumerable<string> productIds)
         {
-            var tcs = new TaskCompletionSource<IList<ProductDetails>>();
             var products = productIds
                 .Select(id => QueryProductDetailsParams.Product.NewBuilder()
                     .SetProductId(id)
-                    .SetProductType(BillingClient.IProductType.Inapp)
+                    .SetProductType(BillingClient.ProductType.Inapp)
                     .Build())
                 .ToList();
 
@@ -249,11 +248,9 @@ namespace musicmate.Platforms.Android
                 .SetProductList(products)
                 .Build();
 
-            _billingClient!.QueryProductDetailsAsync(queryParams,
-                new ProductDetailsListener((result, list) =>
-                    tcs.TrySetResult(list ?? new List<ProductDetails>())));
-
-            return tcs.Task;
+            // Billing 8.x: Task-based API returns QueryProductDetailsResult.
+            var result = await _billingClient!.QueryProductDetailsAsync(queryParams);
+            return result.ProductDetailsList ?? (IList<ProductDetails>)new List<ProductDetails>();
         }
 
         /// <summary>
@@ -266,37 +263,32 @@ namespace musicmate.Platforms.Android
             if (_billingClient == null || !_billingClient.IsReady)
             {
                 Log("QueryCurrentPurchasesAsync: billing not ready — querySucceeded=false, entitlement unchanged.");
-                return PurchaseQueryResult.Failed(BillingResponseServiceDisconnected);
+                return PurchaseQueryResult.Failed(BillingResponseCode.ServiceDisconnected);
             }
 
-            var tcs = new TaskCompletionSource<PurchaseQueryResult>();
             var queryParams = QueryPurchasesParams.NewBuilder()
-                .SetProductType(BillingClient.IProductType.Inapp)
+                .SetProductType(BillingClient.ProductType.Inapp)
                 .Build();
 
-            _billingClient.QueryPurchasesAsync(queryParams,
-                new PurchasesListener((result, purchases) =>
+            var purchasesResult = await _billingClient.QueryPurchasesAsync(queryParams);
+            var code = purchasesResult.Result?.ResponseCode ?? BillingResponseCode.Error;
+            bool succeeded = code == BillingResponseCode.Ok;
+            var purchases = purchasesResult.Purchases;
+
+            var infos = new List<PremiumEntitlement.PurchaseInfo>();
+            if (purchases != null)
+            {
+                foreach (var p in purchases)
                 {
-                    int code = result.ResponseCode;
-                    bool succeeded = code == BillingResponseOk;
+                    infos.Add(new PremiumEntitlement.PurchaseInfo(
+                        p.Products?.ToList() ?? new List<string>(),
+                        (int)p.PurchaseState));
+                }
+            }
 
-                    var infos = new List<PremiumEntitlement.PurchaseInfo>();
-                    if (purchases != null)
-                    {
-                        foreach (var p in purchases)
-                        {
-                            infos.Add(new PremiumEntitlement.PurchaseInfo(
-                                p.Products?.ToList() ?? new List<string>(),
-                                p.PurchaseState));
-                        }
-                    }
-
-                    bool? entitlement = PremiumEntitlement.Resolve(succeeded, infos, productId);
-                    LogPurchaseQuery(code, succeeded, infos, entitlement);
-                    tcs.TrySetResult(new PurchaseQueryResult(succeeded, code, entitlement));
-                }));
-
-            return await tcs.Task;
+            bool? entitlement = PremiumEntitlement.Resolve(succeeded, infos, productId);
+            LogPurchaseQuery(code, succeeded, infos, entitlement);
+            return new PurchaseQueryResult(succeeded, code, entitlement);
         }
 
         private static void ApplyPremiumEntitlement(bool owned)
@@ -310,7 +302,7 @@ namespace musicmate.Platforms.Android
         }
 
         private static void LogPurchaseQuery(
-            int responseCode,
+            BillingResponseCode responseCode,
             bool querySucceeded,
             IReadOnlyList<PremiumEntitlement.PurchaseInfo> purchases,
             bool? entitlement)
@@ -353,10 +345,10 @@ namespace musicmate.Platforms.Android
 
         private readonly record struct PurchaseQueryResult(
             bool QuerySucceeded,
-            int ResponseCode,
+            BillingResponseCode ResponseCode,
             bool? Entitlement)
         {
-            public static PurchaseQueryResult Failed(int responseCode)
+            public static PurchaseQueryResult Failed(BillingResponseCode responseCode)
                 => new(false, responseCode, null);
         }
 
@@ -370,20 +362,6 @@ namespace musicmate.Platforms.Android
             { _onFinished = onFinished; _onDisconnected = onDisconnected; }
             public void OnBillingSetupFinished(BillingResult r) => _onFinished(r);
             public void OnBillingServiceDisconnected() => _onDisconnected();
-        }
-
-        private class ProductDetailsListener : Java.Lang.Object, IProductDetailsResponseListener
-        {
-            private readonly Action<BillingResult, IList<ProductDetails>?> _cb;
-            public ProductDetailsListener(Action<BillingResult, IList<ProductDetails>?> cb) => _cb = cb;
-            public void OnProductDetailsResponse(BillingResult r, IList<ProductDetails>? list) => _cb(r, list);
-        }
-
-        private class PurchasesListener : Java.Lang.Object, IPurchasesResponseListener
-        {
-            private readonly Action<BillingResult, IList<Purchase>?> _cb;
-            public PurchasesListener(Action<BillingResult, IList<Purchase>?> cb) => _cb = cb;
-            public void OnQueryPurchasesResponse(BillingResult r, IList<Purchase> list) => _cb(r, list);
         }
 
         private class AckListener : Java.Lang.Object, IAcknowledgePurchaseResponseListener

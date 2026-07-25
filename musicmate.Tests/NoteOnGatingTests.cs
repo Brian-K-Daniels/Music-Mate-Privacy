@@ -32,7 +32,7 @@ public class NoteOnGatingTests : IDisposable
 
         AssertAccepted(session, cFreq, expectedIndex: 0);
         Assert.Equal(1, session.CurrentNoteIndex);
-        Assert.True(session.IsAwaitingNoteOn);
+        Assert.False(session.IsAwaitingNoteOn); // different next pitch: pitch-lock only
 
         // Sustained C must not advance past D
         AssertRejected(session, cFreq);
@@ -42,7 +42,7 @@ public class NoteOnGatingTests : IDisposable
         session.NotifySilence();
         AssertAccepted(session, dFreq, expectedIndex: 1);
         Assert.Equal(2, session.CurrentNoteIndex);
-        Assert.True(session.IsAwaitingNoteOn);
+        Assert.False(session.IsAwaitingNoteOn);
 
         // Holding D must not mark E
         AssertRejected(session, dFreq);
@@ -147,6 +147,34 @@ public class NoteOnGatingTests : IDisposable
     }
 
     [Fact]
+    public void SamePitch_PitchDropoutWithoutRmsDrop_UnlocksViaNotifyPitchStopped()
+    {
+        // Clarinet tonguing often zeros the pitch detector while RMS stays above threshold.
+        // ObserveLoudness must not wipe the pitch-stop silence clock each audio block.
+        var session = CreateSession(midiNotes: [64, 64]); // E4, E4
+        double freq = Freq(64);
+        float loud = Math.Max(session.RmsThreshold * 3f, 0.05f);
+
+        AssertAccepted(session, freq, expectedIndex: 0);
+        Assert.True(session.IsAwaitingSamePitchRetrigger);
+
+        session.SamePitchSilenceMs = 30;
+        var t0 = DateTime.UtcNow;
+        while ((DateTime.UtcNow - t0).TotalMilliseconds < session.SamePitchSilenceMs + 20)
+        {
+            session.ObserveLoudness(loud); // stays loud — must not cancel pitch-stop silence
+            session.NotifyPitchStopped();
+            Thread.Sleep(5);
+        }
+
+        Assert.True(session.IsAwaitingNoteOn); // armed for post-silence attack
+        session.NotifyPitchResumed(); // pitch returns without RMS dip
+        Assert.False(session.IsAwaitingNoteOn);
+        AssertAccepted(session, freq, expectedIndex: 1);
+        Assert.Equal(new HashSet<int> { 0, 1 }, session.CorrectNoteIndices);
+    }
+
+    [Fact]
     public void SamePitch_AmplitudeDipRise_DoesNotUnlockRepeatedNote()
     {
         var session = CreateSession(midiNotes: [62, 62]);
@@ -165,16 +193,15 @@ public class NoteOnGatingTests : IDisposable
     }
 
     [Fact]
-    public void DifferentPitch_AmplitudeDipRise_StillUnlocks()
+    public void DifferentPitch_NoNoteOnWait_PitchLockBlocksResidual()
     {
         var session = CreateSession(midiNotes: [60, 62]); // C then D
         AssertAccepted(session, Freq(60), expectedIndex: 0);
-        Assert.True(session.IsAwaitingNoteOn);
-
-        session.ObserveLoudness(0.06f);
-        session.ObserveLoudness(0.02f);
-        session.ObserveLoudness(0.055f);
         Assert.False(session.IsAwaitingNoteOn);
+
+        // Residual C is ignored via pitch lock (not scored wrong, not advanced)
+        AssertRejected(session, Freq(60));
+        Assert.Equal(1, session.CurrentNoteIndex);
 
         AssertAccepted(session, Freq(62), expectedIndex: 1);
     }
@@ -189,10 +216,8 @@ public class NoteOnGatingTests : IDisposable
         Assert.True(result.correct);
         Assert.True(session.UpdateFeedbackForCurrent(cFreq, result));
 
-        // Same detection values again in the same "frame" must not advance further
+        // Same detection again must not advance further (pitch lock on residual C)
         Assert.False(session.UpdateFeedbackForCurrent(cFreq, result));
-        Assert.False(session.UpdateFeedbackForCurrent(Freq(62), session.Evaluate(Freq(62))));
-
         Assert.Equal(1, session.CurrentNoteIndex);
         Assert.Equal(new HashSet<int> { 0 }, session.CorrectNoteIndices);
     }

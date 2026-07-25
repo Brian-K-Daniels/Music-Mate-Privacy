@@ -21,9 +21,9 @@
     <ApplicationId>com.bkdaniels.musicmate</ApplicationId>
 
     <!-- Versions -->
-    <ApplicationDisplayVersion>1.18</ApplicationDisplayVersion>
-    <ApplicationVersion>18</ApplicationVersion>
-    <PackageVersion>1.18</PackageVersion>
+    <ApplicationDisplayVersion>1.20</ApplicationDisplayVersion>
+    <ApplicationVersion>20</ApplicationVersion>
+    <PackageVersion>1.20</PackageVersion>
 
     <WindowsPackageType>None</WindowsPackageType>
 
@@ -89,7 +89,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Anjoxam.BillingClient.Droid" Version="7.1.1" Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'" />
+    <PackageReference Include="Xamarin.Android.Google.BillingClient"
+                  Version="8.0.0"
+                  Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'" />
     <PackageReference Include="CommunityToolkit.Maui" Version="14.1.0" />
     <PackageReference Include="CommunityToolkit.Maui.Core" Version="14.1.0" />
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.51" />

@@ -83,4 +83,53 @@ public class ResolveTargetPitchTests
         var note = new NoteInfo { Midi = 69, Name = "B4" };
         Assert.Equal(71, NoteSessionService.ResolveWrittenEvaluationMidi(note));
     }
+
+    [Fact]
+    public void NotationScale_FollowsEffectiveScale_NotStaleSelectedScale()
+    {
+        // By Level / Random pick the effective scale; SelectedScale can still say "Major".
+        // The staff draws B Natural Minor (2 sharps: F#, C#), so A must stay natural.
+        var session = new NoteSessionService();
+        session.RestoreRepeatSameGenerationContext(
+            key: "B",
+            selectedScale: "Major",
+            effectiveScale: "Natural Minor",
+            scaleMode: ScaleSelectionMode.ByLevel,
+            isRandomMode: false,
+            tune: "Selected Scale");
+
+        var (key, scale) = session.GetNotationKeyAndScale();
+        Assert.Equal("B", key);
+        Assert.Equal("Natural Minor", scale);
+
+        var note = new GeneratedNote
+        {
+            MidiNumber = 69,
+            Letter = 'A',
+            Octave = 4,
+            SpelledName = "A4",
+            Accidental = Accidental.None,
+        };
+
+        var (midi, name) = NoteSessionService.ResolveTargetPitch(note, key, scale);
+        Assert.Equal(69, midi);
+        Assert.Equal("A4", name);
+    }
+
+    [Fact]
+    public void ResolveTargetPitch_BMajor_StillSharpensASoTheTestGuardsTheKeyDifference()
+    {
+        var note = new GeneratedNote
+        {
+            MidiNumber = 69,
+            Letter = 'A',
+            Octave = 4,
+            SpelledName = "A4",
+            Accidental = Accidental.None,
+        };
+
+        var (midi, name) = NoteSessionService.ResolveTargetPitch(note, "B", "Major");
+        Assert.Equal(70, midi);
+        Assert.Equal("A#4", name);
+    }
 }

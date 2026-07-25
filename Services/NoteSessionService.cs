@@ -411,7 +411,7 @@ namespace musicmate.Services
                 }
             }
         }
-        private string _instrument = SessionPreferences.Get(PrefInstrumentKey, "Bb");
+        private string _instrument = SessionPreferences.Get(PrefInstrumentKey, "bb-clarinet");
         private string _key = SessionPreferences.Get(PrefKeySignatureKey, "C");
         private string? _keyBeforePracticeTune;
         private string _selectedScale = SessionPreferences.Get(PrefSelectedScaleKey, "Major");
@@ -1516,6 +1516,11 @@ namespace musicmate.Services
         /// Practice tunes use their authored key, not the By Level session key.
         /// Arpeggios use Major so leftover SelectedScale (e.g. Natural Minor) does not
         /// remap the written key through relative-major rules (D + Natural Minor → F).
+        ///
+        /// Uses <see cref="EffectiveScale"/> — the scale the notes were generated from and
+        /// the one the staff draws its key signature from. SelectedScale can lag behind it
+        /// (By Level / Random picks only the effective scale), which previously expected
+        /// e.g. A#4 in B Major while the staff showed B Natural Minor's two sharps.
         /// </summary>
         public (string Key, string Scale) GetNotationKeyAndScale()
         {
@@ -1525,7 +1530,7 @@ namespace musicmate.Services
                 return ResolvePracticeTuneNotation(CurrentTune);
             if (Tune == "Arpeggio")
                 return (Key, "Major");
-            return (Key, SelectedScale);
+            return (Key, EffectiveScale);
         }
 
         private string GetScaleSelectionModeLogLabel()
@@ -2007,13 +2012,21 @@ namespace musicmate.Services
         /// </summary>
         private bool _requirePostSilenceAttack;
         private DateTime? _silenceSinceUtc;
+        /// <summary>
+        /// Same-pitch silence is accumulating because pitch detection dropped (freq==0)
+        /// while loudness may still be above threshold (typical clarinet/voice tonguing).
+        /// While set, <see cref="ObserveLoudness"/> must not clear the silence clock.
+        /// After the debounce arms <see cref="_requirePostSilenceAttack"/>, the next
+        /// non-zero pitch completes the re-trigger via <see cref="NotifyPitchResumed"/>.
+        /// </summary>
+        private bool _samePitchSilenceFromPitchStop;
         private float _awaitingRmsTrough = float.MaxValue;
         private float _awaitingRmsAtStart;
         private const float NoteOnAttackRiseFactor = 1.8f;
         private const float NoteOnAttackMinAbsoluteRise = 0.012f;
         private const float NoteOnAttackDipFraction = 0.55f;
         private const float NoteOnAttackMinDip = 0.015f;
-        public const int DefaultSamePitchSilenceMs = 100;
+        public const int DefaultSamePitchSilenceMs = 40;
         private int _samePitchSilenceMs = DefaultSamePitchSilenceMs;
         /// <summary>
         /// Continuous below-threshold time required before a repeated same pitch may unlock.
@@ -2025,6 +2038,14 @@ namespace musicmate.Services
         }
         /// <summary>True when the next displayed note still needs a new note-on before it can match.</summary>
         public bool IsAwaitingNoteOn => _awaitingNoteOn || _requirePostSilenceAttack;
+
+        /// <summary>
+        /// True when the next note is the same pitch class as the one just accepted and still
+        /// needs silence (or pitch dropout) plus a fresh attack before it can match.
+        /// </summary>
+        public bool IsAwaitingSamePitchRetrigger =>
+            _awaitingSamePitchRetrigger || (_requirePostSilenceAttack && _lockedPitchClassAfterAdvance.HasValue);
+
         // Sustain/rest earliest-start gate (uses MusicBpm as written tempo)
         private bool _rhythmStartGateEnabled;
         private int _rhythmGateMusicBpm;
@@ -2782,15 +2803,8 @@ namespace musicmate.Services
                 return true;
             }
 
-            // Update feedback for incorrect attempt: only increment wrong, do not update cents
-            curFeedback = (Wrong: curFeedback.Wrong + 1, Cents: curFeedback.Cents);
-            NoteFeedbacks[idx] = curFeedback;
-            FeedbackViewModels[idx] = new FeedbackItem(idx, curFeedback.Wrong, curFeedback.Cents, false);
-            RecordAttemptOutcome(BuildNoteOutcome(
-                targetNote, heardNote, result.cents,
-                pitchCorrect: false, timingCorrect: true, reason: "WrongPitch",
-                actualMs: GetSessionElapsedMs()));
-            return true;
+            // Right pitch class but outside cents tolerance: keep waiting — do not score WrongPitch.
+            return false;
         }
         private async Task<string[]> BuildRandomSequenceAsync()
         {
@@ -3118,16 +3132,23 @@ namespace musicmate.Services
         }
         private void BeginAwaitingNoteOn()
         {
-            _awaitingNoteOn = true;
             _requirePostSilenceAttack = false;
             _awaitingRmsTrough = float.MaxValue;
             _awaitingRmsAtStart = 0;
             _silenceSinceUtc = null;
-            _awaitingSamePitchRetrigger =
+            _samePitchSilenceFromPitchStop = false;
+
+            // Only repeated same pitch-class notes need a fresh articulation.
+            // Different next pitches are already protected by _lockedPitchClassAfterAdvance
+            // (residual previous pitch is ignored until the heard class changes).
+            bool samePitchNext =
                 CurrentNoteIndex < NotesToDraw.Count
                 && _lockedPitchClassAfterAdvance.HasValue
                 && Mod12(ResolveWrittenEvaluationMidi(NotesToDraw[CurrentNoteIndex]))
                    == _lockedPitchClassAfterAdvance.Value;
+
+            _awaitingSamePitchRetrigger = samePitchNext;
+            _awaitingNoteOn = samePitchNext;
         }
         private void ClearNoteOnWait()
         {
@@ -3137,6 +3158,7 @@ namespace musicmate.Services
             _awaitingRmsTrough = float.MaxValue;
             _awaitingRmsAtStart = 0;
             _silenceSinceUtc = null;
+            _samePitchSilenceFromPitchStop = false;
             // Keep _lockedPitchClassAfterAdvance so residual previous pitch is ignored
             // (not scored WrongPitch) until the detected pitch class changes.
         }
@@ -3168,7 +3190,12 @@ namespace musicmate.Services
         /// Unlocks the next displayed note (same-pitch repeats need sustained silence + attack).
         /// </summary>
         public void NotifySilence()
-            => TryClearNoteOnWaitFromSilence(DateTime.UtcNow);
+        {
+            // True below-threshold silence: require an amplitude onset afterward,
+            // not merely pitch returning after a detector dropout.
+            _samePitchSilenceFromPitchStop = false;
+            TryClearNoteOnWaitFromSilence(DateTime.UtcNow);
+        }
         /// <summary>
         /// Test helper: advance the same-pitch silence debounce as if
         /// <paramref name="silenceMs"/> of continuous silence had elapsed.
@@ -3181,14 +3208,33 @@ namespace musicmate.Services
         }
         /// <summary>
         /// Called when pitch detection loses the tone (freq == 0). For different-pitch
-        /// targets this unlocks immediately; for same-pitch repeats it counts toward silence.
+        /// targets this unlocks immediately; for same-pitch repeats it counts toward silence
+        /// even when RMS stays loud (tonguing).
         /// </summary>
         public void NotifyPitchStopped()
         {
             if (_awaitingSamePitchRetrigger)
+            {
+                _samePitchSilenceFromPitchStop = true;
                 TryClearNoteOnWaitFromSilence(DateTime.UtcNow);
+            }
             else if (_awaitingNoteOn)
+            {
                 ClearNoteOnWait();
+            }
+        }
+        /// <summary>
+        /// Called when pitch detection returns a tone after <see cref="NotifyPitchStopped"/>.
+        /// Completes same-pitch re-trigger when silence was armed via pitch dropout
+        /// (RMS never dipped, so <see cref="NotifyNoteAttack"/> would not fire from onset).
+        /// </summary>
+        public void NotifyPitchResumed()
+        {
+            if (!_requirePostSilenceAttack || !_samePitchSilenceFromPitchStop)
+                return;
+
+            _samePitchSilenceFromPitchStop = false;
+            NotifyNoteAttack();
         }
         /// <summary>
         /// Called on a clear new onset (sound after silence, or amplitude attack for
@@ -3200,6 +3246,7 @@ namespace musicmate.Services
             {
                 _requirePostSilenceAttack = false;
                 _awaitingSamePitchRetrigger = false;
+                _samePitchSilenceFromPitchStop = false;
                 return;
             }
 
@@ -3225,11 +3272,17 @@ namespace musicmate.Services
 
             if (rms < RmsThreshold)
             {
+                // Real quiet: pitch-dropout path no longer applies; need amplitude onset.
+                _samePitchSilenceFromPitchStop = false;
                 TryClearNoteOnWaitFromSilence(DateTime.UtcNow);
                 return;
             }
 
-            _silenceSinceUtc = null;
+            // Loud: cancel RMS silence debounce — unless pitch-stop silence is in progress.
+            // Clarinet tonguing often keeps RMS above threshold while freq drops to 0;
+            // ObserveLoudness must not wipe that clock every audio block.
+            if (!_samePitchSilenceFromPitchStop)
+                _silenceSinceUtc = null;
 
             // Same-pitch repeats: ignore amplitude wobble; wait for silence + new onset.
             if (_awaitingSamePitchRetrigger || _requirePostSilenceAttack)

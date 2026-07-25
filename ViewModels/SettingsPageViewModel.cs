@@ -17,12 +17,13 @@ namespace musicmate.ViewModels
                 var opts = NoteSessionService.InstrumentOptions;
                 if (opts != null && opts.Length > 0)
                 {
-                    var preferC = opts.FirstOrDefault(i => i == "Concert Pitch");
-                    if (!string.IsNullOrEmpty(preferC))
-                        return preferC;
+                    var preferBbClarinet = opts.FirstOrDefault(i =>
+                        i.Equals("Bb Clarinet", StringComparison.OrdinalIgnoreCase));
+                    if (!string.IsNullOrEmpty(preferBbClarinet))
+                        return preferBbClarinet;
                     return opts[0];
                 }
-                return "C";
+                return "bb-clarinet";
             }
         }
         public const string DefaultKey = "C";
