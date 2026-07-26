@@ -123,6 +123,9 @@ namespace musicmate.Drawables
         private StaffHeaderMetrics _headerMetrics;
 
         private const float AccidentalRightGap = 0.5f;
+        /// <summary>Extra clear ink before a note that draws a body accidental (e.g. A → B♭).</summary>
+        private const float AccidentalLeadingInkPad = 4f;
+        private const float FlatAccidentalExtraInkPad = 2f;
         private const float DoubleBarExtraWidth = 4f;
 
         // Notehead ellipse is drawn with height = NoteHeadR * NoteHeadHeightFactor.
@@ -248,6 +251,7 @@ namespace musicmate.Drawables
         private float NoteCenterLeftReach(bool isRest, bool hasAcc, bool isFlatAcc, bool isNaturalAcc = false)
             => hasAcc
                 ? _layout.NoteHeadR + BodyAccidentalRightGapPxFor(isNaturalAcc) + BodyAccidentalDrawWidth(isFlatAcc, isNaturalAcc)
+                  + AccidentalLeadingInkPad + (isFlatAcc ? FlatAccidentalExtraInkPad : 0f)
                 : NoteHalfWidth(isRest);
 
         /// <summary>Distance from note center to its right drawable edge.</summary>

@@ -4494,8 +4494,17 @@ namespace musicmate.Services
                 return (NoteNameToMidi(spelled), spelled);
             }
 
-            var name = ResolveWrittenNoteName(raw, note.MidiNumber, letter, octave, key, scale);
-            return (NoteNameToMidi(name), name);
+            // Staff letter without a body accidental and not altered by the key signature
+            // is natural (e.g. A on the A line in F major), even if generation stored a
+            // chromatic MIDI from the pitch pool.
+            if (note.Accidental is Accidental.Sharp or Accidental.Flat
+                or Accidental.DoubleSharp or Accidental.DoubleFlat)
+            {
+                var chromaticName = SpellNote(letter, note.MidiNumber);
+                return (note.MidiNumber, chromaticName);
+            }
+
+            return (naturalMidi, raw);
         }
 
         /// <summary>
@@ -4516,6 +4525,9 @@ namespace musicmate.Services
                 return ApplyKeySignatureToSpelledName(raw, key, scale);
 
             if (midi == naturalMidi)
+                return raw;
+
+            if (keySigMidi == naturalMidi)
                 return raw;
 
             return SpellNote(letter, midi);

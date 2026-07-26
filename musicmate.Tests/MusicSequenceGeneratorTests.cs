@@ -99,6 +99,69 @@ public class MusicSequenceGeneratorTests
         Assert.NotEqual(firstFour, nextFour);
     }
 
+    [Fact]
+    public void MotifContourReuse_ReRollsAccidentalsPerPhraseInsteadOfCopyingChromaticPattern()
+    {
+        // Phrase A′ and A-return reuse rhythm + diatonic contour, but each slot should
+        // get its own accidental roll — not inherit A's chromatic spellings measure-for-measure.
+        int identicalPatterns = 0;
+        const int trials = 40;
+
+        for (int seed = 0; seed < trials; seed++)
+        {
+            var gen = CreateRandomGenerator(seed, new HashSet<int>(), maxIntervalSemitones: 4);
+            gen.Key = "G";
+            gen.Scale = "Major";
+            gen.LowestNote = "C4";
+            gen.HighestNote = "E5";
+            gen.AccidentalPercent = 50;
+            gen.MeasureCount = 8;
+
+            var measures = gen.GenerateSequence();
+            var phraseA = ChromaticPatternForPhrase(measures, phraseIndex: 0);
+            var phraseAprime = ChromaticPatternForPhrase(measures, phraseIndex: 1);
+
+            if (phraseA.Count > 0
+                && phraseA.Count == phraseAprime.Count
+                && phraseA.SequenceEqual(phraseAprime))
+            {
+                identicalPatterns++;
+            }
+        }
+
+        Assert.True(
+            identicalPatterns < trials - 2,
+            $"Expected independent per-phrase accidental rolls, but {identicalPatterns}/{trials} A/A′ chromatic patterns matched exactly.");
+    }
+
+    [Fact]
+    public void MotifContourReuse_WithZeroAccidentals_UsesDiatonicOutlineOnly()
+    {
+        var gen = CreateRandomGenerator(1234, new HashSet<int>(), maxIntervalSemitones: 4);
+        gen.Key = "G";
+        gen.Scale = "Major";
+        gen.AccidentalPercent = 0;
+        gen.MeasureCount = 8;
+
+        var pitches = FlattenPitches(gen);
+        var scalePcs = NoteSessionService.GetScalePitchClasses("G", "Major");
+
+        Assert.All(pitches, midi =>
+            Assert.Contains(((midi % 12) + 12) % 12, scalePcs));
+    }
+
+    private static List<bool> ChromaticPatternForPhrase(List<Measure> measures, int phraseIndex)
+    {
+        int startMeasure = phraseIndex * 2;
+        var scalePcs = NoteSessionService.GetScalePitchClasses("G", "Major");
+        return MusicSequenceGenerator.Flatten(measures)
+            .Where(n => !n.IsRest
+                        && n.MeasureIndex >= startMeasure
+                        && n.MeasureIndex < startMeasure + 2)
+            .Select(n => !scalePcs.Contains(((n.MidiNumber % 12) + 12) % 12))
+            .ToList();
+    }
+
     private static List<int> FlattenPitches(MusicSequenceGenerator gen)
         => MusicSequenceGenerator.Flatten(gen.GenerateSequence())
             .Where(n => !n.IsRest)

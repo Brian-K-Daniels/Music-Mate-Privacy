@@ -194,18 +194,22 @@ namespace musicmate.Services
             public int FirstPitchMidi { get; init; }
             public List<int> SemitoneDeltas { get; init; } = new();
 
-            public static PhraseContour FromPitches(IReadOnlyList<int> pitches)
+            /// <summary>
+            /// Builds a diatonic-only outline so A′ / A-return reuse remaps intervals
+            /// without freezing chromatic alterations from the opening phrase.
+            /// </summary>
+            public static PhraseContour FromDiatonicPitches(IReadOnlyList<int> diatonicPitches)
             {
-                if (pitches.Count == 0)
+                if (diatonicPitches.Count == 0)
                     return new PhraseContour();
 
-                var deltas = new List<int>(Math.Max(0, pitches.Count - 1));
-                for (int i = 1; i < pitches.Count; i++)
-                    deltas.Add(pitches[i] - pitches[i - 1]);
+                var deltas = new List<int>(Math.Max(0, diatonicPitches.Count - 1));
+                for (int i = 1; i < diatonicPitches.Count; i++)
+                    deltas.Add(diatonicPitches[i] - diatonicPitches[i - 1]);
 
                 return new PhraseContour
                 {
-                    FirstPitchMidi = pitches[0],
+                    FirstPitchMidi = diatonicPitches[0],
                     SemitoneDeltas = deltas,
                 };
             }
@@ -605,6 +609,7 @@ namespace musicmate.Services
                         int deltaIdx = pitchedMidis.Count - 1;
                         int target = pitchedMidis[^1] + contourToReuse!.SemitoneDeltas[deltaIdx];
                         pitch = SnapPitchToPool(rng, pool, target, prevPitch, phraseEnding: false);
+                        pitch = ResolveSlotAccidental(rng, pitch, pool, prevPitch);
                     }
 
                     var note = BuildNote(pitch, slot.Duration, absoluteMi,
@@ -625,7 +630,10 @@ namespace musicmate.Services
             if (canReuse || pitchedMidis.Count == 0)
                 return null;
 
-            return PhraseContour.FromPitches(pitchedMidis);
+            var diatonicOutline = pitchedMidis
+                .Select(m => NormalizeToDiatonicInPool(m, pool))
+                .ToList();
+            return PhraseContour.FromDiatonicPitches(diatonicOutline);
         }
 
         /// <summary>Picks a starting note for a transposed contour repeat.</summary>
@@ -640,11 +648,16 @@ namespace musicmate.Services
             foreach (int off in offsets.OrderBy(_ => rng.Next()))
             {
                 int candidate = SnapPitchToPool(rng, pool, baseStart + off, prevMidi, phraseEnding: false);
+                candidate = ResolveSlotAccidental(rng, candidate, pool, prevMidi);
                 if (candidate != baseStart || preferPracticeStart)
                     return candidate;
             }
 
-            return SnapPitchToPool(rng, pool, baseStart, prevMidi, phraseEnding: false);
+            return ResolveSlotAccidental(
+                rng,
+                SnapPitchToPool(rng, pool, baseStart, prevMidi, phraseEnding: false),
+                pool,
+                prevMidi);
         }
 
         /// <summary>Nearest pool pitch to target, honouring interval cap and pitch-class variety.</summary>
@@ -667,6 +680,75 @@ namespace musicmate.Services
                 return ordered[0];
 
             return PickFallbackPitch(rng, pool, prevMidi, targetMidi);
+        }
+
+        private bool IsScalePitch(int midi)
+        {
+            var scalePcs = NoteSessionService.GetScalePitchClasses(Key, Scale);
+            return scalePcs.Contains(((midi % 12) + 12) % 12);
+        }
+
+        /// <summary>Maps a pitch to the nearest diatonic pool member (same letter preferred).</summary>
+        private int NormalizeToDiatonicInPool(int midi, List<int> pool)
+        {
+            if (IsScalePitch(midi))
+                return midi;
+
+            var diatonicInPool = pool.Where(IsScalePitch).Distinct().ToList();
+            if (diatonicInPool.Count == 0)
+                return midi;
+
+            char letter = char.ToUpperInvariant(NoteSessionService.SpellWrittenPitch(midi, Key, Scale)[0]);
+            var sameLetter = diatonicInPool
+                .Where(m => char.ToUpperInvariant(NoteSessionService.SpellWrittenPitch(m, Key, Scale)[0]) == letter)
+                .OrderBy(m => Math.Abs(m - midi))
+                .ToList();
+            if (sameLetter.Count > 0)
+                return sameLetter[0];
+
+            return diatonicInPool.OrderBy(m => Math.Abs(m - midi)).First();
+        }
+
+        /// <summary>
+        /// Independent per-slot accidental roll for remapped motif phrases.
+        /// Free <see cref="PickPitch"/> already uses pool weighting; only call this on contour reuse.
+        /// </summary>
+        private int ResolveSlotAccidental(Random rng, int midi, List<int> pool, int prevMidi)
+        {
+            if (AccidentalPercent <= 0 || UseScaleOrder)
+                return NormalizeToDiatonicInPool(midi, pool);
+
+            int diatonic = NormalizeToDiatonicInPool(midi, pool);
+            if (rng.Next(100) >= AccidentalPercent)
+                return diatonic;
+
+            return ApplyChromaticAccidental(rng, diatonic, pool, prevMidi);
+        }
+
+        private int ApplyChromaticAccidental(Random rng, int diatonicMidi, List<int> pool, int prevMidi)
+        {
+            char letter = char.ToUpperInvariant(
+                NoteSessionService.SpellWrittenPitch(diatonicMidi, Key, Scale)[0]);
+
+            var candidates = pool
+                .Where(m => !IsScalePitch(m))
+                .Where(m => prevMidi < 0 || m % 12 != prevMidi % 12)
+                .Where(m => MaxMelodicIntervalSemitones <= 0
+                              || prevMidi < 0
+                              || Math.Abs(m - prevMidi) <= MaxMelodicIntervalSemitones)
+                .OrderBy(m => Math.Abs(m - diatonicMidi))
+                .ToList();
+
+            if (candidates.Count == 0)
+                return diatonicMidi;
+
+            var sameLetter = candidates
+                .Where(m => char.ToUpperInvariant(
+                    NoteSessionService.SpellWrittenPitch(m, Key, Scale, prevMidi)[0]) == letter)
+                .ToList();
+
+            var pickFrom = sameLetter.Count > 0 ? sameLetter : candidates;
+            return pickFrom[rng.Next(pickFrom.Count)];
         }
 
         /// <summary>
@@ -1451,7 +1533,6 @@ namespace musicmate.Services
         private GeneratedNote BuildNote(int midi, NoteDuration dur, int measureIndex, double beatPos, int globalIndex, int prevMidi = -1)
         {
             string spelledName = NoteSessionService.SpellWrittenPitch(midi, Key, Scale, prevMidi);
-            double freq = MidiToFreq(midi);
 
             // Parse letter, accidental, octave from the spelled name.
             char letter = char.ToUpperInvariant(spelledName[0]);
@@ -1461,14 +1542,24 @@ namespace musicmate.Services
                 spelledName, midi, letter, octave, Key, Scale);
             spelledName = finalSpelledName;
 
+            int writtenMidi = midi;
+            if (accidental == Accidental.None)
+            {
+                int naturalMidi = NoteSessionService.NoteNameToMidi($"{letter}{octave}");
+                int keySigMidi = NoteSessionService.ApplyKeySignatureToMidi(
+                    spelledName, naturalMidi, Key, Scale);
+                if (keySigMidi == naturalMidi && midi != naturalMidi)
+                    writtenMidi = naturalMidi;
+            }
+
             return new GeneratedNote
             {
-                MidiNumber = midi,
+                MidiNumber = writtenMidi,
                 Letter = letter,
                 Octave = octave,
                 Accidental = accidental,
                 SpelledName = spelledName,
-                TargetFrequency = freq,
+                TargetFrequency = MidiToFreq(writtenMidi),
                 Duration = dur,
                 IsRest = false,
                 MeasureIndex = measureIndex,

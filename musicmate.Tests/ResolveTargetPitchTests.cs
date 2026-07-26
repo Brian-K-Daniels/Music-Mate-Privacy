@@ -117,6 +117,24 @@ public class ResolveTargetPitchTests
     }
 
     [Fact]
+    public void NaturalLetterInFlatKey_IgnoresStaleChromaticMidiFromPitchPool()
+    {
+        var note = new GeneratedNote
+        {
+            MidiNumber = 68,
+            Letter = 'A',
+            Octave = 4,
+            SpelledName = "A4",
+            Accidental = Accidental.None,
+        };
+
+        var (midi, name) = NoteSessionService.ResolveTargetPitch(note, "F", "Major");
+
+        Assert.Equal(69, midi);
+        Assert.Equal("A4", name);
+    }
+
+    [Fact]
     public void ResolveTargetPitch_BMajor_StillSharpensASoTheTestGuardsTheKeyDifference()
     {
         var note = new GeneratedNote
