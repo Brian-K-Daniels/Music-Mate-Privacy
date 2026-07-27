@@ -3,6 +3,7 @@ using Microsoft.Maui.Graphics;
 using System.Collections.ObjectModel;
 using Microsoft.Maui.Storage;
 using System.Linq;
+using musicmate.Models;
 using musicmate.Services;
 
 namespace musicmate.ViewModels
@@ -495,13 +496,14 @@ namespace musicmate.ViewModels
 
         // ── Rhythm Settings ─────────────────────────────────────────────────────
 
-        public List<string> MeterTimeSignatureOptions { get; } = new() { "4/4", "3/4", "2/4" };
+        public List<string> MeterTimeSignatureOptions { get; } =
+            new(TimeSignature.CommonDisplayOptions);
         public List<string> SmallestRhythmNoteOptions { get; } = new() { "Quarter", "Eighth", "Sixteenth" };
         public List<string> RhythmModeOptions { get; } = new() { "Simple", "Mixed" };
         public List<string> SyncopationSettingOptions { get; } = new() { "None", "Simple", "Full" };
         public List<string> NoteNameDisplayOptions { get; } = new() { "Current only", "All notes", "Off" };
 
-        public List<double> AboutFontSizeOptions { get; } = new() { 6, 8, 10, 12, 14 };
+        public List<double> AboutFontSizeOptions { get; } = new() { 6, 8, 10, 12, 14, 16, 18 };
 
         private double _aboutFontSize = SessionPreferences.Get(AboutPageViewModel.FontSizePreferenceKey, 12.0);
         public double AboutFontSize

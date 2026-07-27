@@ -852,12 +852,7 @@ namespace musicmate.Pages
         private MusicSequenceGenerator BuildSequenceGenerator(int measureCount, int startPrevPitch = -1, int seedSalt = 0)
         {
             // Translate persisted string settings to model types.
-            var timeSig = _session.MeterTimeSignature switch
-            {
-                "3/4" => TimeSignature.ThreeFour,
-                "2/4" => TimeSignature.TwoFour,
-                _ => TimeSignature.FourFour
-            };
+            var timeSig = TimeSignature.FromDisplayString(_session.MeterTimeSignature);
 
             // Selected-scale practice (Major, etc. from What to Play) is a straight
             // quarter-note scale walk — no rests, halves, or mixed rhythm.
@@ -1433,12 +1428,6 @@ namespace musicmate.Pages
                         // Build a combined generator sized to hold the full ascending+descending
                         // scale walk.  The walk length for N pitch-pool notes is (2N − 2) events
                         // so use enough measures to hold it all at the smallest allowed duration.
-                        var timeSig = _session.MeterTimeSignature switch
-                        {
-                            "3/4" => TimeSignature.ThreeFour,
-                            "2/4" => TimeSignature.TwoFour,
-                            _ => TimeSignature.FourFour
-                        };
                         // A safe upper bound: even a chromatic 3-octave range (37 pitches) needs
                         // at most (2*37−2)=72 quarter notes = 18 bars of 4/4.  Cap at 24 to be safe.
                         var genAll = BuildSequenceGenerator(24);

@@ -18,7 +18,7 @@ namespace musicmate.ViewModels
 
         public AboutPageViewModel(ThemeService theme)
         {
-            FontSizeOptions = new ObservableCollection<double> { 6, 8, 10, 12, 14 };
+            FontSizeOptions = new ObservableCollection<double> { 6, 8, 10, 12, 14, 16, 18 };
             // Default selection from preferences or fallback to 12
             var defaultSize = FontSizeOptions[3];
             var saved = Preferences.Get(AboutFontSizeKey, defaultSize);
@@ -150,6 +150,14 @@ namespace musicmate.ViewModels
             System.Diagnostics.Debug.WriteLine($"BuyPremiumAsync called. StoreService={_storeService?.GetType().Name}");
             if (_storeService != null)
             {
+                // Restore first — USB Release builds often already own Premium in Play.
+                var alreadyOwned = await _storeService.CheckPremiumStatusAsync();
+                if (alreadyOwned)
+                {
+                    MainThread.BeginInvokeOnMainThread(() => IsPremium = true);
+                    return;
+                }
+
                 var ok = await _storeService.PurchaseAsync(PremiumProduct.Id);
                 System.Diagnostics.Debug.WriteLine($"PurchaseAsync returned: {ok}");
                 if (ok)

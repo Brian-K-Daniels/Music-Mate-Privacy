@@ -45,17 +45,27 @@ namespace musicmate.Pages
         private async void                      OnAccidentalPercentDragCompleted(object? sender, EventArgs e)
         {
             if (_premiumDialogOpen) return;
+
+            await CheckPremiumStatusAsync();
             if (StatusService.Instance.IsPremiumUser) return;
             if (_viewModel.AccidentalPercent <= 0) return;
 
             _premiumDialogOpen = true;
 
-            await PremiumPromptHelper.ShowAsync(this, onDecline: () =>
+            var ownedOrPurchased = await PremiumPromptHelper.ShowAsync(this, onDecline: () =>
             {
                 _viewModel.AccidentalPercent = 0;
                 if (sender is Slider slider)
                     slider.Value = 0;
             });
+
+            // If Play reported already-owned during the prompt, keep the accidental %.
+            if (!ownedOrPurchased && !StatusService.Instance.IsPremiumUser)
+            {
+                _viewModel.AccidentalPercent = 0;
+                if (sender is Slider slider)
+                    slider.Value = 0;
+            }
 
             _premiumDialogOpen = false;
         }

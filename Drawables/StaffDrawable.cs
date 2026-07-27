@@ -3195,6 +3195,35 @@ namespace musicmate.Drawables
             }
         }
 
+        /// <summary>
+        /// Width reserved/drawn for the time-signature numerals.
+        /// Two-digit meters (e.g. 12/8) need more than a single-digit slot; a too-narrow
+        /// DrawString box wraps and stacks digits on the same center X.
+        /// </summary>
+        private float TimeSignatureBoxWidth(string? timeSigDisplay = null)
+        {
+            timeSigDisplay ??= _session.GetDisplayTimeSignature();
+            var parts = (timeSigDisplay ?? "4/4").Split('/');
+            int maxDigits = 1;
+            foreach (var part in parts)
+            {
+                int digits = 0;
+                foreach (char ch in part.Trim())
+                {
+                    if (char.IsDigit(ch))
+                        digits++;
+                }
+                if (digits > maxDigits)
+                    maxDigits = digits;
+            }
+
+            float tsFontSize = Math.Max(10f, _layout.Sls * 1.83f);
+            float singleDigit = Math.Max(24f, tsFontSize * 1.1f);
+            return maxDigits <= 1
+                ? singleDigit
+                : Math.Max(singleDigit * maxDigits * 0.85f, tsFontSize * maxDigits * 0.72f);
+        }
+
         /// <summary>Quarter-note = MusicBpm marking above the upper staff; "=" centered over the time signature.</summary>
         private void DrawMusicBpmMarking(ICanvas canvas, Color ink, float staffTop)
         {
@@ -3203,7 +3232,7 @@ namespace musicmate.Drawables
 
             int bpm = Math.Clamp(_session.Tempo, NoteSessionService.MinTempo, NoteSessionService.MaxTempo);
             float fontSize = Math.Max(10f, _layout.Sls * 1.6f);
-            const float timeSigW = 24f;
+            float timeSigW = TimeSignatureBoxWidth();
             float timeSigCenterX = _headerMetrics.TimeSigX + timeSigW * 0.5f;
 
             string bpmText = bpm.ToString();
@@ -3975,7 +4004,7 @@ namespace musicmate.Drawables
         private StaffHeaderMetrics ComputeHeaderMetrics(float safeLeft)
         {
             const float clefPad = 2f;
-            const float timeSigW = 24f;
+            float timeSigW = TimeSignatureBoxWidth();
 
             float clefWidth = _layout.Sls * 4.5f;
             float clefOnlyRightRel = clefPad + clefWidth;
@@ -4602,7 +4631,7 @@ namespace musicmate.Drawables
                 if (parts.Length != 2) return;
 
                 float tsX = keySigEndX;
-                float boxW = 24f;
+                float boxW = TimeSignatureBoxWidth(timeSig);
 
                 float tsFontSize = Math.Max(10f, _layout.Sls * 1.83f);  // 22 at sls=12
                 canvas.FontColor = ink;
@@ -4610,11 +4639,14 @@ namespace musicmate.Drawables
                 canvas.Font = Microsoft.Maui.Graphics.Font.DefaultBold;
 
                 float halfH = _layout.Sls * 2f;
+                // One line of text only — height must not invite wrapping of multi-digit meters.
                 float topY = staffTop + (halfH - tsFontSize) * 0.5f;
                 float bottomY = staffMid + (halfH - tsFontSize) * 0.5f;
 
-                canvas.DrawString(parts[0], tsX, topY, boxW, tsFontSize, HorizontalAlignment.Center, VerticalAlignment.Top);
-                canvas.DrawString(parts[1], tsX, bottomY, boxW, tsFontSize, HorizontalAlignment.Center, VerticalAlignment.Top);
+                canvas.DrawString(parts[0], tsX, topY, boxW, tsFontSize,
+                    HorizontalAlignment.Center, VerticalAlignment.Center);
+                canvas.DrawString(parts[1], tsX, bottomY, boxW, tsFontSize,
+                    HorizontalAlignment.Center, VerticalAlignment.Center);
                 canvas.Font = Microsoft.Maui.Graphics.Font.Default;
             }
             finally { canvas.RestoreState(); }

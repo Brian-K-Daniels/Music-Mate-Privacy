@@ -12,23 +12,7 @@ public static class ConductorBeatHelper
     public const double CompoundConductedBeatQuarterValue = 1.5;
 
     public static bool TryParseDisplayTimeSignature(string? display, out TimeSignature timeSignature)
-    {
-        timeSignature = TimeSignature.FourFour;
-        if (string.IsNullOrWhiteSpace(display))
-            return false;
-
-        var parts = display.Split('/');
-        if (parts.Length != 2
-            || !int.TryParse(parts[0].Trim(), out int beats)
-            || !int.TryParse(parts[1].Trim(), out int denominator))
-            return false;
-
-        if (!TryDenominatorToBeatUnit(denominator, out var beatUnit))
-            return false;
-
-        timeSignature = new TimeSignature(beats, beatUnit);
-        return true;
-    }
+        => TimeSignature.TryParse(display, out timeSignature);
 
     public static bool IsCompoundConductedMeter(TimeSignature timeSignature)
         => timeSignature.BeatUnit == NoteDuration.Eighth
@@ -106,30 +90,5 @@ public static class ConductorBeatHelper
         float laneSpan = Math.Max(8f, laneRight - laneLeft);
         float frac = (float)Math.Clamp(beatOffsetInMeasure / measureBeatsInQuarters, 0.0, 1.0);
         return laneLeft + frac * laneSpan;
-    }
-
-    private static bool TryDenominatorToBeatUnit(int denominator, out NoteDuration beatUnit)
-    {
-        beatUnit = NoteDuration.Quarter;
-        switch (denominator)
-        {
-            case 1:
-                beatUnit = NoteDuration.Whole;
-                return true;
-            case 2:
-                beatUnit = NoteDuration.Half;
-                return true;
-            case 4:
-                beatUnit = NoteDuration.Quarter;
-                return true;
-            case 8:
-                beatUnit = NoteDuration.Eighth;
-                return true;
-            case 16:
-                beatUnit = NoteDuration.Sixteenth;
-                return true;
-            default:
-                return false;
-        }
     }
 }

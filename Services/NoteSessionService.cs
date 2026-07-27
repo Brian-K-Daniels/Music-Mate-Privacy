@@ -129,7 +129,7 @@ namespace musicmate.Services
 
         /// <summary>
         /// Time signature for rhythm generation.
-        /// Persisted value is the display string: "4/4", "3/4", or "2/4".
+        /// Persisted value is the display string (e.g. "4/4", "3/4", "6/8").
         /// </summary>
         public string MeterTimeSignature
         {
@@ -152,14 +152,13 @@ namespace musicmate.Services
                 return CurrentTune.TimeSignature.ToString();
             return MeterTimeSignature ?? "4/4";
         }
-        /// <summary>Quarter-note beats per measure for layout validation.</summary>
+        /// <summary>Quarter-note beats per measure for layout validation and bar placement.</summary>
         public double GetDisplayMeasureBeats()
         {
             if (Tune == "Practice Tune" && CurrentTune != null)
                 return CurrentTune.TimeSignature.TotalBeats;
 
-            var parts = (MeterTimeSignature ?? "4/4").Split('/');
-            return parts.Length == 2 && int.TryParse(parts[0], out int beats) ? beats : 4.0;
+            return TimeSignature.FromDisplayString(MeterTimeSignature).TotalBeats;
         }
         /// <summary>
         /// Smallest note value allowed in rhythm generation.

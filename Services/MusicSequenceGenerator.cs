@@ -33,8 +33,8 @@ namespace musicmate.Services
 
         /// <summary>
         /// Time signature for generated measures.
-        /// Defaults to 4/4.  Supported presets: <see cref="TimeSignature.FourFour"/>,
-        /// <see cref="TimeSignature.ThreeFour"/>, <see cref="TimeSignature.TwoFour"/>.
+        /// Defaults to 4/4. Use <see cref="TimeSignature.FromDisplayString"/> for Settings values
+        /// (including compound meters such as 6/8).
         /// </summary>
         public TimeSignature TimeSignature { get; set; } = TimeSignature.FourFour;
 

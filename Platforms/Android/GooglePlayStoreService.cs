@@ -31,13 +31,11 @@ namespace musicmate.Platforms.Android
 
         public async Task<bool?> IsPurchasedAsync(string productId)
         {
-            // VS / adb sideloads must not auto-inherit Play ownership (license testers,
-            // prior purchases). Production Play Store installs still restore normally.
+            // Always ask Play Billing for the signed-in account's ownership.
+            // Installer package (Play Store vs USB/sideload) must not hide a real purchase —
+            // Release USB debugging still needs Premium when the account already owns it.
             if (!IsInstalledFromGooglePlay())
-            {
-                Log("IsPurchasedAsync: not installed from Play Store — returning false (no auto-restore).");
-                return false;
-            }
+                Log("IsPurchasedAsync: not installed from Play Store (USB/sideload) — still querying Billing.");
 
             string id = NormalizeProductId(productId);
             var result = await QueryCurrentPurchasesAsync(id);
@@ -48,6 +46,15 @@ namespace musicmate.Platforms.Android
         {
             await EnsureConnectedAsync();
             string id = NormalizeProductId(productId);
+
+            // Already owned (common when reinstalling or USB-deploying a Release build).
+            var existing = await QueryCurrentPurchasesAsync(id);
+            if (existing.Entitlement is true)
+            {
+                ApplyPremiumEntitlement(true);
+                Log("PurchaseAsync: already owned — granting Premium without billing flow.");
+                return true;
+            }
 
             var products = await QueryProductDetailsAsync(new[] { id });
             if (products.Count == 0)
@@ -97,13 +104,7 @@ namespace musicmate.Platforms.Android
         public async Task<bool> CheckPremiumStatusAsync()
         {
             if (!IsInstalledFromGooglePlay())
-            {
-                // Sideload: do not pull Play ownership into the session. Leave whatever
-                // Buy/Restore already set; App cold-start clears premium for a clean slate.
-                Log("CheckPremiumStatusAsync: sideload — leaving entitlement unchanged "
-                    + $"(IsPremiumUser={StatusService.Instance.IsPremiumUser}).");
-                return StatusService.Instance.IsPremiumUser;
-            }
+                Log("CheckPremiumStatusAsync: not installed from Play Store (USB/sideload) — still querying Billing.");
 
             var result = await QueryCurrentPurchasesAsync(PremiumProduct.Id);
             if (result.Entitlement is bool owned)
@@ -138,12 +139,35 @@ namespace musicmate.Platforms.Android
                     }
                 }
             }
+            else if (code == BillingResponseCode.ItemAlreadyOwned)
+            {
+                Log("OnPurchasesUpdated: ItemAlreadyOwned — restoring Premium from current purchases.");
+                _ = CompleteAlreadyOwnedPurchaseAsync();
+                return;
+            }
             else
             {
                 Log($"OnPurchasesUpdated: no Premium grant (responseCode={code}, "
                     + $"purchases={(purchases == null ? "null" : purchases.Count.ToString())}).");
             }
             _purchaseTcs?.TrySetResult(false);
+        }
+
+        private async Task CompleteAlreadyOwnedPurchaseAsync()
+        {
+            try
+            {
+                var result = await QueryCurrentPurchasesAsync(PremiumProduct.Id);
+                bool owned = result.Entitlement ?? true;
+                ApplyPremiumEntitlement(owned);
+                _purchaseTcs?.TrySetResult(owned);
+            }
+            catch (Exception ex)
+            {
+                Log($"CompleteAlreadyOwnedPurchaseAsync failed: {ex.Message} — granting Premium.");
+                ApplyPremiumEntitlement(true);
+                _purchaseTcs?.TrySetResult(true);
+            }
         }
 
         // ── private helpers ──────────────────────────────────────────────────
@@ -295,10 +319,17 @@ namespace musicmate.Platforms.Android
         {
             // Update StatusService first (setter may Remove the pref when false), then
             // write the authoritative value so a successful empty query persists false.
-            MainThread.BeginInvokeOnMainThread(() =>
-                StatusService.Instance.IsPremiumUser = owned);
-            Preferences.Set(PremiumProduct.PreferenceKey, owned);
-            Log($"ApplyPremiumEntitlement: IsPremium={owned}");
+            void Apply()
+            {
+                StatusService.Instance.IsPremiumUser = owned;
+                Preferences.Set(PremiumProduct.PreferenceKey, owned);
+                Log($"ApplyPremiumEntitlement: IsPremium={owned}");
+            }
+
+            if (MainThread.IsMainThread)
+                Apply();
+            else
+                MainThread.BeginInvokeOnMainThread(Apply);
         }
 
         private static void LogPurchaseQuery(

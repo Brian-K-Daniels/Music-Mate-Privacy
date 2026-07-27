@@ -3,10 +3,10 @@ using CommunityToolkit.Maui.Core;
 using musicmate.Services;
 using musicmate.ViewModels;
 using musicmate.Utilities;
+using System.ComponentModel;
 using System.Globalization;
 using System.Net;
 using System.Text;
-using System.Text.Json;
 using System.IO;
 using Microsoft.Maui.Storage;
 using Microsoft.Maui.ApplicationModel;
@@ -25,6 +25,7 @@ namespace musicmate.Pages
         private int _aboutMatchCount = 0;
         private int _aboutCurrentIndex = -1;
         private string _aboutSearchQuery = string.Empty;
+        private bool _aboutHtmlReady;
 
         // Track whether we've asked the app to pause listening while searching
         private bool _aboutPausedListening = false;
@@ -44,9 +45,11 @@ namespace musicmate.Pages
 
            
 
-            // Reload WebView when font size or theme changes
-            vm.PropertyChanged += async (_, __) => await LoadAboutHtmlAsync();
-            _themeService.PropertyChanged += async (_, __) => await LoadAboutHtmlAsync();
+            // Reload WebView only when appearance settings change — not on IsPremium, etc.
+            // Premium checks were wiping search highlights by reloading the whole document.
+            vm.PropertyChanged += OnAboutViewModelPropertyChanged;
+            _themeService.PropertyChanged += OnThemeServicePropertyChanged;
+            AboutWebView.Navigated += OnAboutWebViewNavigated;
 
             // Ensure Find Next button initial state
             var nextBtn = this.FindByName<Button>("AboutFindNextButton");
@@ -55,6 +58,39 @@ namespace musicmate.Pages
             var posLbl = this.FindByName<Label>("AboutFindPositionLabel");
             if (posLbl != null)
                 posLbl.Text = string.Empty;
+        }
+
+        private void OnAboutViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is null
+                or nameof(AboutPageViewModel.SelectedFontSize)
+                or nameof(AboutPageViewModel.PanelBackgroundColor)
+                or nameof(AboutPageViewModel.ContrastingTextColor))
+            {
+                _ = LoadAboutHtmlAsync();
+            }
+        }
+
+        private void OnThemeServicePropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is null
+                or nameof(ThemeService.PanelBackgroundColor)
+                or nameof(ThemeService.ContrastingTextColor))
+            {
+                _ = LoadAboutHtmlAsync();
+            }
+        }
+
+        private void OnAboutWebViewNavigated(object? sender, WebNavigatedEventArgs e)
+        {
+            _aboutHtmlReady = e.Result == WebNavigationResult.Success;
+
+            // Re-apply an active query after the document is (re)loaded.
+            if (_aboutHtmlReady && !string.IsNullOrEmpty(AboutSearchEntry?.Text))
+            {
+                var q = AboutSearchEntry.Text;
+                _ = SearchAboutPageAsync(q);
+            }
         }
 
         protected override void OnAppearing()
@@ -75,6 +111,11 @@ namespace musicmate.Pages
             _aboutSearchDebounceCts?.Dispose();
             _aboutSearchDebounceCts = null;
             _orientationService?.AllowAutorotate();
+
+            if (!string.IsNullOrEmpty(AboutSearchEntry.Text))  //  2026.07.27 1536  
+            {
+                AboutSearchEntry.Text = string.Empty;
+            }
             base.OnDisappearing();
         }
 
@@ -198,8 +239,13 @@ namespace musicmate.Pages
                 css += "h4 { font-size: 1.05em !important; font-weight: bold !important; font-style: normal !important; margin-top: 0.6em !important; margin-bottom: 0.2em !important; } ";
                 css += "h5 { font-size: 1.0em !important; font-weight: bold !important; font-style: italic !important; margin-top: 0.4em !important; margin-bottom: 0.1em !important; } ";
                 css += "h6 { font-size: 0.95em !important; font-weight: normal !important; font-style: italic !important; margin-top: 0.3em !important; margin-bottom: 0.1em !important; } ";
-                css += ".about-search-highlight { background: rgba(255,255,0,0.6) !important; color: inherit !important; padding: 0 0.05em !important; border-radius: 2px !important; } ";
+                css += ".about-search-highlight { background: rgba(255,230,0,0.75) !important; color: inherit !important; padding: 0 0.05em !important; border-radius: 2px !important; } ";
+                css += ".about-search-highlight.about-search-current { background: rgba(255,140,0,0.9) !important; outline: 2px solid #ff6600 !important; } ";
                 var styled = InjectCssIntoHtml(html, css);
+                _aboutHtmlReady = false;
+                _aboutMatchCount = 0;
+                _aboutCurrentIndex = -1;
+                UpdateAboutSearchControls();
                 web.Source = new HtmlWebViewSource { Html = styled };
 #if ANDROID
                 // Android accessibility font scale otherwise inflates WebView text far beyond the
@@ -225,7 +271,11 @@ namespace musicmate.Pages
                 try
                 {
                     if (web.Handler?.PlatformView is Android.Webkit.WebView native)
+                    {
+                        native.Settings.JavaScriptEnabled = true;
+                        native.Settings.DomStorageEnabled = true;
                         native.Settings.TextZoom = 100;
+                    }
                 }
                 catch
                 {
@@ -290,20 +340,20 @@ namespace musicmate.Pages
                 if (isNewQuery)
                 {
                     await SearchAboutPageAsync(query);
-
-                    if (_aboutMatchCount > 0)
-                        await ScrollToAboutMatchAsync(0);
                 }
                 else if (_aboutMatchCount > 0)
                 {
                     await MoveToNextAboutMatchAsync();
                 }
-
-                entry.Unfocus();
             }
             catch
             {
                 await ShowAboutSearchErrorAsync();
+            }
+            finally
+            {
+                // Close the soft keyboard / search IME after Search finishes its work.
+                HideAboutSearchKeyboard(entry);
             }
         }
 
@@ -317,6 +367,57 @@ namespace musicmate.Pages
             {
                 await ShowAboutSearchErrorAsync();
             }
+            finally
+            {
+                HideAboutSearchKeyboard(AboutSearchEntry);
+            }
+        }
+
+        /// <summary>
+        /// Dismisses the About search Entry focus and soft keyboard (Android IME).
+        /// </summary>
+        private static void HideAboutSearchKeyboard(Entry? entry)
+        {
+            try
+            {
+                entry?.Unfocus();
+            }
+            catch
+            {
+                // Best effort.
+            }
+
+#if ANDROID
+            try
+            {
+                var activity = Microsoft.Maui.ApplicationModel.Platform.CurrentActivity;
+                if (activity == null)
+                    return;
+
+                var imm = activity.GetSystemService(Android.Content.Context.InputMethodService)
+                    as Android.Views.InputMethods.InputMethodManager;
+                if (imm == null)
+                    return;
+
+                var token = activity.CurrentFocus?.WindowToken
+                    ?? entry?.Handler?.PlatformView switch
+                    {
+                        Android.Views.View v => v.WindowToken,
+                        _ => null
+                    };
+
+                if (token != null)
+                {
+                    imm.HideSoftInputFromWindow(
+                        token,
+                        Android.Views.InputMethods.HideSoftInputFlags.None);
+                }
+            }
+            catch
+            {
+                // Best effort only.
+            }
+#endif
         }
 
 
@@ -430,233 +531,175 @@ namespace musicmate.Pages
                 }
             }
 
-            /*
-             * JsonSerializer creates a safe JavaScript string literal,
-             * including the surrounding quotation marks.
-             */
-            var jsQuery = JsonSerializer.Serialize(query);
+            var jsQuery = ToJavaScriptStringLiteral(query);
 
+            // Android WebView often rejects TreeWalker filter *objects*; use null + manual skips.
+            // Always return a string so MAUI Android reliably delivers the result.
             var js = $@"(function(){{
         var q = {jsQuery};
 
-        /*
-         * Remove existing highlights while retaining their text.
-         */
-        var oldHighlights =
-            document.querySelectorAll('.about-search-highlight');
-
-        for (var i = oldHighlights.length - 1; i >= 0; i--) {{
-            var element = oldHighlights[i];
-            var parent = element.parentNode;
-
-            if (!parent)
-                continue;
-
-            while (element.firstChild)
-                parent.insertBefore(element.firstChild, element);
-
-            parent.removeChild(element);
-            parent.normalize();
+        function unwrapHighlights() {{
+            var oldHighlights = document.querySelectorAll('.about-search-highlight');
+            for (var i = oldHighlights.length - 1; i >= 0; i--) {{
+                var element = oldHighlights[i];
+                var parent = element.parentNode;
+                if (!parent) continue;
+                while (element.firstChild)
+                    parent.insertBefore(element.firstChild, element);
+                parent.removeChild(element);
+                parent.normalize();
+            }}
         }}
 
-        /*
-         * An empty query clears the search and returns to the top.
-         */
+        unwrapHighlights();
+
         if (!q) {{
             window.scrollTo(0, 0);
-            return 0;
+            return '0';
         }}
+
+        if (!document.body)
+            return '0';
 
         function escapeRegExp(value) {{
-            return value.replace(
-                /[.*+?^{{}}()|[\]\\]/g,
-                '\\$&'
-            );
+            return value.replace(/[.*+?^${{}}()|[\]\\]/g, '\\$&');
         }}
 
-        var expression =
-            new RegExp(escapeRegExp(q), 'gi');
-
+        var expression = new RegExp(escapeRegExp(q), 'gi');
         var count = 0;
 
         try {{
-            /*
-             * Search text nodes only. This avoids changing HTML
-             * tags, attributes, scripts or styles.
-             */
             var walker = document.createTreeWalker(
                 document.body,
                 NodeFilter.SHOW_TEXT,
-                {{
-                    acceptNode: function(node) {{
-                        var parent = node.parentNode;
-
-                        var tag = parent
-                            ? parent.nodeName.toUpperCase()
-                            : '';
-
-                        if (
-                            tag === 'SCRIPT' ||
-                            tag === 'STYLE' ||
-                            tag === 'NOSCRIPT'
-                        ) {{
-                            return NodeFilter.FILTER_REJECT;
-                        }}
-
-                        if (
-                            parent &&
-                            parent.classList &&
-                            parent.classList.contains(
-                                'about-search-highlight'
-                            )
-                        ) {{
-                            return NodeFilter.FILTER_REJECT;
-                        }}
-
-                        return NodeFilter.FILTER_ACCEPT;
-                    }}
-                }}
+                null
             );
 
-            /*
-             * Collect the text nodes before changing the document.
-             */
             var nodes = [];
             var node;
-
-            while ((node = walker.nextNode()))
+            while ((node = walker.nextNode())) {{
+                var parent = node.parentNode;
+                var tag = parent ? parent.nodeName.toUpperCase() : '';
+                if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT')
+                    continue;
+                if (parent && parent.classList && parent.classList.contains('about-search-highlight'))
+                    continue;
                 nodes.push(node);
+            }}
 
-            for (var nodeIndex = 0;
-                 nodeIndex < nodes.length;
-                 nodeIndex++) {{
-
+            for (var nodeIndex = 0; nodeIndex < nodes.length; nodeIndex++) {{
                 var textNode = nodes[nodeIndex];
-                var text = textNode.textContent;
-
+                var text = textNode.nodeValue || '';
                 expression.lastIndex = 0;
-
                 if (!expression.test(text))
                     continue;
 
                 expression.lastIndex = 0;
-
-                var fragment =
-                    document.createDocumentFragment();
-
+                var fragment = document.createDocumentFragment();
                 var previousIndex = 0;
                 var match;
 
                 while ((match = expression.exec(text)) !== null) {{
                     if (match.index > previousIndex) {{
-                        fragment.appendChild(
-                            document.createTextNode(
-                                text.slice(
-                                    previousIndex,
-                                    match.index
-                                )
-                            )
-                        );
+                        fragment.appendChild(document.createTextNode(
+                            text.slice(previousIndex, match.index)));
                     }}
 
-                    var span =
-                        document.createElement('span');
-
-                    span.className =
-                        'about-search-highlight';
-
-                    span.setAttribute(
-                        'data-about-index',
-                        String(count)
-                    );
-
+                    var span = document.createElement('span');
+                    span.className = 'about-search-highlight';
+                    span.setAttribute('data-about-index', String(count));
                     span.textContent = match[0];
-
                     fragment.appendChild(span);
-
                     count++;
-
-                    previousIndex =
-                        match.index + match[0].length;
-
-                    /*
-                     * Defensive protection against an accidental
-                     * zero-length regular-expression match.
-                     */
+                    previousIndex = match.index + match[0].length;
                     if (match[0].length === 0)
                         expression.lastIndex++;
                 }}
 
                 if (previousIndex < text.length) {{
-                    fragment.appendChild(
-                        document.createTextNode(
-                            text.slice(previousIndex)
-                        )
-                    );
+                    fragment.appendChild(document.createTextNode(
+                        text.slice(previousIndex)));
                 }}
 
-                if (textNode.parentNode) {{
-                    textNode.parentNode.replaceChild(
-                        fragment,
-                        textNode
-                    );
-                }}
+                if (textNode.parentNode)
+                    textNode.parentNode.replaceChild(fragment, textNode);
             }}
 
-            /*
-             * Mark and display the first result.
-             */
             if (count > 0) {{
-            var first = document.querySelector(
-                '.about-search-highlight' +
-                '[data-about-index=""0""]'
-            );
-
-            if (first) {{
-                first.classList.add(
-                    'about-search-current'
-                    );
-        }}
-                 }}
+                var first = document.querySelector(
+                    '.about-search-highlight[data-about-index=""0""]');
+                if (first)
+                    first.classList.add('about-search-current');
             }}
         }}
         catch (error) {{
-            return 0;
+            return '0';
         }}
 
-        return count;
+        return String(count);
     }})();";
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            var result =
-                await web.EvaluateJavaScriptAsync(js);
+            string? result = null;
+            try
+            {
+                result = await web.EvaluateJavaScriptAsync(js);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[AboutSearch] EvaluateJavaScript failed: {ex.Message}");
+                result = null;
+            }
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            /*
-             * Record the query only after its search has completed.
-             */
             _aboutSearchQuery = query;
 
             if (TryParseJavaScriptInteger(result, out var count))
             {
                 _aboutMatchCount = count;
                 _aboutCurrentIndex = count > 0 ? 0 : -1;
-
-                //if (count > 0)
-                //{
-                //    await CenterHighlightedInScrollViewAsync(
-                //        _aboutCurrentIndex);
-                //}
             }
             else
             {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[AboutSearch] Unparsed JS result for '{query}': '{result}'");
                 _aboutMatchCount = 0;
                 _aboutCurrentIndex = -1;
             }
 
             UpdateAboutSearchControls();
+
+            if (_aboutMatchCount > 0)
+                await ScrollToAboutMatchAsync(0);
+        }
+
+        private static string ToJavaScriptStringLiteral(string value)
+        {
+            var sb = new StringBuilder(value.Length + 2);
+            sb.Append('"');
+            foreach (var ch in value)
+            {
+                switch (ch)
+                {
+                    case '\\': sb.Append("\\\\"); break;
+                    case '"': sb.Append("\\\""); break;
+                    case '\n': sb.Append("\\n"); break;
+                    case '\r': sb.Append("\\r"); break;
+                    case '\t': sb.Append("\\t"); break;
+                    case '\u2028': sb.Append("\\u2028"); break;
+                    case '\u2029': sb.Append("\\u2029"); break;
+                    default:
+                        if (ch < ' ')
+                            sb.Append("\\u").Append(((int)ch).ToString("x4"));
+                        else
+                            sb.Append(ch);
+                        break;
+                }
+            }
+            sb.Append('"');
+            return sb.ToString();
         }
         private async Task ScrollToAboutMatchAsync(int matchIndex)
         {
@@ -673,108 +716,106 @@ namespace musicmate.Pages
             _aboutCurrentIndex = matchIndex;
 
             var js = $@"(function(){{
-        var matches =
-            document.querySelectorAll(
-                '.about-search-highlight'
-            );
-
-        for (var i = 0; i < matches.length; i++) {{
-            matches[i].classList.remove(
-                'about-search-current'
-            );
-        }}
+        var matches = document.querySelectorAll('.about-search-highlight');
+        for (var i = 0; i < matches.length; i++)
+            matches[i].classList.remove('about-search-current');
 
         var current = document.querySelector(
-            '.about-search-highlight' +
-            '[data-about-index=""{matchIndex}""]'
-        );
-
+            '.about-search-highlight[data-about-index=""{matchIndex}""]');
         if (!current)
-            return false;
+            return 'false';
 
-        current.classList.add(
-            'about-search-current'
-        );
+        current.classList.add('about-search-current');
 
         try {{
-            current.scrollIntoView({{
-                behavior: 'auto',
-                block: 'center',
-                inline: 'nearest'
-            }});
+            current.scrollIntoView({{ behavior: 'auto', block: 'center', inline: 'nearest' }});
         }}
         catch (error) {{
-            return false;
+            try {{
+                var top = current.getBoundingClientRect().top + (window.pageYOffset || document.documentElement.scrollTop || 0);
+                window.scrollTo(0, Math.max(0, top - (window.innerHeight / 3)));
+            }}
+            catch (e2) {{
+                return 'false';
+            }}
         }}
 
-        return true;
+        return 'true';
     }})();";
 
             await web.EvaluateJavaScriptAsync(js);
 
             UpdateAboutSearchControls();
         }
+
         private async Task MoveToNextAboutMatchAsync()
         {
-            if (_aboutMatchCount <= 0)
-                return;
-
             var web = AboutWebView;
             if (web == null)
                 return;
 
-            _aboutCurrentIndex++;
+            // If the document was reloaded, rebuild highlights before advancing.
+            string? domCountResult = null;
+            try
+            {
+                domCountResult = await web.EvaluateJavaScriptAsync(
+                    "(function(){ try { return String(document.querySelectorAll('.about-search-highlight').length); } catch(e) { return '0'; } })();");
+            }
+            catch
+            {
+                domCountResult = "0";
+            }
 
-            if (_aboutCurrentIndex >= _aboutMatchCount)
+            if (!TryParseJavaScriptInteger(domCountResult, out var domCount) || domCount <= 0)
+            {
+                var text = AboutSearchEntry?.Text?.Trim();
+                if (string.IsNullOrEmpty(text))
+                    return;
+
+                await SearchAboutPageAsync(text);
+                return;
+            }
+
+            _aboutMatchCount = domCount;
+
+            _aboutCurrentIndex++;
+            if (_aboutCurrentIndex < 0 || _aboutCurrentIndex >= _aboutMatchCount)
                 _aboutCurrentIndex = 0;
 
             var js = $@"(function(){{
-        var matches =
-            document.querySelectorAll(
-                '.about-search-highlight'
-            );
-
-        for (var i = 0; i < matches.length; i++) {{
-            matches[i].classList.remove(
-                'about-search-current'
-            );
-        }}
+        var matches = document.querySelectorAll('.about-search-highlight');
+        for (var i = 0; i < matches.length; i++)
+            matches[i].classList.remove('about-search-current');
 
         var current = document.querySelector(
-            '.about-search-highlight' +
-            '[data-about-index=""{_aboutCurrentIndex}""]'
-        );
-
+            '.about-search-highlight[data-about-index=""{_aboutCurrentIndex}""]');
         if (!current)
-            return false;
+            return 'false';
 
-        current.classList.add(
-            'about-search-current'
-        );
+        current.classList.add('about-search-current');
 
         try {{
-            current.scrollIntoView({{
-                behavior: 'auto',
-                block: 'center'
-            }});
+            current.scrollIntoView({{ behavior: 'auto', block: 'center' }});
         }}
         catch (error) {{
+            try {{
+                var top = current.getBoundingClientRect().top + (window.pageYOffset || document.documentElement.scrollTop || 0);
+                window.scrollTo(0, Math.max(0, top - (window.innerHeight / 3)));
+            }}
+            catch (e2) {{ }}
         }}
 
-        return true;
+        return 'true';
     }})();";
 
             await web.EvaluateJavaScriptAsync(js);
-
-            //await CenterHighlightedInScrollViewAsync(
-            //    _aboutCurrentIndex);
 
             UpdateAboutSearchControls();
         }
         private void UpdateAboutSearchControls()
         {
             AboutFindNextButton.IsEnabled =
-                _aboutMatchCount > 1;
+                _aboutMatchCount > 0;
 
             AboutFindPositionLabel.Text =
                 _aboutMatchCount > 0
@@ -790,9 +831,17 @@ namespace musicmate.Pages
 
             var cleaned = result
                 .Trim()
-                .Trim('"');
+                .Trim('"')
+                .Trim('\'');
 
-            return int.TryParse(cleaned, out value);
+            if (cleaned.Equals("null", StringComparison.OrdinalIgnoreCase) ||
+                cleaned.Equals("undefined", StringComparison.OrdinalIgnoreCase) ||
+                cleaned.Equals("false", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return int.TryParse(cleaned, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
         }
         private static async Task ShowAboutSearchErrorAsync()
         {
