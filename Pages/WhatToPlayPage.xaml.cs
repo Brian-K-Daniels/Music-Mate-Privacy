@@ -23,52 +23,24 @@ namespace musicmate.Pages
     public partial class WhatToPlayPage : ContentPage, INotifyPropertyChanged
 
     {
-
         private readonly NoteSessionService _session = null!;
-
         private readonly ThemeService _theme = null!;
-
-
-
         private static readonly HashSet<string> FreeScales = new() { "Major", "Harmonic Minor" };
-
-
-
         private int _lastValidScaleIndex = 0;
-
         private bool _suppressPickerSync = false;
-
         private bool _localPlayModeChange = false;
-
         private bool _isPageVisible = false;
         private readonly IOrientationService _orientation = null!;
-
-
-
         private string[] _tuneTitles = Array.Empty<string>();
-
         private string[] _scaleOptions = Array.Empty<string>();
-
         private ArpeggioPickerChoice[] _arpeggioOptions = Array.Empty<ArpeggioPickerChoice>();
-
-
-
         private sealed record ArpeggioPickerChoice(
-
             string PickerLabel,
-
             string DisplayLabel,
-
             ArpeggioPattern Pattern,
-
             string RootNote,
-
             string KeySignature);
-
-
-
         private Color _panelBackgroundColor = Colors.White;
-
         public Color PanelBackgroundColor
 
         {
@@ -78,11 +50,7 @@ namespace musicmate.Pages
             set { if (_panelBackgroundColor != value) { _panelBackgroundColor = value; RaisePropertyChanged(); } }
 
         }
-
-
-
         private bool _isRandomRepeatButtonsVisible;
-
         public bool IsRandomRepeatButtonsVisible
 
         {
@@ -92,11 +60,7 @@ namespace musicmate.Pages
             set { if (_isRandomRepeatButtonsVisible != value) { _isRandomRepeatButtonsVisible = value; RaisePropertyChanged(); } }
 
         }
-
-
-
         private bool _isScaleRepeatButtonVisible;
-
         public bool IsScaleRepeatButtonVisible
 
         {
@@ -106,9 +70,6 @@ namespace musicmate.Pages
             set { if (_isScaleRepeatButtonVisible != value) { _isScaleRepeatButtonVisible = value; RaisePropertyChanged(); } }
 
         }
-
-
-
         public WhatToPlayPage()
 
         {
@@ -172,9 +133,6 @@ namespace musicmate.Pages
             }
 
         }
-
-
-
         protected override void OnAppearing()
 
         {
@@ -194,9 +152,6 @@ namespace musicmate.Pages
             UpdateRandomModeWarning();
 
         }
-
-
-
         protected override void OnDisappearing()
 
         {
@@ -206,14 +161,15 @@ namespace musicmate.Pages
             base.OnDisappearing();
 
         }
-
-
-
         private void OnSessionPropertyChanged(object? sender, PropertyChangedEventArgs e)
 
         {
 
-            if (_localPlayModeChange || !_isPageVisible) return;
+            // Tune can change from the main-menu Tuner action while this page is hidden;
+            // still sync pickers so Other shows Tuner when the user returns.
+            var allowWhenHidden = e.PropertyName == nameof(NoteSessionService.Tune);
+
+            if (_localPlayModeChange || (!_isPageVisible && !allowWhenHidden)) return;
 
 
 
@@ -221,7 +177,7 @@ namespace musicmate.Pages
 
             {
 
-                if (_localPlayModeChange || !_isPageVisible) return;
+                if (_localPlayModeChange || (!_isPageVisible && !allowWhenHidden)) return;
 
 
 
@@ -276,9 +232,6 @@ namespace musicmate.Pages
             });
 
         }
-
-
-
         private void SyncPickersFromSession()
 
         {
@@ -288,9 +241,6 @@ namespace musicmate.Pages
             UpdateRandomModeWarning();
 
         }
-
-
-
         private void InitializePlayModePickers()
 
         {
@@ -318,9 +268,6 @@ namespace musicmate.Pages
             // SelectedIndexChanged handlers are wired in WhatToPlayPage.xaml.
 
         }
-
-
-
         private void RefreshArpeggioPickerOptions()
 
         {
@@ -429,9 +376,6 @@ namespace musicmate.Pages
             }
 
         }
-
-
-
         private static IEnumerable<string> GetArpeggioRootKeys()
 
         {
@@ -467,9 +411,6 @@ namespace musicmate.Pages
             yield return "Cb";
 
         }
-
-
-
         private string ChooseArpeggioRootInRange(string rootKey)
 
         {
@@ -505,15 +446,9 @@ namespace musicmate.Pages
             return $"{rootKey}{octave}";
 
         }
-
-
-
         private static string TrimOctave(string noteName)
 
             => new(noteName.TakeWhile(c => !char.IsDigit(c)).ToArray());
-
-
-
         private static string NormalizeMajorKeyName(string key) => key switch
 
         {
@@ -533,9 +468,6 @@ namespace musicmate.Pages
             _ => key
 
         };
-
-
-
         private void UpdatePlayModePickersFromSession(bool suppressClear = false)
 
         {
@@ -629,31 +561,25 @@ namespace musicmate.Pages
                 UpdateRandomModeWarning();
 
         }
+        //private Picker? GetActivePlayModePicker()  //  2026.08.01 1542  method out
 
+        //{
 
+        //    return PlayModePickerOptions.ResolveDisplayedPicker(_session, LayoutTestTune.IsEnabled).Category switch
 
-        private Picker? GetActivePlayModePicker()
+        //    {
 
-        {
+        //        PlayModePickerCategory.Tunes => TunesPicker,
 
-            return PlayModePickerOptions.ResolveDisplayedPicker(_session, LayoutTestTune.IsEnabled).Category switch
+        //        PlayModePickerCategory.Scales => ScalesPicker,
 
-            {
+        //        PlayModePickerCategory.Arpeggios => ArpeggiosPicker,
 
-                PlayModePickerCategory.Tunes => TunesPicker,
+        //        _ => OtherPicker
 
-                PlayModePickerCategory.Scales => ScalesPicker,
+        //    };
 
-                PlayModePickerCategory.Arpeggios => ArpeggiosPicker,
-
-                _ => OtherPicker
-
-            };
-
-        }
-
-
-
+        //}
         private void ClearInactivePlayModePickerSelections(Picker? activePicker)
 
         {
@@ -667,9 +593,6 @@ namespace musicmate.Pages
             if (activePicker != OtherPicker) ClearPicker(OtherPicker);
 
         }
-
-
-
         private void ClearPicker(Picker picker)
 
         {
@@ -681,9 +604,6 @@ namespace musicmate.Pages
             picker.SelectedIndex = -1;
 
         }
-
-
-
         private void SetPickerSelection(Picker picker, string value, string[] options)
 
         {
@@ -697,9 +617,6 @@ namespace musicmate.Pages
             picker.SelectedIndex = idx;
 
         }
-
-
-
         private void SetArpeggioPickerSelection()
 
         {
@@ -725,9 +642,6 @@ namespace musicmate.Pages
                 ArpeggiosPicker.SelectedIndex = idx;
 
         }
-
-
-
         private void SetArpeggioPickerSelectionFromPreference(string selection)
 
         {
@@ -759,9 +673,6 @@ namespace musicmate.Pages
                 ArpeggiosPicker.SelectedIndex = idx;
 
         }
-
-
-
         private void ClearOtherPlayModePickers(Picker activePicker)
 
         {
@@ -791,9 +702,6 @@ namespace musicmate.Pages
             }
 
         }
-
-
-
         private void RevertScalesPickerSelection()
 
         {
@@ -831,9 +739,6 @@ namespace musicmate.Pages
             }
 
         }
-
-
-
         private void ApplyPlayModeSessionChange(Action apply)
 
         {
@@ -845,9 +750,6 @@ namespace musicmate.Pages
             finally { _localPlayModeChange = false; }
 
         }
-
-
-
         private void UpdateRandomModeWarning()
 
         {
@@ -855,9 +757,6 @@ namespace musicmate.Pages
             RandomModeWarningLabel.IsVisible = _session.IsRandomMode && _session.Tune == "Practice Tune";
 
         }
-
-
-
         private void UpdateRepeatButtonsVisibility()
 
         {
@@ -871,9 +770,6 @@ namespace musicmate.Pages
             IsScaleRepeatButtonVisible = !isTuner && !isRandom;
 
         }
-
-
-
         private void UpdateRepeatButtonColors()
 
         {
@@ -897,9 +793,6 @@ namespace musicmate.Pages
             });
 
         }
-
-
-
         private async void OnTunesPickerChanged(object? sender, EventArgs e)
 
         {
@@ -969,9 +862,6 @@ namespace musicmate.Pages
             UpdateRandomModeWarning();
 
         }
-
-
-
         private async void OnScalesPickerChanged(object? sender, EventArgs e)
 
         {
@@ -1065,9 +955,6 @@ namespace musicmate.Pages
             UpdateRandomModeWarning();
 
         }
-
-
-
         private async void OnArpeggiosPickerChanged(object? sender, EventArgs e)
 
         {
@@ -1121,9 +1008,6 @@ namespace musicmate.Pages
             UpdateRandomModeWarning();
 
         }
-
-
-
         private async void OnOtherPickerChanged(object? sender, EventArgs e)
 
         {
@@ -1157,9 +1041,6 @@ namespace musicmate.Pages
             UpdateRandomModeWarning();
 
         }
-
-
-
         private void OnAutoRepeatScaleClicked(object? sender, EventArgs e)
 
         {
@@ -1171,9 +1052,6 @@ namespace musicmate.Pages
             UpdateRepeatButtonColors();
 
         }
-
-
-
         private void OnAutoRepeatNewClicked(object? sender, EventArgs e)
 
         {
@@ -1201,9 +1079,6 @@ namespace musicmate.Pages
             UpdateRepeatButtonColors();
 
         }
-
-
-
         private void OnAutoRepeatSameClicked(object? sender, EventArgs e)
 
         {
@@ -1231,9 +1106,6 @@ namespace musicmate.Pages
             UpdateRepeatButtonColors();
 
         }
-
-
-
         private async void OnNavigatePracticeClicked(object? sender, EventArgs e)
 
         {
@@ -1241,18 +1113,11 @@ namespace musicmate.Pages
             await Shell.Current.GoToAsync("//MusicPage");
 
         }
-
-
         public new event PropertyChangedEventHandler? PropertyChanged;
-
-
-
         private void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string? name = null)
 
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-
     }
-
 }
 
 

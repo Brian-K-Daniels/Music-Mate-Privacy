@@ -114,18 +114,15 @@ namespace musicmate.Pages
             get => _session.AutoRepeat;
             set => _session.AutoRepeat = value;
         }
-
         public bool RepeatSameTune
         {
             get => _session.RepeatSameTune;
             set => _session.RepeatSameTune = value;
         }
-
         private void UpdateAutoRepeatButtons()
         {
             // Auto-repeat button styling is handled on WhatToPlayPage.
         }
-
         private bool _isAutoRepeatVisible;
         public bool IsAutoRepeatVisible
         {
@@ -140,7 +137,6 @@ namespace musicmate.Pages
                 }
             }
         }
-
         private bool _isScaleRepeatButtonVisible;
         public bool IsScaleRepeatButtonVisible
         {
@@ -154,7 +150,6 @@ namespace musicmate.Pages
                 }
             }
         }
-
         private void UpdateRepeatButtonsVisibility()
         {
             var isRandom = _session?.IsRandomMode == true;
@@ -162,18 +157,14 @@ namespace musicmate.Pages
             UpdatePlayButtonVisibility();
             Dispatcher.Dispatch(UpdateTitlePlayButtonPosition);
         }
-
         public bool IsTitlePlayButtonVisible => !_isRunning || _isPlaying;
         public bool IsBottomPickersVisible => _session?.Tune != "Tuner";
         public bool IsBottomButtonRowVisible => _session?.Tune != "Tuner";
         public bool IsChildLevelSliderVisible => _session?.ChildLevel > 0 && _session.Tune != "Tuner";
-
         public bool IsEffectiveScaleLabelVisible =>
             _session?.IsRandomMode == true
             || _session?.ScaleSelectionMode == ScaleSelectionMode.Random;
-
         public string EffectiveScaleLabelText => _session?.EffectiveScaleDisplay ?? string.Empty;
-
         private void UpdateEffectiveScaleLabel()
         {
             OnPropertyChanged(nameof(IsEffectiveScaleLabelVisible));
@@ -184,7 +175,6 @@ namespace musicmate.Pages
                 SyncPlayItemStatusMessage();
             }
         }
-
         private void UpdateNoteEmphasisBanner()
         {
             bool show = _session.HasTemporaryNoteEmphasis;
@@ -193,14 +183,12 @@ namespace musicmate.Pages
             if (NoteEmphasisLabel is not null)
                 NoteEmphasisLabel.Text = _session.TemporaryNoteEmphasisBannerText;
         }
-
         private async void OnClearNoteEmphasisClicked(object? sender, EventArgs e)
         {
             _session.ClearTemporaryNoteEmphasis("user-clear");
             UpdateNoteEmphasisBanner();
             await RegenerateNotesAsync();
         }
-
         /// <summary>
         /// Keeps the title status bar aligned with the random-mode picker label
         /// without clobbering live pitch-feedback messages.
@@ -224,7 +212,6 @@ namespace musicmate.Pages
 
             StatusService.Instance.StatusMessage = GetCurrentPlayItemName();
         }
-
         private string _selectedInstrumentShort = "";
         public string SelectedInstrumentShort
         {
@@ -239,8 +226,7 @@ namespace musicmate.Pages
                 }
             }
         }
-
-        private bool _isInstrumentPickerVisible = true;
+        private bool _isInstrumentPickerVisible = true; 
         public bool IsInstrumentPickerVisible
         {
             get => _isInstrumentPickerVisible;
@@ -253,12 +239,10 @@ namespace musicmate.Pages
                 }
             }
         }
-
         private bool _isInstrumentLabelVisible = false;
         private static readonly HashSet<string> FreeScales = new() { "Major", "Harmonic Minor" };
         private int _lastValidScaleTuneIndex = 0;
         private int _lastValidPlayItemIndex = 0;
-
         private enum PlayModeCategory
         {
             Tunes,
@@ -278,16 +262,13 @@ namespace musicmate.Pages
                 }
             }
         }
-        private bool IsPremiumKey(string item) => !FreeKeys.Contains(item);
-        
-
+        private bool IsPremiumKey(string item) => !FreeKeys.Contains(item); 
         private void UpdateInstrumentPickerVisibility()
         {
             // After selection, always show only the label with the short string
             IsInstrumentPickerVisible = false;
             IsInstrumentLabelVisible = true;
         }
-
         public MusicPage()
         {
             try
@@ -632,7 +613,6 @@ namespace musicmate.Pages
                 await StartListeningAndEvaluatingAsync(playBack);
             });
         }
-
         private void ScheduleAutoStartOnAppear()
         {
             if (!_session.AutoStart || _session.Tune == "Tuner")
@@ -643,7 +623,6 @@ namespace musicmate.Pages
             var cts = _autoStartCts;
             _ = RunAutoStartOnAppearAsync(cts.Token);
         }
-
         private async Task RunAutoStartOnAppearAsync(CancellationToken ct)
         {
             try
@@ -677,7 +656,6 @@ namespace musicmate.Pages
                 DebugLog.WriteLine($"[AutoStart] ERROR: {ex}");
             }
         }
-
         private async Task RegenerateNotesAsync()
         {
             // Repeat Same keeps the saved exercise unless the user changes key/scale/tune.
@@ -754,17 +732,13 @@ namespace musicmate.Pages
                 _regenerateSemaphore.Release();
             }
         }
-
         // ── Sequence generation ────────────────────────────────────────────────
-
         /// <summary>How many measures to generate at once (initial fill and each top-up).</summary>
         private const int DefaultMeasureBatchSize = 8;
-
         private int GetMeasureBatchSize()
             => _session.ChildLevel > 0 && _session.ChildMeasureBatchSize > 0
                 ? _session.ChildMeasureBatchSize
                 : DefaultMeasureBatchSize;
-
         /// <summary>
         /// Level-aware measure counts for each staff.  Child levels start with a
         /// single upper-staff measure and grow toward <see cref="MeasuresPerStaff"/>.
@@ -798,15 +772,12 @@ namespace musicmate.Pages
             // Level 31+: eight bars total (four per staff).
             return (MeasuresPerStaff, MeasuresPerStaff);
         }
-
         // Generator offsets: updated every time we append more measures.
         private int _seqNextMeasureIndex = 0;
         private double _seqNextBeatOffset = 0.0;
         private int _seqNextGlobalNoteIndex = 0;
-
         /// <summary>Cached excluded MIDI set rebuilt whenever a new sequence starts.</summary>
         private HashSet<int> _excludedMidis = new();
-
         /// <summary>
         /// Loads the set of mastered MIDI numbers from the note database using the
         /// same logic as <see cref="NoteSessionService.BuildRandomSequenceAsync"/>.
@@ -829,7 +800,6 @@ namespace musicmate.Pages
                 $"excludedCount={_excludedMidis.Count} " +
                 $"excluded=[{MasteredNoteOmission.FormatMidiSample(_excludedMidis)}]");
         }
-
         private string DescribeMasteryOmitActivity()
         {
             if (_session.HasTemporaryNoteEmphasis)
@@ -844,7 +814,6 @@ namespace musicmate.Pages
                 return "Arpeggio";
             return _session.IsRandomMode ? "Random" : "Scale";
         }
-
         /// <summary>
         /// Builds a <see cref="MusicSequenceGenerator"/> configured with the current
         /// session parameters, append offsets, and mastery exclusions.
@@ -913,7 +882,6 @@ namespace musicmate.Pages
             DebugLog.WriteLine($"[StaffGen] Tune={_session.Tune} Random={_session.IsRandomMode} SimpleScale={simpleSelectedScale} AccPct={_session.AccidentalPercent} EffectiveAccPct={(_session.IsRandomMode ? _session.AccidentalPercent : 0)} Activity={gen.ActivityType} Excluded={_excludedMidis.Count}");
             return gen;
         }
-
         private void ReportMasteryOmissionFallback(MusicSequenceGenerator gen)
         {
             if (gen.LastMasteryFallback == MasteredNoteOmission.FallbackKind.None)
@@ -931,7 +899,6 @@ namespace musicmate.Pages
                 StatusService.Instance.StatusMessage = gen.LastMasteryFallbackReason;
             }
         }
-
         private sealed class StandardStaffGenResult
         {
             public required List<GeneratedNote> UpperFlat { get; init; }
@@ -945,7 +912,6 @@ namespace musicmate.Pages
             public required double LowerBeatOffset { get; init; }
             public required int LowerGlobalNoteIndex { get; init; }
         }
-
         /// <summary>CPU-only staff sequence generation (safe to run off the UI thread).</summary>
         private StandardStaffGenResult BuildStandardStaffNoteLists(int upperMc, int lowerMc)
         {
@@ -1031,7 +997,6 @@ namespace musicmate.Pages
                 LowerGlobalNoteIndex = lowerGlobalNoteIndex,
             };
         }
-
         /// <summary>
         /// Converts a <see cref="PracticeTune"/> into a flat list of <see cref="GeneratedNote"/>
         /// with correct <see cref="GeneratedNote.BeatPosition"/>, <see cref="GeneratedNote.MeasureIndex"/>,
@@ -1109,7 +1074,6 @@ namespace musicmate.Pages
             }
             return result;
         }
-
         /// <summary>
         /// Derives bar-beat positions from a flat list of <see cref="GeneratedNote"/>
         /// based on the <see cref="GeneratedNote.MeasureIndex"/> transitions.
@@ -1118,7 +1082,7 @@ namespace musicmate.Pages
         /// </summary>
         private static List<double> ComputeNewBarBeats(
             IReadOnlyList<GeneratedNote> notes,
-            HashSet<double> existingBarBeats)
+            HashSet<double> existingBarBeats)   
         {
             var result = new List<double>();
             int prevMeasure = notes.Count > 0 ? (notes[0].MeasureIndex ?? 0) : 0;
@@ -1137,11 +1101,10 @@ namespace musicmate.Pages
             }
             return result;
         }
-
         /// <summary>
         /// Bar lines every <paramref name="measureBeats"/> from the first note's beat
         /// through the staff content end. Used for written tunes with a fixed meter.
-        /// </summary>
+        /// </summary> 
         private static List<double> ComputeRegularBarBeats(
             IReadOnlyList<GeneratedNote> notes,
             double measureBeats,
@@ -1177,7 +1140,6 @@ namespace musicmate.Pages
 
             return result;
         }
-
         /// <summary>
         /// Bar beats every <paramref name="measureBeats"/> from accumulated note duration.
         /// Measure-index transitions are kept only when they add more boundaries than the
@@ -1234,7 +1196,6 @@ namespace musicmate.Pages
 
             return regular;
         }
-
         private static List<GeneratedNote> ShiftStaffBeatPositions(
             IReadOnlyList<GeneratedNote> notes,
             double beatShift)
@@ -1264,27 +1225,21 @@ namespace musicmate.Pages
             }
             return shifted;
         }
-
         // ── Two-staff display ──────────────────────────────────────────────────
-
         /// <summary>How many measures to put on each staff (non-child / high levels).</summary>
         private const int MeasuresPerStaff = 4;
-
         /// <summary>Bumped on each regeneration so child random tunes differ every time.</summary>
         private int _generationSeed;
-
         // Offsets for appending the lower staff content.
         private int _lowerMeasureIndex = 0;
         private double _lowerBeatOffset = 0.0;
         private int _lowerGlobalNoteIndex = 0;
-
         /// <summary>
         /// Pitched-note count on the upper staff when <see cref="NoteSessionService.NotesToDraw"/>
         /// was built.  The upper drawable may be replaced mid-session (lookahead refresh) with
         /// a different note count; session indices must stay tied to this value.
         /// </summary>
         private int _sessionUpperPitchCount = 0;
-
         /// <summary>
         /// Populates the staff drawable with an upper and lower staff worth of notes.
         /// Upper staff is played first; lower staff follows.
@@ -1582,7 +1537,6 @@ namespace musicmate.Pages
                 StatusService.Instance.StatusMessage = $"[Staff Error] {ex.Message}";
             }
         }
-
         private static bool StaffNoteStatesEqual(StaffNoteState[] a, StaffNoteState[] b)
         {
             if (a.Length != b.Length) return false;
@@ -1592,7 +1546,6 @@ namespace musicmate.Pages
             }
             return true;
         }
-
         /// <summary>
         /// Syncs note states from session progress on the two-staff display.
         /// </summary>
@@ -1663,15 +1616,10 @@ namespace musicmate.Pages
             // UpperNoteStates to Pending, which turned correct upper notes black at the
             // upper→lower transition; defer upper refresh until RegenerateNotesAsync.
         }
-
         /// <summary>
         /// Generates new notes for the upper staff while the player is on the lower staff,
         /// then fades in the new upper staff content.
         /// </summary>
-
-
-
-
         /// <summary>
         /// Resizes the staff canvas.  Must be called on the main thread.
         /// </summary>
@@ -1698,7 +1646,6 @@ namespace musicmate.Pages
             StaffBorder.HeightRequest = h;
             UpdateTitlePlayButtonPosition();
         }
-
         /// <summary>
         /// Expand the tuner staff panel to fill the content area below the title bar.
         /// </summary>
@@ -1731,9 +1678,7 @@ namespace musicmate.Pages
                 DebugLog.WriteLine($"[ApplyTunerHeight] ERROR: {ex}");
             }
         }
-
         private const double TitlePlayButtonSizeMm = 6;
-
         private void UpdateTitlePlayButtonPosition()
         {
             if (TitlePlayButton == null || TitleStartStopButton == null || TitleMarqueeGrid == null
@@ -1764,7 +1709,6 @@ namespace musicmate.Pages
             double left = go.Center.X - parent.Left - playSize * 0.5;
             TitlePlayButton.Margin = new Thickness(Math.Max(0, left), top, 0, 0);
         }
-
         /// <summary>
         /// Screen bounds in MAUI logical units. TitleView lives outside the page content tree,
         /// so parent-chain X/Y cannot align Shell chrome with MainPageRootGrid.
@@ -1823,13 +1767,10 @@ namespace musicmate.Pages
             return null;
 #endif
         }
-
-
         private static readonly Color PlayButtonGreen = Color.FromArgb("#2E8B57");
         private static readonly Color PlayButtonGreenBorder = Color.FromArgb("#1F5C3A");
         private static readonly Color PlayButtonRed = Color.FromArgb("#C62828");
         private static readonly Color PlayButtonRedBorder = Color.FromArgb("#8B0000");
-
         private void SetPlayButtonPlaying(bool isPlaying, bool? isEnabled = null)
         {
             if (TitlePlayButton == null)
@@ -1853,7 +1794,6 @@ namespace musicmate.Pages
 
             UpdateTitlePlayButtonFontSize();
         }
-
         private async Task StopListeningForPlaybackAsync()
         {
             try
@@ -1873,7 +1813,6 @@ namespace musicmate.Pages
 
             await Task.Delay(80);
         }
-
         private const int TitleBarChromeHeight = 52;
         private const int TitleStartStopButtonSize = TitleBarChromeHeight;
         /// <summary>Title-bar slot width — stop state expands to this so "Stop" fits.</summary>
@@ -1882,15 +1821,12 @@ namespace musicmate.Pages
         private const string TitlePlayLabelText = "Play";
         private const string TitleStopLabelText = "Stop";
         private string _titlePlayLabelText = TitlePlayLabelText;
-
         private static SKTypeface? _v3UiRegularTypeface;
-
         /// <summary>OpenSansRegular base face; MAUI applies synthetic bold via FontAttributes.Bold.</summary>
         private static SKTypeface TitleUiRegularTypeface =>
             _v3UiRegularTypeface ??= SKTypeface.FromFamilyName("Open Sans", SKFontStyle.Normal)
                 ?? SKTypeface.FromFamilyName("Arial", SKFontStyle.Normal)
                 ?? SKTypeface.Default;
-
         private static void ConfigureTitleUiBoldFont(SKFont font, float size)
         {
             font.Size = size;
@@ -1900,7 +1836,6 @@ namespace musicmate.Pages
             font.Edging = SKFontEdging.Antialias;
             font.Subpixel = true;
         }
-
         /// <summary>
         /// Largest bold font size whose glyph bounds fit inside the box, with slack for
         /// embolden stroke and MAUI Label rendering wider than Skia advance width.
@@ -1949,7 +1884,6 @@ namespace musicmate.Pages
             double inner = circleDiameter - inset * 2;
             return GetTitleFittedFontSize(TitleGoLabelText, inner, inner);
         }
-
         /// <summary>Largest bold "Stop" font size that fits inside the red stop button.</summary>
         private static double GetTitleStopFontSize(double width, double height)
         {
@@ -1959,7 +1893,6 @@ namespace musicmate.Pages
             const double inset = 2;
             return GetTitleFittedFontSize(TitleStopLabelText, width - inset * 2, height - inset * 2);
         }
-
         private void UpdateTitlePlayButtonFontSize()
         {
             if (TitlePlayButton == null)
@@ -2001,7 +1934,6 @@ namespace musicmate.Pages
                 Padding = 0
             };
         }
-
         private void UpdateTitleStartStopButtonVisual(bool isRunning)
         {
             if (TitleStartStopButton == null)
@@ -2069,7 +2001,6 @@ namespace musicmate.Pages
                 };
             }
         }
-
         private void SetButtonStates(bool isRunning, bool keepPlayEnabled = false)
         {
             _isRunning = isRunning;
@@ -2082,13 +2013,11 @@ namespace musicmate.Pages
                     SyncPlayItemStatusMessage();
             });
         }
-
         private void UpdatePlayButtonVisibility()
         {
             OnPropertyChanged(nameof(IsTitlePlayButtonVisible));
             UpdateTitlePlayButtonPosition();
         }
-
         private string GetCurrentPlayItemName()
         {
             if (LayoutTestTune.IsEnabled)
@@ -2133,7 +2062,6 @@ namespace musicmate.Pages
 
             return _session.SelectedScale ?? "Selected Scale";
         }
-
         private async Task ApplyChildLevelAndRefreshAsync(int level)
         {
             level = Math.Clamp(level, 1, 100);
@@ -2183,7 +2111,6 @@ namespace musicmate.Pages
                     scaleKeyTrigger: "AutoStart");
             }
         }
-
         private async void OnChildLevelDeltaClicked(object? sender, EventArgs e)
         {
             if (_session.ChildLevel <= 0
@@ -2215,7 +2142,6 @@ namespace musicmate.Pages
                 // Newer +/- click replaced this apply.
             }
         }
-
         private async Task RefreshDisplayForLevelChangeAsync()
         {
             _freezeStaff = false;
@@ -2240,7 +2166,6 @@ namespace musicmate.Pages
                 UpdateTitlePlayButtonPosition();
             });
         }
-
         /// <summary>
         /// Apply child-level range and batch sizing for a new run.
         /// Scale/key refresh is handled by <see cref="NoteSessionService.PrepareFreshScaleAndKeyForGeneration"/>.
@@ -2255,7 +2180,6 @@ namespace musicmate.Pages
 
             DifficultyLevelMapper.ApplyLevelDerivedSettings(_session.ChildLevel, _session);
         }
-
         private async Task BuildAndPublishSessionEndMarqueeAsync(
             int progressLevel,
             string instrumentKey,
@@ -2287,7 +2211,6 @@ namespace musicmate.Pages
             SetSessionEndMarqueeMessage(
                 progressLevel, ssns, sessionCount, avgPitch, avgOverall, avgTiming, avgDetectedBpm);
         }
-
         private async Task HideSessionResultBannerAsync(bool refreshMarqueeForNewLevel)
         {
             if (SessionResultBanner != null)
@@ -2295,7 +2218,6 @@ namespace musicmate.Pages
             if (refreshMarqueeForNewLevel)
                 await RefreshMarqueeAfterCongratulatoryBannerAsync();
         }
-
         /// <summary>
         /// Hides the post-session result banner and scrolls so the staff is fully visible.
         /// Called when the microphone first detects playing (RMS above threshold).
@@ -2328,7 +2250,6 @@ namespace musicmate.Pages
                 DebugLog.WriteLine($"[FirstSound] scroll error: {ex}");
             }
         }
-
         private double GetViewYOffsetInMainLayout(VisualElement view)
         {
             double y = view.Y;
@@ -2340,7 +2261,6 @@ namespace musicmate.Pages
             }
             return Math.Max(0, y);
         }
-
         /// <summary>
         /// After the congratulatory session-result banner is dismissed, publish marquee stats
         /// for the new level. While the banner was visible, the saved marquee was kept at the
@@ -2366,7 +2286,6 @@ namespace musicmate.Pages
                 StatusService.Instance.StatusMessage = _sessionEndMarqueeMessage;
             }
         }
-
         private void SetSessionEndMarqueeMessage(
             int progressLevel,
             int ssns,
@@ -2385,12 +2304,10 @@ namespace musicmate.Pages
 #endif
             StatusService.Instance.StatusMessage = _sessionEndMarqueeMessage;
         }
-
         private bool ShouldPreserveSessionEndMarquee() =>
             !string.IsNullOrEmpty(_sessionEndMarqueeMessage)
             && _session.SessionCompleted
             && _session.ChildLevel > 0;
-
         private void RestoreSessionEndMarqueeIfNeeded()
         {
             if (!ShouldPreserveSessionEndMarquee())
@@ -2400,14 +2317,12 @@ namespace musicmate.Pages
             if (SessionResultBanner != null)
                 MainThread.BeginInvokeOnMainThread(() => SessionResultBanner.IsVisible = true);
         }
-
         private void ClearSessionEndMarquee()
         {
             _sessionEndMarqueeMessage = null;
             _deferNewLevelMarqueeUntilBannerDismissed = false;
             _pendingInstrumentForMarquee = null;
         }
-
         /// <summary>
         /// Updates Level +/- visibility and the on-screen level label from the live session.
         /// Does not mutate <see cref="NoteSessionService.ChildLevel"/> or re-apply settings —
@@ -2422,7 +2337,6 @@ namespace musicmate.Pages
             if (ChildLevelSliderValueLabel != null)
                 ChildLevelSliderValueLabel.Text = _session.ChildLevel.ToString();
         }
-
         /// <summary>
         /// Adopts the saved Home-page level when Music is opened without Home → Start
         /// (e.g. via the flyout menu). Applies range/batch settings only — does not
@@ -2450,7 +2364,6 @@ namespace musicmate.Pages
             DebugLog.WriteLine($"[ChildLevel] Hydrated from preferences: L{saved}");
 #endif
         }
-
         protected async override void OnAppearing()
         {
             try
@@ -2463,7 +2376,6 @@ namespace musicmate.Pages
                 DebugLog.WriteLine($"[MusicPage.OnAppearing] ERROR: {ex}");
             }
         }
-
         private async Task OnAppearingCoreAsync()
         {
             base.OnAppearing();
@@ -2540,7 +2452,6 @@ namespace musicmate.Pages
 
             RestoreSessionEndMarqueeIfNeeded();
         }
-
         protected override void OnNavigatedTo(NavigatedToEventArgs args)
         {
             base.OnNavigatedTo(args);
@@ -2589,7 +2500,6 @@ namespace musicmate.Pages
             if (!ShouldPreserveSessionEndMarquee())
                 StatusService.Instance.StatusMessage = "Stopped listening.";
         }
-
         private async void OnPlayEvaluateClicked(object? sender, EventArgs e)
         {
             if (_isPlaying)
@@ -2632,7 +2542,6 @@ namespace musicmate.Pages
             UpdatePlayButtonVisibility();
             await StartListeningAndEvaluatingAsync(playBack: true);
         }
-
         private void OnAudioBlock(short[] pcm16)
         {
             var buf = new float[pcm16.Length];
@@ -2800,7 +2709,6 @@ namespace musicmate.Pages
                 });
             }
         }
-
         /// <summary>
         /// Restarts only the audio capture stream without resetting session state,
         /// notes, or progress. Used when MaxBlocks is reached mid-session.
@@ -2914,7 +2822,6 @@ namespace musicmate.Pages
 
         }
         // Replace duplicate method implementations with these single canonical versions.
-
         /// <summary>
         /// Saves one <see cref="NoteAttempt"/> per note slot in the completed session,
         /// then lets <see cref="NoteAttemptDatabase.SaveAttemptAsync"/> prune old rows so
@@ -3013,7 +2920,6 @@ namespace musicmate.Pages
             UpdateScaleTunePicker();
             UpdateEffectiveScaleLabel();
         }
-
         private void CaptureRepeatSameSnapshot()
         {
             if (_staffDrawable == null || _session.NotesToDraw.Count == 0)
@@ -3030,7 +2936,6 @@ namespace musicmate.Pages
                     _sessionUpperPitchCount,
                     _staffDrawable.UpperHasEndBar));
         }
-
         private async Task RestoreRepeatSameSnapshotAsync(IReadOnlyList<NoteInfo> notes)
         {
             var snap = _repeatSameSnapshot;
@@ -3065,7 +2970,6 @@ namespace musicmate.Pages
                 _suppressSessionRegenerate = false;
             }
         }
-
         private async Task StartListeningAndEvaluatingAsync(
             bool playBack = false,
             bool forceNewNotes = false,
@@ -3472,7 +3376,7 @@ namespace musicmate.Pages
         /// <summary>
         /// Saves session statistics and, for child-Practice sessions, a SessionResult.
         /// Returns the new child level if a level-up occurred, otherwise null.
-        /// </summary>
+        /// </summary>        
         private async Task<int?> SaveSessionStatAsync()
         {
             var outcome = await PracticeSessionPersistence.SaveSessionStatAsync(
@@ -3481,7 +3385,6 @@ namespace musicmate.Pages
                 _sessionResultDb,
                 Preferences.Default.Get("CollectSessionStats", true),
                 (long)Preferences.Default.Get("MaxSessionDbSizeMb", 50) * 1024 * 1024);
-
             if (outcome.NewChildLevel.HasValue)
             {
                 _repeatSameSnapshot = null;
@@ -3491,10 +3394,8 @@ namespace musicmate.Pages
                 UpdateConcertKeyLabel();
                 await RefreshDisplayForLevelChangeAsync();
             }
-
             return outcome.NewChildLevel;
         }
-
         private async void Session_PropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
             if (e.PropertyName == nameof(NoteSessionService.IsRandomMode)
@@ -3610,7 +3511,6 @@ namespace musicmate.Pages
             SelectedInstrumentShort = _session.InstrumentDisplayName;
         }
         private void EnterPickerSyncSuppress() => _pickerSyncSuppressCount++;
-
         /// <summary>
         /// Clears picker-sync suppression on the next UI frame so any
         /// <see cref="Picker.SelectedIndexChanged"/> events queued by a programmatic
@@ -3624,7 +3524,6 @@ namespace musicmate.Pages
                     _pickerSyncSuppressCount--;
             });
         }
-
         private void UpdateKeyPickerSelection()
         {
             if (KeyPicker.ItemsSource is not string[] items) return;
@@ -3642,13 +3541,11 @@ namespace musicmate.Pages
                 ExitPickerSyncSuppress();
             }
         }
-
         private void MarkChildKeyScaleOverrideIfNeeded()
         {
             if (_session.ChildLevel > 0)
                 _session.MarkChildPracticeSettingsCustomized();
         }
-
         /// <summary>
         /// Reads the selected key from a picker index (avoids stale <see cref="Picker.SelectedItem"/> on programmatic sync).
         /// </summary>
@@ -3663,14 +3560,12 @@ namespace musicmate.Pages
 
             return picker.SelectedItem?.ToString()?.Split(',')[0].Trim();
         }
-
         private void UpdateConcertKeyLabel()
         {
             var text = $"(Concert {_session.GetConcertKey()})";
             ConcertKeyLabel.Text = text;
             if (PracticeConcertKeyLabel != null) PracticeConcertKeyLabel.Text = text;
         }
-
         private void InitializePracticePickers(string[] instrumentOptions)
         {
             if (PracticeInstrumentPicker == null || PracticeKeyPicker == null || PracticeScaleTunePicker == null)
@@ -3697,7 +3592,6 @@ namespace musicmate.Pages
 
             UpdatePracticePlayItemPickerCore();
         }
-
         private void EnsurePracticePickersReady()
         {
             if (PracticeInstrumentPicker == null || PracticeKeyPicker == null || PracticeScaleTunePicker == null)
@@ -3711,7 +3605,6 @@ namespace musicmate.Pages
             UpdateKeyPickerVisibility();
             UpdateConcertKeyLabel();
         }
-
         private void UpdateKeyPickerVisibility()
         {
             var show = _session.Tune != "Tuner" && _session.Tune != "Arpeggio";
@@ -3733,7 +3626,6 @@ namespace musicmate.Pages
             if (PracticeKeyBorder != null) PracticeKeyBorder.IsVisible = show;
             if (PracticeConcertKeyLabel != null) PracticeConcertKeyLabel.IsVisible = show;
         }
-
         private void UpdateTunerStaffDisplay()
         {
             if (_staffDrawable == null || _session.Tune != "Tuner")
@@ -3777,7 +3669,6 @@ namespace musicmate.Pages
 
             MainThread.BeginInvokeOnMainThread(() => TunerGraphicsView?.Invalidate());
         }
-
         private void EnterTunerMode()
         {
             _repeatSameSnapshot = null;
@@ -3793,14 +3684,11 @@ namespace musicmate.Pages
             UpdatePracticePlayItemPicker();
             UpdateTunerVisibility();
         }
-
         private void UpdatePickersContainerVisibility()
         {
             // Scale/key/instrument pickers live on the What to Play page.
             PickersContainer.IsVisible = false;
         }
-
-
         private void UpdateTunerVisibility()
         {
             var isTuner = _session.Tune == "Tuner";
@@ -3852,7 +3740,6 @@ namespace musicmate.Pages
                     MainPageMainLayout.Spacing = 16;
             }
         }
-
         private string[] BuildScaleTuneOptions()
         {
             var practiceTuneTitles = musicmate.Models.TuneLibrary.All.Select(t => t.Title).ToArray();
@@ -3863,7 +3750,6 @@ namespace musicmate.Pages
                 .Concat(NoteSessionService.AvailableScales)
                 .ToArray();
         }
-
         private IReadOnlyList<ArpeggioPickerChoice> BuildArpeggioPickerChoices()
         {
             _arpeggioPickerChoices.Clear();
@@ -3894,7 +3780,6 @@ namespace musicmate.Pages
 
             return choices;
         }
-
         private static IEnumerable<string> GetArpeggioRootKeys()
         {
             yield return "C";
@@ -3913,7 +3798,6 @@ namespace musicmate.Pages
             yield return "Gb";
             yield return "Cb";
         }
-
         private string ChooseArpeggioRootInRange(string rootKey)
         {
             const int baseOctave = 4;
@@ -3932,10 +3816,8 @@ namespace musicmate.Pages
             int octave = baseOctave + ((candidate - rootMidi) / 12);
             return $"{rootKey}{octave}";
         }
-
         private static string TrimOctave(string noteName)
             => new(noteName.TakeWhile(c => !char.IsDigit(c)).ToArray());
-
         private void UpdateScaleTunePicker()
         {
             if (ScaleTunePicker == null)
@@ -3976,11 +3858,9 @@ namespace musicmate.Pages
 
             UpdatePracticePlayItemPickerCore();
         }
-
         private bool IsArpeggioSelectionApplied(string label)
             => _session.Tune == "Arpeggio"
                && string.Equals(_session.SelectedArpeggioDisplay, label, StringComparison.Ordinal);
-
         private async Task ApplyArpeggioSelectionAsync(ArpeggioPickerChoice arpeggioChoice, string preferenceLabel, int validIndex)
         {
             _applyingArpeggioSelection = true;
@@ -4019,7 +3899,6 @@ namespace musicmate.Pages
                 MainThread.BeginInvokeOnMainThread(() => _applyingArpeggioSelection = false);
             }
         }
-
         /// <summary>Syncs the legacy scale/tune picker without re-entering practice picker sync.</summary>
         private void UpdateScaleTunePickerWithoutPracticeCascade()
         {
@@ -4055,7 +3934,6 @@ namespace musicmate.Pages
 
             UpdatePracticePlayItemPickerCore();
         }
-
         private PlayModeCategory GetActivePlayModeCategory()
         {
             if (LayoutTestTune.IsEnabled
@@ -4070,7 +3948,6 @@ namespace musicmate.Pages
                 return PlayModeCategory.Arpeggios;
             return PlayModeCategory.Scales;
         }
-
         private string[] BuildPracticePlayItemOptions(PlayModeCategory category)
             => category switch
             {
@@ -4082,7 +3959,6 @@ namespace musicmate.Pages
                     BuildArpeggioPickerChoices().Select(choice => choice.Label).ToArray(),
                 _ => PlayModePickerOptions.OtherOptions.ToArray()
             };
-
         private string GetPracticePlayItemSelection(PlayModeCategory category)
             => category switch
             {
@@ -4095,7 +3971,6 @@ namespace musicmate.Pages
                     _session, LayoutTestTune.IsEnabled),
                 _ => string.Empty
             };
-
         private int FindPracticePlayItemIndex(string[] items, PlayModeCategory category, string selection)
         {
             var idx = Array.IndexOf(items, selection);
@@ -4114,7 +3989,6 @@ namespace musicmate.Pages
                 _arpeggioPickerChoices.TryGetValue(label, out var choice)
                 && choice.Label == _session.SelectedArpeggioDisplay);
         }
-
         private void UpdatePracticePlayItemPickerCore()
         {
             if (PracticeScaleTunePicker == null)
@@ -4141,10 +4015,8 @@ namespace musicmate.Pages
                 ExitPickerSyncSuppress();
             }
         }
-
         private void UpdatePracticePlayItemPicker()
             => UpdatePracticePlayItemPickerCore();
-
         private void PracticeInstrumentPicker_SelectedIndexChanged(object? sender, EventArgs e)
         {
             if (PracticeInstrumentPicker == null) return;
@@ -4156,7 +4028,6 @@ namespace musicmate.Pages
                 InstrumentPicker.SelectedIndex = idx;
             SelectedInstrumentShort = _session.InstrumentDisplayName;
         }
-
         private async void PracticeKeyPicker_SelectedIndexChanged(object? sender, EventArgs e)
         {
             if (PracticeKeyPicker == null) return;
@@ -4184,13 +4055,11 @@ namespace musicmate.Pages
             if (_isPageVisible && !_suppressSessionRegenerate)
                 await RegenerateNotesAsync();
         }
-
         private void PracticeScaleTunePickerChanged(object? sender, EventArgs e)
         {
             if (IsPickerSyncSuppressed) return;
             OnPracticePlayItemPickerChanged();
         }
-
         private async void OnPracticePlayItemPickerChanged()
         {
             if (_applyingArpeggioSelection) return;
@@ -4217,7 +4086,6 @@ namespace musicmate.Pages
                     break;
             }
         }
-
         private async Task ApplyTuneSelectionAsync(string selected, int idx)
         {
             if (PlayModePickerOptions.IsRhythmNoteTuneSelection(selected)
@@ -4248,7 +4116,6 @@ namespace musicmate.Pages
             UpdateKeyPickerVisibility();
             await RegenerateNotesAsync();
         }
-
         private async Task ApplyScaleSelectionAsync(string selected, int idx)
         {
             if (!NoteSessionService.IsNamedScaleOption(selected))
@@ -4281,7 +4148,6 @@ namespace musicmate.Pages
             UpdatePracticePlayItemPickerCore();
             await RegenerateNotesAsync();
         }
-
         private async Task ApplyArpeggioSelectionAsync(string selected, int idx)
         {
             if (!_arpeggioPickerChoices.TryGetValue(selected, out var arpeggioChoice))
@@ -4295,7 +4161,6 @@ namespace musicmate.Pages
             _session.IsRandomMode = false;
             await ApplyArpeggioSelectionAsync(arpeggioChoice, selected, idx);
         }
-
         private async Task ApplyOtherSelectionAsync(string selected, int idx)
         {
             _lastValidPlayItemIndex = idx;
@@ -4332,7 +4197,6 @@ namespace musicmate.Pages
                 await RegenerateNotesAsync();
             }
         }
-
         private async void OnScaleTunePickerChanged(object? sender, EventArgs e)
         {
             DebugLog.WriteLine($"[PickerDBG] OnScaleTunePickerChanged fired. suppress={IsPickerSyncSuppressed} sender={sender?.GetType().Name}");
@@ -4436,13 +4300,11 @@ namespace musicmate.Pages
                 InstrumentPicker.Unfocus();
             }
         }
-
         private void InstrumentPicker_Unfocused(object? sender, EventArgs e)
         {
             IsInstrumentPickerVisible = false;
             IsInstrumentLabelVisible = true;
         }
-
         async void OnKeyPickerChangedWithPrompt(object? sender, EventArgs e)
         {
             if (IsPickerSyncSuppressed) return;
@@ -4470,9 +4332,7 @@ namespace musicmate.Pages
             MarkChildKeyScaleOverrideIfNeeded();
             OnSettingsChanged(sender, e);
         }
-
         // Use base BindableObject.OnPropertyChanged so XAML bindings receive change notifications
-
         private async Task StopListeningAndEvaluatingAsync(string statusMessage = "Stopped.")
         {
             _playCts?.Cancel();
@@ -4514,7 +4374,6 @@ namespace musicmate.Pages
             await StopListeningAndEvaluatingAsync("Paused for color selection.");
             ColorPickerDialog.Show(_theme_service.PanelBackgroundColor);
         }
-
         private async void OnStartStopToggleClicked(object? sender, EventArgs e)
         {
             var plan = PracticeSessionLifecycle.PlanStopToggle(
@@ -4564,12 +4423,10 @@ namespace musicmate.Pages
                     scaleKeyTrigger: plan.ScaleKeyTrigger);
             }
         }
-
         private void OnStartStopToggleClicked(object sender, TappedEventArgs e)
         {
 
         }
-
         private void OnAutoRepeatScaleClicked(object? sender, EventArgs e)
         {
             // Toggle auto-repeat for scale mode

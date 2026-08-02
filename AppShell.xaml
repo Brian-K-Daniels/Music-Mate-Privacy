@@ -49,6 +49,22 @@
     </DataTemplate>
   </Shell.ItemTemplate>
 
+  <Shell.MenuItemTemplate>
+    <DataTemplate>
+      <Grid
+                HeightRequest="48"
+                Padding="12,0,0,0"
+                ColumnDefinitions="40,*">
+        <Label
+                    Grid.Column="1"
+                    Text="{Binding Text}"
+                    FontSize="16"
+                    TextColor="{DynamicResource ThemeContrastingText}"
+                    VerticalTextAlignment="Center" />
+      </Grid>
+    </DataTemplate>
+  </Shell.MenuItemTemplate>
+
   <!-- Home is first so the app starts here without any navigation flash. -->
   <FlyoutItem Title="Home" Route="Home">
     <ShellContent
@@ -101,5 +117,8 @@
       ContentTemplate="{DataTemplate local:ResetOptionsPage}" />
   </FlyoutItem>
 
+  <!-- Tuner is a MenuItem (not its own page): it selects Tuner mode then opens Music,
+       same as What to Play → Other → Tuner, then Practice. -->
+  <MenuItem Text="Tuner" Command="{Binding GoTunerCommand}" />
 
 </Shell>

@@ -146,17 +146,24 @@ namespace musicmate.Services
         /// <summary>
         /// What To Play should display from the user's saved picker choice, not from
         /// composition-assigned <see cref="NoteSessionService.Tune"/> / arpeggio / tune title.
+        /// Tuner is an exception: main menu and Other picker both set <see cref="NoteSessionService.Tune"/>,
+        /// so the Other row must follow that session state.
         /// </summary>
         public static (PlayModePickerCategory Category, string Selection) ResolveDisplayedPicker(
             NoteSessionService session,
             bool layoutTestTuneEnabled,
             string? selectedTunePreference = null)
-            => ResolveDisplayedPicker(
+        {
+            if (session.Tune == Tuner)
+                return (PlayModePickerCategory.Other, Tuner);
+
+            return ResolveDisplayedPicker(
                 layoutTestTuneEnabled,
                 NormalizeRhythmNoteTunePreference(
                     selectedTunePreference ?? Preferences.Default.Get<string?>("SelectedTune", null)),
                 session.ScaleSelectionMode,
                 session.SelectedScale);
+        }
 
         /// <summary>Testable/display resolver from persisted preference + scale mode.</summary>
         public static (PlayModePickerCategory Category, string Selection) ResolveDisplayedPicker(
