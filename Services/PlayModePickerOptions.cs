@@ -22,6 +22,13 @@ namespace musicmate.Services
         public const string RandomMelodic = NoteSessionService.ScaleSelectionRandom;
         public const string Tuner = "Tuner";
 
+        /// <summary>True when the session is in Tuner mode (hamburger or Other → Tuner).</summary>
+        public static bool IsTunerMode(NoteSessionService? session)
+            => session?.Tune == Tuner;
+
+        public static bool IsTunerMode(string? tune)
+            => string.Equals(tune, Tuner, StringComparison.Ordinal);
+
         /// <summary>Other picker: By Level, Random, Tuner.</summary>
         public static readonly string[] OtherOptions =
         [
@@ -63,6 +70,10 @@ namespace musicmate.Services
             if (tune == Tuner)
                 return true;
 
+            // Explicit Scales / Tunes / Arpeggios picks are never shown on the Other row.
+            if (NoteSessionService.IsNamedScaleOption(selectedTunePreference))
+                return false;
+
             if (tune == "Practice Tune" && IsUserSelectedPracticeTuneTitle(selectedTunePreference))
                 return false;
 
@@ -92,6 +103,8 @@ namespace musicmate.Services
             if (IsUserSelectedPracticeTuneTitle(selectedTunePreference))
                 return false;
             if (IsRhythmNoteTuneSelection(selectedTunePreference))
+                return false;
+            if (NoteSessionService.IsNamedScaleOption(selectedTunePreference))
                 return false;
             return selectedTunePreference is not ("Random" or "Tuner" or "Selected Scale"
                 or NoteSessionService.ScaleSelectionByLevel);
@@ -187,8 +200,8 @@ namespace musicmate.Services
                 && scaleSelectionMode == ScaleSelectionMode.ByLevel)
                 return (PlayModePickerCategory.Other, NoteSessionService.ScaleSelectionByLevel);
 
-            if (scaleSelectionMode == ScaleSelectionMode.Named
-                && NoteSessionService.IsNamedScaleOption(selectedTunePreference))
+            // Explicit Scales-picker choice (SelectedTune = "Major", etc.) wins over By Level mode.
+            if (NoteSessionService.IsNamedScaleOption(selectedTunePreference))
                 return (PlayModePickerCategory.Scales, selectedTunePreference!);
 
             if (IsUserSelectedPracticeTuneTitle(selectedTunePreference))
@@ -307,8 +320,19 @@ namespace musicmate.Services
 
             if (selected == Tuner)
             {
-                session.Tune = Tuner;
+                // Shared transition for hamburger Tuner and WhatToPlay → Other → Tuner.
+                // Overrides prior By Level / random play-mode selection; composition and
+                // note generation must not run while Tune == Tuner.
                 session.IsRandomMode = false;
+                session.RepeatSameTune = false;
+                bool enteringTuner = session.Tune != Tuner;
+                session.Tune = Tuner;
+                if (enteringTuner)
+                {
+                    session.ClearTunerDetection();
+                    session.NotesToDraw.Clear();
+                    session.FeedbackViewModels.Clear();
+                }
                 persistSelectedTune(Tuner);
                 return;
             }

@@ -35,7 +35,9 @@ namespace musicmate.Services
             bool isRandomMode,
             string? selectedTunePreference)
         {
-            if (tune == "Tuner")
+            // Tuner (hamburger or Other picker) must never run By Level composition.
+            if (PlayModePickerOptions.IsTunerMode(tune)
+                || string.Equals(selectedTunePreference, PlayModePickerOptions.Tuner, StringComparison.Ordinal))
                 return true;
 
             if (scaleSelectionMode == ScaleSelectionMode.Named)

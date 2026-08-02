@@ -938,11 +938,19 @@ namespace musicmate.Pages
 
                     _lastValidScaleIndex = idx;
 
+                    Preferences.Default.Set("SelectedTune", selected);
+
                 }
 
             });
 
-            Preferences.Default.Set("SelectedTune", selected);
+            if (rejectionReason != null)
+
+            {
+
+                UpdatePlayModePickersFromSession(suppressClear: true);
+
+            }
 
 #if DEBUG
 

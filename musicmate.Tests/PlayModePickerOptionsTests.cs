@@ -30,6 +30,53 @@ public class PlayModePickerOptionsTests
     }
 
     [Fact]
+    public void ApplyOtherSelection_Tuner_OverridesByLevelAndSyncsPreference()
+    {
+        var session = new NoteSessionService
+        {
+            Tune = "Selected Scale",
+            IsRandomMode = true,
+            RepeatSameTune = true,
+        };
+        Assert.True(session.TryApplyScalePickerSelection(
+            NoteSessionService.ScaleSelectionByLevel, out _));
+
+        string? persisted = null;
+        PlayModePickerOptions.ApplyOtherSelection(
+            session, PlayModePickerOptions.Tuner, value => persisted = value);
+
+        Assert.Equal(PlayModePickerOptions.Tuner, session.Tune);
+        Assert.False(session.IsRandomMode);
+        Assert.False(session.RepeatSameTune);
+        Assert.Equal(PlayModePickerOptions.Tuner, persisted);
+
+        var (category, selection) = PlayModePickerOptions.ResolveDisplayedPicker(
+            session, layoutTestTuneEnabled: false, selectedTunePreference: "Selected Scale");
+        Assert.Equal(PlayModePickerCategory.Other, category);
+        Assert.Equal(PlayModePickerOptions.Tuner, selection);
+
+        Assert.True(PracticeCompositionSelector.IsUserExplicitPlayMode(
+            session.Tune ?? string.Empty,
+            session.ScaleSelectionMode,
+            session.IsRandomMode,
+            persisted));
+    }
+
+    [Fact]
+    public void ResolveDisplayedPicker_SessionTuner_WinsOverStaleByLevelPreference()
+    {
+        var session = new NoteSessionService { Tune = PlayModePickerOptions.Tuner };
+
+        var (category, selection) = PlayModePickerOptions.ResolveDisplayedPicker(
+            session,
+            layoutTestTuneEnabled: false,
+            selectedTunePreference: "Selected Scale");
+
+        Assert.Equal(PlayModePickerCategory.Other, category);
+        Assert.Equal(PlayModePickerOptions.Tuner, selection);
+    }
+
+    [Fact]
     public void TunePickerOptions_ContainsRhythmNotesFirstThenLibraryTunes()
     {
         var options = PlayModePickerOptions.BuildTunePickerOptions();
@@ -145,6 +192,26 @@ public class PlayModePickerOptionsTests
 
         Assert.Equal(PlayModePickerCategory.Scales, category);
         Assert.Equal("Major", selection);
+    }
+
+    [Fact]
+    public void ResolveDisplayedPicker_NamedScalePreference_WinsOverByLevelMode()
+    {
+        var (category, selection) = PlayModePickerOptions.ResolveDisplayedPicker(
+            layoutTestTuneEnabled: false,
+            selectedTunePreference: "Major",
+            scaleSelectionMode: ScaleSelectionMode.ByLevel,
+            selectedScale: "Natural Minor");
+
+        Assert.Equal(PlayModePickerCategory.Scales, category);
+        Assert.Equal("Major", selection);
+        Assert.False(PlayModePickerOptions.IsUserSelectedArpeggioTitle("Major"));
+        Assert.False(PlayModePickerOptions.UsesOtherPicker(
+            layoutTestTuneEnabled: false,
+            tune: "Selected Scale",
+            isRandomMode: false,
+            scaleSelectionMode: ScaleSelectionMode.ByLevel,
+            selectedTunePreference: "Major"));
     }
 
     [Fact]

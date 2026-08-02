@@ -34,6 +34,22 @@ public class PracticeCompositionSelectorTests
     }
 
     [Fact]
+    public void TunerMode_IsUserExplicit_EvenWhenByLevelModeRemains()
+    {
+        Assert.True(PracticeCompositionSelector.IsUserExplicitPlayMode(
+            PlayModePickerOptions.Tuner,
+            ScaleSelectionMode.ByLevel,
+            isRandomMode: false,
+            selectedTunePreference: "Selected Scale"));
+
+        Assert.True(PracticeCompositionSelector.IsUserExplicitPlayMode(
+            "Selected Scale",
+            ScaleSelectionMode.ByLevel,
+            isRandomMode: false,
+            selectedTunePreference: PlayModePickerOptions.Tuner));
+    }
+
+    [Fact]
     public void CompositionAssignedPracticeTune_DoesNotImplyTunesPickerSelection()
     {
         // Simulates state after composition picks a tune: session.Tune is Practice Tune

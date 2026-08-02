@@ -673,6 +673,16 @@ namespace musicmate.Pages
             await _regenerateSemaphore.WaitAsync();
             try
             {
+                // Tuner: skip By Level / composition / note-generation entirely.
+                if (PlayModePickerOptions.IsTunerMode(_session))
+                {
+                    using (PracticeSessionStartProfiler.Scope("RegenerateNotes.Banner"))
+                        await HideSessionResultBannerAsync(refreshMarqueeForNewLevel: true);
+                    _holdResultForChildSession = false;
+                    ApplyTunerDisplayState();
+                    return;
+                }
+
                 using (PracticeSessionStartProfiler.Scope("RegenerateNotes.Banner"))
                     await HideSessionResultBannerAsync(refreshMarqueeForNewLevel: true);
                 _holdResultForChildSession = false;
@@ -691,13 +701,6 @@ namespace musicmate.Pages
                     return;
 
                 _generationSeed = unchecked(_generationSeed + 1);
-
-                if (_session.Tune == "Tuner")
-                {
-                    UpdateTunerStaffDisplay();
-                    UpdateTunerVisibility();
-                    return;
-                }
 
                 UpdateTunerVisibility();
 
@@ -2026,6 +2029,34 @@ namespace musicmate.Pages
             if (_session.Tune == "Tuner")
                 return "Tuner";
 
+            // Keep the Music status/picker label aligned with WhatToPlay's resolved choice.
+            var (category, selection) = PlayModePickerOptions.ResolveDisplayedPicker(
+                _session, LayoutTestTune.IsEnabled);
+
+            if (category == PlayModePickerCategory.Other
+                && selection == NoteSessionService.ScaleSelectionByLevel)
+                return $"{_session.Key} {_session.EffectiveScale} (By Level)";
+
+            if (category == PlayModePickerCategory.Other
+                && selection == PlayModePickerOptions.RandomMelodic)
+                return _session.EffectiveScaleDisplay;
+
+            if (category == PlayModePickerCategory.Scales
+                && !string.IsNullOrWhiteSpace(selection))
+                return selection;
+
+            if (category == PlayModePickerCategory.Tunes
+                && !string.IsNullOrWhiteSpace(selection))
+                return selection;
+
+            if (category == PlayModePickerCategory.Arpeggios
+                && !string.IsNullOrWhiteSpace(selection))
+                return selection;
+
+            if (category == PlayModePickerCategory.Other
+                && !string.IsNullOrWhiteSpace(selection))
+                return selection;
+
             if (_session.Tune == "Arpeggio")
                 return string.IsNullOrWhiteSpace(_session.SelectedArpeggioDisplay)
                     ? "Arpeggio"
@@ -2150,6 +2181,12 @@ namespace musicmate.Pages
             _session.SessionCompleted = false;
 
             await HideSessionResultBannerAsync(refreshMarqueeForNewLevel: false);
+
+            if (PlayModePickerOptions.IsTunerMode(_session))
+            {
+                ApplyTunerDisplayState();
+                return;
+            }
 
             if (!LayoutTestTune.IsEnabled)
                 PracticeCompositionSelector.ApplyNextExerciseIfNeeded(_session, _generationSeed);
@@ -2398,11 +2435,14 @@ namespace musicmate.Pages
             _orientation?.ForceLandscape();
 
             DebugLog.WriteLine($"[DEBUG] OnAppearing: IsAutoRepeatVisible={IsAutoRepeatVisible}, Tune={_session.Tune}");
-            IsAutoRepeatVisible = _session.Tune != "Tuner";
+            IsAutoRepeatVisible = !PlayModePickerOptions.IsTunerMode(_session);
             UpdateAutoRepeatButtons();
             UpdateEffectiveScaleLabel();
             UpdateNoteEmphasisBanner();
-            UpdateTunerVisibility();
+            if (PlayModePickerOptions.IsTunerMode(_session))
+                ApplyTunerDisplayState();
+            else
+                UpdateTunerVisibility();
             DeviceDisplay.Current.KeepScreenOn = true;
 
             if (_session.PendingMasteryPracticeNavigation)
@@ -2908,6 +2948,9 @@ namespace musicmate.Pages
         private void PrepareFreshScaleAndKeyIfNeeded(bool forceNewNotes, string? scaleKeyTrigger)
         {
             if (_session.RepeatSameTune)
+                return;
+
+            if (PlayModePickerOptions.IsTunerMode(_session))
                 return;
 
             if (!LayoutTestTune.IsEnabled)
@@ -3669,15 +3712,21 @@ namespace musicmate.Pages
 
             MainThread.BeginInvokeOnMainThread(() => TunerGraphicsView?.Invalidate());
         }
+        /// <summary>
+        /// Music-page Tuner entry (legacy pickers). Session state comes from the same
+        /// <see cref="PlayModePickerOptions.ApplyOtherSelection"/> path as hamburger / WhatToPlay.
+        /// </summary>
         private void EnterTunerMode()
         {
             _repeatSameSnapshot = null;
-            _session.IsRandomMode = false;
-            _session.Tune = "Tuner";
-            _session.ClearTunerDetection();
-            _session.NotesToDraw.Clear();
-            _session.FeedbackViewModels.Clear();
-            Preferences.Default.Set("SelectedTune", "Tuner");
+            LayoutTestTune.SetEnabled(false);
+            PlayModePickerOptions.ApplyOtherSelection(_session, PlayModePickerOptions.Tuner);
+            ApplyTunerDisplayState();
+        }
+
+        /// <summary>Shows the existing Tuner UI and starts listening when Tune is already Tuner.</summary>
+        private void ApplyTunerDisplayState()
+        {
             IsAutoRepeatVisible = false;
             UpdateTunerStaffDisplay();
             UpdateKeyPickerVisibility();
@@ -3936,17 +3985,15 @@ namespace musicmate.Pages
         }
         private PlayModeCategory GetActivePlayModeCategory()
         {
-            if (LayoutTestTune.IsEnabled
-                || PlayModePickerOptions.IsRhythmNoteTuneSelection(
-                    Preferences.Default.Get<string?>("SelectedTune", null)))
-                return PlayModeCategory.Tunes;
-            if (PlayModePickerOptions.UsesOtherPicker(_session, LayoutTestTune.IsEnabled))
-                return PlayModeCategory.Other;
-            if (_session.Tune == "Practice Tune")
-                return PlayModeCategory.Tunes;
-            if (_session.Tune == "Arpeggio")
-                return PlayModeCategory.Arpeggios;
-            return PlayModeCategory.Scales;
+            var (category, _) = PlayModePickerOptions.ResolveDisplayedPicker(
+                _session, LayoutTestTune.IsEnabled);
+            return category switch
+            {
+                PlayModePickerCategory.Tunes => PlayModeCategory.Tunes,
+                PlayModePickerCategory.Scales => PlayModeCategory.Scales,
+                PlayModePickerCategory.Arpeggios => PlayModeCategory.Arpeggios,
+                _ => PlayModeCategory.Other
+            };
         }
         private string[] BuildPracticePlayItemOptions(PlayModeCategory category)
             => category switch
@@ -3960,7 +4007,13 @@ namespace musicmate.Pages
                 _ => PlayModePickerOptions.OtherOptions.ToArray()
             };
         private string GetPracticePlayItemSelection(PlayModeCategory category)
-            => category switch
+        {
+            var (_, selection) = PlayModePickerOptions.ResolveDisplayedPicker(
+                _session, LayoutTestTune.IsEnabled);
+            if (!string.IsNullOrEmpty(selection))
+                return selection;
+
+            return category switch
             {
                 PlayModeCategory.Tunes => LayoutTestTune.IsEnabled
                     ? PlayModePickerOptions.HalfThroughSixteenthNotes
@@ -3971,6 +4024,7 @@ namespace musicmate.Pages
                     _session, LayoutTestTune.IsEnabled),
                 _ => string.Empty
             };
+        }
         private int FindPracticePlayItemIndex(string[] items, PlayModeCategory category, string selection)
         {
             var idx = Array.IndexOf(items, selection);
