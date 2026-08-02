@@ -141,6 +141,10 @@ namespace musicmate.Pages
 
             _isPageVisible = true;
 
+            if (Shell.Current is musicmate.AppShell shell)
+
+                shell.ResetMusicNavigationGuard();
+
             _orientation?.ForceLandscape();
 
             SyncPickersFromSession();
@@ -807,6 +811,10 @@ namespace musicmate.Pages
 
             var selected = _tuneTitles[idx];
 
+            var previousSelection = PlayModePickerOptions.ResolvePlaySelectionKey(
+
+                _session, LayoutTestTune.IsEnabled);
+
 
 
             ClearOtherPlayModePickers(TunesPicker);
@@ -828,6 +836,14 @@ namespace musicmate.Pages
                 UpdateRepeatButtonsVisibility();
 
                 UpdateRandomModeWarning();
+
+                await NavigateIfNewSelectionAsync(
+
+                    previousSelection,
+
+                    PlayModePickerOptions.ResolvePlaySelectionKey(
+
+                        PlayModePickerCategory.Tunes, PlayModePickerOptions.HalfThroughSixteenthNotes));
 
                 return;
 
@@ -860,6 +876,12 @@ namespace musicmate.Pages
             UpdateRepeatButtonsVisibility();
 
             UpdateRandomModeWarning();
+
+            await NavigateIfNewSelectionAsync(
+
+                previousSelection,
+
+                PlayModePickerOptions.ResolvePlaySelectionKey(PlayModePickerCategory.Tunes, selected));
 
         }
         private async void OnScalesPickerChanged(object? sender, EventArgs e)
@@ -899,6 +921,12 @@ namespace musicmate.Pages
                     return;
 
             }
+
+
+
+            var previousSelection = PlayModePickerOptions.ResolvePlaySelectionKey(
+
+                _session, LayoutTestTune.IsEnabled);
 
 
 
@@ -944,23 +972,27 @@ namespace musicmate.Pages
 
             });
 
-            if (rejectionReason != null)
-
-            {
-
-                UpdatePlayModePickersFromSession(suppressClear: true);
-
-            }
+            // Always resync after apply — an awaited premium prompt can leave the
+            // picker visually stale even when session state updated correctly.
+            UpdatePlayModePickersFromSession(suppressClear: true);
 
 #if DEBUG
 
-            DebugLog.WriteLine($"[PickerTest] Scales/{selected}: mode={_session.ScaleSelectionMode} scale={_session.SelectedScale} Key={_session.Key}");
+            DebugLog.WriteLine($"[PickerTest] Scales/{selected}: mode={_session.ScaleSelectionMode} scale={_session.SelectedScale} Key={_session.Key} rejected={rejectionReason}");
 
 #endif
 
             UpdateRepeatButtonsVisibility();
 
             UpdateRandomModeWarning();
+
+            if (rejectionReason == null)
+
+                await NavigateIfNewSelectionAsync(
+
+                    previousSelection,
+
+                    PlayModePickerOptions.ResolvePlaySelectionKey(PlayModePickerCategory.Scales, selected));
 
         }
         private async void OnArpeggiosPickerChanged(object? sender, EventArgs e)
@@ -991,6 +1023,12 @@ namespace musicmate.Pages
 
 
 
+            var previousSelection = PlayModePickerOptions.ResolvePlaySelectionKey(
+
+                _session, LayoutTestTune.IsEnabled);
+
+
+
             ClearOtherPlayModePickers(ArpeggiosPicker);
 
             LayoutTestTune.SetEnabled(false);
@@ -1015,6 +1053,14 @@ namespace musicmate.Pages
 
             UpdateRandomModeWarning();
 
+            await NavigateIfNewSelectionAsync(
+
+                previousSelection,
+
+                PlayModePickerOptions.ResolvePlaySelectionKey(
+
+                    PlayModePickerCategory.Arpeggios, selected.DisplayLabel));
+
         }
         private async void OnOtherPickerChanged(object? sender, EventArgs e)
 
@@ -1030,11 +1076,65 @@ namespace musicmate.Pages
 
             var selected = PlayModePickerOptions.OtherOptions[idx];
 
+            var previousSelection = PlayModePickerOptions.ResolvePlaySelectionKey(
+
+                _session, LayoutTestTune.IsEnabled);
+
+            var nextSelection = PlayModePickerOptions.ResolvePlaySelectionKey(
+
+                PlayModePickerCategory.Other, selected);
+
 
 
             ClearOtherPlayModePickers(OtherPicker);
 
             LayoutTestTune.SetEnabled(false);
+
+
+
+            if (string.Equals(selected, PlayModePickerOptions.Tuner, StringComparison.Ordinal))
+
+            {
+
+                if (!PlayModePickerOptions.IsNewPlaySelection(previousSelection, nextSelection))
+
+                {
+
+                    ApplyPlayModeSessionChange(() =>
+
+                        PlayModePickerOptions.ApplyOtherSelection(_session, selected));
+
+                    UpdatePlayModePickersFromSession(suppressClear: true);
+
+                    UpdateRepeatButtonsVisibility();
+
+                    UpdateRandomModeWarning();
+
+                    return;
+
+                }
+
+
+
+                if (Shell.Current is musicmate.AppShell shell)
+
+                    await shell.SelectTunerAndOpenMusicAsync();
+
+                else
+
+                {
+
+                    ApplyPlayModeSessionChange(() =>
+
+                        PlayModePickerOptions.ApplyOtherSelection(_session, selected));
+
+                    await Shell.Current.GoToAsync("//MusicPage");
+
+                }
+
+                return;
+
+            }
 
 
 
@@ -1047,6 +1147,8 @@ namespace musicmate.Pages
             UpdateRepeatButtonsVisibility();
 
             UpdateRandomModeWarning();
+
+            await NavigateIfNewSelectionAsync(previousSelection, nextSelection);
 
         }
         private void OnAutoRepeatScaleClicked(object? sender, EventArgs e)
@@ -1118,9 +1220,42 @@ namespace musicmate.Pages
 
         {
 
-            await Shell.Current.GoToAsync("//MusicPage");
+            await NavigateToMusicAsync();
 
         }
+
+        /// <summary>
+        /// Opens Music only when the user picked a different What To Play item than before
+        /// (including a different item in the same picker). Skips init/programmatic restores.
+        /// </summary>
+        private async Task NavigateIfNewSelectionAsync(string previousSelectionKey, string nextSelectionKey)
+
+        {
+
+            if (!_isPageVisible) return;
+
+            if (!PlayModePickerOptions.IsNewPlaySelection(previousSelectionKey, nextSelectionKey))
+
+                return;
+
+            await NavigateToMusicAsync();
+
+        }
+
+        private async Task NavigateToMusicAsync()
+
+        {
+
+            if (Shell.Current is musicmate.AppShell shell)
+
+                await shell.OpenMusicPageAsync();
+
+            else
+
+                await Shell.Current.GoToAsync("//MusicPage");
+
+        }
+
         public new event PropertyChangedEventHandler? PropertyChanged;
         private void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string? name = null)
 

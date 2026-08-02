@@ -1349,14 +1349,8 @@ namespace musicmate.Services
                     break;
 
                 default:
+                    // Honor an explicit Scales-picker Named choice for this generation.
                     activeScale = SelectedScale;
-                    if (level > 0 && !ChildLevelProgression.IsScaleAllowedAtLevel(level, activeScale))
-                    {
-                        ScaleSelectionMode = ScaleSelectionMode.ByLevel;
-                        activeScale = ChildLevelProgression.GetDefaultScaleForLevel(level);
-                        SelectedScale = activeScale;
-                        resetReason = "SelectedScaleNotAllowed";
-                    }
                     SetEffectiveScale(activeScale);
                     break;
             }
@@ -1416,18 +1410,10 @@ namespace musicmate.Services
                     break;
 
                 default:
+                    // Explicit Named selection stays put until the user changes it
+                    // or the child level drops below what that scale allows.
                     newScale = SelectedScale;
-                    if (level > 0 && !ChildLevelProgression.IsScaleAllowedAtLevel(level, newScale))
-                    {
-                        ScaleSelectionMode = ScaleSelectionMode.ByLevel;
-                        newScale = ChildLevelProgression.GetDefaultScaleForLevel(level);
-                        SelectedScale = newScale;
-                        scaleChanged = true;
-                    }
-                    else
-                    {
-                        scaleChanged = !string.Equals(oldScale, newScale, StringComparison.Ordinal);
-                    }
+                    scaleChanged = !string.Equals(oldScale, newScale, StringComparison.Ordinal);
                     SetEffectiveScale(newScale);
                     break;
             }
@@ -1601,6 +1587,8 @@ namespace musicmate.Services
                         SelectedScale = activeScale;
                         SetEffectiveScale(activeScale);
                         resetReason = "SelectedScaleNotAllowed";
+                        // Keep What To Play's Scales row from showing the old Named pick.
+                        Preferences.Default.Set("SelectedTune", "Selected Scale");
                     }
                     break;
             }
@@ -1644,17 +1632,8 @@ namespace musicmate.Services
                 return false;
             }
 
-            if (level > 0 && !ChildLevelProgression.IsScaleAllowedAtLevel(level, selection))
-            {
-                ScaleSelectionMode = ScaleSelectionMode.ByLevel;
-                var fallback = ChildLevelProgression.GetDefaultScaleForLevel(level);
-                SelectedScale = fallback;
-                SetEffectiveScale(fallback);
-                rejectionReason = "SelectedScaleNotAllowed";
-                LogScaleLevel(level, fallback, weightedRandom: false, resetReason: rejectionReason);
-                return false;
-            }
-
+            // Explicit Scales-picker choice always sticks. Level pools only constrain
+            // By Level / Random; level-down still clears a Named pick that is no longer allowed.
             ScaleSelectionMode = ScaleSelectionMode.Named;
             SelectedScale = selection;
             SetEffectiveScale(selection);

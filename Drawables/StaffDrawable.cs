@@ -765,40 +765,88 @@ namespace musicmate.Drawables
         /// then place remaining measures on the lower staff.  Never splits a measure.
         /// </summary>
         public StaffMeasureSplitResult SplitMeasuresAcrossStaves(
-            List<GeneratedNote> allNotes,
-            IReadOnlyList<double> barBeats,
-            float canvasWidth,
-            float canvasHeight)
+    List<GeneratedNote> allNotes,
+    IReadOnlyList<double> barBeats,
+    float canvasWidth,
+    float canvasHeight)
         {
+            ArgumentNullException.ThrowIfNull(allNotes);
+            ArgumentNullException.ThrowIfNull(barBeats);
+
             var result = new StaffMeasureSplitResult();
+
             if (allNotes.Count == 0)
                 return result;
 
-            var insets = _safeArea?.GetSafeAreaInsets() ?? (0f, 0f, 0f, 0f);
-            float effectiveRightInset = Math.Max(0f, insets.Right - RelaxCutoutInsetRightDp);
-            float safeLeft = insets.Left;
-            float layoutRightLimit = canvasWidth - effectiveRightInset - LayoutRightPad;
-            float safeWidth = Math.Max(64f, layoutRightLimit - safeLeft);
+            var insets =
+                _safeArea?.GetSafeAreaInsets()
+                ?? (0f, 0f, 0f, 0f);
 
-            ComputeLayout(Math.Max(canvasHeight, 120f));
+            float effectiveRightInset =
+                Math.Max(0f, insets.Right - RelaxCutoutInsetRightDp);
+
+            float safeLeft = insets.Left;
+
+            float layoutRightLimit =
+                canvasWidth - effectiveRightInset - LayoutRightPad;
+
+            float safeWidth =
+                Math.Max(64f, layoutRightLimit - safeLeft);
+
+            /*
+             * Do not calculate notation size from the previous UpperNotes/LowerNotes
+             * split. At this point no new split has yet been established.
+             *
+             * Use all incoming notes as the provisional upper-staff range and an
+             * empty lower staff. This makes the result deterministic for identical
+             * inputs and prevents feedback from the preceding split.
+             */
+            ComputeLayout(
+                Math.Max(canvasHeight, 120f),
+                allNotes,
+                Array.Empty<GeneratedNote>());
+
             _headerMetrics = ComputeHeaderMetrics(safeLeft);
-            float upperUsableWidth = Math.Max(64f, safeWidth - _headerMetrics.LeftMargin - RightMargin);
-            float lowerUsableWidth = Math.Max(64f, safeWidth - _headerMetrics.ClefOnlyLeftMargin - RightMargin);
+
+            float upperUsableWidth = Math.Max(
+                64f,
+                safeWidth - _headerMetrics.LeftMargin - RightMargin);
 
             var notes = allNotes;
-            double beatOrigin = GetStaffBeatOrigin(notes, barBeats);
-            var barBeatsList = barBeats is List<double> list ? new List<double>(list) : barBeats.ToList();
-            barBeatsList = ResolveStaffBarBeats(notes, barBeatsList, beatOrigin);
+
+            double beatOrigin =
+                GetStaffBeatOrigin(notes, barBeats);
+
+            var barBeatsList = barBeats is List<double> list
+                ? new List<double>(list)
+                : barBeats.ToList();
+
+            barBeatsList =
+                ResolveStaffBarBeats(notes, barBeatsList, beatOrigin);
 
             double totalBeats = 0.0;
+
             for (int i = 0; i < notes.Count; i++)
             {
-                double rel = (notes[i].BeatPosition ?? 0.0) - beatOrigin;
-                totalBeats = Math.Max(totalBeats, rel + notes[i].BeatDuration);
+                double relativeBeat =
+                    (notes[i].BeatPosition ?? 0.0) - beatOrigin;
+
+                totalBeats = Math.Max(
+                    totalBeats,
+                    relativeBeat + notes[i].BeatDuration);
             }
 
-            var sortedBarBeats = barBeatsList.Select(b => b - beatOrigin).OrderBy(b => b).ToList();
-            var segments = BuildMeasureSegments(notes, sortedBarBeats, beatOrigin, totalBeats);
+            var sortedBarBeats = barBeatsList
+                .Select(beat => beat - beatOrigin)
+                .OrderBy(beat => beat)
+                .ToList();
+
+            var segments = BuildMeasureSegments(
+                notes,
+                sortedBarBeats,
+                beatOrigin,
+                totalBeats);
+
             result.TotalMeasureCount = segments.Count;
 
             if (segments.Count == 0)
@@ -807,36 +855,55 @@ namespace musicmate.Drawables
                 return result;
             }
 
-            var minWidths = new float[segments.Count];
-            for (int m = 0; m < segments.Count; m++)
-                minWidths[m] = ComputeMeasureMinWidth(notes, segments[m], beatOrigin);
+            var minimumWidths = new float[segments.Count];
+
+            for (int measureIndex = 0;
+                 measureIndex < segments.Count;
+                 measureIndex++)
+            {
+                minimumWidths[measureIndex] =
+                    ComputeMeasureMinWidth(
+                        notes,
+                        segments[measureIndex],
+                        beatOrigin);
+            }
 
             int upperMeasureCount = PackMeasuresOntoStaff(
-                segments, minWidths, upperUsableWidth, startMeasureIndex: 0, isLowerStaff: false);
+                segments,
+                minimumWidths,
+                upperUsableWidth,
+                startMeasureIndex: 0);
 
-            if (upperMeasureCount < segments.Count)
-            {
-                PackMeasuresOntoStaff(
-                    segments, minWidths, lowerUsableWidth,
-                    startMeasureIndex: upperMeasureCount, isLowerStaff: true);
-            }
+            /*
+             * Guarantee progress. PackMeasuresOntoStaff normally places the first
+             * measure even when it is wider than the staff, but retain this guard
+             * so a future change cannot leave every note on the lower staff.
+             */
+            if (upperMeasureCount == 0 && segments.Count > 0)
+                upperMeasureCount = 1;
 
             var upperIndices = new HashSet<int>();
-            for (int m = 0; m < upperMeasureCount; m++)
+
+            for (int measureIndex = 0;
+                 measureIndex < upperMeasureCount;
+                 measureIndex++)
             {
-                foreach (int idx in segments[m].NoteIndices)
-                    upperIndices.Add(idx);
+                foreach (int noteIndex in segments[measureIndex].NoteIndices)
+                    upperIndices.Add(noteIndex);
             }
 
-            for (int i = 0; i < notes.Count; i++)
+            for (int noteIndex = 0;
+                 noteIndex < notes.Count;
+                 noteIndex++)
             {
-                if (upperIndices.Contains(i))
-                    result.UpperNotes.Add(notes[i]);
+                if (upperIndices.Contains(noteIndex))
+                    result.UpperNotes.Add(notes[noteIndex]);
                 else
-                    result.LowerNotes.Add(notes[i]);
+                    result.LowerNotes.Add(notes[noteIndex]);
             }
 
             result.UpperMeasureCount = upperMeasureCount;
+
             return result;
         }
 
@@ -845,25 +912,49 @@ namespace musicmate.Drawables
         /// measures placed (may be zero when <paramref name="startMeasureIndex"/> is past the end).
         /// </summary>
         private int PackMeasuresOntoStaff(
-            List<MeasureSegment> segments,
-            float[] minWidths,
-            float usableWidth,
-            int startMeasureIndex,
-            bool isLowerStaff)
+    IReadOnlyList<MeasureSegment> segments,
+    IReadOnlyList<float> minimumWidths,
+    float usableWidth,
+    int startMeasureIndex)
         {
+            if (segments.Count == 0)
+                return 0;
+
+            if (minimumWidths.Count != segments.Count)
+            {
+                throw new ArgumentException(
+                    "The measure-width count must equal the segment count.",
+                    nameof(minimumWidths));
+            }
+
+            if (startMeasureIndex < 0 ||
+                startMeasureIndex >= segments.Count)
+            {
+                return 0;
+            }
+
             float usedWidth = 0f;
             int placed = 0;
 
-            for (int m = startMeasureIndex; m < segments.Count; m++)
+            for (int measureIndex = startMeasureIndex;
+                 measureIndex < segments.Count;
+                 measureIndex++)
             {
-                float measureWidth = minWidths[m];
-                float remainingStaffWidth = usableWidth - usedWidth;
-                bool mustWrap = placed > 0 && measureWidth > remainingStaffWidth + 0.5f;
-                bool wrappedFromPreviousStaff = isLowerStaff && placed == 0;
+                float measureWidth = minimumWidths[measureIndex];
+                float remainingWidth = usableWidth - usedWidth;
+
+                bool mustWrap =
+                    placed > 0 &&
+                    measureWidth > remainingWidth + 0.5f;
 
 #if DEBUG
-                LogMeasureLayout(m + 1, measureWidth, remainingStaffWidth, mustWrap || wrappedFromPreviousStaff);
+                LogMeasureLayout(
+                    measureIndex + 1,
+                    measureWidth,
+                    remainingWidth,
+                    mustWrap);
 #endif
+
                 if (mustWrap)
                     break;
 
@@ -882,76 +973,108 @@ namespace musicmate.Drawables
 
         // ── Ordered layout pipeline ──────────────────────────────────────────────
         // Approximate height of the iOS/Android system Practice-indicator bar at the bottom of the screen.
-        private const float BottomBarReserve = 34f;
-
-        /// <summary>
-        /// Steps 1–8: determine note ranges, derive staff-line spacing so the complete
-        /// note range (both staffs + gap) fills <paramref name="availH"/> exactly, then
-        /// compute all staff Y positions.  Must be called before any drawing.
-        /// </summary>
-        private void ComputeLayout(float availH)
+        private const float BottomBarReserve = 34f;        
+        private void ComputeLayout(float availableHeight)
         {
-            if (availH <= 0f) availH = 300f;
+            ComputeLayout(availableHeight, UpperNotes, LowerNotes);
+        }
+        private void ComputeLayout( float availableHeight,
+                                    IReadOnlyList<GeneratedNote> upperNotes,
+                                    IReadOnlyList<GeneratedNote> lowerNotes)
+        {
+            if (availableHeight <= 0f)
+                availableHeight = 300f;
 
-            // Reserve space for the OS Practice-indicator bar so notes are never hidden behind it.
-            float usableH = availH - BottomBarReserve;
+            // Reserve space for the OS Practice-indicator bar so notes are
+            // never hidden behind it.
+            float usableH = Math.Max(1f, availableHeight - BottomBarReserve);
 
             // Diatonic-step range for each staff.
-            int minS1 = 0, maxS1 = 0, minS2 = 0, maxS2 = 0;
-            bool hasU = false, hasL = false;
-            foreach (var n in UpperNotes)
+            int minS1 = 0;
+            int maxS1 = 0;
+            int minS2 = 0;
+            int maxS2 = 0;
+
+            bool hasU = false;
+            bool hasL = false;
+
+            foreach (var note in upperNotes)
             {
-                if (n.IsRest) continue;
-                int s = DiatonicStepsFromB4(n.Letter, n.Octave);
-                if (!hasU) { minS1 = maxS1 = s; hasU = true; }
-                else { if (s < minS1) minS1 = s; if (s > maxS1) maxS1 = s; }
-            }
-            foreach (var n in LowerNotes)
-            {
-                if (n.IsRest) continue;
-                int s = DiatonicStepsFromB4(n.Letter, n.Octave);
-                if (!hasL) { minS2 = maxS2 = s; hasL = true; }
-                else { if (s < minS2) minS2 = s; if (s > maxS2) maxS2 = s; }
+                if (note.IsRest)
+                    continue;
+
+                int steps = DiatonicStepsFromB4(note.Letter, note.Octave);
+
+                if (!hasU)
+                {
+                    minS1 = steps;
+                    maxS1 = steps;
+                    hasU = true;
+                }
+                else
+                {
+                    minS1 = Math.Min(minS1, steps);
+                    maxS1 = Math.Max(maxS1, steps);
+                }
             }
 
-            // Half-spaces of clearance beyond the 5-line staff boundaries.
-            // eA = above-top clearance, eB = below-bottom clearance.
-            // A fixed breathing-room constant pads both the top of the upper staff
-            // and the bottom of the lower staff so noteheads are never clipped.
+            foreach (var note in lowerNotes)
+            {
+                if (note.IsRest)
+                    continue;
+
+                int steps = DiatonicStepsFromB4(note.Letter, note.Octave);
+
+                if (!hasL)
+                {
+                    minS2 = steps;
+                    maxS2 = steps;
+                    hasL = true;
+                }
+                else
+                {
+                    minS2 = Math.Min(minS2, steps);
+                    maxS2 = Math.Max(maxS2, steps);
+                }
+            }
+
+            // Half-spaces of clearance beyond the five staff lines.
             const int breathing = 3;
+
             int eA1 = Math.Max(0, -4 - minS1) + breathing;
             int eB1 = Math.Max(0, maxS1 - 4) + breathing;
             int eA2 = Math.Max(0, -4 - minS2) + breathing;
             int eB2 = Math.Max(0, maxS2 - 4) + breathing;
 
-            // The MusicBpm quarter-note marking lives above the upper staff; reserve enough
-            // room for its tangential stem so it does not clip at the top of the canvas.
+            // Reserve room for the BPM marking above the upper staff.
             if (_session.Tune != "Tuner")
                 eA1 = Math.Max(eA1, 9);
 
-            // Total half-spaces consumed by the staff/staves (each staff = 8 hs for 5 lines / 4 spaces).
             bool tunerSingleStaff = _session.Tune == "Tuner";
-            float totalHalfSpaces = tunerSingleStaff
-                ? (float)(8 + eA1 + eB1)
-                : (float)(8 + eA1 + eB1 + 8 + eA2 + eB2);
 
-            // Derive sls so the two staffs fill usableH, then clamp to a comfortable range.
+            float totalHalfSpaces = tunerSingleStaff
+                ? 8f + eA1 + eB1
+                : 8f + eA1 + eB1 + 8f + eA2 + eB2;
+
             float sls = usableH / (totalHalfSpaces / 2f);
             sls = Math.Clamp(sls, 6f, 12f);
+
             float hs = sls / 2f;
 
             float compactNoteHeadR = sls * CompactNoteHeadRRatio;
+
             float noteHeadR = UseBeginnerNotationScale
                 ? sls * BeginnerNoteHeadSpaceRatio / NoteHeadHeightFactor
                 : _session.ChildLevel > 30
                     ? sls * MidLevelNoteHeadRRatio
                     : compactNoteHeadR;
+
             float glyphScale = noteHeadR / compactNoteHeadR;
+
             float stemLen = UseBeginnerNotationScale
                 ? 3.5f * sls
                 : sls * CompactStemLenRatio * glyphScale;
 
-            // Staff Y positions — no extra gap between the staffs beyond the natural breathing room.
             float upperTop = eA1 * hs;
             float upperMid = upperTop + 2f * sls;
             float upperBot = upperTop + 4f * sls;
@@ -959,12 +1082,13 @@ namespace musicmate.Drawables
             float lowerTop = upperBot + eB1 * hs + eA2 * hs;
             float lowerMid = lowerTop + 2f * sls;
             float lowerBot = lowerTop + 4f * sls;
-            float contentH = lowerBot + eB2 * hs;
 
-            // Distribute unused space equally above the top and below the bottom (and the
-            // middle gap between the staffs already receives eB1+eA2 half-spaces of padding).
+            float contentH = tunerSingleStaff
+                ? upperBot + eB1 * hs
+                : lowerBot + eB2 * hs;
+
             float slack = Math.Max(0f, usableH - contentH);
-            float vOffset = slack / 2f;
+            float verticalOffset = slack / 2f;
 
             _layout = new StaffLayout
             {
@@ -973,13 +1097,16 @@ namespace musicmate.Drawables
                 NoteHeadR = noteHeadR,
                 StemLen = stemLen,
                 GlyphScale = glyphScale,
-                UpperTop = upperTop + vOffset,
-                UpperMid = upperMid + vOffset,
-                UpperBot = upperBot + vOffset,
-                LowerTop = lowerTop + vOffset,
-                LowerMid = lowerMid + vOffset,
-                LowerBot = lowerBot + vOffset,
-                TotalHeight = contentH + vOffset
+
+                UpperTop = upperTop + verticalOffset,
+                UpperMid = upperMid + verticalOffset,
+                UpperBot = upperBot + verticalOffset,
+
+                LowerTop = lowerTop + verticalOffset,
+                LowerMid = lowerMid + verticalOffset,
+                LowerBot = lowerBot + verticalOffset,
+
+                TotalHeight = contentH + verticalOffset
             };
         }
 

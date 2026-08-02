@@ -474,9 +474,16 @@
                       Style="{StaticResource CompactBrownBoxFill}"
                       HorizontalOptions="Fill">
                 <Grid BackgroundColor="White">
-                  <Picker x:Name="PracticeScaleTunePicker"
-                          Style="{StaticResource PracticeBottomPicker}"
-                          SelectedIndexChanged="PracticeScaleTunePickerChanged" />
+                  <Label FontSize="10"
+                         TextColor="#000000"
+                         BackgroundColor="Transparent"
+                         VerticalOptions="Center"
+                         HorizontalOptions="Fill"
+                         VerticalTextAlignment="Center"
+                         LineBreakMode="TailTruncation"
+                         MaxLines="1"
+                         Padding="6,0"
+                         Text="{Binding Source={x:Reference musicPage}, Path=PracticePlayItemLabelText, x:DataType=pages:MusicPage}" />
                 </Grid>
               </Border>
             </Grid>

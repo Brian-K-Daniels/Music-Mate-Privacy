@@ -216,6 +216,24 @@ namespace musicmate.Services
             return (PlayModePickerCategory.Other, NoteSessionService.ScaleSelectionByLevel);
         }
 
+        /// <summary>
+        /// Stable key for the current What To Play pick (category + selection).
+        /// Used so a different item in the same picker (e.g. Major → Dorian) counts as a new choice.
+        /// </summary>
+        public static string ResolvePlaySelectionKey(PlayModePickerCategory category, string? selection)
+            => $"{category}:{selection ?? string.Empty}";
+
+        public static string ResolvePlaySelectionKey(NoteSessionService session, bool layoutTestTuneEnabled)
+        {
+            var (category, selection) = ResolveDisplayedPicker(session, layoutTestTuneEnabled);
+            return ResolvePlaySelectionKey(category, selection);
+        }
+
+        /// <summary>True when the user picked a different What To Play item than before.</summary>
+        public static bool IsNewPlaySelection(string? previousSelectionKey, string? nextSelectionKey)
+            => !string.IsNullOrEmpty(nextSelectionKey)
+               && !string.Equals(previousSelectionKey, nextSelectionKey, StringComparison.Ordinal);
+
         public static string BuildSessionWhatLabel(
             NoteSessionService session,
             bool layoutTestTuneEnabled,

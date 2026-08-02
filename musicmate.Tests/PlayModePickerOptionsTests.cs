@@ -350,6 +350,47 @@ public class PlayModePickerOptionsTests
             selectedTunePreference: "Fixed Tune"));
     }
 
+    [Fact]
+    public void ResolvePlaySelectionKey_TreatsDifferentItemsInSamePickerAsNew()
+    {
+        var major = PlayModePickerOptions.ResolvePlaySelectionKey(
+            PlayModePickerCategory.Scales, "Major");
+        var dorian = PlayModePickerOptions.ResolvePlaySelectionKey(
+            PlayModePickerCategory.Scales, "Dorian");
+
+        Assert.False(PlayModePickerOptions.IsNewPlaySelection(major, major));
+        Assert.True(PlayModePickerOptions.IsNewPlaySelection(major, dorian));
+
+        var mary = PlayModePickerOptions.ResolvePlaySelectionKey(
+            PlayModePickerCategory.Tunes, "Mary Had a Little Lamb");
+        var ode = PlayModePickerOptions.ResolvePlaySelectionKey(
+            PlayModePickerCategory.Tunes, "Ode to Joy");
+        Assert.True(PlayModePickerOptions.IsNewPlaySelection(mary, ode));
+
+        var byLevel = PlayModePickerOptions.ResolvePlaySelectionKey(
+            PlayModePickerCategory.Other, NoteSessionService.ScaleSelectionByLevel);
+        var tuner = PlayModePickerOptions.ResolvePlaySelectionKey(
+            PlayModePickerCategory.Other, PlayModePickerOptions.Tuner);
+        Assert.True(PlayModePickerOptions.IsNewPlaySelection(byLevel, tuner));
+    }
+
+    [Fact]
+    public void TryApplyScalePickerSelection_NamedScale_SticksEvenWhenBelowUnlockLevel()
+    {
+        var session = new NoteSessionService
+        {
+            ChildLevel = 40, // Dorian unlocks at 76+
+            Tune = "Selected Scale",
+        };
+
+        Assert.False(ChildLevelProgression.IsScaleAllowedAtLevel(40, "Dorian"));
+        Assert.True(session.TryApplyScalePickerSelection("Dorian", out var rejection));
+        Assert.Null(rejection);
+        Assert.Equal(ScaleSelectionMode.Named, session.ScaleSelectionMode);
+        Assert.Equal("Dorian", session.SelectedScale);
+        Assert.Equal("Dorian", session.EffectiveScale);
+    }
+
     [Theory]
     [InlineData(PlayModePickerCategory.Other, "By Level", "ByLvl")]
     [InlineData(PlayModePickerCategory.Other, "Random", "Rnd")]

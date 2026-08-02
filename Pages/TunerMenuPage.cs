@@ -6,7 +6,7 @@ namespace musicmate.Pages
 {
     /// <summary>
     /// Placeholder for the Tuner flyout item. Preferred path cancels this route in
-    /// <c>AppShell</c> and opens Music. This page is a fallback if cancel does not run.
+    /// <see cref="AppShell"/> and opens Music. This page is a fallback if cancel does not run.
     /// </summary>
     public class TunerMenuPage : ContentPage
     {
@@ -32,13 +32,15 @@ namespace musicmate.Pages
             {
                 try
                 {
-                    LayoutTestTune.SetEnabled(false);
-                    var session = ServiceHelper.GetService<NoteSessionService>();
-                    if (session != null)
-                        PlayModePickerOptions.ApplyOtherSelection(session, PlayModePickerOptions.Tuner);
-
-                    if (Shell.Current != null)
+                    if (Shell.Current is musicmate.AppShell shell)
+                        await shell.SelectTunerAndOpenMusicAsync();
+                    else if (Shell.Current != null)
                     {
+                        LayoutTestTune.SetEnabled(false);
+                        var session = ServiceHelper.GetService<NoteSessionService>();
+                        if (session != null)
+                            PlayModePickerOptions.ApplyOtherSelection(session, PlayModePickerOptions.Tuner);
+
                         Shell.Current.FlyoutIsPresented = false;
                         await Shell.Current.GoToAsync("//MusicPage");
                     }
