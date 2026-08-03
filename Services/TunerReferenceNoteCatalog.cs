@@ -13,6 +13,9 @@ namespace musicmate.Services
 
     public static class TunerReferenceNoteCatalog
     {
+        /// <summary>Persisted written MIDI for the Tuner reference-note selection.</summary>
+        public const string PreferenceKeyWrittenMidi = "TunerReferenceWrittenMidi";
+
         /// <summary>
         /// Full practical written MIDI range for the instrument (ignores child-level narrowing).
         /// </summary>
@@ -124,22 +127,28 @@ namespace musicmate.Services
         }
 
         /// <summary>
+        /// Concert MIDI for a written MIDI using <see cref="InstrumentProfile.TransposeOffset"/>.
+        /// Convention (negative offset = sounds lower than written):
+        /// writtenMidi = concertMidi - offset, so concertMidi = writtenMidi + offset.
+        /// Applied exactly once — do not add further octave or transpose shifts.
+        /// </summary>
+        public static int ToConcertMidi(int writtenMidi, int transposeOffset)
+            => writtenMidi + transposeOffset;
+
+        /// <summary>
         /// Concert frequency for a written MIDI using <see cref="InstrumentProfile.TransposeOffset"/>.
-        /// Convention: writtenMidi = concertMidi - offset, so concertMidi = writtenMidi + offset.
         /// </summary>
         public static double ConcertFrequencyHz(int writtenMidi, int transposeOffset)
-            => NoteSessionService.MidiToFreqPublic(writtenMidi + transposeOffset);
+            => NoteSessionService.MidiToFreqPublic(ToConcertMidi(writtenMidi, transposeOffset));
 
+        /// <summary>
+        /// Nearest MIDI in <paramref name="midis"/> (order-independent — picker choices are high→low).
+        /// </summary>
         public static int ClampToRange(int writtenMidi, IReadOnlyList<int> midis)
         {
             if (midis.Count == 0)
                 return writtenMidi;
-            if (writtenMidi <= midis[0])
-                return midis[0];
-            if (writtenMidi >= midis[^1])
-                return midis[^1];
 
-            // Midis are contiguous from BuildAvailableMidiSet; still tolerate gaps.
             int best = midis[0];
             int bestDist = Math.Abs(writtenMidi - best);
             for (int i = 1; i < midis.Count; i++)
@@ -158,7 +167,17 @@ namespace musicmate.Services
         {
             if (midis.Count == 0)
                 return NoteSessionService.NoteNameToMidi("C4");
-            return midis[midis.Count / 2];
+
+            // Prefer ascending span so "middle" is pitch-middle regardless of list order.
+            int lo = midis[0];
+            int hi = midis[0];
+            for (int i = 1; i < midis.Count; i++)
+            {
+                if (midis[i] < lo) lo = midis[i];
+                if (midis[i] > hi) hi = midis[i];
+            }
+            int target = (lo + hi) / 2;
+            return ClampToRange(target, midis);
         }
     }
 }

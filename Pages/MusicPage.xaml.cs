@@ -87,9 +87,12 @@ namespace musicmate.Pages
         private bool _isReferenceTonePlaying;
         private CancellationTokenSource? _referenceToneCts;
         private int _referenceToneGeneration;
+        /// <summary>Source of truth for picker, staff, Play Note pitch, and ◀/▶ enablement.</summary>
         private int _referenceWrittenMidi;
         private IReadOnlyList<TunerReferenceNoteChoice> _referenceNoteChoices =
             Array.Empty<TunerReferenceNoteChoice>();
+        private bool _isUpdatingReferenceNoteUi;
+        private string? _lastLoggedTunerHeardNote;
         private const double ReferenceToneSeconds = 2.5;
 #pragma warning restore CS0414
 
@@ -707,12 +710,14 @@ namespace musicmate.Pages
             try
             {
                 // Tuner: skip By Level / composition / note-generation entirely.
+                // Do NOT call ApplyTunerDisplayState here — that re-enters listening setup
+                // and is owned by OnAppearing / EnterTunerMode / UpdateTunerVisibility.
                 if (PlayModePickerOptions.IsTunerMode(_session))
                 {
                     using (PracticeSessionStartProfiler.Scope("RegenerateNotes.Banner"))
                         await HideSessionResultBannerAsync(refreshMarqueeForNewLevel: true);
                     _holdResultForChildSession = false;
-                    ApplyTunerDisplayState();
+                    DebugLog.WriteLine("[Tuner] RegenerateNotesAsync skipped (no exercise notes)");
                     return;
                 }
 
@@ -1685,8 +1690,8 @@ namespace musicmate.Pages
             UpdateTitlePlayButtonPosition();
         }
         /// <summary>
-        /// Size the tuner panels to the visible page content with a uniform inset so
-        /// every side of both green borders stays on-screen (no clipping/scroll).
+        /// Size the equal-width tuner panels short enough that both green borders and
+        /// their contents stay fully visible without scrolling (portrait and landscape).
         /// </summary>
         private void ApplyTunerHeight()
         {
@@ -1696,25 +1701,51 @@ namespace musicmate.Pages
             try
             {
                 double availH = 0;
+                double availW = 0;
                 if (MainPageRootGrid?.Height > 0)
+                {
                     availH = MainPageRootGrid.Height;
+                    availW = MainPageRootGrid.Width;
+                }
                 else if (Height > 0)
+                {
                     availH = Height;
+                    availW = Width;
+                }
                 else
                 {
                     var win = Application.Current?.Windows?.FirstOrDefault();
                     if (win != null)
+                    {
                         availH = Math.Max(180, win.Height - 72);
+                        availW = win.Width;
+                    }
                 }
 
-                availH = Math.Max(180, availH);
+                availH = Math.Max(160, availH);
 
                 if (SessionResultBanner?.IsVisible == true && SessionResultBanner.Height > 0)
                     availH -= SessionResultBanner.Height + 4;
 
-                // Inset so stroke on all four sides stays inside the viewport.
+                // Outer inset keeps stroke clear of cutouts / viewport edges.
                 const double edge = 8;
-                double panelH = Math.Max(140, availH - edge * 2);
+                // Extra bottom reserve so borders are not clipped by system chrome.
+                const double bottomReserve = 16;
+                double usableH = Math.Max(140, availH - edge * 2 - bottomReserve);
+
+                bool landscape = availW > availH && availW > 0;
+                // Content-sized panels: shorter than the full page so bottoms stay visible.
+                // Landscape already has limited height — use most of it; portrait caps lower.
+                double panelH = landscape
+                    ? Math.Min(usableH, Math.Max(150, usableH * 0.92))
+                    : Math.Min(usableH, Math.Max(170, Math.Min(260, usableH * 0.62)));
+
+                // Note list shares the right column; keep it inside the shorter panel.
+                if (TunerNoteListBorder != null)
+                {
+                    double listH = Math.Clamp(panelH - 110, 72, landscape ? 140 : 120);
+                    TunerNoteListBorder.HeightRequest = listH;
+                }
 
                 MainPageMainLayout.Spacing = 0;
                 if (MainScrollView != null)
@@ -1733,14 +1764,13 @@ namespace musicmate.Pages
                 StaffAreaStack.Margin = new Thickness(edge);
                 StaffAreaStack.HeightRequest = panelH;
                 StaffAreaStack.HorizontalOptions = LayoutOptions.Fill;
-                StaffAreaStack.VerticalOptions = LayoutOptions.Fill;
+                StaffAreaStack.VerticalOptions = LayoutOptions.Start;
 
-                // Let the two column borders fill the grid; do not force oversized HeightRequests
-                // that clip the bottom/side strokes.
+                // Equal-width columns fill the shared height; avoid oversized HeightRequests.
                 TunerGrid.HeightRequest = panelH;
                 TunerGrid.Margin = new Thickness(0);
                 TunerGrid.HorizontalOptions = LayoutOptions.Fill;
-                TunerGrid.VerticalOptions = LayoutOptions.Fill;
+                TunerGrid.VerticalOptions = LayoutOptions.Start;
                 TunerBorder.HeightRequest = -1;
                 TunerInfoBorder.HeightRequest = -1;
                 TunerGraphicsView.HeightRequest = -1;
@@ -2877,10 +2907,21 @@ namespace musicmate.Pages
 
                 if (_session.Tune == "Tuner")
                 {
-                    // Live detection updates the picker readout and staff; reference tone keeps the selected note.
+                    // Live mic detection only — never mutate _referenceWrittenMidi / picker selection.
                     if (_isReferenceTonePlaying)
                         return;
+
                     _session.UpdateTunerLastNote(freq);
+                    // Log only when the heard note identity changes (avoid per-buffer spam).
+                    string? heard = _session.TunerLastNoteName;
+                    if (!string.Equals(heard, _lastLoggedTunerHeardNote, StringComparison.Ordinal))
+                    {
+                        _lastLoggedTunerHeardNote = heard;
+                        DebugLog.WriteLine(
+                            $"[Tuner] accept freq={freq:F1} note={heard} cents={_session.TunerLastCents} " +
+                            $"(selectedRefMidi={_referenceWrittenMidi})");
+                    }
+
                     MainThread.BeginInvokeOnMainThread(() =>
                     {
                         RefreshTunerPickerDisplayLabel();
@@ -3242,6 +3283,14 @@ namespace musicmate.Pages
 
                 ct.ThrowIfCancellationRequested();
 
+                // Tuner uses the same mic/pitch pipeline as scales, but must not run
+                // exercise preparation (RegenerateNotesAsync / By Level / composition).
+                if (PlayModePickerOptions.IsTunerMode(_session) && !playBack)
+                {
+                    await StartTunerMicrophoneCaptureAsync(ct);
+                    return;
+                }
+
                 if (!_session.RepeatSameTune)
                     _repeatSameSnapshot = null;
 
@@ -3396,6 +3445,47 @@ namespace musicmate.Pages
                     await snack.Show();
                 });
             }
+        }
+
+        /// <summary>
+        /// Tuner mic start: same permission + StartCapture(OnAudioBlock) path as scales,
+        /// without regenerating exercise notes or requiring an active staff target.
+        /// </summary>
+        private async Task StartTunerMicrophoneCaptureAsync(CancellationToken ct)
+        {
+            DebugLog.WriteLine("[Tuner] activated — starting microphone (shared scale pipeline)");
+
+            if (!_isRunning)
+            {
+                DebugLog.WriteLine("[Tuner] Aborted before permission: no longer running");
+                return;
+            }
+
+            using (PracticeSessionStartProfiler.Scope("AudioPermission"))
+            {
+                await _audio.EnsurePermissionAsync();
+            }
+            DebugLog.WriteLine("[Tuner] microphone permission requested/checked");
+
+            ct.ThrowIfCancellationRequested();
+            if (!_isRunning)
+            {
+                DebugLog.WriteLine("[Tuner] Aborted after permission: no longer running");
+                return;
+            }
+
+            try { _audio.StopCapture(); } catch { }
+            _pitchBufferPos = 0;
+            _lastProcess = DateTime.MinValue;
+            _isBelowThreshold = true;
+
+            DebugLog.WriteLine("[Tuner] microphone start requested");
+            _audio.StartCapture(OnAudioBlock);
+            _session?.StartListeningClock();
+            StatusService.Instance.StatusMessage = "Listening…";
+            UpdateTunerModeChrome();
+            RefreshTunerPickerDisplayLabel();
+            DebugLog.WriteLine("[Tuner] microphone capture running");
         }
         /// <summary>Full rhythmic sequence (notes and rests) for autoplay.</summary>
         private List<GeneratedNote>? TryGetAutoplayRhythmSequence()
@@ -3885,28 +3975,42 @@ namespace musicmate.Pages
 
             BuildReferenceNoteChoices();
 
+            // Restore order: in-memory → persisted written MIDI → default middle.
+            // Never auto-play on restore.
             int initial = _referenceWrittenMidi;
+            if (initial <= 0)
+                initial = LoadPersistedReferenceWrittenMidi();
             if (initial <= 0)
             {
                 var midis = _referenceNoteChoices.Select(c => c.WrittenMidi).ToList();
-                if (!string.IsNullOrWhiteSpace(_session.TunerLastNoteName))
-                {
-                    int detected = NoteSessionService.NoteNameToMidi(_session.TunerLastNoteName);
-                    if (detected > 0)
-                        initial = detected;
-                }
-                if (initial <= 0)
-                    initial = TunerReferenceNoteCatalog.DefaultMiddleMidi(midis);
+                initial = TunerReferenceNoteCatalog.DefaultMiddleMidi(midis);
             }
 
             SelectReferenceNote(initial, stopTone: false);
+        }
+
+        private static int LoadPersistedReferenceWrittenMidi()
+        {
+            int saved = Preferences.Default.Get(TunerReferenceNoteCatalog.PreferenceKeyWrittenMidi, 0);
+            return saved > 0 ? saved : 0;
+        }
+
+        private static void PersistReferenceWrittenMidi(int writtenMidi)
+        {
+            if (writtenMidi <= 0)
+                return;
+            Preferences.Default.Set(TunerReferenceNoteCatalog.PreferenceKeyWrittenMidi, writtenMidi);
         }
 
         private void RebuildReferenceNotesForInstrumentChange()
         {
             _ = StopReferenceToneAsync(resumeListening: false);
             BuildReferenceNoteChoices();
-            SelectReferenceNote(_referenceWrittenMidi, stopTone: false);
+            // Keep the same written MIDI when still valid; ClampToRange picks nearest otherwise.
+            int keep = _referenceWrittenMidi > 0
+                ? _referenceWrittenMidi
+                : LoadPersistedReferenceWrittenMidi();
+            SelectReferenceNote(keep, stopTone: false);
             UpdateTunerStaffDisplay();
         }
 
@@ -3944,9 +4048,9 @@ namespace musicmate.Pages
                     BorderColor = Color.FromArgb("#DDDDDD"),
                     BorderWidth = 1,
                     CornerRadius = 0,
-                    Padding = new Thickness(8, 6),
+                    Padding = new Thickness(8, 4),
                     Margin = 0,
-                    HeightRequest = 40,
+                    HeightRequest = 36,
                     HorizontalOptions = LayoutOptions.Fill,
                 };
                 SemanticProperties.SetDescription(btn, $"Select written {choice.PickerLabel}");
@@ -3974,6 +4078,9 @@ namespace musicmate.Pages
             bool stopTone = true,
             bool resumeListeningAfterStop = true)
         {
+            if (_isUpdatingReferenceNoteUi)
+                return;
+
             if (stopTone && _isReferenceTonePlaying)
             {
                 try
@@ -3998,16 +4105,32 @@ namespace musicmate.Pages
                 return;
             }
 
-            _referenceWrittenMidi = TunerReferenceNoteCatalog.ClampToRange(writtenMidi, midis);
-            // Selection is intentional — don't keep showing a prior heard pitch on the staff
-            // until the next detection; the note-to-play chip always follows this midi.
-            if (!_isReferenceTonePlaying)
-                _session.ClearTunerDetection();
-            SyncReferenceNoteChrome();
-            UpdateTunerStaffDisplay();
-            DebugLog.WriteLine(
-                $"[ReferenceTone] Selected writtenMidi={_referenceWrittenMidi} " +
-                $"label={TunerReferenceNoteCatalog.FormatWrittenDisplayLabel(_referenceWrittenMidi, PreferFlatsForReferenceSpelling())}");
+            _isUpdatingReferenceNoteUi = true;
+            try
+            {
+                // Clamp is order-independent; choices are high→low for the picker UI.
+                _referenceWrittenMidi = TunerReferenceNoteCatalog.ClampToRange(writtenMidi, midis);
+                PersistReferenceWrittenMidi(_referenceWrittenMidi);
+                // Selection is intentional — don't keep showing a prior heard pitch on the staff
+                // until the next detection; the note-to-play chip always follows this midi.
+                if (!_isReferenceTonePlaying)
+                    _session.ClearTunerDetection();
+                _lastLoggedTunerHeardNote = null;
+                SyncReferenceNoteChrome();
+                UpdateTunerStaffDisplay();
+
+                int offset = _session.InstrumentTransposeOffset;
+                int concertMidi = TunerReferenceNoteCatalog.ToConcertMidi(_referenceWrittenMidi, offset);
+                double hz = NoteSessionService.MidiToFreqPublic(concertMidi);
+                DebugLog.WriteLine(
+                    $"[ReferenceTone] select picker='{TunerReferenceNoteCatalog.FormatPickerLabel(_referenceWrittenMidi)}' " +
+                    $"writtenMidi={_referenceWrittenMidi} transpose={offset} " +
+                    $"concertMidi={concertMidi} hz={hz:F2}");
+            }
+            finally
+            {
+                _isUpdatingReferenceNoteUi = false;
+            }
         }
 
         private void SyncReferenceNoteChrome()
@@ -4144,8 +4267,8 @@ namespace musicmate.Pages
 
         /// <summary>
         /// Closed-picker text:
-        /// - Listening with a detection: "Written B♭4 / A♯4 + 30¢"
-        /// - Playing or idle selection: "Written B♭4"
+        /// - Listening with a detection: heard note + cents (does not change selection)
+        /// - Playing or idle: selected reference note (<see cref="_referenceWrittenMidi"/>)
         /// </summary>
         private void RefreshTunerPickerDisplayLabel()
         {
@@ -4177,18 +4300,13 @@ namespace musicmate.Pages
             }
 
             TunerReferenceNoteDisplayLabel.Text = text;
-            // Long heard strings need a bit more room / smaller type.
-            TunerReferenceNoteDisplayLabel.FontSize = showHeard ? 12 : 15;
+            TunerReferenceNoteDisplayLabel.FontSize = showHeard ? 12 : 14;
 
             if (TunerNoteChooserHint != null)
             {
-                TunerNoteChooserHint.Text = _isReferenceTonePlaying
-                    ? "Playing this note"
-                    : showHeard
-                        ? "Hearing — tap Stop to pick a note to play"
-                        : _isRunning
-                            ? "Listening — tap Stop to pick a note to play"
-                            : "Note to play — tap list or use ◀ ▶";
+                TunerNoteChooserHint.Text = "Note to play – tap list or use ◀ ▶";
+                TunerNoteChooserHint.LineBreakMode = LineBreakMode.NoWrap;
+                TunerNoteChooserHint.MaxLines = 1;
             }
         }
 
@@ -4198,7 +4316,11 @@ namespace musicmate.Pages
                 TitlePageModeLabel.Text = _session.Tune == "Tuner" ? "  Tuner " : "  Music ";
 
             if (TunerModeStatusLabel != null)
+            {
+                // Big "Heard"/"Playing" row only while the mic is listening.
+                TunerModeStatusLabel.IsVisible = _isRunning;
                 TunerModeStatusLabel.Text = _isReferenceTonePlaying ? "Playing" : "Heard";
+            }
 
             UpdateTitleStartStopButtonVisual(_isRunning);
         }
@@ -4254,9 +4376,20 @@ namespace musicmate.Pages
             if (_isReferenceTonePlaying)
                 return;
 
-            double concertHz = TunerReferenceNoteCatalog.ConcertFrequencyHz(
-                _referenceWrittenMidi,
-                _session.InstrumentTransposeOffset);
+            if (_referenceWrittenMidi <= 0)
+                return;
+
+            // Pitch path (each step once):
+            // written MIDI → + InstrumentTransposeOffset → concert MIDI → Hz → sine playback.
+            int transposeOffset = _session.InstrumentTransposeOffset;
+            int concertMidi = TunerReferenceNoteCatalog.ToConcertMidi(
+                _referenceWrittenMidi, transposeOffset);
+            double concertHz = NoteSessionService.MidiToFreqPublic(concertMidi);
+
+            DebugLog.WriteLine(
+                $"[ReferenceTone] play picker='{TunerReferenceNoteCatalog.FormatPickerLabel(_referenceWrittenMidi)}' " +
+                $"writtenMidi={_referenceWrittenMidi} transpose={transposeOffset} " +
+                $"concertMidi={concertMidi} hz={concertHz:F2}");
 
             int generation = ++_referenceToneGeneration;
             _referenceToneCts?.Cancel();
@@ -4334,25 +4467,37 @@ namespace musicmate.Pages
         private async Task ResumeTunerListeningAfterReferenceToneAsync()
         {
             if (_isReferenceTonePlaying || !_isPageVisible || _session.Tune != "Tuner")
+            {
+                DebugLog.WriteLine(
+                    $"[Tuner] resume skipped playing={_isReferenceTonePlaying} " +
+                    $"visible={_isPageVisible} tune={_session.Tune}");
                 return;
+            }
 
             // User tapped Stop — stay quiet so they can pick notes, see them on the staff, and play.
             if (!_isRunning)
+            {
+                DebugLog.WriteLine("[Tuner] resume skipped: not listening (_isRunning=false)");
                 return;
+            }
 
             try
             {
+                DebugLog.WriteLine("[Tuner] resume microphone after reference tone");
                 await _audio.EnsurePermissionAsync();
                 try { _audio.StopCapture(); } catch { }
                 _pitchBufferPos = 0;
+                _lastProcess = DateTime.MinValue;
+                _isBelowThreshold = true;
                 _audio.StartCapture(OnAudioBlock);
                 StatusService.Instance.StatusMessage = "Listening…";
                 UpdateTunerModeChrome();
                 RefreshTunerPickerDisplayLabel();
+                DebugLog.WriteLine("[Tuner] microphone capture running (resumed)");
             }
             catch (Exception ex)
             {
-                DebugLog.WriteLine($"[ReferenceTone] Resume mic error: {ex}");
+                DebugLog.WriteLine($"[Tuner] Resume mic error: {ex}");
             }
         }
 
@@ -4374,18 +4519,19 @@ namespace musicmate.Pages
 
             bool preferFlats = PreferFlatsForReferenceSpelling();
 
-            // Listening + detection → heard note on staff (with accidental).
-            // Playing / idle selection → selected note to play on staff.
+            // Listening + detection → show heard note (visual only; does not change selection).
+            // Playing / idle → show selected reference note (_referenceWrittenMidi).
             string? spelling = null;
+            bool showingHeard = false;
             if (!_isReferenceTonePlaying
                 && _isRunning
                 && !string.IsNullOrWhiteSpace(_session.TunerLastNoteName))
             {
                 spelling = _session.TunerLastNoteName;
+                showingHeard = true;
             }
             else if (_referenceWrittenMidi > 0)
             {
-                // Prefer the choice's staff spelling when available (matches picker).
                 int idx = IndexOfReferenceMidi(_referenceWrittenMidi);
                 spelling = idx >= 0
                     ? _referenceNoteChoices[idx].StaffSpellingAscii
@@ -4403,7 +4549,8 @@ namespace musicmate.Pages
             _staffDrawable.LowerAlpha = 0f;
 
             _staffDrawable.UpperNotes = upper;
-            _staffDrawable.UpperBarBeats = upper.Count > 0 ? new List<double> { 4.0 } : new List<double>();
+            // No measure bar beats — Tuner staff must not draw an end bar line.
+            _staffDrawable.UpperBarBeats = new List<double>();
             _staffDrawable.UpperNoteStates = new StaffNoteState[upper.Count];
             if (upper.Count > 0)
             {
@@ -4417,6 +4564,8 @@ namespace musicmate.Pages
             _staffDrawable.UpperHasEndBar = false;
             _staffDrawable.InvalidateLayoutCache();
 
+            // Do not clear session exercise state used by scales when leaving Tuner;
+            // while in Tuner these lists only mirror the single displayed note for feedback chrome.
             _session.NotesToDraw.Clear();
             _session.FeedbackViewModels.Clear();
             if (tunerNote != null)
@@ -4429,7 +4578,9 @@ namespace musicmate.Pages
                     X = 0f,
                     Duration = tunerNote.Duration,
                 });
-                _session.FeedbackViewModels.Add(new FeedbackItem(0, 0, 0, false));
+                // Cents feedback for heard notes (flat / sharp / in tune).
+                int cents = showingHeard ? _session.TunerLastCents : 0;
+                _session.FeedbackViewModels.Add(new FeedbackItem(0, 0, cents, false));
             }
 
             MainThread.BeginInvokeOnMainThread(() => TunerGraphicsView?.Invalidate());
@@ -4456,6 +4607,23 @@ namespace musicmate.Pages
             UpdateKeyPickerVisibility();
             UpdatePracticePlayItemLabel();
             UpdateTunerVisibility();
+        }
+
+        /// <summary>
+        /// Starts the shared scale mic pipeline for Tuner exactly once when not already running.
+        /// </summary>
+        private async Task EnsureTunerListeningAsync()
+        {
+            if (_session.Tune != "Tuner" || _isReferenceTonePlaying)
+                return;
+            if (_isRunning)
+            {
+                DebugLog.WriteLine("[Tuner] EnsureTunerListening: already running");
+                return;
+            }
+
+            DebugLog.WriteLine("[Tuner] EnsureTunerListening: requesting StartListening");
+            await StartListeningAndEvaluatingAsync();
         }
         private void UpdatePickersContainerVisibility()
         {
@@ -4491,7 +4659,8 @@ namespace musicmate.Pages
                 Dispatcher.Dispatch(ApplyTunerHeight);
                 if (!_isRunning && !_isReferenceTonePlaying)
                 {
-                    _ = StartListeningAndEvaluatingAsync();
+                    DebugLog.WriteLine("[Tuner] UpdateTunerVisibility → EnsureTunerListening");
+                    _ = EnsureTunerListeningAsync();
                 }
             }
             else
@@ -4954,7 +5123,7 @@ namespace musicmate.Pages
                 if (_isReferenceTonePlaying)
                 {
                     await StopReferenceToneAsync(resumeListening: false);
-                    await StartListeningAndEvaluatingAsync();
+                    await EnsureTunerListeningAsync();
                     UpdateTunerModeChrome();
                     return;
                 }
@@ -4965,7 +5134,7 @@ namespace musicmate.Pages
                     return;
                 }
 
-                await StartListeningAndEvaluatingAsync();
+                await EnsureTunerListeningAsync();
                 UpdateTunerModeChrome();
                 return;
             }
@@ -5032,6 +5201,7 @@ namespace musicmate.Pages
                     await StopReferenceToneAsync(resumeListening: false);
 
                 _session.ClearTunerDetection();
+                _lastLoggedTunerHeardNote = null;
                 SetButtonStates(false);
                 StatusService.Instance.StatusMessage =
                     "Stopped — pick a note to play, or tap GO to listen.";

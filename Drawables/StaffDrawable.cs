@@ -1929,6 +1929,10 @@ namespace musicmate.Drawables
             var barList = new List<BarLayout>();
             float x = staffLeftMargin;
 
+            // Tuner reference staff: layout the note only — never emit measure/end bar lines
+            // (normal music / scales / arpeggios / tunes keep the bar path below).
+            bool tunerNoBars = _session.Tune == "Tuner";
+
             for (int m = 0; m < segments.Count; m++)
             {
                 if (beginner)
@@ -1937,11 +1941,11 @@ namespace musicmate.Drawables
                     LayoutNotesInMeasure(notes, noteLayouts, segments[m], beatOrigin, x, measureWidths[m], m == 0);
                 x += measureWidths[m];
 
-                if (m < sortedBarBeats.Count)
+                if (!tunerNoBars && m < sortedBarBeats.Count)
                     barList.Add(new BarLayout { X = x, IsDouble = false });
             }
 
-            if (notes.Count > 0)
+            if (!tunerNoBars && notes.Count > 0)
             {
                 float lastNoteRight = float.NegativeInfinity;
                 for (int i = 0; i < notes.Count; i++)
@@ -1955,6 +1959,16 @@ namespace musicmate.Drawables
                 barList.Add(new BarLayout { X = endBarX, IsDouble = isFinalStaff });
             }
 
+            if (tunerNoBars && notes.Count == 1 && noteLayouts.Length == 1)
+            {
+                // Center the selected written note in the open staff area after the clef.
+                float left = staffLeftMargin + BarLeftPadding;
+                float right = staffLeftMargin + availableWidth - BarRightPadding;
+                if (right > left)
+                    noteLayouts[0].X = (left + right) * 0.5f;
+                SyncAccidentalX(noteLayouts, 0);
+            }
+
             float totalWidth = barList.Count > 0
                 ? barList.Max(b => b.X) + RightMargin
                 : staffLeftMargin + availableWidth;
@@ -1965,6 +1979,16 @@ namespace musicmate.Drawables
             {
                 EnforceGlobalBeatOrderSpacing(notes, noteLayouts, beatOrigin, _planInkGap);
                 EnforceStrictBeatOrderSpacing(notes, noteLayouts, beatOrigin, MinInkGap);
+            }
+
+            if (tunerNoBars && notes.Count == 1 && noteLayouts.Length == 1)
+            {
+                // Spacing passes can nudge the single note left again — re-center.
+                float left = staffLeftMargin + BarLeftPadding;
+                float right = staffLeftMargin + availableWidth - BarRightPadding;
+                if (right > left)
+                    noteLayouts[0].X = (left + right) * 0.5f;
+                SyncAccidentalX(noteLayouts, 0);
             }
 
             ValidateLayout(notes, barBeats, noteLayouts, beatOrigin, beginner);
@@ -2188,6 +2212,13 @@ namespace musicmate.Drawables
                 SanitizeLayoutPositions(upperNoteLayouts, upperBarLayouts);
                 SanitizeLayoutPositions(lowerNoteLayouts, lowerBarLayouts);
 
+                if (_session.Tune == "Tuner")
+                {
+                    upperBarLayouts = Array.Empty<BarLayout>();
+                    CenterTunerReferenceNote(
+                        upperNoteLayouts, safeLeft, upperStaffMargin, layoutRightLimit);
+                }
+
                 LogStaffLayoutDiagnostics("Upper", UpperNotes, upperNoteLayouts, upperPreScaleX,
                     upperTop, upperMid, upperBot);
                 LogStaffLayoutDiagnostics("Lower", LowerNotes, lowerNoteLayouts, lowerPreScaleX,
@@ -2319,6 +2350,14 @@ namespace musicmate.Drawables
 
             EnforceStrictBeatOrderSpacing(UpperNotes, upperNoteLayouts, upperBeatOrigin, MinInkGap);
             EnforceStrictBeatOrderSpacing(LowerNotes, lowerNoteLayouts, lowerBeatOrigin, MinInkGap);
+
+            // Tuner: discard any residual bars and keep the selected note centered.
+            if (_session.Tune == "Tuner")
+            {
+                upperBarLayouts = Array.Empty<BarLayout>();
+                CenterTunerReferenceNote(
+                    upperNoteLayouts, safeLeft, upperStaffMargin, layoutRightLimit);
+            }
 
             LogStaffLayoutDiagnostics("Upper", UpperNotes, upperNoteLayouts, upperPreScaleX,
                 upperTop, upperMid, upperBot);
@@ -2640,6 +2679,28 @@ namespace musicmate.Drawables
             if (finalBarIndex > 0)
                 endBarX = Math.Max(endBarX, barLayouts[finalBarIndex - 1].X + 5f);
             barLayouts[finalBarIndex].X = endBarX;
+        }
+
+        /// <summary>
+        /// Places the single Tuner reference note in the middle of the open staff
+        /// (after clef, before the safe right edge). No-op for multi-note music.
+        /// </summary>
+        private void CenterTunerReferenceNote(
+            NoteLayout[] noteLayouts,
+            float safeLeft,
+            float staffLeftMargin,
+            float layoutRightLimit)
+        {
+            if (noteLayouts.Length != 1)
+                return;
+
+            float left = safeLeft + staffLeftMargin + BarLeftPadding;
+            float right = layoutRightLimit - BarRightPadding;
+            if (right <= left)
+                return;
+
+            noteLayouts[0].X = (left + right) * 0.5f;
+            SyncAccidentalX(noteLayouts, 0);
         }
 
         /// <summary>
