@@ -49,7 +49,7 @@ namespace musicmate
 
         /// <summary>
         /// Shared Music navigation used after a final What To Play activity choice.
-        /// Re-entry safe: concurrent calls are ignored until the guard is reset.
+        /// Re-entry safe for concurrent calls only while navigation is in flight.
         /// </summary>
         public async Task OpenMusicPageAsync()
         {
@@ -66,6 +66,12 @@ namespace musicmate
             catch (Exception ex)
             {
                 Utils.Log($"[AppShell] OpenMusicPageAsync ERROR: {ex}");
+            }
+            finally
+            {
+                // Clear after navigation finishes so hamburger → Tuner (and later Music
+                // picks) are not permanently blocked. Leaving this set stranded users on
+                // the blank TunerMenuPage when SelectTunerAndOpenMusicAsync early-returned.
                 _isNavigatingToMusic = false;
             }
         }
@@ -97,6 +103,9 @@ namespace musicmate
             catch (Exception ex)
             {
                 Utils.Log($"[AppShell] SelectTunerAndOpenMusicAsync ERROR: {ex}");
+            }
+            finally
+            {
                 _isNavigatingToMusic = false;
             }
         }
@@ -110,10 +119,19 @@ namespace musicmate
             var target = e.Target?.Location?.OriginalString ?? string.Empty;
             if (target.IndexOf("TunerEntry", StringComparison.OrdinalIgnoreCase) < 0)
                 return;
-            if (_isNavigatingToMusic || !e.CanCancel)
-                return;
 
-            e.Cancel();
+            // Always divert Tuner flyout taps. If a Music navigation is already in flight,
+            // still cancel the blank gateway route; the in-flight call (or fallback page)
+            // will finish opening Music.
+            if (e.CanCancel)
+                e.Cancel();
+
+            if (_isNavigatingToMusic)
+            {
+                Utils.Log("[AppShell] Tuner flyout ignored — Music navigation already in progress");
+                return;
+            }
+
             Utils.Log("[AppShell] Tuner flyout → SelectTunerAndOpenMusicAsync");
 
             MainThread.BeginInvokeOnMainThread(async () =>

@@ -33,7 +33,12 @@ namespace musicmate.Pages
                 try
                 {
                     if (Shell.Current is musicmate.AppShell shell)
+                    {
+                        // Prior Music navigation may have left the re-entry guard set;
+                        // clear it so this fallback can open Music Tuner.
+                        shell.ResetMusicNavigationGuard();
                         await shell.SelectTunerAndOpenMusicAsync();
+                    }
                     else if (Shell.Current != null)
                     {
                         LayoutTestTune.SetEnabled(false);

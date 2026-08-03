@@ -70,6 +70,28 @@ public class PracticeTuneKeyTests
     }
 
     [Fact]
+    public void PrepareFreshScaleAndKey_NamedSelectedScale_PreservesKey()
+    {
+        // AutoStart used to re-pick the key on every regenerate, so the first
+        // WhatToPlay→Music paint (stale key/range) disagreed with later ones.
+        var session = new NoteSessionService
+        {
+            ChildLevel = 40,
+            ScaleSelectionMode = ScaleSelectionMode.Named,
+            SelectedScale = "Major",
+            Tune = "Selected Scale",
+            IsRandomMode = false,
+            Key = "Bb",
+        };
+
+        for (int seed = 0; seed < 20; seed++)
+            session.PrepareFreshScaleAndKeyForGeneration("test", repeatSame: false, generationSeed: seed);
+
+        Assert.Equal("Bb", session.Key);
+        Assert.Equal("Major", session.SelectedScale);
+    }
+
+    [Fact]
     public void ResolvePracticeTuneNotation_AllBuiltInTunesUseCMajor()
     {
         foreach (var tune in TuneLibrary.All)

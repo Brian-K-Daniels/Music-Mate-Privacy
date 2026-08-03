@@ -3495,8 +3495,9 @@ namespace musicmate.Drawables
                     DrawAccidental(canvas, note, layout, ny, ink, accHistory, barCancelledAccidentals, fadeAlpha, headerRightAbs);
 
                     var nameDisplay = _session.NoteNameDisplay;
-                    bool showName = nameDisplay == "All notes"
-                        || (nameDisplay == "Current only" && state == StaffNoteState.Current);
+                    bool showName = _session.Tune != "Tuner"
+                        && (nameDisplay == "All notes"
+                            || (nameDisplay == "Current only" && state == StaffNoteState.Current));
                     if (showName)
                         DrawNoteName(canvas, note, layout.X, ny, staffTop, staffBot, ink, fadeAlpha);
                 }

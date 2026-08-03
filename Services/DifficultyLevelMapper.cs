@@ -177,7 +177,12 @@ namespace musicmate.Services
             session.MaxMelodicIntervalSemitones = ChildLevelProgression.MaxIntervalForLevel(level);
             session.ChildMeasureBatchSize = ChildLevelProgression.MeasureBatchSizeForLevel(
                 level, ChildLevelProgression.NoteCountForLevel(level));
-            session.ApplyAutomaticInstrumentRange(level);
+            // Snap to the level's automatic range unless the user customized limits —
+            // expanding a stale narrow range left the first WhatToPlay→Music paint
+            // with too few scale notes (one tonic only → no two-octave walk).
+            session.ApplyAutomaticInstrumentRange(
+                levelOverride: level,
+                fullReset: !session.NoteRangeCustomized);
         }
 
         public static void ApplyToSession(

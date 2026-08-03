@@ -190,4 +190,46 @@ public class ApplyLevelSettingsTests : IDisposable
         var settings = DifficultyLevelMapper.ResolveSessionSettings(36, new Random(1));
         Assert.Equal("Sixteenth", settings.SmallestRhythmNote);
     }
+
+    [Fact]
+    public void ApplyLevelDerivedSettings_ResetsStaleNarrowRangeWhenNotCustomized()
+    {
+        // WhatToPlay → Music used to skip level-derived range apply when ChildLevel
+        // was already set, leaving a stale narrow range and a tiny first scale walk.
+        var session = new NoteSessionService
+        {
+            ChildLevel = 40,
+            ScaleSelectionMode = ScaleSelectionMode.Named,
+            SelectedScale = "Major",
+            Key = "F",
+        };
+        session.ClearNoteRangeCustomization();
+        session.LowestNote = "F3";
+        session.HighestNote = "A3";
+        session.ClearNoteRangeCustomization();
+
+        DifficultyLevelMapper.ApplyLevelDerivedSettings(40, session);
+
+        int lo = NoteSessionService.NoteNameToMidi(session.LowestNote);
+        int hi = NoteSessionService.NoteNameToMidi(session.HighestNote);
+        Assert.True(hi - lo >= 12, $"Expected at least one octave after level apply, got {session.LowestNote}-{session.HighestNote}");
+        Assert.False(session.NoteRangeCustomized);
+    }
+
+    [Fact]
+    public void ApplyLevelDerivedSettings_ShrinksRangeOnLevelDownWhenNotCustomized()
+    {
+        var session = new NoteSessionService { ChildLevel = 80 };
+        session.ClearNoteRangeCustomization();
+        DifficultyLevelMapper.ApplyLevelDerivedSettings(80, session);
+        int wideSpan = NoteSessionService.NoteNameToMidi(session.HighestNote)
+            - NoteSessionService.NoteNameToMidi(session.LowestNote);
+
+        DifficultyLevelMapper.ApplyLevelDerivedSettings(5, session);
+        int narrowSpan = NoteSessionService.NoteNameToMidi(session.HighestNote)
+            - NoteSessionService.NoteNameToMidi(session.LowestNote);
+
+        Assert.True(narrowSpan < wideSpan,
+            $"Level-down should shrink automatic range ({session.LowestNote}-{session.HighestNote})");
+    }
 }

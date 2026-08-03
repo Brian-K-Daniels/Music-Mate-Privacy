@@ -1418,8 +1418,21 @@ namespace musicmate.Services
                     break;
             }
 
-            string newKey = ResolveKeyForFreshGeneration(
-                Tune ?? string.Empty, CurrentTune, newScale, keyPoolLevel, rng, preservedKey: oldKey);
+            // Explicit Named scale from What To Play keeps the user's key; only By Level /
+            // Random (and composition) should draw a fresh key from the level pool.
+            string newKey;
+            if (ScaleSelectionMode == ScaleSelectionMode.Named
+                && string.Equals(Tune, "Selected Scale", StringComparison.Ordinal)
+                && !IsRandomMode
+                && !string.IsNullOrWhiteSpace(oldKey))
+            {
+                newKey = oldKey;
+            }
+            else
+            {
+                newKey = ResolveKeyForFreshGeneration(
+                    Tune ?? string.Empty, CurrentTune, newScale, keyPoolLevel, rng, preservedKey: oldKey);
+            }
 
             // Final validation before generation: never keep a key above the level's
             // permitted difficulty (Practice Tune authored keys are exempt).
