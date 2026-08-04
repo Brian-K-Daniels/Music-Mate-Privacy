@@ -19,8 +19,6 @@ namespace musicmate
                 .ConfigureFonts(fonts =>
                 {
                     fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
-                    // Add this if you ship the MDL2 font file (place the TTF under Resources/Fonts)
-                    fonts.AddFont("SegoeMDL2Assets.ttf", "SegoeMDL2");
                     fonts.AddFont("Bravura.otf", "Bravura");
                 });
 
