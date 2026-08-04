@@ -16,6 +16,7 @@ public static class TimingDiagnostics
     {
         TimingWrong,
         RestTimingWrong,
+        ConductorDecision,
     }
 
     private readonly struct PendingEntry
@@ -23,17 +24,20 @@ public static class TimingDiagnostics
         public PendingKind Kind { get; init; }
         public TimingWrongPayload TimingWrong { get; init; }
         public RestTimingWrongPayload RestTimingWrong { get; init; }
+        public ConductorTimingDecisionPayload ConductorDecision { get; init; }
     }
 
     private static readonly ConcurrentQueue<PendingEntry> _pending = new();
     private static int _timingWrongCount;
     private static int _restTimingWrongCount;
+    private static int _conductorDecisionCount;
 
     public static void ResetSession()
     {
         while (_pending.TryDequeue(out _)) { }
         _timingWrongCount = 0;
         _restTimingWrongCount = 0;
+        _conductorDecisionCount = 0;
     }
 
     public static void EnqueueTimingWrong(in TimingWrongPayload payload)
@@ -59,6 +63,19 @@ public static class TimingDiagnostics
         {
             Kind = PendingKind.RestTimingWrong,
             RestTimingWrong = payload,
+        });
+    }
+
+    public static void EnqueueConductorDecision(in ConductorTimingDecisionPayload payload)
+    {
+        if (!EnableTimingDiagnostics)
+            return;
+
+        Interlocked.Increment(ref _conductorDecisionCount);
+        _pending.Enqueue(new PendingEntry
+        {
+            Kind = PendingKind.ConductorDecision,
+            ConductorDecision = payload,
         });
     }
 
@@ -94,6 +111,21 @@ public static class TimingDiagnostics
                             $"reason={p.Reason}");
                         break;
                     }
+                case PendingKind.ConductorDecision:
+                    {
+                        var p = entry.ConductorDecision;
+                        Debug.WriteLine(
+                            $"[ConductorTiming] bpm={p.Bpm} secPerBeat={p.SecondsPerBeat:F4} " +
+                            $"conductorStartMs={p.ConductorStartMs:F0} idx={p.NoteIndex} " +
+                            $"beat={p.BeatPosition:F2} expectedMs={p.ExpectedOnsetMs:F0} " +
+                            $"actualMs={p.ActualOnsetMs:F0} errMs={p.TimingErrorMs:F0} " +
+                            $"earlyTolMs={p.EarlyToleranceMs:F0} lateTolMs={p.LateToleranceMs:F0} " +
+                            $"detMidi={p.DetectedMidi} expMidi={p.ExpectedMidi} " +
+                            $"heard={p.DetectedName} expected={p.ExpectedName} " +
+                            $"pitchOk={p.PitchAccepted} timingOk={p.TimingAccepted} " +
+                            $"reason={p.AdvanceReason}");
+                        break;
+                    }
             }
         }
     }
@@ -104,7 +136,9 @@ public static class TimingDiagnostics
             return;
 
         Debug.WriteLine(
-            $"[TimingSummary] timingWrongCount={_timingWrongCount} restTimingWrongCount={_restTimingWrongCount}");
+            $"[TimingSummary] timingWrongCount={_timingWrongCount} " +
+            $"restTimingWrongCount={_restTimingWrongCount} " +
+            $"conductorDecisionCount={_conductorDecisionCount}");
     }
 }
 
@@ -132,4 +166,25 @@ public readonly struct RestTimingWrongPayload
     public string ActualName { get; init; }
     public double ActualMs { get; init; }
     public string Reason { get; init; }
+}
+
+public readonly struct ConductorTimingDecisionPayload
+{
+    public int Bpm { get; init; }
+    public double SecondsPerBeat { get; init; }
+    public double ConductorStartMs { get; init; }
+    public int NoteIndex { get; init; }
+    public double BeatPosition { get; init; }
+    public double ExpectedOnsetMs { get; init; }
+    public double ActualOnsetMs { get; init; }
+    public double TimingErrorMs { get; init; }
+    public double EarlyToleranceMs { get; init; }
+    public double LateToleranceMs { get; init; }
+    public int DetectedMidi { get; init; }
+    public int ExpectedMidi { get; init; }
+    public string DetectedName { get; init; }
+    public string ExpectedName { get; init; }
+    public bool PitchAccepted { get; init; }
+    public bool TimingAccepted { get; init; }
+    public string AdvanceReason { get; init; }
 }

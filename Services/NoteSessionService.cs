@@ -2096,6 +2096,11 @@ namespace musicmate.Services
         private static readonly int[] NeapolitanMajorUp = new[] { 0, 1, 3, 5, 7, 9, 11, 12 };
         // Timing: onset-based linear regression (least-squares fit)
         private readonly Stopwatch _sessionStopwatch = new();
+        /// <summary>
+        /// Test seam: when set, <see cref="GetSessionElapsedMs"/> returns this instead of the stopwatch.
+        /// Conductor expected onsets remain anchored to session start (0 on the injected clock).
+        /// </summary>
+        internal Func<double>? SessionElapsedMsOverride { get; set; }
         private readonly List<(double OnsetMs, double ExpectedBeat)> _onsetData = new();
         private double? _timingAccuracyPercent;
         /// <summary>Detected tempo (BPM) from the user's performance this session.</summary>
@@ -2235,10 +2240,12 @@ namespace musicmate.Services
             _tunerPrevWrittenMidi = null;// reset direction tracking for next session
             // ensure persisted value is reloaded
             _wrongDebounceMs = SessionPreferences.Get(PrefWrongDebounceMsKey, DefaultDebounceMs);
+            SessionElapsedMsOverride = null;
             _sessionStopwatch.Reset();
         }
         /// <summary>
         /// Starts the session clock. Call when the microphone is live (after tune setup).
+        /// This restart is the authoritative conductor start (t = 0) for onset timing.
         /// </summary>
         public void StartListeningClock()
         {
@@ -2271,9 +2278,67 @@ namespace musicmate.Services
             }
         }
         private double GetSessionElapsedMs()
-            => _sessionStopwatch.Elapsed.TotalMilliseconds;
+            => SessionElapsedMsOverride?.Invoke() ?? _sessionStopwatch.Elapsed.TotalMilliseconds;
         private double BeatToGateMs(double beats)
             => beats * 60000.0 / _rhythmGateMusicBpm;
+        /// <summary>
+        /// When conductor cues are on, live acceptance must wait for the conductor-absolute
+        /// earliest-start window. Rest-only rhythm gates remain separate.
+        /// </summary>
+        private bool IsConductorOnsetGateEnabled()
+            => ShowConductorCues
+               && Tune != "Tuner"
+               && NotesToDraw.Count > 0;
+        private int GetConductorTimingBpm()
+            => _rhythmGateMusicBpm > 0
+                ? _rhythmGateMusicBpm
+                : Math.Clamp(MusicBpm, MinTempo, MaxTempo);
+        private double GetConductorExpectedBeat(int noteIndex)
+            => ConductorOnsetTiming.GetAnchoredBeatPosition(NotesToDraw, noteIndex);
+        private double GetConductorExpectedOnsetMs(int noteIndex)
+            => ConductorOnsetTiming.ExpectedOnsetMs(
+                conductorStartMs: 0.0,
+                beatPosition: GetConductorExpectedBeat(noteIndex),
+                bpm: GetConductorTimingBpm());
+        private void LogConductorTimingDecision(
+            int noteIndex,
+            NoteInfo targetNote,
+            string heardNote,
+            int detectedMidi,
+            double actualMs,
+            double expectedMs,
+            double expectedBeat,
+            double earlyTolMs,
+            double lateTolMs,
+            bool pitchAccepted,
+            bool timingAccepted,
+            string advanceReason)
+        {
+            if (!TimingDiagnostics.EnableTimingDiagnostics)
+                return;
+
+            int bpm = GetConductorTimingBpm();
+            TimingDiagnostics.EnqueueConductorDecision(new ConductorTimingDecisionPayload
+            {
+                Bpm = bpm,
+                SecondsPerBeat = ConductorOnsetTiming.SecondsPerBeat(bpm),
+                ConductorStartMs = 0.0,
+                NoteIndex = noteIndex,
+                BeatPosition = expectedBeat,
+                ExpectedOnsetMs = expectedMs,
+                ActualOnsetMs = actualMs,
+                TimingErrorMs = actualMs - expectedMs,
+                EarlyToleranceMs = earlyTolMs,
+                LateToleranceMs = lateTolMs,
+                DetectedMidi = detectedMidi,
+                ExpectedMidi = targetNote.Midi,
+                DetectedName = heardNote,
+                ExpectedName = targetNote.Name,
+                PitchAccepted = pitchAccepted,
+                TimingAccepted = timingAccepted,
+                AdvanceReason = advanceReason,
+            });
+        }
         private void ArmRhythmGateAfterAdvance(int acceptedIdx)
         {
             if (!_rhythmStartGateEnabled)
@@ -2412,9 +2477,11 @@ namespace musicmate.Services
             double actualMs,
             string reason,
             bool pitchCorrect,
-            bool timingCorrect)
+            bool timingCorrect,
+            double? expectedMsOverride = null,
+            double toleranceMs = 0)
         {
-            double expectedMs = _rhythmGateUntilMs;
+            double expectedMs = expectedMsOverride ?? _rhythmGateUntilMs;
             double errorMs = actualMs - expectedMs;
             bool overallCorrect = ComputeOverallCorrect(pitchCorrect, timingCorrect);
 
@@ -2427,7 +2494,7 @@ namespace musicmate.Services
                 ActualName = heardNote,
                 ActualMs = actualMs,
                 ErrorMs = errorMs,
-                ToleranceMs = 0,
+                ToleranceMs = toleranceMs,
                 PitchCorrect = pitchCorrect,
                 TimingCorrect = timingCorrect,
                 OverallCorrect = overallCorrect,
@@ -2697,11 +2764,70 @@ namespace musicmate.Services
             ClearRhythmGateIfExpired();
 
             var curFeedback = NoteFeedbacks.TryGetValue(idx, out var v2) ? v2 : (Wrong: 0, Cents: 0);
+            double actualMs = GetSessionElapsedMs();
+            bool conductorGateEnabled = IsConductorOnsetGateEnabled();
+            double conductorExpectedBeat = 0;
+            double conductorExpectedMs = 0;
+            double conductorEarlyTolMs = 0;
+            double conductorLateTolMs = 0;
+            bool conductorTooEarly = false;
+            if (conductorGateEnabled)
+            {
+                int bpm = GetConductorTimingBpm();
+                conductorExpectedBeat = GetConductorExpectedBeat(idx);
+                conductorExpectedMs = ConductorOnsetTiming.ExpectedOnsetMs(0.0, conductorExpectedBeat, bpm);
+                conductorEarlyTolMs = ConductorOnsetTiming.EarlyToleranceMs(bpm);
+                conductorLateTolMs = ConductorOnsetTiming.LateToleranceMs(bpm);
+                conductorTooEarly = ConductorOnsetTiming.IsTooEarly(
+                    actualMs, conductorExpectedMs, conductorEarlyTolMs);
+            }
+
+            // Conductor absolute earliest-start: do not complete a note played far before its beat.
+            if (conductorTooEarly)
+            {
+                StatusService.Instance.StatusMessage =
+                    $"Expected: {expectedNote}, Heard: {heardNote}, {result.cents}¢ (too early), Notes: {NotesToDraw.Count}";
+
+                if (Mod12(expectedWrittenMidi) == detectedPcWritten)
+                {
+                    const string reason = "Early";
+                    LogConductorTimingDecision(
+                        idx, targetNote, heardNote, detMidiWritten, actualMs,
+                        conductorExpectedMs, conductorExpectedBeat,
+                        conductorEarlyTolMs, conductorLateTolMs,
+                        pitchAccepted: true, timingAccepted: false,
+                        advanceReason: "blocked-early-conductor");
+                    if (TryMarkDebouncedWrong(idx, curFeedback, result.cents))
+                    {
+                        var outcome = BuildNoteOutcome(
+                            targetNote, heardNote, result.cents,
+                            pitchCorrect: true, timingCorrect: false, reason: reason,
+                            actualMs: actualMs, expectedStartMs: conductorExpectedMs,
+                            timingErrorMs: actualMs - conductorExpectedMs,
+                            timingToleranceMs: conductorEarlyTolMs);
+                        RecordAttemptOutcome(outcome);
+                        TryEnqueueTimingWrong(
+                            targetNote, heardNote, actualMs, reason,
+                            pitchCorrect: true, timingCorrect: false,
+                            expectedMsOverride: conductorExpectedMs,
+                            toleranceMs: conductorEarlyTolMs);
+                        return true;
+                    }
+                    return false;
+                }
+
+                LogConductorTimingDecision(
+                    idx, targetNote, heardNote, detMidiWritten, actualMs,
+                    conductorExpectedMs, conductorExpectedBeat,
+                    conductorEarlyTolMs, conductorLateTolMs,
+                    pitchAccepted: false, timingAccepted: false,
+                    advanceReason: "blocked-early-wrong-pitch-ignored");
+                return false;
+            }
 
             // Sustain/rest gate: block N+1 until prior note duration + rests have elapsed.
             if (IsRhythmGateBlocking())
             {
-                double actualMs = GetSessionElapsedMs();
                 double elapsedInGate = actualMs - _rhythmGateStartMs;
                 bool inRestPhase = elapsedInGate >= _rhythmGatePriorDurationMs;
 
@@ -2742,21 +2868,39 @@ namespace musicmate.Services
                     RecordAttemptOutcome(BuildNoteOutcome(
                         targetNote, heardNote, result.cents,
                         pitchCorrect: false, timingCorrect: true, reason: "WrongPitch",
-                        actualMs: GetSessionElapsedMs()));
+                        actualMs: actualMs));
                     return true;
                 }
                 return false;
             }
             if (result.correct)
             {
+                bool timingOk = !conductorGateEnabled
+                    || ConductorOnsetTiming.IsWithinTimingWindow(
+                        actualMs, conductorExpectedMs, conductorEarlyTolMs, conductorLateTolMs);
+
                 // Timing: record onset time and expected beat position
                 RecordOnsetIfNeeded(idx);
 
                 RecordAttemptOutcome(BuildNoteOutcome(
                     targetNote, heardNote, result.cents,
-                    pitchCorrect: true, timingCorrect: true, reason: string.Empty,
-                    actualMs: GetSessionElapsedMs(), expectedStartMs: targetNote.StartBeat > 0
-                        ? null : GetSessionElapsedMs()));
+                    pitchCorrect: true, timingCorrect: timingOk, reason: string.Empty,
+                    actualMs: actualMs,
+                    expectedStartMs: conductorGateEnabled
+                        ? conductorExpectedMs
+                        : (targetNote.StartBeat > 0 ? null : actualMs),
+                    timingErrorMs: conductorGateEnabled ? actualMs - conductorExpectedMs : null,
+                    timingToleranceMs: conductorGateEnabled ? conductorEarlyTolMs : 0));
+
+                if (conductorGateEnabled)
+                {
+                    LogConductorTimingDecision(
+                        idx, targetNote, heardNote, detMidiWritten, actualMs,
+                        conductorExpectedMs, conductorExpectedBeat,
+                        conductorEarlyTolMs, conductorLateTolMs,
+                        pitchAccepted: true, timingAccepted: timingOk,
+                        advanceReason: "advanced-pitch-and-conductor-window");
+                }
 
                 // Update feedback: update cents only on correct
                 CorrectNoteIndices.Add(idx);

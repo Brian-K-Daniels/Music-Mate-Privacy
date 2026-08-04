@@ -93,7 +93,12 @@ namespace musicmate.Pages
             Array.Empty<TunerReferenceNoteChoice>();
         private bool _isUpdatingReferenceNoteUi;
         private string? _lastLoggedTunerHeardNote;
-        private const double ReferenceToneSeconds = 2.5;
+        /// <summary>Tuner-local BPM for repeated reference playback (independent of Settings until synced).</summary>
+        private int _tunerTempoBpm = NoteSessionService.DefaultTempo;
+        private bool _isUpdatingTunerTempoPicker;
+        private const string PrefTunerTempoKey = "musicmate.TunerTempo";
+        /// <summary>Fraction of each beat that the reference note sounds (remainder is silence).</summary>
+        private const double ReferenceToneNoteOnFraction = 0.70;
 #pragma warning restore CS0414
 
         private sealed record ArpeggioPickerChoice(
@@ -3973,6 +3978,7 @@ namespace musicmate.Pages
             if (_session.Tune != "Tuner")
                 return;
 
+            EnsureTunerTempoPicker();
             BuildReferenceNoteChoices();
 
             // Restore order: in-memory → persisted written MIDI → default middle.
@@ -4000,6 +4006,94 @@ namespace musicmate.Pages
             if (writtenMidi <= 0)
                 return;
             Preferences.Default.Set(TunerReferenceNoteCatalog.PreferenceKeyWrittenMidi, writtenMidi);
+        }
+
+        private static int LoadPersistedTunerTempo()
+        {
+            int saved = Preferences.Default.Get(PrefTunerTempoKey, 0);
+            if (saved >= NoteSessionService.MinTempo && saved <= NoteSessionService.MaxTempo)
+                return saved;
+            return 0;
+        }
+
+        private static void PersistTunerTempo(int bpm)
+        {
+            Preferences.Default.Set(
+                PrefTunerTempoKey,
+                Math.Clamp(bpm, NoteSessionService.MinTempo, NoteSessionService.MaxTempo));
+        }
+
+        private void EnsureTunerTempoPicker()
+        {
+            if (TunerTempoPicker == null)
+                return;
+
+            if (TunerTempoPicker.Items.Count == 0)
+            {
+                for (int bpm = NoteSessionService.MinTempo; bpm <= NoteSessionService.MaxTempo; bpm++)
+                    TunerTempoPicker.Items.Add(bpm.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
+
+            int tempo = _tunerTempoBpm;
+            if (tempo < NoteSessionService.MinTempo || tempo > NoteSessionService.MaxTempo)
+            {
+                int persisted = LoadPersistedTunerTempo();
+                tempo = persisted > 0
+                    ? persisted
+                    : Math.Clamp(_session.Tempo, NoteSessionService.MinTempo, NoteSessionService.MaxTempo);
+            }
+
+            SetTunerTempo(tempo, persist: true, updatePicker: true);
+        }
+
+        private void SetTunerTempo(int bpm, bool persist, bool updatePicker)
+        {
+            int clamped = Math.Clamp(bpm, NoteSessionService.MinTempo, NoteSessionService.MaxTempo);
+            _tunerTempoBpm = clamped;
+            if (persist)
+                PersistTunerTempo(clamped);
+
+            if (!updatePicker || TunerTempoPicker == null)
+                return;
+
+            int index = clamped - NoteSessionService.MinTempo;
+            if (index < 0 || index >= TunerTempoPicker.Items.Count)
+                return;
+
+            if (TunerTempoPicker.SelectedIndex == index)
+                return;
+
+            _isUpdatingTunerTempoPicker = true;
+            try
+            {
+                TunerTempoPicker.SelectedIndex = index;
+            }
+            finally
+            {
+                _isUpdatingTunerTempoPicker = false;
+            }
+        }
+
+        private void OnTunerTempoPickerChanged(object? sender, EventArgs e)
+        {
+            if (_isUpdatingTunerTempoPicker || TunerTempoPicker == null)
+                return;
+            if (TunerTempoPicker.SelectedIndex < 0)
+                return;
+
+            int bpm = NoteSessionService.MinTempo + TunerTempoPicker.SelectedIndex;
+            SetTunerTempo(bpm, persist: true, updatePicker: false);
+            DebugLog.WriteLine($"[ReferenceTone] tuner tempo → {bpm} BPM (loop reads next beat)");
+        }
+
+        private void OnTunerUseSettingsTempoClicked(object? sender, EventArgs e)
+        {
+            int settingsTempo = Math.Clamp(
+                _session.Tempo,
+                NoteSessionService.MinTempo,
+                NoteSessionService.MaxTempo);
+            SetTunerTempo(settingsTempo, persist: true, updatePicker: true);
+            DebugLog.WriteLine($"[ReferenceTone] Use Settings Tempo → {settingsTempo} BPM");
         }
 
         private void RebuildReferenceNotesForInstrumentChange()
@@ -4070,8 +4164,9 @@ namespace musicmate.Pages
         }
 
         /// <param name="resumeListeningAfterStop">
-        /// When stopping a playing tone (e.g. ◀/▶), resume the mic. Set false when the
-        /// caller will immediately start another reference tone (note-list selection).
+        /// When stopping a playing tone (e.g. instrument change), resume the mic.
+        /// Note navigation (◀/▶/picker) keeps an active loop running so the next beat
+        /// uses the newly selected note without starting a second loop.
         /// </param>
         private void SelectReferenceNote(
             int writtenMidi,
@@ -4253,7 +4348,12 @@ namespace musicmate.Pages
             DebugLog.WriteLine($"[ReferenceTone] Note button clicked midi={writtenMidi} text='{btn.Text}'");
 
             SetTunerNoteListVisible(false);
-            SelectReferenceNote(writtenMidi, stopTone: true, resumeListeningAfterStop: false);
+            bool wasPlaying = _isReferenceTonePlaying;
+            // Keep an active loop running; the next beat uses the newly selected note.
+            SelectReferenceNote(writtenMidi, stopTone: false);
+
+            if (wasPlaying)
+                return;
 
             try
             {
@@ -4339,7 +4439,8 @@ namespace musicmate.Pages
                 return;
 
             SetTunerNoteListVisible(false);
-            SelectReferenceNote(_referenceNoteChoices[next].WrittenMidi);
+            // Do not stop a running loop — the next repetition uses the new note.
+            SelectReferenceNote(_referenceNoteChoices[next].WrittenMidi, stopTone: false);
         }
 
         private void OnTunerLowerNoteClicked(object? sender, EventArgs e)
@@ -4373,26 +4474,16 @@ namespace musicmate.Pages
 
         private async Task PlayReferenceToneAsync()
         {
+            // Only one loop at a time — ignore Start while already playing.
             if (_isReferenceTonePlaying)
                 return;
 
             if (_referenceWrittenMidi <= 0)
                 return;
 
-            // Pitch path (each step once):
-            // written MIDI → + InstrumentTransposeOffset → concert MIDI → Hz → sine playback.
-            int transposeOffset = _session.InstrumentTransposeOffset;
-            int concertMidi = TunerReferenceNoteCatalog.ToConcertMidi(
-                _referenceWrittenMidi, transposeOffset);
-            double concertHz = NoteSessionService.MidiToFreqPublic(concertMidi);
-
-            DebugLog.WriteLine(
-                $"[ReferenceTone] play picker='{TunerReferenceNoteCatalog.FormatPickerLabel(_referenceWrittenMidi)}' " +
-                $"writtenMidi={_referenceWrittenMidi} transpose={transposeOffset} " +
-                $"concertMidi={concertMidi} hz={concertHz:F2}");
-
             int generation = ++_referenceToneGeneration;
             _referenceToneCts?.Cancel();
+            try { _referenceToneCts?.Dispose(); } catch { }
             _referenceToneCts = new CancellationTokenSource();
             var ct = _referenceToneCts.Token;
 
@@ -4407,12 +4498,60 @@ namespace musicmate.Pages
                 try { _audio.StopCapture(); } catch { }
                 await Task.Delay(60, ct);
 
-                await _player.PlayAsync(
-                    new[] { concertHz },
-                    ReferenceToneSeconds,
-                    gapSeconds: 0,
-                    volume: 0.35f,
-                    ct);
+                // Schedule each beat from an absolute stopwatch origin so silence/note
+                // proportions stay accurate and tempo changes apply on the next beat.
+                var clock = Stopwatch.StartNew();
+                double nextBeatStartMs = 0;
+
+                while (!ct.IsCancellationRequested)
+                {
+                    int tempo = Math.Clamp(
+                        _tunerTempoBpm,
+                        NoteSessionService.MinTempo,
+                        NoteSessionService.MaxTempo);
+                    double beatMs = 60000.0 / tempo;
+                    double noteOnMs = beatMs * ReferenceToneNoteOnFraction;
+
+                    double waitMs = nextBeatStartMs - clock.Elapsed.TotalMilliseconds;
+                    if (waitMs > 1)
+                        await Task.Delay(TimeSpan.FromMilliseconds(waitMs), ct);
+
+                    // Pitch path (each beat): written MIDI → transpose → concert Hz → sine.
+                    int writtenMidi = _referenceWrittenMidi;
+                    if (writtenMidi <= 0)
+                        break;
+
+                    int transposeOffset = _session.InstrumentTransposeOffset;
+                    int concertMidi = TunerReferenceNoteCatalog.ToConcertMidi(
+                        writtenMidi, transposeOffset);
+                    double concertHz = NoteSessionService.MidiToFreqPublic(concertMidi);
+
+                    DebugLog.WriteLine(
+                        $"[ReferenceTone] beat tempo={tempo} noteOnMs={noteOnMs:F0} " +
+                        $"picker='{TunerReferenceNoteCatalog.FormatPickerLabel(writtenMidi)}' " +
+                        $"writtenMidi={writtenMidi} transpose={transposeOffset} " +
+                        $"concertMidi={concertMidi} hz={concertHz:F2}");
+
+                    try
+                    {
+                        await _player.PlayAsync(
+                            new[] { concertHz },
+                            noteOnMs / 1000.0,
+                            gapSeconds: 0,
+                            volume: 0.35f,
+                            ct);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+
+                    nextBeatStartMs += beatMs;
+                    // If we fell behind (device hitch), skip ahead so we don't stack overdue beats.
+                    double nowMs = clock.Elapsed.TotalMilliseconds;
+                    if (nowMs - nextBeatStartMs > beatMs)
+                        nextBeatStartMs = nowMs;
+                }
             }
             catch (OperationCanceledException)
             {
@@ -4424,6 +4563,8 @@ namespace musicmate.Pages
             }
             finally
             {
+                try { _player.CancelPlayback(); } catch { }
+
                 // A newer play/stop superseded this run — don't clobber its UI or mic state.
                 if (generation == _referenceToneGeneration)
                 {
@@ -4508,7 +4649,7 @@ namespace musicmate.Pages
 
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                TunerPlayNoteButton.Text = _isReferenceTonePlaying ? "Stop" : "Play Note";
+                TunerPlayNoteButton.Text = _isReferenceTonePlaying ? "Stop" : "Start";
             });
         }
 
