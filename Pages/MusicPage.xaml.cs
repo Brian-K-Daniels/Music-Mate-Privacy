@@ -1426,20 +1426,27 @@ namespace musicmate.Pages
                     {
                         using (PracticeSessionStartProfiler.Scope("StaffDisplay.SequenceGen"))
                         {
-                        // Build a combined generator sized to hold the full ascending+descending
-                        // scale walk.  The walk length for N pitch-pool notes is (2N − 2) events
-                        // so use enough measures to hold it all at the smallest allowed duration.
-                        // A safe upper bound: even a chromatic 3-octave range (37 pitches) needs
-                        // at most (2*37−2)=72 quarter notes = 18 bars of 4/4.  Cap at 24 to be safe.
-                        var genAll = BuildSequenceGenerator(24);
-                        var allMeasures = genAll.GenerateSequence();
-                        ReportMasteryOmissionFallback(genAll);
-                        var allNotes = MusicSequenceGenerator.Flatten(allMeasures);
-                        double measureBeats = genAll.TimeSignature.TotalBeats;
-                        var allBarBeats = ComputeStaffBarBeats(allNotes, measureBeats, new HashSet<double>());
-
+                        // Sequence generation is CPU-heavy; keep it off the UI thread.
+                        // Staff split/layout stays on this path so drawable state is not
+                        // mutated concurrently with Draw.
                         float canvasWidth = StaffGraphicsView?.Width > 0 ? (float)StaffGraphicsView.Width : 360f;
                         float canvasHeight = StaffGraphicsView?.Height > 0 ? (float)StaffGraphicsView.Height : 480f;
+
+                        var generated = await Task.Run(() =>
+                        {
+                            var genAll = BuildSequenceGenerator(24);
+                            var allMeasures = genAll.GenerateSequence();
+                            var flat = MusicSequenceGenerator.Flatten(allMeasures);
+                            double beats = genAll.TimeSignature.TotalBeats;
+                            var bars = ComputeStaffBarBeats(flat, beats, new HashSet<double>());
+                            return (genAll, flat, beats, bars, MeasureCount: allMeasures.Count);
+                        });
+
+                        ReportMasteryOmissionFallback(generated.genAll);
+                        var allNotes = generated.flat;
+                        double measureBeats = generated.beats;
+                        var allBarBeats = generated.bars;
+
                         var split = _staffDrawable!.SplitMeasuresAcrossStaves(allNotes, allBarBeats, canvasWidth, canvasHeight);
                         upperFlat = split.UpperNotes;
                         lowerFlat = split.LowerNotes;
@@ -1475,7 +1482,7 @@ namespace musicmate.Pages
                         int upperPitches = upperFlat.Count(n => !n.IsRest);
                         int lowerPitches = lowerFlat.Count(n => !n.IsRest);
 
-                        _seqNextMeasureIndex = allMeasures.Count;
+                        _seqNextMeasureIndex = generated.MeasureCount;
                         _seqNextBeatOffset = upperBeats + lowerBeats;
                         _seqNextGlobalNoteIndex = upperPitches + lowerPitches;
                         _lowerMeasureIndex = _seqNextMeasureIndex;
@@ -3819,6 +3826,8 @@ namespace musicmate.Pages
                 {
                     BuildReferenceNoteChoices();
                     SelectReferenceNote(_referenceWrittenMidi, stopTone: false);
+                    if (TunerNoteListBorder?.IsVisible == true)
+                        RebuildTunerNoteListButtons();
                 }
             }
             if (e.PropertyName == nameof(NoteSessionService.AutoRepeat)
@@ -4119,6 +4128,8 @@ namespace musicmate.Pages
                 ? _referenceWrittenMidi
                 : LoadPersistedReferenceWrittenMidi();
             SelectReferenceNote(keep, stopTone: false);
+            if (TunerNoteListBorder?.IsVisible == true)
+                RebuildTunerNoteListButtons();
             UpdateTunerStaffDisplay();
         }
 
@@ -4129,12 +4140,22 @@ namespace musicmate.Pages
                 profile,
                 PreferFlatsForReferenceSpelling());
 
-            RebuildTunerNoteListButtons();
+            // Defer MaterialButton creation until the list is opened — building the full
+            // practical range eagerly on Tuner enter janks the UI thread and floods logcat.
+            InvalidateTunerNoteListButtons();
         }
 
         /// <summary>
-        /// Build note rows in code. Each button stores WrittenMidi in <see cref="Element.StyleId"/>
-        /// so selection does not depend on MAUI CollectionView/DataTemplate BindingContext.
+        /// Clears cached list rows so the next open rebuilds against current choices.
+        /// </summary>
+        private void InvalidateTunerNoteListButtons()
+        {
+            TunerNoteListStack?.Children.Clear();
+        }
+
+        /// <summary>
+        /// Build note rows in code. Uses Border+Label (not Button) so Android does not
+        /// inflate dozens of MaterialButtons. StyleId holds WrittenMidi for selection.
         /// </summary>
         private void RebuildTunerNoteListButtons()
         {
@@ -4143,27 +4164,37 @@ namespace musicmate.Pages
 
             TunerNoteListStack.Children.Clear();
             var themeBg = Color.FromArgb("#F7F7F7");
+            var borderColor = Color.FromArgb("#DDDDDD");
             foreach (var choice in _referenceNoteChoices)
             {
-                var btn = new Button
+                var row = new Border
                 {
-                    Text = choice.PickerLabel,
                     StyleId = choice.WrittenMidi.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    FontSize = 15,
-                    FontAttributes = FontAttributes.Bold,
-                    TextColor = Colors.Black,
                     BackgroundColor = themeBg,
-                    BorderColor = Color.FromArgb("#DDDDDD"),
-                    BorderWidth = 1,
-                    CornerRadius = 0,
+                    Stroke = borderColor,
+                    StrokeThickness = 1,
                     Padding = new Thickness(8, 4),
                     Margin = 0,
                     HeightRequest = 36,
                     HorizontalOptions = LayoutOptions.Fill,
+                    Content = new Label
+                    {
+                        Text = choice.PickerLabel,
+                        FontSize = 15,
+                        FontAttributes = FontAttributes.Bold,
+                        TextColor = Colors.Black,
+                        VerticalTextAlignment = TextAlignment.Center,
+                        HorizontalTextAlignment = TextAlignment.Start,
+                        InputTransparent = true,
+                    },
                 };
-                SemanticProperties.SetDescription(btn, $"Select written {choice.PickerLabel}");
-                btn.Clicked += OnTunerNoteListItemClicked;
-                TunerNoteListStack.Children.Add(btn);
+                SemanticProperties.SetDescription(row, $"Select written {choice.PickerLabel}");
+                int midi = choice.WrittenMidi;
+                string label = choice.PickerLabel;
+                var tap = new TapGestureRecognizer();
+                tap.Tapped += async (_, _) => await OnTunerNotePickedAsync(midi, label);
+                row.GestureRecognizers.Add(tap);
+                TunerNoteListStack.Children.Add(row);
             }
         }
 
@@ -4268,12 +4299,12 @@ namespace musicmate.Pages
 
             foreach (var child in TunerNoteListStack.Children)
             {
-                if (child is not Button btn)
+                if (child is not Border row)
                     continue;
                 bool selected = !string.IsNullOrEmpty(selectedId)
-                    && string.Equals(btn.StyleId, selectedId, StringComparison.Ordinal);
-                btn.BackgroundColor = selected ? Color.FromArgb("#D4EDDA") : Color.FromArgb("#F7F7F7");
-                btn.BorderColor = selected ? Color.FromArgb("#8B4513") : Color.FromArgb("#DDDDDD");
+                    && string.Equals(row.StyleId, selectedId, StringComparison.Ordinal);
+                row.BackgroundColor = selected ? Color.FromArgb("#D4EDDA") : Color.FromArgb("#F7F7F7");
+                row.Stroke = selected ? Color.FromArgb("#8B4513") : Color.FromArgb("#DDDDDD");
             }
         }
 
@@ -4319,13 +4350,13 @@ namespace musicmate.Pages
 
             string selectedId = _referenceWrittenMidi.ToString(
                 System.Globalization.CultureInfo.InvariantCulture);
-            Button? target = null;
+            Border? target = null;
             foreach (var child in TunerNoteListStack.Children)
             {
-                if (child is Button btn
-                    && string.Equals(btn.StyleId, selectedId, StringComparison.Ordinal))
+                if (child is Border row
+                    && string.Equals(row.StyleId, selectedId, StringComparison.Ordinal))
                 {
-                    target = btn;
+                    target = row;
                     break;
                 }
             }
@@ -4344,24 +4375,12 @@ namespace musicmate.Pages
             }
         }
 
-        private async void OnTunerNoteListItemClicked(object? sender, EventArgs e)
+        private async Task OnTunerNotePickedAsync(int writtenMidi, string labelText)
         {
-            if (sender is not Button btn)
+            if (writtenMidi <= 0)
                 return;
 
-            // StyleId is set when the button is created — never use BindingContext here.
-            if (!int.TryParse(
-                    btn.StyleId,
-                    System.Globalization.NumberStyles.Integer,
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    out int writtenMidi)
-                || writtenMidi <= 0)
-            {
-                DebugLog.WriteLine($"[ReferenceTone] Note button missing StyleId midi: '{btn.StyleId}' text='{btn.Text}'");
-                return;
-            }
-
-            DebugLog.WriteLine($"[ReferenceTone] Note button clicked midi={writtenMidi} text='{btn.Text}'");
+            DebugLog.WriteLine($"[ReferenceTone] Note row tapped midi={writtenMidi} text='{labelText}'");
 
             SetTunerNoteListVisible(false);
             bool wasPlaying = _isReferenceTonePlaying;
@@ -4759,11 +4778,10 @@ namespace musicmate.Pages
         private void ApplyTunerDisplayState()
         {
             IsAutoRepeatVisible = false;
-            EnsureReferenceNoteUi();
-            UpdateTunerStaffDisplay();
             UpdateTunerModeChrome();
             UpdateKeyPickerVisibility();
             UpdatePracticePlayItemLabel();
+            // UpdateTunerVisibility owns EnsureReferenceNoteUi / staff / height / listening.
             UpdateTunerVisibility();
         }
 
