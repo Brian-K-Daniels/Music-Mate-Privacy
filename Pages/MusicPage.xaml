@@ -318,12 +318,12 @@
                                        HorizontalOptions="Fill"
                                        VerticalOptions="Start">
                     <Label x:Name="TunerModeStatusLabel"
-                           Text="Heard"
+                           Text="Metronome"
                            FontSize="16"
                            FontAttributes="Bold"
                            HorizontalOptions="Center"
                            TextColor="#000000"
-                           IsVisible="False" />
+                           IsVisible="True" />  <!--//  2026.08.04 1834-->  
 
                     <!-- Note chooser: ◀  WrittenPicker  ▶ -->
                     <VerticalStackLayout Spacing="1" HorizontalOptions="Fill">
@@ -335,7 +335,7 @@
                              LineBreakMode="NoWrap"
                              MaxLines="1"
                              TextColor="#444444" />
-                      <Grid ColumnDefinitions="32,*,32"
+                      <Grid ColumnDefinitions="Auto,8,*,8,Auto"
                             ColumnSpacing="4"
                             HeightRequest="40"
                             HorizontalOptions="Fill">
@@ -354,7 +354,7 @@
                                 Clicked="OnTunerLowerNoteClicked"
                                 SemanticProperties.Description="Lower the note to play by one semitone" />
                         <Border x:Name="TunerNoteChooserChip"
-                                Grid.Column="1"
+                                Grid.Column="2"
                                 Stroke="#8B4513"
                                 StrokeThickness="1.5"
                                 StrokeShape="RoundRectangle 8"
@@ -392,7 +392,7 @@
                           </Grid>
                         </Border>
                         <Button x:Name="TunerHigherNoteButton"
-                                Grid.Column="2"
+                                Grid.Column="4"
                                 Text="▶"
                                 FontSize="14"
                                 FontAttributes="Bold"
@@ -414,7 +414,7 @@
                               StrokeShape="RoundRectangle 8"
                               BackgroundColor="White"
                               Padding="0"
-                              HeightRequest="120"
+                              HeightRequest="288"
                               HorizontalOptions="Fill">
                         <ScrollView x:Name="TunerNoteListScroll"
                                     VerticalOptions="Fill"
@@ -453,11 +453,14 @@
                         <Picker x:Name="TunerTempoPicker"
                                 Grid.Column="0"
                                 Title="BPM"
-                                FontSize="11"
-                                WidthRequest="64"
-                                HeightRequest="28"
+                                FontSize="12"
+                                FontAttributes="Bold"
+                                WidthRequest="40"
+                                HeightRequest="32"
                                 VerticalOptions="Center"
-                                HorizontalOptions="Start"
+                                HorizontalOptions="Start"                                
+                                BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                                TextColor="{DynamicResource ThemeContrastingText}"
                                 SelectedIndexChanged="OnTunerTempoPickerChanged"
                                 SemanticProperties.Description="Tempo for repeated reference note playback" />
                         <Button x:Name="TunerPlayNoteButton"
@@ -475,10 +478,11 @@
                                 SemanticProperties.Description="Start or stop repeated reference note playback" />
                         <Button x:Name="TunerUseSettingsTempoButton"
                                 Grid.Column="2"
-                                Text="Set. BPM"
+                                Text="From Settings"
                                 FontSize="10"
                                 FontAttributes="Bold"
                                 HeightRequest="28"
+                                WidthRequest="150"
                                 Padding="4,0"
                                 VerticalOptions="Center"
                                 BackgroundColor="{DynamicResource ThemeButtonBackground}"

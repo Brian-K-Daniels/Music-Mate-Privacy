@@ -1739,16 +1739,30 @@ namespace musicmate.Pages
                 double usableH = Math.Max(140, availH - edge * 2 - bottomReserve);
 
                 bool landscape = availW > availH && availW > 0;
+                bool noteListOpen = TunerNoteListBorder?.IsVisible == true;
                 // Content-sized panels: shorter than the full page so bottoms stay visible.
                 // Landscape already has limited height — use most of it; portrait caps lower.
+                // When the note picker is open, grow toward usableH so more notes are visible.
                 double panelH = landscape
                     ? Math.Min(usableH, Math.Max(150, usableH * 0.92))
                     : Math.Min(usableH, Math.Max(170, Math.Min(260, usableH * 0.62)));
+                if (noteListOpen)
+                {
+                    panelH = landscape
+                        ? Math.Min(usableH, Math.Max(panelH, usableH * 0.95))
+                        : Math.Min(usableH, Math.Max(panelH, Math.Min(420, usableH * 0.88)));
+                }
 
-                // Note list shares the right column; keep it inside the shorter panel.
+                // Note list shares the right column. Show ~7–8 rows when open so scrolling
+                // is easier (row height is 36); keep a modest size when closed (unused).
                 if (TunerNoteListBorder != null)
                 {
-                    double listH = Math.Clamp(panelH - 110, 72, landscape ? 140 : 120);
+                    const double chromeAboveList = 100;
+                    const double chromeBelowList = 70;
+                    double listMax = landscape ? 216 : 288; // 6 or 8 × 36px rows
+                    double listH = noteListOpen
+                        ? Math.Clamp(panelH - chromeAboveList - chromeBelowList, 144, listMax)
+                        : Math.Clamp(panelH - 110, 72, landscape ? 140 : 120);
                     TunerNoteListBorder.HeightRequest = listH;
                 }
 
@@ -4269,6 +4283,8 @@ namespace musicmate.Pages
                 TunerNoteListBorder.IsVisible = visible;
             if (TunerNoteChooserChevron != null)
                 TunerNoteChooserChevron.Text = visible ? "▴" : "▾";
+            // Recompute panel/list height so the open picker can show more notes.
+            ApplyTunerHeight();
         }
 
         private void OnTunerNoteChooserTapped(object? sender, TappedEventArgs e)
@@ -4418,8 +4434,9 @@ namespace musicmate.Pages
             if (TunerModeStatusLabel != null)
             {
                 // Big "Heard"/"Playing" row only while the mic is listening.
-                TunerModeStatusLabel.IsVisible = _isRunning;
-                TunerModeStatusLabel.Text = _isReferenceTonePlaying ? "Playing" : "Heard";
+                //  //  2026.08.04 1804  TunerModeStatusLabel.IsVisible = _isRunning;
+                //TunerModeStatusLabel.Text = _isReferenceTonePlaying ? "Playing" : "Heard";
+                TunerModeStatusLabel.Text = "Metronome";
             }
 
             UpdateTitleStartStopButtonVisual(_isRunning);
