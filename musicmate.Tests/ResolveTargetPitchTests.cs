@@ -87,7 +87,7 @@ public class ResolveTargetPitchTests
     [Fact]
     public void NotationScale_FollowsEffectiveScale_NotStaleSelectedScale()
     {
-        // By Level / Random pick the effective scale; SelectedScale can still say "Major".
+        // Assortment by Level / Random pick the effective scale; SelectedScale can still say "Major".
         // The staff draws B Natural Minor (2 sharps: F#, C#), so A must stay natural.
         var session = new NoteSessionService();
         session.RestoreRepeatSameGenerationContext(

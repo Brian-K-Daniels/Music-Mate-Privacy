@@ -3,7 +3,7 @@ using musicmate.Models;
 namespace musicmate.Services
 {
     /// <summary>
-    /// Eligible practice tunes for By Level composition, based on session constraints.
+    /// Eligible practice tunes for Assortment by Level composition, based on session constraints.
     /// </summary>
     public static class CompositionTuneEligibility
     {

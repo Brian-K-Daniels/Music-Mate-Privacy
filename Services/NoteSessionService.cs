@@ -1294,7 +1294,7 @@ namespace musicmate.Services
         /// <summary>Label for the active scale selection.</summary>
         public string EffectiveScaleDisplay => ScaleSelectionMode switch
         {
-            ScaleSelectionMode.ByLevel => $"{Key} {EffectiveScale} (By Level)",
+            ScaleSelectionMode.ByLevel => $"{Key} {EffectiveScale} (Assortment by Level)",
             ScaleSelectionMode.Random when IsRandomMode => $"Random — {Key} {EffectiveScale}",
             ScaleSelectionMode.Random => $"Random — {Key} {EffectiveScale}",
             _ when IsRandomMode => $"Random — {Key} {EffectiveScale}",
@@ -1359,7 +1359,7 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// Chooses a fresh scale (when mode is Random or By Level) and key before note generation.
+        /// Chooses a fresh scale (when mode is Random or Assortment by Level) and key before note generation.
         /// Skipped when <paramref name="repeatSame"/> is true.
         /// </summary>
         public void PrepareFreshScaleAndKeyForGeneration(string trigger, bool repeatSame, int generationSeed)
@@ -1418,7 +1418,7 @@ namespace musicmate.Services
                     break;
             }
 
-            // Explicit Named scale from What To Play keeps the user's key; only By Level /
+            // Explicit Named scale from What To Play keeps the user's key; only Assortment by Level /
             // Random (and composition) should draw a fresh key from the level pool.
             string newKey;
             if (ScaleSelectionMode == ScaleSelectionMode.Named
@@ -1452,7 +1452,7 @@ namespace musicmate.Services
 
         /// <summary>
         /// Key for fresh generation. Practice tunes keep their authored key instead of
-        /// the By Level session key pool. Arpeggios keep the written key derived from the
+        /// the Assortment by Level session key pool. Arpeggios keep the written key derived from the
         /// selected concert root (instrument transposition already applied).
         /// </summary>
         internal static string ResolveKeyForFreshGeneration(
@@ -1472,7 +1472,7 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// Scale for fresh By Level generation. Scale and Random composition exercises
+        /// Scale for fresh Assortment by Level generation. Scale and Random composition exercises
         /// draw from the level pool (e.g. Major + Natural Minor at L24); tunes/arpeggios
         /// keep the level default for display only.
         /// </summary>
@@ -1511,13 +1511,13 @@ namespace musicmate.Services
 
         /// <summary>
         /// Key and scale for note spelling and pitch evaluation.
-        /// Practice tunes use their authored key, not the By Level session key.
+        /// Practice tunes use their authored key, not the Assortment by Level session key.
         /// Arpeggios use Major so leftover SelectedScale (e.g. Natural Minor) does not
         /// remap the written key through relative-major rules (D + Natural Minor → F).
         ///
         /// Uses <see cref="EffectiveScale"/> — the scale the notes were generated from and
         /// the one the staff draws its key signature from. SelectedScale can lag behind it
-        /// (By Level / Random picks only the effective scale), which previously expected
+        /// (Assortment by Level / Random picks only the effective scale), which previously expected
         /// e.g. A#4 in B Major while the staff showed B Natural Minor's two sharps.
         /// </summary>
         public (string Key, string Scale) GetNotationKeyAndScale()
@@ -1646,7 +1646,7 @@ namespace musicmate.Services
             }
 
             // Explicit Scales-picker choice always sticks. Level pools only constrain
-            // By Level / Random; level-down still clears a Named pick that is no longer allowed.
+            // Assortment by Level / Random; level-down still clears a Named pick that is no longer allowed.
             ScaleSelectionMode = ScaleSelectionMode.Named;
             SelectedScale = selection;
             SetEffectiveScale(selection);
@@ -1724,7 +1724,7 @@ namespace musicmate.Services
         }
         /// <summary>
         /// Pool weights (sum 100): practice tunes, random, scales, arpeggios.
-        /// Used by <see cref="PracticeCompositionSelector"/> for Child / By Level / mixed practice.
+        /// Used by <see cref="PracticeCompositionSelector"/> for Child / Assortment by Level / mixed practice.
         /// </summary>
         public int PcTunes
         {
@@ -2046,7 +2046,7 @@ namespace musicmate.Services
         private double _rhythmGatePriorDurationMs;
         private double _lastRestViolationLogMs = double.NegativeInfinity;
         private enum AccidentalPreference { Auto, Sharps, Flats }
-        public const string ScaleSelectionByLevel = "By Level";
+        public const string ScaleSelectionByLevel = "Assortment by Level";
         public const string ScaleSelectionRandom = "Random";
 
         public static readonly string[] AvailableScales = new[]

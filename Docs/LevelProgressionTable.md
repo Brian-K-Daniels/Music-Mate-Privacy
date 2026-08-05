@@ -17,7 +17,7 @@ This document provides a complete reference for how difficulty settings change a
 
 ---
 
-## Detailed Settings by Level Band
+## Detailed Settings Assortment by Level Band
 
 ### Levels 1–10: Beginner
 **Stage:** Beginner  

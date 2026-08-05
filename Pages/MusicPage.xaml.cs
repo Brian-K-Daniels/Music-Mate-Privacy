@@ -552,10 +552,21 @@ namespace musicmate.Pages
                 {
                     if (e.PropertyName == nameof(NoteSessionService.Tune))
                     {
-                        IsAutoRepeatVisible = _session.Tune != "Tuner";
+                        IsAutoRepeatVisible = !PlayModePickerOptions.IsTunerMode(_session);
                         UpdateRepeatButtonsVisibility();
                         UpdateKeyPickerVisibility();
                         OnPropertyChanged(nameof(Tune));
+
+                        // Hamburger / WhatToPlay set Tune via ApplyOtherSelection. If Music is
+                        // already visible, OnAppearing may not re-run — switch Tuner chrome here
+                        // so both entry points use the same display activation path.
+                        if (_isPageVisible)
+                        {
+                            if (PlayModePickerOptions.IsTunerMode(_session))
+                                ApplyTunerDisplayState();
+                            else
+                                UpdateTunerVisibility();
+                        }
                     }
 
                     if (e.PropertyName == nameof(NoteSessionService.ShowConductorCues)
@@ -714,7 +725,7 @@ namespace musicmate.Pages
             await _regenerateSemaphore.WaitAsync();
             try
             {
-                // Tuner: skip By Level / composition / note-generation entirely.
+                // Tuner: skip Assortment by Level / composition / note-generation entirely.
                 // Do NOT call ApplyTunerDisplayState here — that re-enters listening setup
                 // and is owned by OnAppearing / EnterTunerMode / UpdateTunerVisibility.
                 if (PlayModePickerOptions.IsTunerMode(_session))
@@ -831,7 +842,7 @@ namespace musicmate.Pages
         private async Task LoadExcludedMidisAsync()
         {
             // Omit mastered written pitches for random / candidate-selection generation
-            // (including By Level composition Random and temporary note emphasis).
+            // (including Assortment by Level composition Random and temporary note emphasis).
             // Fixed tunes, scales, and arpeggios leave exclusions empty so required notes remain.
             bool candidateSelection =
                 _session.IsRandomMode || _session.HasTemporaryNoteEmphasis;
@@ -1741,31 +1752,32 @@ namespace musicmate.Pages
 
                 // Outer inset keeps stroke clear of cutouts / viewport edges.
                 const double edge = 8;
-                // Extra bottom reserve so borders are not clipped by system chrome.
-                const double bottomReserve = 16;
-                double usableH = Math.Max(140, availH - edge * 2 - bottomReserve);
+                // Bottom reserve so the green border and instrument row stay on-screen.
+                const double bottomReserve = 8;
+                double usableH = Math.Max(160, availH - edge * 2 - bottomReserve);
 
                 bool landscape = availW > availH && availW > 0;
                 bool noteListOpen = TunerNoteListBorder?.IsVisible == true;
-                // Content-sized panels: shorter than the full page so bottoms stay visible.
-                // Landscape already has limited height — use most of it; portrait caps lower.
-                // When the note picker is open, grow toward usableH so more notes are visible.
+
+                // Right-panel content needs ~200dp closed (title + note + action rows).
+                // Use nearly all usable height so the instrument row is not clipped.
+                const double minContentH = 200;
                 double panelH = landscape
-                    ? Math.Min(usableH, Math.Max(150, usableH * 0.92))
-                    : Math.Min(usableH, Math.Max(170, Math.Min(260, usableH * 0.62)));
+                    ? Math.Min(usableH, Math.Max(minContentH, usableH * 0.98))
+                    : Math.Min(usableH, Math.Max(minContentH, Math.Min(280, usableH * 0.72)));
                 if (noteListOpen)
                 {
                     panelH = landscape
-                        ? Math.Min(usableH, Math.Max(panelH, usableH * 0.95))
-                        : Math.Min(usableH, Math.Max(panelH, Math.Min(420, usableH * 0.88)));
+                        ? Math.Min(usableH, Math.Max(panelH, usableH * 0.98))
+                        : Math.Min(usableH, Math.Max(panelH, Math.Min(420, usableH * 0.90)));
                 }
 
                 // Note list shares the right column. Show ~7–8 rows when open so scrolling
                 // is easier (row height is 36); keep a modest size when closed (unused).
                 if (TunerNoteListBorder != null)
                 {
-                    const double chromeAboveList = 100;
-                    const double chromeBelowList = 70;
+                    const double chromeAboveList = 72;
+                    const double chromeBelowList = 96; // Heard + action row + instrument + padding
                     double listMax = landscape ? 216 : 288; // 6 or 8 × 36px rows
                     double listH = noteListOpen
                         ? Math.Clamp(panelH - chromeAboveList - chromeBelowList, 144, listMax)
@@ -1946,8 +1958,11 @@ namespace musicmate.Pages
         }
         private const int TitleBarChromeHeight = 52;
         private const int TitleStartStopButtonSize = TitleBarChromeHeight;
+        /// <summary>Shared height for title Back and Stop (running) chrome.</summary>
+        private const int TitleControlHeight = 40;
         /// <summary>Title-bar slot width — stop state expands to this so "Stop" fits.</summary>
         private const int TitleStartStopSlotWidth = 64;
+        private const int TunerControlCornerRadius = 8;
         private const string TitleGoLabelText = "GO";
         private const string TitlePlayLabelText = "Play";
         private const string TitleStopLabelText = "Stop";
@@ -2077,7 +2092,7 @@ namespace musicmate.Pages
             if (showListen || isRunning)
             {
                 double width = TitleStartStopSlotWidth;
-                double height = TitleBarChromeHeight;
+                double height = TitleControlHeight;
                 string label = showListen ? TitleListenLabelText : TitleStopLabelText;
 
                 TitleStartStopButton.WidthRequest = width;
@@ -2085,7 +2100,9 @@ namespace musicmate.Pages
                 TitleStartStopButton.MinimumWidthRequest = width;
                 TitleStartStopButton.MinimumHeightRequest = height;
                 TitleStartStopButton.BackgroundColor = Colors.Red;
-                TitleStartStopButton.StrokeShape = new RoundRectangle { CornerRadius = 6 };
+                TitleStartStopButton.Stroke = Colors.Transparent;
+                TitleStartStopButton.StrokeThickness = 0;
+                TitleStartStopButton.StrokeShape = new RoundRectangle { CornerRadius = TunerControlCornerRadius };
                 TitleStartStopButton.Content = new Label
                 {
                     Text = label,
@@ -2115,6 +2132,8 @@ namespace musicmate.Pages
                 TitleStartStopButton.MinimumWidthRequest = diameter;
                 TitleStartStopButton.MinimumHeightRequest = diameter;
                 TitleStartStopButton.BackgroundColor = Color.FromArgb("#008000");
+                TitleStartStopButton.Stroke = Colors.Transparent;
+                TitleStartStopButton.StrokeThickness = 0;
                 TitleStartStopButton.StrokeShape = new RoundRectangle { CornerRadius = diameter / 2 };
                 TitleStartStopButton.Content = new Label
                 {
@@ -2168,7 +2187,7 @@ namespace musicmate.Pages
 
             if (category == PlayModePickerCategory.Other
                 && selection == NoteSessionService.ScaleSelectionByLevel)
-                return $"{_session.Key} {_session.EffectiveScale} (By Level)";
+                return $"{_session.Key} {_session.EffectiveScale} (Assortment by Level)";
 
             if (category == PlayModePickerCategory.Other
                 && selection == PlayModePickerOptions.RandomMelodic)
@@ -2202,7 +2221,7 @@ namespace musicmate.Pages
                     if (_session.ScaleSelectionMode == ScaleSelectionMode.ByLevel
                         && !PlayModePickerOptions.IsUserSelectedPracticeTuneTitle(
                             Preferences.Default.Get<string?>("SelectedTune", null)))
-                        return $"{_session.CurrentTune.Title} (By Level)";
+                        return $"{_session.CurrentTune.Title} (Assortment by Level)";
 
                     return _session.CurrentTune.Title;
                 }
@@ -2219,7 +2238,7 @@ namespace musicmate.Pages
                 return _session.EffectiveScaleDisplay;
 
             if (_session.ScaleSelectionMode == ScaleSelectionMode.ByLevel)
-                return $"{_session.Key} {_session.EffectiveScale} (By Level)";
+                return $"{_session.Key} {_session.EffectiveScale} (Assortment by Level)";
 
             if (_session.ScaleSelectionMode == ScaleSelectionMode.Random)
                 return _session.EffectiveScaleDisplay;
@@ -3310,7 +3329,7 @@ namespace musicmate.Pages
                 ct.ThrowIfCancellationRequested();
 
                 // Tuner uses the same mic/pitch pipeline as scales, but must not run
-                // exercise preparation (RegenerateNotesAsync / By Level / composition).
+                // exercise preparation (RegenerateNotesAsync / Assortment by Level / composition).
                 if (PlayModePickerOptions.IsTunerMode(_session) && !playBack)
                 {
                     await StartTunerMicrophoneCaptureAsync(ct);
@@ -3873,6 +3892,8 @@ namespace musicmate.Pages
                 InstrumentPicker.SelectedIndex = idx;
             if (idx >= 0 && PracticeInstrumentPicker != null && PracticeInstrumentPicker.SelectedIndex != idx)
                 PracticeInstrumentPicker.SelectedIndex = idx;
+            if (idx >= 0 && TunerInstrumentPicker != null && TunerInstrumentPicker.SelectedIndex != idx)
+                TunerInstrumentPicker.SelectedIndex = idx;
             SelectedInstrumentShort = _session.InstrumentDisplayName;
         }
         private void EnterPickerSyncSuppress() => _pickerSyncSuppressCount++;
@@ -3953,6 +3974,17 @@ namespace musicmate.Pages
                 PracticeInstrumentPicker.SelectedIndexChanged += PracticeInstrumentPicker_SelectedIndexChanged;
                 PracticeKeyPicker.SelectedIndexChanged += PracticeKeyPicker_SelectedIndexChanged;
                 _practicePickerEventsWired = true;
+            }
+
+            if (TunerInstrumentPicker != null)
+            {
+                TunerInstrumentPicker.ItemsSource = NoteSessionService.InstrumentOptions;
+                var tunerIdx = Array.IndexOf(
+                    NoteSessionService.InstrumentOptions, _session.InstrumentDisplayName);
+                if (tunerIdx < 0)
+                    tunerIdx = InstrumentPicker?.SelectedIndex ?? 0;
+                if (tunerIdx >= 0)
+                    TunerInstrumentPicker.SelectedIndex = tunerIdx;
             }
 
             UpdatePracticePlayItemLabel();
@@ -4164,17 +4196,16 @@ namespace musicmate.Pages
 
             TunerNoteListStack.Children.Clear();
             var themeBg = Color.FromArgb("#F7F7F7");
-            var borderColor = Color.FromArgb("#DDDDDD");
             foreach (var choice in _referenceNoteChoices)
             {
                 var row = new Border
                 {
                     StyleId = choice.WrittenMidi.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     BackgroundColor = themeBg,
-                    Stroke = borderColor,
-                    StrokeThickness = 1,
+                    StrokeThickness = 0,
+                    StrokeShape = new RoundRectangle { CornerRadius = 8 },
                     Padding = new Thickness(8, 4),
-                    Margin = 0,
+                    Margin = new Thickness(0, 1),
                     HeightRequest = 36,
                     HorizontalOptions = LayoutOptions.Fill,
                     Content = new Label
@@ -4304,7 +4335,7 @@ namespace musicmate.Pages
                 bool selected = !string.IsNullOrEmpty(selectedId)
                     && string.Equals(row.StyleId, selectedId, StringComparison.Ordinal);
                 row.BackgroundColor = selected ? Color.FromArgb("#D4EDDA") : Color.FromArgb("#F7F7F7");
-                row.Stroke = selected ? Color.FromArgb("#8B4513") : Color.FromArgb("#DDDDDD");
+                row.StrokeThickness = 0;
             }
         }
 
@@ -5078,6 +5109,18 @@ namespace musicmate.Pages
             _session.Instrument = fullInstrument;
             if (InstrumentPicker.SelectedIndex != idx)
                 InstrumentPicker.SelectedIndex = idx;
+            SelectedInstrumentShort = _session.InstrumentDisplayName;
+        }
+        private void TunerInstrumentPicker_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            if (TunerInstrumentPicker == null) return;
+            var idx = TunerInstrumentPicker.SelectedIndex;
+            if (idx < 0 || idx >= NoteSessionService.InstrumentOptions.Length) return;
+            _session.Instrument = NoteSessionService.InstrumentOptions[idx];
+            if (InstrumentPicker.SelectedIndex != idx)
+                InstrumentPicker.SelectedIndex = idx;
+            if (PracticeInstrumentPicker != null && PracticeInstrumentPicker.SelectedIndex != idx)
+                PracticeInstrumentPicker.SelectedIndex = idx;
             SelectedInstrumentShort = _session.InstrumentDisplayName;
         }
         private async void PracticeKeyPicker_SelectedIndexChanged(object? sender, EventArgs e)

@@ -1,7 +1,7 @@
 namespace musicmate.Services
 {
     /// <summary>
-    /// Applies level-based tune weight restrictions for Other → By Level composition.
+    /// Applies level-based tune weight restrictions for Other → Assortment by Level composition.
     /// Slider values are desired weights; tune share is scaled by level before normalization.
     /// </summary>
     public static class CompositionLevelWeights

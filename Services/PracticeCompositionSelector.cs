@@ -7,7 +7,7 @@ namespace musicmate.Services
 {
     /// <summary>
     /// Picks the next exercise type from practice-composition sliders for
-    /// Child / By Level / mixed practice. Explicit user modes are left unchanged.
+    /// Child / Assortment by Level / mixed practice. Explicit user modes are left unchanged.
     /// </summary>
     public static class PracticeCompositionSelector
     {
@@ -35,7 +35,7 @@ namespace musicmate.Services
             bool isRandomMode,
             string? selectedTunePreference)
         {
-            // Tuner (hamburger or Other picker) must never run By Level composition.
+            // Tuner (hamburger or Other picker) must never run Assortment by Level composition.
             if (PlayModePickerOptions.IsTunerMode(tune)
                 || string.Equals(selectedTunePreference, PlayModePickerOptions.Tuner, StringComparison.Ordinal))
                 return true;
@@ -68,7 +68,7 @@ namespace musicmate.Services
             => IsUserExplicitPlayMode(session);
 
         /// <summary>
-        /// Child practice, By Level, or adult mixed practice — roll composition sliders.
+        /// Child practice, Assortment by Level, or adult mixed practice — roll composition sliders.
         /// </summary>
         public static bool UsesCompositionSliders(NoteSessionService session)
         {

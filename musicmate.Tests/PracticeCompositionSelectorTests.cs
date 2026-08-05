@@ -53,7 +53,7 @@ public class PracticeCompositionSelectorTests
     public void CompositionAssignedPracticeTune_DoesNotImplyTunesPickerSelection()
     {
         // Simulates state after composition picks a tune: session.Tune is Practice Tune
-        // but SelectedTune preference must remain the By Level marker, not the tune title.
+        // but SelectedTune preference must remain the Assortment by Level marker, not the tune title.
         Assert.True(PlayModePickerOptions.UsesOtherPicker(
             layoutTestTuneEnabled: false,
             tune: "Practice Tune",

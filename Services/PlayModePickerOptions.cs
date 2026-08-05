@@ -29,7 +29,7 @@ namespace musicmate.Services
         public static bool IsTunerMode(string? tune)
             => string.Equals(tune, Tuner, StringComparison.Ordinal);
 
-        /// <summary>Other picker: By Level, Random, Tuner.</summary>
+        /// <summary>Other picker: Assortment by Level, Random, Tuner.</summary>
         public static readonly string[] OtherOptions =
         [
             NoteSessionService.ScaleSelectionByLevel,
@@ -141,8 +141,8 @@ namespace musicmate.Services
                 return Tuner;
 
             // Explicit Other → Random persists SelectedTune as "Random".
-            // By Level composition may set IsRandomMode without that preference —
-            // keep the picker on By Level in that case.
+            // Assortment by Level composition may set IsRandomMode without that preference —
+            // keep the picker on Assortment by Level in that case.
             if (isRandomMode
                 && string.Equals(selectedTunePreference, RandomMelodic, StringComparison.Ordinal))
                 return RandomMelodic;
@@ -200,7 +200,7 @@ namespace musicmate.Services
                 && scaleSelectionMode == ScaleSelectionMode.ByLevel)
                 return (PlayModePickerCategory.Other, NoteSessionService.ScaleSelectionByLevel);
 
-            // Explicit Scales-picker choice (SelectedTune = "Major", etc.) wins over By Level mode.
+            // Explicit Scales-picker choice (SelectedTune = "Major", etc.) wins over Assortment by Level mode.
             if (NoteSessionService.IsNamedScaleOption(selectedTunePreference))
                 return (PlayModePickerCategory.Scales, selectedTunePreference!);
 
@@ -316,7 +316,7 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// Applies an Other-picker choice to session state (same behavior as legacy Random/Tuner + By Level).
+        /// Applies an Other-picker choice to session state (same behavior as legacy Random/Tuner + Assortment by Level).
         /// </summary>
         public static void ApplyOtherSelection(
             NoteSessionService session,
@@ -339,7 +339,7 @@ namespace musicmate.Services
             if (selected == Tuner)
             {
                 // Shared transition for hamburger Tuner and WhatToPlay → Other → Tuner.
-                // Overrides prior By Level / random play-mode selection; composition and
+                // Overrides prior Assortment by Level / random play-mode selection; composition and
                 // note generation must not run while Tune == Tuner.
                 session.IsRandomMode = false;
                 session.RepeatSameTune = false;
@@ -379,7 +379,7 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// Migrates legacy Scales-picker Random (level scale pool) to By Level in the Other picker.
+        /// Migrates legacy Scales-picker Random (level scale pool) to Assortment by Level in the Other picker.
         /// </summary>
         public static void MigrateLegacySessionSelection(NoteSessionService session)
         {

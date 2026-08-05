@@ -22,7 +22,7 @@ public class PlayModePickerOptionsTests
     public void OtherOptions_ContainsExpectedItemsInOrder()
     {
         Assert.Equal(
-            new[] { "By Level", "Random", "Tuner" },
+            new[] { "Assortment by Level", "Random", "Tuner" },
             PlayModePickerOptions.OtherOptions);
 
         Assert.DoesNotContain(PlayModePickerOptions.HalfThroughSixteenthNotes, PlayModePickerOptions.OtherOptions);
@@ -243,7 +243,7 @@ public class PlayModePickerOptionsTests
     [Fact]
     public void ResolveOtherSelection_ByLevelCompositionRandom_KeepsByLevelPicker()
     {
-        // Composition under By Level sets IsRandomMode but leaves SelectedTune as "Selected Scale".
+        // Composition under Assortment by Level sets IsRandomMode but leaves SelectedTune as "Selected Scale".
         Assert.Equal(
             NoteSessionService.ScaleSelectionByLevel,
             PlayModePickerOptions.ResolveOtherSelection(
@@ -392,7 +392,7 @@ public class PlayModePickerOptionsTests
     }
 
     [Theory]
-    [InlineData(PlayModePickerCategory.Other, "By Level", "ByLvl")]
+    [InlineData(PlayModePickerCategory.Other, "Assortment by Level", "ByLvl")]
     [InlineData(PlayModePickerCategory.Other, "Random", "Rnd")]
     [InlineData(PlayModePickerCategory.Other, "Tuner", "Tuner")]
     [InlineData(PlayModePickerCategory.Tunes, "Half through Sixteenth Notes", "Rhythm")]
