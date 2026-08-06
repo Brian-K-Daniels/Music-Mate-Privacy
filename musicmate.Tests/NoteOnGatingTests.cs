@@ -4,7 +4,8 @@ namespace musicmate.Tests;
 
 /// <summary>
 /// Ensures one detected / sustained pitch can mark only one displayed note correct;
-/// each subsequent note needs a fresh note-on (silence, pitch stop, or attack).
+/// each subsequent same-pitch note needs silence+attack, pitch-stop, or a strong
+/// post-refractory amplitude re-articulation.
 /// </summary>
 [Collection("SessionPreferences")]
 public class NoteOnGatingTests : IDisposable
@@ -94,11 +95,11 @@ public class NoteOnGatingTests : IDisposable
 
         AssertAccepted(session, cFreq, expectedIndex: 0);
 
-        // Hold C across what would be several displayed slots — including amplitude wobble
+        // Hold C with mild amplitude wobble that must NOT meet same-pitch tongue thresholds
         for (int i = 0; i < 8; i++)
         {
-            session.ObserveLoudness(0.05f);
-            session.ObserveLoudness(0.02f); // dip that must NOT unlock same-pitch
+            session.ObserveLoudness(0.06f);
+            session.ObserveLoudness(0.045f);
             session.ObserveLoudness(0.055f);
             AssertRejected(session, cFreq);
         }
@@ -175,7 +176,7 @@ public class NoteOnGatingTests : IDisposable
     }
 
     [Fact]
-    public void SamePitch_AmplitudeDipRise_DoesNotUnlockRepeatedNote()
+    public void SamePitch_MildAmplitudeDip_DoesNotUnlockRepeatedNote()
     {
         var session = CreateSession(midiNotes: [62, 62]);
         double freq = Freq(62);
@@ -183,13 +184,50 @@ public class NoteOnGatingTests : IDisposable
         AssertAccepted(session, freq, expectedIndex: 0);
         Assert.True(session.IsAwaitingNoteOn);
 
-        // Amplitude wobble that used to false-trigger same-pitch advances
+        WaitPastSamePitchAmplitudeRefractory();
+
+        // Mild wobble below same-pitch tongue thresholds
         session.ObserveLoudness(0.06f);
-        session.ObserveLoudness(0.02f);
+        session.ObserveLoudness(0.045f);
         session.ObserveLoudness(0.055f);
         Assert.True(session.IsAwaitingNoteOn);
         AssertRejected(session, freq);
         Assert.Equal(new HashSet<int> { 0 }, session.CorrectNoteIndices);
+    }
+
+    [Fact]
+    public void SamePitch_StrongAmplitudeTongueAfterRefractory_UnlocksRepeatedNote()
+    {
+        var session = CreateSession(midiNotes: [64, 64, 64]); // Mary-style E E E
+        double freq = Freq(64);
+
+        AssertAccepted(session, freq, expectedIndex: 0);
+        Assert.True(session.IsAwaitingSamePitchRetrigger);
+
+        // Immediately after accept, strong dip must still be ignored (refractory).
+        // Keep trough above RmsThreshold so this exercises amplitude unlock, not silence.
+        session.ObserveLoudness(0.09f);
+        session.ObserveLoudness(0.03f);
+        session.ObserveLoudness(0.08f);
+        Assert.True(session.IsAwaitingNoteOn);
+        AssertRejected(session, freq);
+
+        WaitPastSamePitchAmplitudeRefractory();
+
+        // Strong tongue after refractory unlocks without full silence
+        session.ObserveLoudness(0.09f);
+        session.ObserveLoudness(0.03f);
+        session.ObserveLoudness(0.08f);
+        Assert.False(session.IsAwaitingNoteOn);
+        AssertAccepted(session, freq, expectedIndex: 1);
+
+        WaitPastSamePitchAmplitudeRefractory();
+        session.ObserveLoudness(0.09f);
+        session.ObserveLoudness(0.03f);
+        session.ObserveLoudness(0.08f);
+        AssertAccepted(session, freq, expectedIndex: 2);
+
+        Assert.Equal(new HashSet<int> { 0, 1, 2 }, session.CorrectNoteIndices);
     }
 
     [Fact]
@@ -264,6 +302,9 @@ public class NoteOnGatingTests : IDisposable
         session.NotifyNoteAttack();
         Assert.False(session.IsAwaitingNoteOn);
     }
+
+    private static void WaitPastSamePitchAmplitudeRefractory()
+        => Thread.Sleep(NoteSessionService.SamePitchAmplitudeRefractoryMs + 30);
 
     private static NoteSessionService CreateSession(int[] midiNotes)
     {

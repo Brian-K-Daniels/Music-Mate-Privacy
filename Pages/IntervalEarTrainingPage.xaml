@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="musicmate.Pages.IntervalEarTrainingPage"
+             x:Name="EarTrainingRoot"
+             Title="Interval Ear Training"
+             Shell.NavBarIsVisible="True"
+             BackgroundColor="{DynamicResource ThemePanelBackground}">
+
+  <ContentPage.Resources>
+    <Style x:Key="EarTrainButton" TargetType="Button">
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeContrastingText}" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="BorderWidth" Value="0" />
+      <Setter Property="FontAttributes" Value="Bold" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="MinimumHeightRequest" Value="44" />
+      <Setter Property="HeightRequest" Value="44" />
+      <Setter Property="Padding" Value="4,2" />
+      <Setter Property="HorizontalOptions" Value="Fill" />
+      <Setter Property="VerticalOptions" Value="Fill" />
+      <Setter Property="LineBreakMode" Value="WordWrap" />
+    </Style>
+  </ContentPage.Resources>
+
+  <Shell.TitleView>
+    <Grid ColumnDefinitions="Auto,*,Auto"
+          HeightRequest="44"
+          Padding="0,0,8,0"
+          VerticalOptions="Center">
+      <Label Grid.Column="0"
+             Text="Interval Ear Training"
+             FontAttributes="Bold"
+             FontSize="18"
+             TextColor="{DynamicResource ThemeContrastingText}"
+             VerticalOptions="Center" />
+      <Border Grid.Column="2"
+              Style="{StaticResource TitleLogoBorder}"
+              VerticalOptions="Center"
+              HorizontalOptions="End">
+        <Image Source="logo.png" Aspect="AspectFill" />
+      </Border>
+    </Grid>
+  </Shell.TitleView>
+
+  <Grid>
+    <ScrollView x:Name="MainScroll"
+                Padding="12,8,20,16"
+                VerticalOptions="Fill"
+                HorizontalOptions="Fill">
+      <VerticalStackLayout x:Name="MainContent" Spacing="10" HorizontalOptions="Fill">
+
+        <VerticalStackLayout x:Name="TopControlsSection" Spacing="10" HorizontalOptions="Fill">
+          <Label x:Name="StatusLabel"
+                 Text="Tap an interval to hear it, or Play Random to quiz yourself."
+                 FontSize="14"
+                 LineBreakMode="WordWrap"
+                 TextColor="{DynamicResource ThemeContrastingText}" />
+
+          <VerticalStackLayout Spacing="4">
+            <Label Text="Direction"
+                   FontSize="16"
+                   FontAttributes="Bold"
+                   TextColor="{DynamicResource ThemeContrastingText}" />
+            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="6">
+              <Button x:Name="DirectionAscendingButton"
+                      Grid.Column="0"
+                      Style="{StaticResource EarTrainButton}"
+                      Text="Ascending"
+                      Clicked="OnDirectionAscendingClicked"
+                      SemanticProperties.Description="Play intervals going up" />
+              <Button x:Name="DirectionDescendingButton"
+                      Grid.Column="1"
+                      Style="{StaticResource EarTrainButton}"
+                      Text="Descending"
+                      Clicked="OnDirectionDescendingClicked"
+                      SemanticProperties.Description="Play intervals going down" />
+              <Button x:Name="DirectionRandomButton"
+                      Grid.Column="2"
+                      Style="{StaticResource EarTrainButton}"
+                      Text="Random"
+                      Clicked="OnDirectionRandomClicked"
+                      SemanticProperties.Description="Play intervals going up or down at random" />
+            </Grid>
+          </VerticalStackLayout>
+
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" VerticalOptions="Center">
+            <VerticalStackLayout Grid.Column="0" Spacing="2">
+              <Label x:Name="DurationLabel"
+                     Text="Note duration: 500 ms"
+                     FontSize="14"
+                     TextColor="{DynamicResource ThemeContrastingText}" />
+              <Slider x:Name="DurationSlider"
+                      Minimum="0"
+                      Maximum="1000"
+                      Value="500"
+                      MinimumTrackColor="{DynamicResource ThemeSlider}"
+                      MaximumTrackColor="#CCCCCC"
+                      ThumbColor="{DynamicResource ThemeSlider}"
+                      ValueChanged="OnDurationChanged"
+                      SemanticProperties.Description="Duration of each played note in milliseconds" />
+            </VerticalStackLayout>
+            <Label Grid.Column="1"
+                   x:Name="DurationValueLabel"
+                   Text="500"
+                   FontSize="16"
+                   FontAttributes="Bold"
+                   WidthRequest="48"
+                   HorizontalTextAlignment="End"
+                   VerticalOptions="Center"
+                   TextColor="{DynamicResource ThemeContrastingText}" />
+          </Grid>
+        </VerticalStackLayout>
+
+        <VerticalStackLayout x:Name="IntervalsSection" Spacing="6" HorizontalOptions="Fill">
+          <Label Text="Intervals"
+                 FontSize="16"
+                 FontAttributes="Bold"
+                 TextColor="{DynamicResource ThemeContrastingText}" />
+          <Grid x:Name="IntervalButtonsHost"
+                ColumnDefinitions="*,*,*"
+                ColumnSpacing="6"
+                RowSpacing="6" />
+        </VerticalStackLayout>
+
+        <!-- Extra space so the interval grid can scroll to the vertical center of the viewport. -->
+        <BoxView x:Name="ScrollBottomSpacer"
+                 Color="Transparent"
+                 HeightRequest="220"
+                 HorizontalOptions="Fill" />
+
+      </VerticalStackLayout>
+    </ScrollView>
+
+    <!-- Brief success / failure overlay (images optional via ear_train_success / ear_train_fail). -->
+    <Grid x:Name="FeedbackOverlay"
+          IsVisible="False"
+          BackgroundColor="#CC000000"
+          InputTransparent="False"
+          SemanticProperties.Description="Answer feedback">
+      <Border x:Name="FeedbackCard"
+              BackgroundColor="{DynamicResource ThemeButtonBackground}"
+              StrokeThickness="0"
+              StrokeShape="RoundRectangle 16"
+              Padding="24"
+              HorizontalOptions="Center"
+              VerticalOptions="Center"
+              MaximumWidthRequest="320">
+        <VerticalStackLayout Spacing="12" HorizontalOptions="Center">
+          <Image x:Name="FeedbackImage"
+                 WidthRequest="96"
+                 HeightRequest="96"
+                 Aspect="AspectFit"
+                 IsVisible="False"
+                 HorizontalOptions="Center" />
+          <Label x:Name="FeedbackEmojiLabel"
+                 FontSize="56"
+                 HorizontalTextAlignment="Center"
+                 HorizontalOptions="Center" />
+          <Label x:Name="FeedbackTitleLabel"
+                 FontSize="22"
+                 FontAttributes="Bold"
+                 HorizontalTextAlignment="Center"
+                 TextColor="{DynamicResource ThemeContrastingText}" />
+          <Label x:Name="FeedbackDetailLabel"
+                 FontSize="15"
+                 HorizontalTextAlignment="Center"
+                 LineBreakMode="WordWrap"
+                 TextColor="{DynamicResource ThemeContrastingText}" />
+        </VerticalStackLayout>
+      </Border>
+    </Grid>
+  </Grid>
+</ContentPage>

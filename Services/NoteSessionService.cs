@@ -2024,6 +2024,12 @@ namespace musicmate.Services
         private bool _requirePostSilenceAttack;
         private DateTime? _silenceSinceUtc;
         /// <summary>
+        /// When same-pitch note-on wait began — amplitude re-attacks are ignored until
+        /// <see cref="SamePitchAmplitudeRefractoryMs"/> elapses so the attack that accepted
+        /// the previous note cannot immediately unlock the next identical pitch.
+        /// </summary>
+        private DateTime? _samePitchAwaitStartedUtc;
+        /// <summary>
         /// Same-pitch silence is accumulating because pitch detection dropped (freq==0)
         /// while loudness may still be above threshold (typical clarinet/voice tonguing).
         /// While set, <see cref="ObserveLoudness"/> must not clear the silence clock.
@@ -2037,7 +2043,14 @@ namespace musicmate.Services
         private const float NoteOnAttackMinAbsoluteRise = 0.012f;
         private const float NoteOnAttackDipFraction = 0.55f;
         private const float NoteOnAttackMinDip = 0.015f;
+        /// <summary>Stricter amplitude tongue for same-pitch repeats (kids / soft articulations).</summary>
+        private const float SamePitchAttackRiseFactor = 2.0f;
+        private const float SamePitchAttackMinAbsoluteRise = 0.018f;
+        private const float SamePitchAttackDipFraction = 0.40f;
+        private const float SamePitchAttackMinDip = 0.020f;
         public const int DefaultSamePitchSilenceMs = 40;
+        /// <summary>Ignore amplitude wobble immediately after accepting a note before the next same pitch.</summary>
+        public const int SamePitchAmplitudeRefractoryMs = 120;
         private int _samePitchSilenceMs = DefaultSamePitchSilenceMs;
         /// <summary>
         /// Continuous below-threshold time required before a repeated same pitch may unlock.
@@ -2052,7 +2065,7 @@ namespace musicmate.Services
 
         /// <summary>
         /// True when the next note is the same pitch class as the one just accepted and still
-        /// needs silence (or pitch dropout) plus a fresh attack before it can match.
+        /// needs silence, pitch dropout, or a strong re-articulation before it can match.
         /// </summary>
         public bool IsAwaitingSamePitchRetrigger =>
             _awaitingSamePitchRetrigger || (_requirePostSilenceAttack && _lockedPitchClassAfterAdvance.HasValue);
@@ -3292,6 +3305,7 @@ namespace musicmate.Services
             _awaitingRmsAtStart = 0;
             _silenceSinceUtc = null;
             _samePitchSilenceFromPitchStop = false;
+            _samePitchAwaitStartedUtc = null;
 
             // Only repeated same pitch-class notes need a fresh articulation.
             // Different next pitches are already protected by _lockedPitchClassAfterAdvance
@@ -3304,6 +3318,8 @@ namespace musicmate.Services
 
             _awaitingSamePitchRetrigger = samePitchNext;
             _awaitingNoteOn = samePitchNext;
+            if (samePitchNext)
+                _samePitchAwaitStartedUtc = DateTime.UtcNow;
         }
         private void ClearNoteOnWait()
         {
@@ -3314,6 +3330,7 @@ namespace musicmate.Services
             _awaitingRmsAtStart = 0;
             _silenceSinceUtc = null;
             _samePitchSilenceFromPitchStop = false;
+            _samePitchAwaitStartedUtc = null;
             // Keep _lockedPitchClassAfterAdvance so residual previous pitch is ignored
             // (not scored WrongPitch) until the detected pitch class changes.
         }
@@ -3393,7 +3410,8 @@ namespace musicmate.Services
         }
         /// <summary>
         /// Called on a clear new onset (sound after silence, or amplitude attack for
-        /// different-pitch targets). Completes same-pitch re-trigger arming.
+        /// different-pitch targets / post-refractory same-pitch). Completes same-pitch
+        /// re-trigger when armed after silence.
         /// </summary>
         public void NotifyNoteAttack()
         {
@@ -3402,10 +3420,13 @@ namespace musicmate.Services
                 _requirePostSilenceAttack = false;
                 _awaitingSamePitchRetrigger = false;
                 _samePitchSilenceFromPitchStop = false;
+                _samePitchAwaitStartedUtc = null;
                 return;
             }
 
-            // Amplitude attacks never unlock repeated same-pitch notes (too easy to false-trigger).
+            // Rising edge after brief quiet does not unlock same-pitch until silence debounce
+            // completed (_requirePostSilenceAttack) or a strong post-refractory amplitude tongue
+            // is detected in ObserveLoudness.
             if (_awaitingSamePitchRetrigger)
                 return;
 
@@ -3415,7 +3436,8 @@ namespace musicmate.Services
         /// <summary>
         /// Tracks loudness while awaiting a note-on. Volume below <see cref="RmsThreshold"/>
         /// unlocks (with debounce for same-pitch repeats). Amplitude dip/rise attacks unlock
-        /// only when the next note is a different pitch.
+        /// different-pitch waits immediately, and same-pitch waits after a short refractory
+        /// using stricter thresholds (so soft tonguing works without chaining on one sustain).
         /// </summary>
         public void ObserveLoudness(float rms)
         {
@@ -3439,11 +3461,15 @@ namespace musicmate.Services
             if (!_samePitchSilenceFromPitchStop)
                 _silenceSinceUtc = null;
 
-            // Same-pitch repeats: ignore amplitude wobble; wait for silence + new onset.
-            if (_awaitingSamePitchRetrigger || _requirePostSilenceAttack)
+            // Waiting for onset after completed silence debounce — do not use amplitude path.
+            if (_requirePostSilenceAttack)
                 return;
 
             if (!_awaitingNoteOn)
+                return;
+
+            // Same-pitch: ignore amplitude wobble during the refractory window after advance.
+            if (_awaitingSamePitchRetrigger && !IsSamePitchAmplitudeUnlockAllowed(DateTime.UtcNow))
                 return;
 
             if (_awaitingRmsAtStart <= 0)
@@ -3452,16 +3478,28 @@ namespace musicmate.Services
             if (rms < _awaitingRmsTrough)
                 _awaitingRmsTrough = rms;
 
+            float dipFraction = _awaitingSamePitchRetrigger ? SamePitchAttackDipFraction : NoteOnAttackDipFraction;
+            float minDip = _awaitingSamePitchRetrigger ? SamePitchAttackMinDip : NoteOnAttackMinDip;
+            float riseFactor = _awaitingSamePitchRetrigger ? SamePitchAttackRiseFactor : NoteOnAttackRiseFactor;
+            float minRise = _awaitingSamePitchRetrigger ? SamePitchAttackMinAbsoluteRise : NoteOnAttackMinAbsoluteRise;
+
             bool hadMeaningfulDip =
-                _awaitingRmsTrough <= _awaitingRmsAtStart * NoteOnAttackDipFraction
-                || _awaitingRmsAtStart - _awaitingRmsTrough >= NoteOnAttackMinDip;
+                _awaitingRmsTrough <= _awaitingRmsAtStart * dipFraction
+                || _awaitingRmsAtStart - _awaitingRmsTrough >= minDip;
 
             if (hadMeaningfulDip
-                && rms >= _awaitingRmsTrough + NoteOnAttackMinAbsoluteRise
-                && rms >= _awaitingRmsTrough * NoteOnAttackRiseFactor)
+                && rms >= _awaitingRmsTrough + minRise
+                && rms >= _awaitingRmsTrough * riseFactor)
             {
                 ClearNoteOnWait();
             }
+        }
+
+        private bool IsSamePitchAmplitudeUnlockAllowed(DateTime utcNow)
+        {
+            if (_samePitchAwaitStartedUtc is not { } started)
+                return false;
+            return (utcNow - started).TotalMilliseconds >= SamePitchAmplitudeRefractoryMs;
         }
         public (string WrittenName, int CentsDeviation) MapPitch(double freq)
         {

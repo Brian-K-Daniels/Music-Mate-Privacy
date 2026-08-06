@@ -358,7 +358,8 @@ namespace musicmate.Pages
                 };
 
                 StatusLabelShell?.BindingContext = StatusService.Instance;
-                _orientation.AllowAutorotate();
+                // Keep landscape locked; ForceLandscape runs again in OnAppearing.
+                // Do not AllowAutorotate here — that briefly unlocks portrait during Shell navigation.
 
                 var panelColor = _theme_service?.PanelBackgroundColor ?? Colors.White;
                 try

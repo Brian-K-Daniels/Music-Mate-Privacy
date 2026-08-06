@@ -89,8 +89,8 @@ namespace musicmate.Pages
 
                 _orientation = ServiceHelper.GetService<IOrientationService>()!;
 
-                _orientation.AllowAutorotate();
-
+                // Keep landscape locked until OnAppearing ForceLandscape. Calling
+                // AllowAutorotate in the ctor unlocks portrait during Shell flyout navigation.
 
                 BindingContext = _session;
 

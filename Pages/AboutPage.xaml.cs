@@ -110,7 +110,8 @@ namespace musicmate.Pages
             _aboutSearchDebounceCts?.Cancel();
             _aboutSearchDebounceCts?.Dispose();
             _aboutSearchDebounceCts = null;
-            _orientationService?.AllowAutorotate();
+            // Do not AllowAutorotate here — destination landscape pages ForceLandscape in
+            // OnAppearing; unlocking mid-navigation causes a portrait flash.
 
             if (!string.IsNullOrEmpty(AboutSearchEntry.Text))  //  2026.07.27 1536  
             {

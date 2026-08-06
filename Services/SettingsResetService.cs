@@ -190,6 +190,12 @@ namespace musicmate.Services
             SessionPreferences.Set(MaxAttemptsPerNoteKey, 100);
             SessionPreferences.Set(AboutPageViewModel.FontSizePreferenceKey, 14.0);
             SessionPreferences.Set(RepeatDelaySecondsKey, 2.0);
+            SessionPreferences.Set(
+                IntervalEarTrainingLogic.NoteDurationPreferenceKey,
+                IntervalEarTrainingLogic.DefaultNoteDurationMs);
+            SessionPreferences.Set(
+                IntervalEarTrainingLogic.DirectionPreferenceKey,
+                IntervalEarTrainingLogic.DefaultDirectionMode.ToString());
 
             _session.SelectedScale = SettingsPageViewModel.DefaultTune;
             _session.Instrument = SettingsPageViewModel.DefaultInstrument;
