@@ -570,8 +570,12 @@ namespace musicmate.Pages
                     }
 
                     if (e.PropertyName == nameof(NoteSessionService.ShowConductorCues)
-                        || e.PropertyName == nameof(NoteSessionService.NoteNameDisplay))
+                        || e.PropertyName == nameof(NoteSessionService.NoteNameDisplay)
+                        || e.PropertyName == nameof(NoteSessionService.ShowSignaturesOnBothStaffs))
                     {
+                        // Signatures-on-both changes first-note X; bust layout cache without regenerating notes.
+                        if (e.PropertyName == nameof(NoteSessionService.ShowSignaturesOnBothStaffs))
+                            _staffDrawable?.InvalidateLayoutCache();
                         StaffGraphicsView?.Invalidate();
                     }
                 };

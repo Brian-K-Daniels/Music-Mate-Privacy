@@ -98,6 +98,16 @@
                       SelectedItem="{Binding NoteNameDisplay, Mode=TwoWay}"
                       Style="{StaticResource SettingsPickerStyle}" />
             </Grid>
+            <Grid ColumnDefinitions="200,*,60" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Show key and time signatures on both staffs" LineBreakMode="WordWrap" />
+              <Switch Grid.Column="1" IsToggled="{Binding ShowSignaturesOnBothStaffs, Mode=TwoWay}"
+                      OnColor="{DynamicResource ThemeSlider}" HorizontalOptions="End" />
+            </Grid>
+            <Grid ColumnDefinitions="200,*,60" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Show Conductor Cues" />
+              <Switch Grid.Column="1" IsToggled="{Binding ShowConductorCues, Mode=TwoWay}"
+                      OnColor="{DynamicResource ThemeSlider}" HorizontalOptions="End" />
+            </Grid>
             <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
               <Label Grid.Column="0" Text="Font used in About page" />
               <Picker Grid.Column="1"
@@ -202,12 +212,6 @@
             <Grid ColumnDefinitions="200,*,60" ColumnSpacing="4" VerticalOptions="Center">
               <Label Grid.Column="0" Text="Listening starts when music appears." />
               <Switch Grid.Column="1" IsToggled="{Binding AutoStart, Mode=TwoWay}"
-                      OnColor="{DynamicResource ThemeSlider}" HorizontalOptions="End" />
-            </Grid>
-            
-            <Grid ColumnDefinitions="200,*,60" ColumnSpacing="4" VerticalOptions="Center">
-              <Label Grid.Column="0" Text="Show Conductor Cues" />
-              <Switch Grid.Column="1" IsToggled="{Binding ShowConductorCues, Mode=TwoWay}"
                       OnColor="{DynamicResource ThemeSlider}" HorizontalOptions="End" />
             </Grid>
             

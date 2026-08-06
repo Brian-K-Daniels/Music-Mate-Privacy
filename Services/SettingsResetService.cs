@@ -177,6 +177,7 @@ namespace musicmate.Services
             _session.StreakCrit = MasteryPreferenceDefaults.StreakCrit;
             _session.UseNoteMasteryForGeneration = MasteryPreferenceDefaults.UseNoteMasteryForGeneration;
             _session.ShowConductorCues = false;
+            _session.ShowSignaturesOnBothStaffs = true;
             _session.NoteNameDisplay = "Current only";
             _session.MeterTimeSignature = "4/4";
             _session.SmallestRhythmNote = "Quarter";
@@ -187,7 +188,7 @@ namespace musicmate.Services
             SessionPreferences.Set(CollectSessionStatsKey, SettingsPageViewModel.DefaultCollectSession);
             SessionPreferences.Set(MaxSessionDbSizeMbKey, SettingsPageViewModel.DefaultMaxSessionDbMb);
             SessionPreferences.Set(MaxAttemptsPerNoteKey, 100);
-            SessionPreferences.Set(AboutPageViewModel.FontSizePreferenceKey, 12.0);
+            SessionPreferences.Set(AboutPageViewModel.FontSizePreferenceKey, 14.0);
             SessionPreferences.Set(RepeatDelaySecondsKey, 2.0);
 
             _session.SelectedScale = SettingsPageViewModel.DefaultTune;
@@ -237,7 +238,8 @@ namespace musicmate.Services
                 SyncopationSetting = _session.SyncopationSetting,
                 NoteNameDisplay = _session.NoteNameDisplay,
                 ShowConductorCues = _session.ShowConductorCues,
-                AboutFontSize = SessionPreferences.Get(AboutPageViewModel.FontSizePreferenceKey, 12.0),
+                ShowSignaturesOnBothStaffs = _session.ShowSignaturesOnBothStaffs,
+                AboutFontSize = SessionPreferences.Get(AboutPageViewModel.FontSizePreferenceKey, 14.0),
                 CollectNoteStats = SessionPreferences.Get(CollectNoteStatsKey, true),
                 CollectSessionStats = SessionPreferences.Get(CollectSessionStatsKey, true),
                 MaxSessionDbSizeMb = SessionPreferences.Get(MaxSessionDbSizeMbKey, 50),
@@ -295,7 +297,8 @@ namespace musicmate.Services
                 SyncopationSetting = "None",
                 NoteNameDisplay = "Current only",
                 ShowConductorCues = false,
-                AboutFontSize = 12.0,
+                ShowSignaturesOnBothStaffs = true,
+                AboutFontSize = 14.0,
                 CollectNoteStats = SettingsPageViewModel.DefaultCollectNote,
                 CollectSessionStats = SettingsPageViewModel.DefaultCollectSession,
                 MaxSessionDbSizeMb = SettingsPageViewModel.DefaultMaxSessionDbMb,
@@ -393,6 +396,7 @@ namespace musicmate.Services
             _session.SyncopationSetting = snapshot.SyncopationSetting;
             _session.NoteNameDisplay = snapshot.NoteNameDisplay;
             _session.ShowConductorCues = snapshot.ShowConductorCues;
+            _session.ShowSignaturesOnBothStaffs = snapshot.ShowSignaturesOnBothStaffs;
 
             SessionPreferences.Set(CollectNoteStatsKey, snapshot.CollectNoteStats);
             SessionPreferences.Set(CollectSessionStatsKey, snapshot.CollectSessionStats);
@@ -450,6 +454,7 @@ namespace musicmate.Services
             public string SyncopationSetting { get; init; } = "None";
             public string NoteNameDisplay { get; init; } = "Current only";
             public bool ShowConductorCues { get; init; }
+            public bool ShowSignaturesOnBothStaffs { get; init; } = true;
             public double AboutFontSize { get; init; } = 12;
             public bool CollectNoteStats { get; init; } = true;
             public bool CollectSessionStats { get; init; } = true;
@@ -501,6 +506,7 @@ namespace musicmate.Services
                     && StringEq(SyncopationSetting, other.SyncopationSetting)
                     && StringEq(NoteNameDisplay, other.NoteNameDisplay)
                     && ShowConductorCues == other.ShowConductorCues
+                    && ShowSignaturesOnBothStaffs == other.ShowSignaturesOnBothStaffs
                     && NearlyEqual(AboutFontSize, other.AboutFontSize)
                     && CollectNoteStats == other.CollectNoteStats
                     && CollectSessionStats == other.CollectSessionStats

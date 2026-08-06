@@ -120,12 +120,15 @@ namespace musicmate.Services
         private const string PrefSyncopationSettingKey = "musicmate.Syncopation";
         private const string PrefNoteNameDisplayKey = "musicmate.NoteNameDisplay";
         private const string PrefShowConductorCuesKey = "musicmate.ShowConductorCues";
+        private const string PrefShowSignaturesOnBothStaffsKey = "musicmate.ShowSignaturesOnBothStaffs";
         private string _meterTimeSignature = SessionPreferences.Get(PrefMeterTimeSignatureKey, "4/4");
         private string _smallestRhythmNote = SessionPreferences.Get(PrefSmallestRhythmNoteKey, "Quarter");
         private string _rhythmMode = SessionPreferences.Get(PrefRhythmModeKey, "Simple");
         private string _syncopationSetting = SessionPreferences.Get(PrefSyncopationSettingKey, "None");
         private string _noteNameDisplay = SessionPreferences.Get(PrefNoteNameDisplayKey, "Current only");
         private bool _showConductorCues = SessionPreferences.Get(PrefShowConductorCuesKey, false);
+        private bool _showSignaturesOnBothStaffs =
+            SessionPreferences.Get(PrefShowSignaturesOnBothStaffsKey, true);
 
         /// <summary>
         /// Time signature for rhythm generation.
@@ -233,6 +236,23 @@ namespace musicmate.Services
                 _showConductorCues = value;
                 SessionPreferences.Set(PrefShowConductorCuesKey, value);
                 OnPropertyChanged(nameof(ShowConductorCues));
+            }
+        }
+
+        /// <summary>
+        /// When true, draw key and time signatures on both upper and lower staffs.
+        /// When false, draw them only on the upper staff (legacy layout).
+        /// Factory default is ON.
+        /// </summary>
+        public bool ShowSignaturesOnBothStaffs
+        {
+            get => _showSignaturesOnBothStaffs;
+            set
+            {
+                if (_showSignaturesOnBothStaffs == value) return;
+                _showSignaturesOnBothStaffs = value;
+                SessionPreferences.Set(PrefShowSignaturesOnBothStaffsKey, value);
+                OnPropertyChanged(nameof(ShowSignaturesOnBothStaffs));
             }
         }
         public int AccidentalPercent

@@ -165,7 +165,8 @@ namespace musicmate.Pages
             _viewModel.MinCorrectCount = _session.MinCorrectCount;
             _viewModel.OmitMsAvgThreshold = _session.OmitMsAvgThreshold;
             _viewModel.AutoStart = _session.AutoStart;
-            _viewModel.ShowConductorCues = _session.ShowConductorCues; 
+            _viewModel.ShowConductorCues = _session.ShowConductorCues;
+            _viewModel.ShowSignaturesOnBothStaffs = _session.ShowSignaturesOnBothStaffs;
             _viewModel.MasteredMethod = _session.MasteredMethod;
             _viewModel.StreakCrit = _session.StreakCrit;
 

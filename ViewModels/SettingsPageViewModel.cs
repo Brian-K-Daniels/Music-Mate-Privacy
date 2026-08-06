@@ -505,7 +505,7 @@ namespace musicmate.ViewModels
 
         public List<double> AboutFontSizeOptions { get; } = new() { 6, 8, 10, 12, 14, 16, 18 };
 
-        private double _aboutFontSize = SessionPreferences.Get(AboutPageViewModel.FontSizePreferenceKey, 12.0);
+        private double _aboutFontSize = SessionPreferences.Get(AboutPageViewModel.FontSizePreferenceKey, 14.0);
         public double AboutFontSize
         {
             get => _aboutFontSize;
@@ -610,6 +610,8 @@ namespace musicmate.ViewModels
 
         private string _noteNameDisplay = Preferences.Get("musicmate.NoteNameDisplay", "Current only");
         private bool _showConductorCues = Preferences.Get("musicmate.ShowConductorCues", false);
+        private bool _showSignaturesOnBothStaffs =
+            Preferences.Get("musicmate.ShowSignaturesOnBothStaffs", true);
         public string NoteNameDisplay
         {
             get => _session?.NoteNameDisplay ?? _noteNameDisplay;
@@ -647,6 +649,26 @@ namespace musicmate.ViewModels
                     _showConductorCues = value;
                     Preferences.Set("musicmate.ShowConductorCues", value);
                     OnPropertyChanged(nameof(ShowConductorCues));
+                }
+            }
+        }
+
+        public bool ShowSignaturesOnBothStaffs
+        {
+            get => _session?.ShowSignaturesOnBothStaffs ?? _showSignaturesOnBothStaffs;
+            set
+            {
+                if ((_session?.ShowSignaturesOnBothStaffs ?? _showSignaturesOnBothStaffs) == value) return;
+                if (_session != null)
+                {
+                    _session.ShowSignaturesOnBothStaffs = value;
+                    OnPropertyChanged(nameof(ShowSignaturesOnBothStaffs));
+                }
+                else
+                {
+                    _showSignaturesOnBothStaffs = value;
+                    Preferences.Set("musicmate.ShowSignaturesOnBothStaffs", value);
+                    OnPropertyChanged(nameof(ShowSignaturesOnBothStaffs));
                 }
             }
         }

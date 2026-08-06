@@ -21,9 +21,9 @@
     <ApplicationId>com.bkdaniels.musicmate</ApplicationId>
 
     <!-- Versions -->
-    <ApplicationDisplayVersion>1.21</ApplicationDisplayVersion>
-    <ApplicationVersion>21</ApplicationVersion>
-    <PackageVersion>1.21</PackageVersion>
+    <ApplicationDisplayVersion>1.22</ApplicationDisplayVersion>
+    <ApplicationVersion>22</ApplicationVersion>
+    <PackageVersion>1.22</PackageVersion>
 
     <WindowsPackageType>None</WindowsPackageType>
 

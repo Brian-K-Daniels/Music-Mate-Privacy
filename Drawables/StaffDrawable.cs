@@ -13,8 +13,9 @@ namespace musicmate.Drawables
     /// Two-staff drawable.
     /// Renders an upper and a lower treble staff inside a single <see cref="ICanvas"/>.
     /// Reading order follows standard sheet music: upper staff first, then lower staff.
-    /// These are two <b>independent</b> lines of music (not a grand staff): the lower staff
-    /// omits key and time signatures for space but uses the same key and meter; internal bar
+    /// These are two <b>independent</b> lines of music (not a grand staff). Key and time
+    /// signatures may be drawn on both staffs or only the upper staff
+    /// (<see cref="NoteSessionService.ShowSignaturesOnBothStaffs"/>). Internal bar
     /// lines need not align vertically between staves (only the final bar may be aligned).
     ///
     /// <para><b>Transitions / fade:</b> when new notes are loaded onto a staff while the
@@ -436,6 +437,7 @@ namespace musicmate.Drawables
             public string SessionTune { get; init; }
             public string TimeSig { get; init; }
             public int MusicBpm { get; init; }
+            public bool ShowSignaturesOnBothStaffs { get; init; }
 
             public bool Equals(LayoutCacheKey other) =>
                 Width == other.Width && Height == other.Height
@@ -446,7 +448,8 @@ namespace musicmate.Drawables
                 && ChildLevel == other.ChildLevel
                 && SessionKey == other.SessionKey && SessionScale == other.SessionScale
                 && SessionTune == other.SessionTune
-                && TimeSig == other.TimeSig && MusicBpm == other.MusicBpm;
+                && TimeSig == other.TimeSig && MusicBpm == other.MusicBpm
+                && ShowSignaturesOnBothStaffs == other.ShowSignaturesOnBothStaffs;
 
             public override bool Equals(object? obj) => obj is LayoutCacheKey other && Equals(other);
             public override int GetHashCode()
@@ -458,6 +461,7 @@ namespace musicmate.Drawables
                 hc.Add(UpperBarHash); hc.Add(LowerBarHash);
                 hc.Add(UpperHasEndBar); hc.Add(BeginnerLayout); hc.Add(ChildLevel);
                 hc.Add(SessionKey); hc.Add(SessionScale); hc.Add(SessionTune); hc.Add(TimeSig); hc.Add(MusicBpm);
+                hc.Add(ShowSignaturesOnBothStaffs);
                 return hc.ToHashCode();
             }
         }
@@ -517,6 +521,7 @@ namespace musicmate.Drawables
                 SessionTune = _session.Tune ?? string.Empty,
                 TimeSig = _session.GetDisplayTimeSignature(),
                 MusicBpm = _session.MusicBpm,
+                ShowSignaturesOnBothStaffs = _session.ShowSignaturesOnBothStaffs,
             };
 
         private bool TryDrawFromLayoutCache(
@@ -717,11 +722,16 @@ namespace musicmate.Drawables
             float upperTop, float upperMid, float upperBot,
             float lowerTop, float lowerMid, float lowerBot)
         {
-            DrawStaffHeaderChrome(canvas, ink, upperTop, upperMid, upperBot, drawKeyAndTimeSig: true);
+            // BPM marking stays on the upper staff only; key/time may repeat on lower.
+            DrawStaffHeaderChrome(canvas, ink, upperTop, upperMid, upperBot,
+                drawKeyAndTimeSig: true, drawBpmMarking: true);
             if (_session.Tune != "Tuner")
             {
+                bool drawLowerSignatures = UpperNotes.Count == 0
+                    || _session.ShowSignaturesOnBothStaffs;
                 DrawStaffHeaderChrome(canvas, ink, lowerTop, lowerMid, lowerBot,
-                    drawKeyAndTimeSig: UpperNotes.Count == 0);
+                    drawKeyAndTimeSig: drawLowerSignatures,
+                    drawBpmMarking: UpperNotes.Count == 0);
             }
         }
 
@@ -2149,8 +2159,11 @@ namespace musicmate.Drawables
             ComputeLayout(dirtyRect.Height);
             _headerMetrics = ComputeHeaderMetrics(safeLeft);
             _leftMargin = _headerMetrics.LeftMargin;
-            // Independent staves: lower omits key/time sig (clef-only margin) but shares key/meter with upper.
-            bool lowerClefOnlyStart = LowerNotes.Count > 0 && UpperNotes.Count > 0;
+            // Lower staff: full key/time header when the setting is ON (or when it is the
+            // only staff with notes); otherwise clef-only start like the legacy layout.
+            bool lowerUsesFullHeader = LowerNotes.Count > 0
+                && (UpperNotes.Count == 0 || _session.ShowSignaturesOnBothStaffs);
+            bool lowerClefOnlyStart = LowerNotes.Count > 0 && !lowerUsesFullHeader;
             float upperStaffMargin = _headerMetrics.LeftMargin;
             float lowerStaffMargin = lowerClefOnlyStart
                 ? _headerMetrics.ClefOnlyLeftMargin
@@ -3364,7 +3377,8 @@ namespace musicmate.Drawables
         private void DrawStaffHeaderChrome(
             ICanvas canvas, Color ink,
             float staffTop, float staffMid, float staffBot,
-            bool drawKeyAndTimeSig)
+            bool drawKeyAndTimeSig,
+            bool drawBpmMarking = true)
         {
             canvas.SaveState();
             canvas.FontColor = ink;
@@ -3374,9 +3388,11 @@ namespace musicmate.Drawables
                 HorizontalAlignment.Left, VerticalAlignment.Top);
             canvas.RestoreState();
 
+            if (drawBpmMarking && drawKeyAndTimeSig)
+                DrawMusicBpmMarking(canvas, ink, staffTop);
+
             if (drawKeyAndTimeSig)
             {
-                DrawMusicBpmMarking(canvas, ink, staffTop);
                 float keySigEndX = DrawKeySignature(canvas, staffTop, staffMid, ink);
                 if (_session.Tune != "Tuner")
                     DrawTimeSignature(canvas, staffTop, staffMid, ink, keySigEndX + KeySigTimeSigGap);
