@@ -50,6 +50,22 @@ public class PracticeCompositionSelectorTests
     }
 
     [Fact]
+    public void PreserveAssortmentByLevelPreference_KeepsExistingMarker()
+    {
+        string? pref = NoteSessionService.ScaleSelectionByLevel;
+        PracticeCompositionSelector.PreserveAssortmentByLevelPreference(() => pref, value => pref = value);
+        Assert.Equal(NoteSessionService.ScaleSelectionByLevel, pref);
+    }
+
+    [Fact]
+    public void PreserveAssortmentByLevelPreference_UpgradesSelectedScaleMarker()
+    {
+        string? pref = "Selected Scale";
+        PracticeCompositionSelector.PreserveAssortmentByLevelPreference(() => pref, value => pref = value);
+        Assert.Equal(NoteSessionService.ScaleSelectionByLevel, pref);
+    }
+
+    [Fact]
     public void CompositionAssignedPracticeTune_DoesNotImplyTunesPickerSelection()
     {
         // Simulates state after composition picks a tune: session.Tune is Practice Tune

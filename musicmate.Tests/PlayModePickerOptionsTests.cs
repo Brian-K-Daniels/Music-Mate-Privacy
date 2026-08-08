@@ -375,6 +375,64 @@ public class PlayModePickerOptionsTests
     }
 
     [Fact]
+    public void ApplyPersistedSelection_RestoresRandomMelodic()
+    {
+        string? pref = PlayModePickerOptions.RandomMelodic;
+        var session = new NoteSessionService
+        {
+            Tune = "Selected Scale",
+            IsRandomMode = false,
+            ScaleSelectionMode = ScaleSelectionMode.ByLevel,
+        };
+
+        PlayModePickerOptions.ApplyPersistedSelection(session, () => pref, value => pref = value);
+
+        Assert.True(session.IsRandomMode);
+        Assert.Equal("Selected Scale", session.Tune);
+        Assert.Equal(PlayModePickerOptions.RandomMelodic, pref);
+    }
+
+    [Fact]
+    public void ApplyPersistedSelection_RestoresAssortmentByLevel_FromLegacySelectedScale()
+    {
+        string? pref = "Selected Scale";
+        var session = new NoteSessionService
+        {
+            Tune = "Selected Scale",
+            IsRandomMode = false,
+            ScaleSelectionMode = ScaleSelectionMode.ByLevel,
+        };
+
+        PlayModePickerOptions.ApplyPersistedSelection(session, () => pref, value => pref = value);
+
+        Assert.Equal(ScaleSelectionMode.ByLevel, session.ScaleSelectionMode);
+        Assert.Equal(NoteSessionService.ScaleSelectionByLevel, pref);
+        Assert.Equal(
+            (PlayModePickerCategory.Other, NoteSessionService.ScaleSelectionByLevel),
+            PlayModePickerOptions.ResolveDisplayedPicker(
+                session, layoutTestTuneEnabled: false, selectedTunePreference: pref));
+    }
+
+    [Fact]
+    public void ApplyPersistedSelection_RestoresNamedScale()
+    {
+        string? pref = "Dorian";
+        var session = new NoteSessionService
+        {
+            Tune = "Selected Scale",
+            IsRandomMode = true,
+            ChildLevel = 100,
+        };
+
+        PlayModePickerOptions.ApplyPersistedSelection(session, () => pref, value => pref = value);
+
+        Assert.False(session.IsRandomMode);
+        Assert.Equal(ScaleSelectionMode.Named, session.ScaleSelectionMode);
+        Assert.Equal("Dorian", session.SelectedScale);
+        Assert.Equal("Dorian", pref);
+    }
+
+    [Fact]
     public void TryApplyScalePickerSelection_NamedScale_SticksEvenWhenBelowUnlockLevel()
     {
         var session = new NoteSessionService

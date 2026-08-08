@@ -147,6 +147,8 @@ namespace musicmate.Pages
 
             _orientation?.ForceLandscape();
 
+            RefreshTunePickerOptions();
+
             SyncPickersFromSession();
 
             UpdateRepeatButtonsVisibility();
@@ -240,6 +242,8 @@ namespace musicmate.Pages
 
         {
 
+            PlayModePickerOptions.ApplyPersistedSelection(_session);
+
             UpdatePlayModePickersFromSession();
 
             UpdateRandomModeWarning();
@@ -253,13 +257,11 @@ namespace musicmate.Pages
 
 
 
-            _tuneTitles = PlayModePickerOptions.BuildTunePickerOptions();
+            RefreshTunePickerOptions();
 
             _scaleOptions = NoteSessionService.ScalePickerOptions;
 
 
-
-            TunesPicker.ItemsSource = _tuneTitles;
 
             ScalesPicker.ItemsSource = _scaleOptions;
 
@@ -271,6 +273,27 @@ namespace musicmate.Pages
 
             // SelectedIndexChanged handlers are wired in WhatToPlayPage.xaml.
 
+        }
+
+        /// <summary>Rebuilds the Tunes picker from built-in + saved titles (e.g. after Save/Delete on Music).</summary>
+        private void RefreshTunePickerOptions()
+        {
+            string? previous = TunesPicker.SelectedItem as string
+                ?? Preferences.Default.Get<string?>("SelectedTune", null);
+
+            _tuneTitles = PlayModePickerOptions.BuildTunePickerOptions();
+            TunesPicker.ItemsSource = _tuneTitles;
+
+            if (!string.IsNullOrEmpty(previous))
+            {
+                int idx = Array.IndexOf(_tuneTitles, previous);
+                if (idx >= 0)
+                {
+                    _suppressPickerSync = true;
+                    try { TunesPicker.SelectedIndex = idx; }
+                    finally { _suppressPickerSync = false; }
+                }
+            }
         }
         private void RefreshArpeggioPickerOptions()
 
@@ -851,7 +874,7 @@ namespace musicmate.Pages
 
 
 
-            var practiceTune = TuneLibrary.All.FirstOrDefault(t => t.Title == selected);
+            var practiceTune = PlayModePickerOptions.TryResolvePracticeTune(selected);
 
             if (practiceTune == null) return;
 

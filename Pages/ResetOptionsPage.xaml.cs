@@ -107,17 +107,42 @@ namespace musicmate.Pages
 
         private async void OnFactoryResetClicked(object? sender, EventArgs e)
         {
-            bool confirmed = await DisplayAlertAsync(
-                "Reset Settings",
-                "Reset all settings to factory defaults? This includes advanced audio, level-up criteria, and practice options.",
-                "Reset", "Cancel");
-
-            if (!confirmed)
+            bool continueReset = await DisplayAlertAsync(
+                "Factory Reset",
+                "Factory Reset will permanently erase all your progress, practice history, statistics, and settings. Premium purchases will not be affected. Continue?",
+                "Continue",
+                "Cancel");
+            if (!continueReset)
                 return;
 
-            _resetService.ResetToFactoryDefaults();
-            UpdateActiveDefaultsButtonHighlight();
-            await DisplayAlertAsync("Reset Complete", "Settings have been restored to factory defaults.", "OK");
+            bool eraseEverything = await DisplayAlertAsync(
+                "Confirm Factory Reset",
+                "This cannot be undone.",
+                "Yes, erase everything.",
+                "Cancel");
+            if (!eraseEverything)
+                return;
+
+            try
+            {
+                await _resetService.PerformFullFactoryResetAsync(
+                    ServiceHelper.GetService<NoteDatabase>(),
+                    ServiceHelper.GetService<SessionDatabase>(),
+                    ServiceHelper.GetService<SessionResultDatabase>(),
+                    ServiceHelper.GetService<NoteAttemptDatabase>(),
+                    ServiceHelper.GetService<StatisticsCacheService>());
+
+                UpdateCustomDefaultsButtonState();
+                UpdateActiveDefaultsButtonHighlight();
+                await DisplayAlertAsync(
+                    "Reset Complete",
+                    "Progress, practice history, statistics, and settings have been erased. Premium purchases were not affected.",
+                    "OK");
+            }
+            catch (Exception ex)
+            {
+                await DisplayAlertAsync("Error", $"Factory reset failed: {ex.Message}", "OK");
+            }
         }
 
         private async void OnSaveCustomDefaultsClicked(object? sender, EventArgs e)

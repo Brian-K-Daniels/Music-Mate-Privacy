@@ -99,6 +99,88 @@ namespace musicmate.Services
                 $"Key={_session.Key} AccPct={_session.AccidentalPercent} AreFactory={AreFactoryDefaultsApplied}");
         }
 
+        /// <summary>
+        /// Restores a brand-new-install experience: clears progress databases and caches,
+        /// resets level to 1, and restores all user settings. Does <b>not</b> revoke Premium.
+        /// </summary>
+        public async Task PerformFullFactoryResetAsync(
+            NoteDatabase? noteDatabase = null,
+            SessionDatabase? sessionDatabase = null,
+            SessionResultDatabase? sessionResultDatabase = null,
+            NoteAttemptDatabase? noteAttemptDatabase = null,
+            StatisticsCacheService? statisticsCache = null)
+        {
+            DebugLog.WriteLine("[FactoryReset] Full factory reset starting (Premium preserved).");
+
+            await ClearProgressDatabasesAsync(
+                noteDatabase, sessionDatabase, sessionResultDatabase, noteAttemptDatabase);
+
+            statisticsCache?.InvalidateNoteStats();
+            statisticsCache?.InvalidateSessionStats();
+            ServiceHelper.GetService<NoteMasteryService>()?.Invalidate();
+
+            // Level first so factory note-range resolution uses ChildLevel 1.
+            Preferences.Default.Set("ChildPractice.Level", 1);
+            _session.ChildLevel = 1;
+            _session.ClearChildPracticeSettingsCustomization();
+            _session.ClearTemporaryNoteEmphasis("factory-reset");
+
+            // Fresh install has no level-up counting window yet.
+            Preferences.Default.Remove("LevelUp.CountSinceUtc");
+
+            // Ephemeral UI / What-to-Play selections a new install would not have.
+            Preferences.Default.Remove("SelectedTune");
+            Preferences.Default.Remove("musicmate.SelectedStatsDb");
+            ClearSavedCustomDefaults();
+
+            // User-saved practice tunes are not part of a fresh install.
+            ServiceHelper.GetService<SavedTuneStore>()?.ClearAll();
+
+            ResetToFactoryDefaults();
+
+            DebugLog.WriteLine(
+                $"[FactoryReset] Complete. Level={_session.ChildLevel} Premium={StatusService.Instance.IsPremiumUser}");
+        }
+
+        /// <summary>Removes saved custom-default snapshots (not present on a fresh install).</summary>
+        public void ClearSavedCustomDefaults()
+        {
+            SessionPreferences.Remove(CustomDefaultsJsonKey);
+            SessionPreferences.Remove(CustomDefaultsExistsKey);
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasCustomDefaults)));
+        }
+
+        private static async Task ClearProgressDatabasesAsync(
+            NoteDatabase? noteDatabase,
+            SessionDatabase? sessionDatabase,
+            SessionResultDatabase? sessionResultDatabase,
+            NoteAttemptDatabase? noteAttemptDatabase)
+        {
+            if (noteDatabase != null)
+            {
+                await noteDatabase.InitializeAsync();
+                await noteDatabase.ClearAllAsync();
+            }
+
+            if (sessionDatabase != null)
+            {
+                await sessionDatabase.InitializeAsync();
+                await sessionDatabase.ClearAllAsync();
+            }
+
+            if (sessionResultDatabase != null)
+            {
+                await sessionResultDatabase.InitializeAsync();
+                await sessionResultDatabase.ClearAllAsync();
+            }
+
+            if (noteAttemptDatabase != null)
+            {
+                await noteAttemptDatabase.InitializeAsync();
+                await noteAttemptDatabase.ClearAllAsync();
+            }
+        }
+
         /// <summary>Saves the currently active settings as the user's custom defaults.</summary>
         public void SaveCustomDefaultsFromCurrent()
         {
@@ -196,11 +278,17 @@ namespace musicmate.Services
             SessionPreferences.Set(
                 IntervalEarTrainingLogic.DirectionPreferenceKey,
                 IntervalEarTrainingLogic.DefaultDirectionMode.ToString());
+            WaitingCountInSettings.ResetToFactoryDefaults();
 
             _session.SelectedScale = SettingsPageViewModel.DefaultTune;
             _session.Instrument = SettingsPageViewModel.DefaultInstrument;
             _session.Key = SettingsPageViewModel.DefaultKey;
             _session.Tune = "Selected Scale";
+            _session.ScaleSelectionMode = ScaleSelectionMode.ByLevel;
+            _session.IsRandomMode = false;
+            SessionPreferences.Remove("musicmate.SelectedArpeggioId");
+            SessionPreferences.Remove("musicmate.SelectedArpeggioRoot");
+            SessionPreferences.Remove("musicmate.SelectedArpeggioDisplay");
             _session.ApplyAutomaticInstrumentRange(fullReset: true);
             _session.ResetAdvancedDetectionDefaults();
             _session.WrongDebounceMs = NoteSessionService.DefaultDebounceMs;

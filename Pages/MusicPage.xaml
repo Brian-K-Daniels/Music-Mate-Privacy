@@ -673,6 +673,25 @@
             </Grid>
           </Border>
 
+          <!-- Save / delete user practice tunes -->
+          <Grid x:Name="SavedTuneButtonRow"
+                Margin="8,4,8,0"
+                ColumnDefinitions="*,*"
+                ColumnSpacing="8"
+                HorizontalOptions="Fill"
+                IsVisible="{Binding Source={x:Reference musicPage}, Path=IsBottomButtonRowVisible, x:DataType=pages:MusicPage}">
+            <Button Grid.Column="0"
+                    Text="Save Tune As"
+                    Style="{StaticResource CompactBrownButton}"
+                    HorizontalOptions="Fill"
+                    Clicked="OnSaveTuneAsClicked" />
+            <Button Grid.Column="1"
+                    Text="Delete Saved Tune"
+                    Style="{StaticResource CompactBrownButton}"
+                    HorizontalOptions="Fill"
+                    Clicked="OnDeleteSavedTuneClicked" />
+          </Grid>
+
           <!-- Bottom row: practice pickers -->
           <Grid x:Name="BottomButtonRow"
                 Margin="8,8,8,8"

@@ -26,6 +26,7 @@ namespace musicmate.Pages
         private readonly NoteAttemptDatabase _noteAttemptDb = null!;
         private readonly IOrientationService _orientation = null!;
         private readonly ThemeService _theme_service = null!;
+        private readonly SavedTuneStore _savedTunes = null!;
 
         private readonly object _processLock = new();
         private DateTime _lastProcess = DateTime.MinValue;
@@ -99,6 +100,13 @@ namespace musicmate.Pages
         private const string PrefTunerTempoKey = "musicmate.TunerTempo";
         /// <summary>Fraction of each beat that the reference note sounds (remainder is silence).</summary>
         private const double ReferenceToneNoteOnFraction = 0.70;
+
+        // ── Waiting count-in (Music practice) ─────────────────────────────────
+        private WaitingCountInPlayer? _waitingCountInPlayer;
+        private CancellationTokenSource? _waitingCountInCts;
+        private bool _waitingCountInActive;
+        private int _waitingCountInGeneration;
+        private int _startListeningEpoch;
 #pragma warning restore CS0414
 
         private sealed record ArpeggioPickerChoice(
@@ -319,12 +327,15 @@ namespace musicmate.Pages
                 BackgroundColor = Colors.White;
                 _orientation = ServiceHelper.GetService<IOrientationService>()!;
                 _session = ServiceHelper.GetService<NoteSessionService>()!;
-                PlayModePickerOptions.MigrateLegacySessionSelection(_session);
+                PlayModePickerOptions.ApplyPersistedSelection(_session);
                 _sessionDb = ServiceHelper.GetService<SessionDatabase>()!;
                 _sessionResultDb = ServiceHelper.GetService<SessionResultDatabase>()!;
                 _noteAttemptDb = ServiceHelper.GetService<NoteAttemptDatabase>()!;
+                _savedTunes = ServiceHelper.GetService<SavedTuneStore>()!;
                 _audio = ServiceHelper.GetService<IAudioCaptureService>()!;
                 _player = ServiceHelper.GetService<IAudioPlaybackService>()!;
+                var countInClicks = ServiceHelper.GetService<ICountInClickService>()!;
+                _waitingCountInPlayer = new WaitingCountInPlayer(countInClicks);
                 BindingContext = _session;
                 StaffBorder.BindingContext = _theme_service;
                 StaffGraphicsView.BindingContext = _theme_service;
@@ -609,35 +620,33 @@ namespace musicmate.Pages
                 var scaleTuneOptions = BuildScaleTuneOptions();
                 ScaleTunePicker.ItemsSource = scaleTuneOptions;
 
-                PlayModePickerOptions.MigrateLegacySelectedTunePreference();
+                // ApplyPersistedSelection already restored Tune / scale / random / practice tune.
+                // Rhythm layout flag and concrete arpeggio still need page-local wiring.
                 var savedTune = PlayModePickerOptions.NormalizeRhythmNoteTunePreference(
                     Preferences.Default.Get<string?>("SelectedTune", null));
-                if (!string.IsNullOrEmpty(savedTune) && savedTune == "Tuner")
-                    _session.Tune = savedTune;
-                else if (PlayModePickerOptions.IsRhythmNoteTuneSelection(savedTune))
-                {
+                if (PlayModePickerOptions.IsRhythmNoteTuneSelection(savedTune))
                     LayoutTestTune.SetEnabled(true);
-                    PlayModePickerOptions.ApplyRhythmNoteTuneSelection(_session);
-                }
                 else if (!string.IsNullOrEmpty(savedTune)
-                         && practiceTuneTitles.Contains(savedTune))
-                {
-                    var savedPT = musicmate.Models.TuneLibrary.All.FirstOrDefault(t => t.Title == savedTune);
-                    if (savedPT != null)
-                        _session.SelectPracticeTune(savedPT);
-                }
-                else if (!string.IsNullOrEmpty(savedTune) && _arpeggioPickerChoices.TryGetValue(savedTune, out var savedArpeggio))
+                         && _arpeggioPickerChoices.TryGetValue(savedTune, out var savedArpeggio))
                 {
                     _session.SelectArpeggio(savedArpeggio.Pattern, savedArpeggio.RootNote, savedArpeggio.Label);
                 }
-                // else _session.Tune stays "Selected Scale" (persisted via SelectedTune preference)
 
-                var initialScaleTuneSelection = LayoutTestTune.IsEnabled
-                    ? PlayModePickerOptions.HalfThroughSixteenthNotes
-                    : _session.Tune == "Tuner" ? "Tuner"
-                    : _session.Tune == "Practice Tune" ? (_session.CurrentTune?.Title ?? practiceTuneTitles[0])
-                    : _session.Tune == "Arpeggio" ? _session.SelectedArpeggioDisplay
-                    : _session.SelectedScale;
+                var (displayCategory, displaySelection) = PlayModePickerOptions.ResolveDisplayedPicker(
+                    _session, LayoutTestTune.IsEnabled);
+                var initialScaleTuneSelection = displayCategory switch
+                {
+                    PlayModePickerCategory.Tunes => displaySelection,
+                    PlayModePickerCategory.Arpeggios => displaySelection,
+                    PlayModePickerCategory.Other when displaySelection == PlayModePickerOptions.Tuner
+                        => PlayModePickerOptions.Tuner,
+                    PlayModePickerCategory.Scales => displaySelection,
+                    _ => _session.Tune == "Practice Tune"
+                        ? (_session.CurrentTune?.Title ?? practiceTuneTitles.FirstOrDefault() ?? string.Empty)
+                        : _session.Tune == "Arpeggio"
+                            ? _session.SelectedArpeggioDisplay
+                            : _session.SelectedScale
+                };
                 var scaleTuneIdx = Array.IndexOf(scaleTuneOptions, initialScaleTuneSelection);
                 ScaleTunePicker.SelectedIndex = scaleTuneIdx >= 0 ? scaleTuneIdx : 0;
                 _lastValidScaleTuneIndex = ScaleTunePicker.SelectedIndex;
@@ -672,7 +681,9 @@ namespace musicmate.Pages
         }
         private void ScheduleAutoStartOnAppear()
         {
-            if (!_session.AutoStart || _session.Tune == "Tuner")
+            // Count-in needs an active listening session. Start when AutoStart OR count-in is on.
+            bool wantListen = _session.AutoStart || WaitingCountInSettings.Enabled;
+            if (!wantListen || _session.Tune == "Tuner")
                 return;
 
             _autoStartCts?.Cancel();
@@ -698,7 +709,8 @@ namespace musicmate.Pages
                 await Task.Delay(150, ct);
                 ct.ThrowIfCancellationRequested();
 
-                if (!_session.AutoStart || _session.Tune == "Tuner"
+                bool wantListen = _session.AutoStart || WaitingCountInSettings.Enabled;
+                if (!wantListen || _session.Tune == "Tuner"
                     || _holdResultForChildSession || _isRunning)
                     return;
 
@@ -1239,7 +1251,7 @@ namespace musicmate.Pages
             }
 #endif
 
-            if (regular.Count >= fromMeasures.Count && regular.Count > 0)
+            if (regular.Count > 0)
                 return regular;
 
             if (fromMeasures.Count > 0)
@@ -2330,6 +2342,165 @@ namespace musicmate.Pages
                 // Newer +/- click replaced this apply.
             }
         }
+
+        private async void OnSaveTuneAsClicked(object? sender, EventArgs e)
+        {
+            try
+            {
+                string proposed = _savedTunes.SuggestNextTitle();
+                string? name = await DisplayPromptAsync(
+                    "Save Tune As",
+                    "Enter a name for this tune.",
+                    accept: "Save",
+                    cancel: "Cancel",
+                    placeholder: proposed,
+                    maxLength: 80,
+                    keyboard: Keyboard.Text,
+                    initialValue: proposed);
+
+                if (string.IsNullOrWhiteSpace(name))
+                    return;
+
+                name = name.Trim();
+                if (SavedTuneStore.IsBuiltInTuneTitle(name)
+                    || string.Equals(name, PlayModePickerOptions.HalfThroughSixteenthNotes, StringComparison.Ordinal))
+                {
+                    await DisplayAlertAsync(
+                        "Cannot Save",
+                        "That name is reserved for a built-in tune. Choose a different name.",
+                        "OK");
+                    return;
+                }
+
+                PracticeTune? toSave = TryCaptureCurrentPracticeTune(name);
+                if (toSave == null || toSave.NoteCount == 0)
+                {
+                    await DisplayAlertAsync(
+                        "Nothing to Save",
+                        "There is no tune on the staff to save.",
+                        "OK");
+                    return;
+                }
+
+                _savedTunes.Save(toSave);
+
+                // Persist into What to Play → Tunes only. Do not switch the active play mode;
+                // otherwise every GO/Stop reloads this saved title instead of Assortment/Random/etc.
+                RefreshPracticeTunePickers();
+                UpdatePracticePlayItemLabel();
+                SyncPlayItemStatusMessage();
+                await DisplayAlertAsync(
+                    "Saved",
+                    $"\"{name}\" was saved and added to What to Play → Tunes. Select it there when you want to practice it.",
+                    "OK");
+            }
+            catch (Exception ex)
+            {
+                await DisplayAlertAsync("Save Failed", ex.Message, "OK");
+            }
+        }
+
+        private async void OnDeleteSavedTuneClicked(object? sender, EventArgs e)
+        {
+            try
+            {
+                string? title = _session.CurrentTune?.Title
+                    ?? Preferences.Default.Get<string?>("SelectedTune", null);
+
+                if (string.IsNullOrWhiteSpace(title)
+                    || !SavedTuneStore.IsSavedTuneTitle(title)
+                    || SavedTuneStore.IsBuiltInTuneTitle(title)
+                    || _savedTunes.GetByTitle(title) == null)
+                {
+                    await DisplayAlertAsync(
+                        "Cannot Delete",
+                        "Only user-saved tunes whose names contain \"Saved Tune\" can be deleted with this button.",
+                        "OK");
+                    return;
+                }
+
+                bool confirmed = await DisplayAlertAsync(
+                    "Delete Saved Tune",
+                    $"Permanently delete \"{title}\"? This cannot be undone.",
+                    "Delete",
+                    "Cancel");
+                if (!confirmed)
+                    return;
+
+                if (!_savedTunes.Delete(title))
+                {
+                    await DisplayAlertAsync("Delete Failed", "The saved tune could not be removed.", "OK");
+                    return;
+                }
+
+                // Fall back to the first built-in tune so the staff stays usable.
+                var fallback = TuneLibrary.All.FirstOrDefault() ?? TuneLibrary.CMajorScale;
+                LayoutTestTune.SetEnabled(false);
+                _session.IsRandomMode = false;
+                _session.SelectPracticeTune(fallback);
+                Preferences.Default.Set("SelectedTune", fallback.Title);
+                RefreshPracticeTunePickers();
+                UpdatePracticePlayItemLabel();
+                await RegenerateNotesAsync();
+                await DisplayAlertAsync("Deleted", $"\"{title}\" was removed.", "OK");
+            }
+            catch (Exception ex)
+            {
+                await DisplayAlertAsync("Delete Failed", ex.Message, "OK");
+            }
+        }
+
+        /// <summary>
+        /// Captures the currently displayed music as a <see cref="PracticeTune"/>.
+        /// Prefers <see cref="NoteSessionService.CurrentTune"/> when already in Practice Tune mode.
+        /// </summary>
+        private PracticeTune? TryCaptureCurrentPracticeTune(string title)
+        {
+            if (_session.Tune == "Practice Tune" && _session.CurrentTune != null && _session.CurrentTune.NoteCount > 0)
+                return SavedTuneStore.CloneWithTitle(_session.CurrentTune, title);
+
+            var notes = CollectDisplayedGeneratedNotes();
+            if (notes.Count == 0)
+                return null;
+
+            var ts = TimeSignature.FromDisplayString(_session.GetDisplayTimeSignature());
+            return SavedTuneStore.FromGeneratedNotes(title, notes, ts, _session.Key);
+        }
+
+        private List<GeneratedNote> CollectDisplayedGeneratedNotes()
+        {
+            var notes = new List<GeneratedNote>();
+            if (_staffDrawable != null)
+            {
+                if (_staffDrawable.UpperNotes != null)
+                    notes.AddRange(_staffDrawable.UpperNotes);
+                if (_staffDrawable.LowerNotes != null)
+                    notes.AddRange(_staffDrawable.LowerNotes);
+            }
+
+            if (notes.Count == 0 && _session.NotesToDraw != null)
+            {
+                // NotesToDraw lacks full GeneratedNote rhythm metadata; avoid empty save when possible.
+            }
+
+            return notes
+                .OrderBy(n => n.BeatPosition ?? 0.0)
+                .ThenBy(n => n.MeasureIndex ?? 0)
+                .ToList();
+        }
+
+        private void RefreshPracticeTunePickers()
+        {
+            try
+            {
+                UpdateScaleTunePicker();
+            }
+            catch (Exception ex)
+            {
+                DebugLog.WriteLine($"[SavedTune] Refresh pickers: {ex.Message}");
+            }
+        }
+
         private async Task RefreshDisplayForLevelChangeAsync()
         {
             _freezeStaff = false;
@@ -2654,7 +2825,7 @@ namespace musicmate.Pages
             _allowStaffLayoutSettle = true;
             ScheduleStaffLayoutSettleRefresh();
 
-            if (_session.AutoStart)
+            if (_session.AutoStart || WaitingCountInSettings.Enabled)
             {
                 if (_holdResultForChildSession)
                 {
@@ -2754,7 +2925,7 @@ namespace musicmate.Pages
         protected override void OnNavigatedTo(NavigatedToEventArgs args)
         {
             base.OnNavigatedTo(args);
-            if (_session.AutoStart && !_holdResultForChildSession)
+            if ((_session.AutoStart || WaitingCountInSettings.Enabled) && !_holdResultForChildSession)
                 ScheduleAutoStartOnAppear();
 
             // Shell calls OnNavigatedTo after it has finished restoring scroll position,
@@ -2800,6 +2971,7 @@ namespace musicmate.Pages
             _staffLayoutSettleCts?.Cancel();
             // Stop listening and evaluating
             _playCts?.Cancel();
+            StopWaitingCountIn();
             _ = StopReferenceToneAsync(resumeListening: false);
             _audio?.StopCapture();
             SetButtonStates(false);
@@ -2995,6 +3167,32 @@ namespace musicmate.Pages
                     if (_session.ShouldIgnoreAudio(DateTime.UtcNow))
                         return;
 
+                    // Waiting count-in: listen only for the correct first note.
+                    // Incorrect pitches and click bleed-through must not stop the count-in.
+                    if (_waitingCountInActive)
+                    {
+                        if (_session.CurrentNoteIndex != 0 || _session.NotesToDraw.Count == 0)
+                            return;
+
+                        var countInResult = _session.Evaluate(freq);
+                        if (!WaitingCountInLogic.ShouldStopForFirstNote(
+                                countInResult.correct, countInActive: true, currentNoteIndex: 0))
+                            return;
+
+                        StopWaitingCountIn();
+                        _session.StartListeningClock();
+                        _pitchBufferPos = 0;
+                        _isBelowThreshold = true;
+                        if (!_audio.IsCapturing
+                            && !_audio.TryStartCapture(OnAudioBlock, out var capErr))
+                        {
+                            DebugLog.WriteLine($"[CountIn] capture after first note failed: {capErr}");
+                        }
+                        if (_session.UpdateFeedbackForCurrent(freq, countInResult))
+                            SyncStaffNoteStates();
+                        return;
+                    }
+
                     if (_session.IsAwaitingNoteOn)
                     {
                         // Keep the status bar honest during same-pitch repeats (E-E-E): the
@@ -3034,6 +3232,86 @@ namespace musicmate.Pages
                 });
             }
         }
+
+        private async Task StartWaitingCountInAsync()
+        {
+            if (_waitingCountInPlayer == null || _session == null)
+                return;
+
+            int myGen = Interlocked.Increment(ref _waitingCountInGeneration);
+
+            try { _waitingCountInCts?.Cancel(); } catch { }
+            try { _waitingCountInCts?.Dispose(); } catch { }
+            _waitingCountInCts = new CancellationTokenSource();
+            var ct = _waitingCountInCts.Token;
+            _waitingCountInActive = true;
+
+            try
+            {
+                int beats = WaitingCountInLogic.GetBeatsPerMeasure(_session.GetDisplayTimeSignature());
+                DebugLog.WriteLine(
+                    $"[CountIn] starting beats/measure={beats} tempo={_session.Tempo} " +
+                    $"accentHz={WaitingCountInSettings.AccentedPitchHz:F0} " +
+                    $"vol={WaitingCountInSettings.AccentedVolume:F2}/{WaitingCountInSettings.UnaccentedVolume:F2} " +
+                    $"durMs={WaitingCountInSettings.BeatDurationMs}");
+
+                // Mic stays open for the whole count-in so Mary can be heard.
+                // Clicks use ToneGenerator on Android (audible with mic open) — no per-beat mic thrashing.
+                try { _audio.StopCapture(); } catch { }
+                await Task.Delay(80, ct).ConfigureAwait(false);
+
+                if (myGen != Volatile.Read(ref _waitingCountInGeneration) || ct.IsCancellationRequested)
+                    return;
+
+                _pitchBufferPos = 0;
+                _isBelowThreshold = true;
+                if (!_audio.TryStartCapture(OnAudioBlock, out var startCapErr))
+                    DebugLog.WriteLine($"[CountIn] initial capture failed: {startCapErr}");
+
+                await _waitingCountInPlayer.RunAsync(
+                    tempoBpm: _session.Tempo,
+                    beatsPerMeasure: beats,
+                    accentedVolume: WaitingCountInSettings.AccentedVolume,
+                    unaccentedVolume: WaitingCountInSettings.UnaccentedVolume,
+                    accentedPitchHz: WaitingCountInSettings.AccentedPitchHz,
+                    unaccentedPitchHz: WaitingCountInSettings.UnaccentedPitchHz,
+                    beatDurationMs: WaitingCountInSettings.BeatDurationMs,
+                    externalCt: ct);
+
+                DebugLog.WriteLine("[CountIn] loop ended");
+
+                // Keep mic open if still waiting for the first note.
+                if (_isRunning && _waitingCountInActive && !_audio.IsCapturing)
+                {
+                    _pitchBufferPos = 0;
+                    _isBelowThreshold = true;
+                    if (!_audio.TryStartCapture(OnAudioBlock, out var err))
+                        DebugLog.WriteLine($"[CountIn] post-loop capture failed: {err}");
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                DebugLog.WriteLine("[CountIn] cancelled");
+            }
+            catch (Exception ex)
+            {
+                DebugLog.WriteLine($"[CountIn] error: {ex}");
+            }
+            finally
+            {
+                if (myGen == Volatile.Read(ref _waitingCountInGeneration)
+                    && _waitingCountInPlayer?.IsActive != true)
+                    _waitingCountInActive = false;
+            }
+        }
+
+        private void StopWaitingCountIn()
+        {
+            Interlocked.Increment(ref _waitingCountInGeneration);
+            _waitingCountInActive = false;
+            try { _waitingCountInCts?.Cancel(); } catch { }
+            try { _waitingCountInPlayer?.Stop(); } catch { }
+        }
         /// <summary>
         /// Restarts only the audio capture stream without resetting session state,
         /// notes, or progress. Used when MaxBlocks is reached mid-session.
@@ -3046,7 +3324,11 @@ namespace musicmate.Pages
                 _audio.StopCapture();
                 _pitchBufferPos = 0;
                 await _audio.EnsurePermissionAsync();
-                _audio.StartCapture(OnAudioBlock);
+                if (!_audio.TryStartCapture(OnAudioBlock, out var restartErr))
+                {
+                    DebugLog.WriteLine($"[Restart] capture failed: {restartErr}");
+                    throw new InvalidOperationException(restartErr ?? "capture failed");
+                }
                 DebugLog.WriteLine("[Restart] Audio capture restarted");
             }
             catch (Exception ex)
@@ -3303,6 +3585,17 @@ namespace musicmate.Pages
             bool forceNewNotes = false,
             string? scaleKeyTrigger = null)
         {
+            // Duplicate AutoStart / OnNavigatedTo must not cancel an in-flight count-in.
+            if (_isRunning
+                && !playBack
+                && !forceNewNotes
+                && string.Equals(scaleKeyTrigger, "AutoStart", StringComparison.Ordinal))
+            {
+                DebugLog.WriteLine("[Start] Skip duplicate AutoStart — already listening/count-in");
+                return;
+            }
+
+            int epoch = Interlocked.Increment(ref _startListeningEpoch);
             _sessionStartCts = PracticeSessionLifecycle.ReplaceSessionStartCancellation(_sessionStartCts);
             var ct = _sessionStartCts.Token;
 
@@ -3323,6 +3616,7 @@ namespace musicmate.Pages
                     // Stop the old capture before Reset so OnAudioBlock cannot race
                     // against an empty/rebuilding NotesToDraw (missed first-note greens).
                     try { _audio.StopCapture(); } catch { }
+                    StopWaitingCountIn();
 
                     _lastProcess = DateTime.MinValue;
                     _isBelowThreshold = true;
@@ -3447,9 +3741,39 @@ namespace musicmate.Pages
                     DebugLog.WriteLine(sessionLog);
                     Utils.Log(sessionLog);
                     DebugLog.WriteLine("[Start] Starting audio capture...");
-                    _audio.StartCapture(OnAudioBlock);
-                    _session?.StartListeningClock();
-                    DebugLog.WriteLine("[Start] Audio capture started");
+                    // Count-in pauses capture around each click; start capture only when
+                    // not using count-in, otherwise the first beforeClick will stop it.
+                    bool startCountIn = WaitingCountInSettings.Enabled
+                        && (_session?.NotesToDraw?.Count ?? 0) > 0;
+                    if (startCountIn)
+                    {
+                        if (epoch != Volatile.Read(ref _startListeningEpoch))
+                        {
+                            DebugLog.WriteLine("[Start] Count-in aborted — superseded start");
+                            return;
+                        }
+
+                        _waitingCountInActive = true;
+                        StatusService.Instance.StatusMessage =
+                            "Count-in… play the first note when ready.";
+                        DebugLog.WriteLine("[Start] Count-in enabled — starting click loop");
+                        // Own CTS so session-start replacement cannot kill the loop mid-measure.
+                        _ = StartWaitingCountInAsync();
+                    }
+                    else
+                    {
+                        _waitingCountInActive = false;
+                        if (!_audio.TryStartCapture(OnAudioBlock, out var capErr))
+                        {
+                            DebugLog.WriteLine($"[Start] capture failed: {capErr}");
+                            StatusService.Instance.StatusMessage =
+                                "Microphone unavailable — tap ● to retry.";
+                            SetButtonStates(false);
+                            return;
+                        }
+                        _session?.StartListeningClock();
+                    }
+                    DebugLog.WriteLine("[Start] Audio capture / count-in armed");
                 }
                 else
                 {
@@ -3530,7 +3854,13 @@ namespace musicmate.Pages
             _isBelowThreshold = true;
 
             DebugLog.WriteLine("[Tuner] microphone start requested");
-            _audio.StartCapture(OnAudioBlock);
+            if (!_audio.TryStartCapture(OnAudioBlock, out var tunerCapErr))
+            {
+                DebugLog.WriteLine($"[Tuner] capture failed: {tunerCapErr}");
+                StatusService.Instance.StatusMessage = "Microphone unavailable — tap Listen to retry.";
+                SetButtonStates(false);
+                return;
+            }
             _session?.StartListeningClock();
             StatusService.Instance.StatusMessage = "Listening…";
             UpdateTunerModeChrome();
@@ -3891,15 +4221,49 @@ namespace musicmate.Pages
         }
         private void UpdateInstrumentPickerSelection()
         {
-            if (InstrumentPicker.ItemsSource is not string[] items) return;
-            var idx = Array.IndexOf(items, _session.InstrumentDisplayName);
-            if (idx >= 0 && InstrumentPicker.SelectedIndex != idx)
-                InstrumentPicker.SelectedIndex = idx;
-            if (idx >= 0 && PracticeInstrumentPicker != null && PracticeInstrumentPicker.SelectedIndex != idx)
-                PracticeInstrumentPicker.SelectedIndex = idx;
-            if (idx >= 0 && TunerInstrumentPicker != null && TunerInstrumentPicker.SelectedIndex != idx)
-                TunerInstrumentPicker.SelectedIndex = idx;
-            SelectedInstrumentShort = _session.InstrumentDisplayName;
+            string display = _session.InstrumentDisplayName;
+            int idx = ResolveInstrumentOptionIndex(display);
+            if (idx < 0)
+                return;
+
+            EnterPickerSyncSuppress();
+            try
+            {
+                if (InstrumentPicker?.ItemsSource != null && InstrumentPicker.SelectedIndex != idx)
+                    InstrumentPicker.SelectedIndex = idx;
+                if (PracticeInstrumentPicker?.ItemsSource != null
+                    && PracticeInstrumentPicker.SelectedIndex != idx)
+                    PracticeInstrumentPicker.SelectedIndex = idx;
+                if (TunerInstrumentPicker?.ItemsSource != null
+                    && TunerInstrumentPicker.SelectedIndex != idx)
+                    TunerInstrumentPicker.SelectedIndex = idx;
+            }
+            finally
+            {
+                ExitPickerSyncSuppress();
+            }
+
+            SelectedInstrumentShort = display;
+        }
+
+        private static int ResolveInstrumentOptionIndex(string displayName)
+        {
+            var options = NoteSessionService.InstrumentOptions;
+            int idx = Array.IndexOf(options, displayName);
+            if (idx >= 0)
+                return idx;
+
+            // Fallback: match by normalized id / profile.
+            for (int i = 0; i < options.Length; i++)
+            {
+                if (string.Equals(
+                        NoteSessionService.NormalizeInstrumentOption(options[i]),
+                        NoteSessionService.NormalizeInstrumentOption(displayName),
+                        StringComparison.OrdinalIgnoreCase))
+                    return i;
+            }
+
+            return -1;
         }
         private void EnterPickerSyncSuppress() => _pickerSyncSuppressCount++;
         /// <summary>
@@ -3983,13 +4347,20 @@ namespace musicmate.Pages
 
             if (TunerInstrumentPicker != null)
             {
-                TunerInstrumentPicker.ItemsSource = NoteSessionService.InstrumentOptions;
-                var tunerIdx = Array.IndexOf(
-                    NoteSessionService.InstrumentOptions, _session.InstrumentDisplayName);
-                if (tunerIdx < 0)
-                    tunerIdx = InstrumentPicker?.SelectedIndex ?? 0;
-                if (tunerIdx >= 0)
-                    TunerInstrumentPicker.SelectedIndex = tunerIdx;
+                EnterPickerSyncSuppress();
+                try
+                {
+                    TunerInstrumentPicker.ItemsSource = NoteSessionService.InstrumentOptions;
+                    var tunerIdx = ResolveInstrumentOptionIndex(_session.InstrumentDisplayName);
+                    if (tunerIdx < 0)
+                        tunerIdx = InstrumentPicker?.SelectedIndex ?? 0;
+                    if (tunerIdx >= 0)
+                        TunerInstrumentPicker.SelectedIndex = tunerIdx;
+                }
+                finally
+                {
+                    ExitPickerSyncSuppress();
+                }
             }
 
             UpdatePracticePlayItemLabel();
@@ -4702,7 +5073,12 @@ namespace musicmate.Pages
                 _pitchBufferPos = 0;
                 _lastProcess = DateTime.MinValue;
                 _isBelowThreshold = true;
-                _audio.StartCapture(OnAudioBlock);
+                if (!_audio.TryStartCapture(OnAudioBlock, out var resumeErr))
+                {
+                    DebugLog.WriteLine($"[Tuner] resume mic failed: {resumeErr}");
+                    StatusService.Instance.StatusMessage = "Microphone unavailable — tap Listen to retry.";
+                    return;
+                }
                 StatusService.Instance.StatusMessage = "Listening…";
                 UpdateTunerModeChrome();
                 RefreshTunerPickerDisplayLabel();
@@ -4910,7 +5286,9 @@ namespace musicmate.Pages
         }
         private string[] BuildScaleTuneOptions()
         {
-            var practiceTuneTitles = musicmate.Models.TuneLibrary.All.Select(t => t.Title).ToArray();
+            var practiceTuneTitles = PlayModePickerOptions.BuildTunePickerOptions()
+                .Where(t => t != PlayModePickerOptions.HalfThroughSixteenthNotes)
+                .ToArray();
             var arpeggioTitles = BuildArpeggioPickerChoices().Select(choice => choice.Label).ToArray();
             return new[] { "Tuner", PlayModePickerOptions.HalfThroughSixteenthNotes }
                 .Concat(practiceTuneTitles)
@@ -5107,26 +5485,48 @@ namespace musicmate.Pages
         }
         private void PracticeInstrumentPicker_SelectedIndexChanged(object? sender, EventArgs e)
         {
+            if (IsPickerSyncSuppressed) return;
             if (PracticeInstrumentPicker == null) return;
             var idx = PracticeInstrumentPicker.SelectedIndex;
-            if (idx < 0) return;
+            if (idx < 0 || idx >= NoteSessionService.InstrumentOptions.Length) return;
             var fullInstrument = NoteSessionService.InstrumentOptions[idx];
             _session.Instrument = fullInstrument;
-            if (InstrumentPicker.SelectedIndex != idx)
-                InstrumentPicker.SelectedIndex = idx;
             SelectedInstrumentShort = _session.InstrumentDisplayName;
+
+            EnterPickerSyncSuppress();
+            try
+            {
+                if (InstrumentPicker.SelectedIndex != idx)
+                    InstrumentPicker.SelectedIndex = idx;
+                if (TunerInstrumentPicker != null && TunerInstrumentPicker.SelectedIndex != idx)
+                    TunerInstrumentPicker.SelectedIndex = idx;
+            }
+            finally
+            {
+                ExitPickerSyncSuppress();
+            }
         }
         private void TunerInstrumentPicker_SelectedIndexChanged(object? sender, EventArgs e)
         {
+            if (IsPickerSyncSuppressed) return;
             if (TunerInstrumentPicker == null) return;
             var idx = TunerInstrumentPicker.SelectedIndex;
             if (idx < 0 || idx >= NoteSessionService.InstrumentOptions.Length) return;
             _session.Instrument = NoteSessionService.InstrumentOptions[idx];
-            if (InstrumentPicker.SelectedIndex != idx)
-                InstrumentPicker.SelectedIndex = idx;
-            if (PracticeInstrumentPicker != null && PracticeInstrumentPicker.SelectedIndex != idx)
-                PracticeInstrumentPicker.SelectedIndex = idx;
             SelectedInstrumentShort = _session.InstrumentDisplayName;
+
+            EnterPickerSyncSuppress();
+            try
+            {
+                if (InstrumentPicker.SelectedIndex != idx)
+                    InstrumentPicker.SelectedIndex = idx;
+                if (PracticeInstrumentPicker != null && PracticeInstrumentPicker.SelectedIndex != idx)
+                    PracticeInstrumentPicker.SelectedIndex = idx;
+            }
+            finally
+            {
+                ExitPickerSyncSuppress();
+            }
         }
         private async void PracticeKeyPicker_SelectedIndexChanged(object? sender, EventArgs e)
         {
@@ -5181,9 +5581,9 @@ namespace musicmate.Pages
                 return;
             }
 
-            // Check if the selection is a practice tune title
-            var practiceTune = musicmate.Models.TuneLibrary.All.FirstOrDefault(t => t.Title == selected);
-            DebugLog.WriteLine($"[PickerDBG] practiceTune={practiceTune?.Title ?? "null"} TuneLibrary.All count={musicmate.Models.TuneLibrary.All.Count}");
+            // Check if the selection is a practice tune title (built-in or saved)
+            var practiceTune = PlayModePickerOptions.TryResolvePracticeTune(selected);
+            DebugLog.WriteLine($"[PickerDBG] practiceTune={practiceTune?.Title ?? "null"}");
             if (practiceTune != null)
             {
                 _lastValidScaleTuneIndex = sourcePicker.SelectedIndex;
@@ -5247,16 +5647,33 @@ namespace musicmate.Pages
         }
         private void InstrumentPicker_SelectedIndexChanged(object? sender, EventArgs e)
         {
-            if (InstrumentPicker.SelectedItem is string s)
+            if (IsPickerSyncSuppressed) return;
+            if (InstrumentPicker.SelectedItem is not string s)
+                return;
+
+            _session.Instrument = s;
+            SelectedInstrumentShort = _session.InstrumentDisplayName;
+
+            // Keep Practice + Tuner instrument pickers in lockstep with Music.
+            int idx = InstrumentPicker.SelectedIndex;
+            EnterPickerSyncSuppress();
+            try
             {
-                _session.Instrument = s;
-                SelectedInstrumentShort = _session.InstrumentDisplayName;
-                // Hide picker and show label immediately
-                IsInstrumentPickerVisible = false;
-                IsInstrumentLabelVisible = true;
-                // Workaround: immediately unfocus picker to prevent unwanted stage
-                InstrumentPicker.Unfocus();
+                if (PracticeInstrumentPicker != null && PracticeInstrumentPicker.SelectedIndex != idx)
+                    PracticeInstrumentPicker.SelectedIndex = idx;
+                if (TunerInstrumentPicker != null && TunerInstrumentPicker.SelectedIndex != idx)
+                    TunerInstrumentPicker.SelectedIndex = idx;
             }
+            finally
+            {
+                ExitPickerSyncSuppress();
+            }
+
+            // Hide picker and show label immediately
+            IsInstrumentPickerVisible = false;
+            IsInstrumentLabelVisible = true;
+            // Workaround: immediately unfocus picker to prevent unwanted stage
+            InstrumentPicker.Unfocus();
         }
         private void InstrumentPicker_Unfocused(object? sender, EventArgs e)
         {
@@ -5294,6 +5711,7 @@ namespace musicmate.Pages
         private async Task StopListeningAndEvaluatingAsync(string statusMessage = "Stopped.")
         {
             _playCts?.Cancel();
+            StopWaitingCountIn();
             _audio.StopCapture();
             StatusService.Instance.StatusMessage = statusMessage;
             SetButtonStates(false);
@@ -5373,6 +5791,7 @@ namespace musicmate.Pages
                 try
                 {
                     _playCts?.Cancel();
+                    StopWaitingCountIn();
                     _player.CancelPlayback();
                     _audio.StopCapture();
                     _isPlaying = false;

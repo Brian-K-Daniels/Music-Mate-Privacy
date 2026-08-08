@@ -176,13 +176,14 @@ namespace musicmate.Services
                 case ExerciseKind.Random:
                     session.IsRandomMode = true;
                     session.Tune = "Selected Scale";
-                    Preferences.Default.Set("SelectedTune", "Selected Scale");
+                    // Keep Assortment by Level as the What to Play selection (not the exercise kind).
+                    PreserveAssortmentByLevelPreference();
                     break;
 
                 case ExerciseKind.Scale:
                     session.IsRandomMode = false;
                     session.Tune = "Selected Scale";
-                    Preferences.Default.Set("SelectedTune", "Selected Scale");
+                    PreserveAssortmentByLevelPreference();
                     break;
 
                 case ExerciseKind.Tune:
@@ -214,6 +215,23 @@ namespace musicmate.Services
                 $"[Composition] Picked {kind} (Pc: tunes={session.PcTunes}% random={session.PcRandom}% " +
                 $"scales={session.PcScales}% arpeggios={session.PcArpeggios}%)");
             ApplyExerciseKind(session, kind, rng);
+        }
+
+        /// <summary>
+        /// Composition may assign a scale/random exercise under Assortment by Level without
+        /// changing the user's What to Play selection.
+        /// </summary>
+        internal static void PreserveAssortmentByLevelPreference(
+            Func<string?>? getSelectedTune = null,
+            Action<string>? setSelectedTune = null)
+        {
+            getSelectedTune ??= () => Preferences.Default.Get<string?>("SelectedTune", null);
+            setSelectedTune ??= value => Preferences.Default.Set("SelectedTune", value);
+
+            var pref = getSelectedTune();
+            if (string.Equals(pref, NoteSessionService.ScaleSelectionByLevel, StringComparison.Ordinal))
+                return;
+            setSelectedTune(NoteSessionService.ScaleSelectionByLevel);
         }
 
         private static bool IsUserSelectedPracticeTune(string? selectedTunePreference)

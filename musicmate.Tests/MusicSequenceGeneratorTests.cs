@@ -18,9 +18,79 @@ public class MusicSequenceGeneratorTests
 
             foreach (var measure in measures)
             {
+                Assert.InRange(
+                    measure.BeatsUsed,
+                    measure.BeatsAvailable - 1e-6,
+                    measure.BeatsAvailable + 1e-6);
                 Assert.True(
-                    measure.IsFull,
-                    $"Seed {seed}: measure not full ({measure.BeatsUsed}/{measure.BeatsAvailable} beats)");
+                    measure.BeatsUsed <= measure.BeatsAvailable + 1e-9,
+                    $"Seed {seed}: measure overflow ({measure.BeatsUsed}/{measure.BeatsAvailable} beats)");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Regression: motif B used to turn an eighth rest into a quarter note without a capacity
+    /// check, producing 4.5 beats in 4/4. Stress Random motif generation with rests + eighths.
+    /// </summary>
+    [Theory]
+    [InlineData(21)]
+    [InlineData(32)]
+    [InlineData(45)]
+    public void RandomMotifMeasures_NeverOverflowMeter_AcrossManySeeds(int level)
+    {
+        const double eps = 1e-6;
+        for (int seed = 0; seed < 400; seed++)
+        {
+            var gen = CreateLevelGenerator(level, seed);
+            gen.MeasureCount = 8; // ensures motif B measures are emitted
+            gen.SmallestDuration = NoteDuration.Eighth;
+            gen.RestChancePercent = Math.Max(gen.RestChancePercent, 25);
+            gen.RhythmVarietyPercent = Math.Max(gen.RhythmVarietyPercent, 40);
+            gen.UseMotifPhrases = true;
+
+            var measures = gen.GenerateSequence();
+            Assert.NotEmpty(measures);
+
+            double expected = gen.TimeSignature.TotalBeats;
+            var flat = MusicSequenceGenerator.Flatten(measures);
+
+            // No lost/duplicated events: flatten count matches measure note counts.
+            Assert.Equal(measures.Sum(m => m.GeneratedNotes.Count), flat.Count);
+
+            for (int mi = 0; mi < measures.Count; mi++)
+            {
+                var measure = measures[mi];
+                Assert.True(
+                    measure.BeatsUsed <= expected + eps,
+                    $"Level {level} seed {seed} measure {mi}: overflow {measure.BeatsUsed}/{expected}");
+                Assert.InRange(measure.BeatsUsed, expected - eps, expected + eps);
+
+                // Beat positions stay inside this measure's span and preserve order.
+                double start = mi * expected;
+                double end = start + expected;
+                double prev = start - 1e-6;
+                foreach (var n in measure.GeneratedNotes)
+                {
+                    double bp = n.BeatPosition ?? -1;
+                    Assert.InRange(bp, start - eps, end - eps);
+                    Assert.True(bp >= prev - eps, $"Level {level} seed {seed} measure {mi}: beat order broken");
+                    prev = bp;
+                }
+            }
+
+            // Flattened beat spans cover each bar exactly once (no cross-bar overlap from overflow).
+            for (int mi = 0; mi < measures.Count; mi++)
+            {
+                double start = mi * expected;
+                double end = start + expected;
+                var inMeasure = flat.Where(n =>
+                {
+                    double bp = n.BeatPosition ?? 0;
+                    return bp >= start - eps && bp < end - eps;
+                }).ToList();
+                double sum = inMeasure.Sum(n => n.BeatDuration);
+                Assert.InRange(sum, expected - eps, expected + eps);
             }
         }
     }

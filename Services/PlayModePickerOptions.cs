@@ -37,11 +37,30 @@ namespace musicmate.Services
             Tuner
         ];
 
-        /// <summary>Tunes picker: rhythm-note exercise first, then library tunes.</summary>
-        public static string[] BuildTunePickerOptions()
-            => new[] { HalfThroughSixteenthNotes }
+        /// <summary>Tunes picker: rhythm-note exercise first, then library tunes, then saved tunes.</summary>
+        public static string[] BuildTunePickerOptions(SavedTuneStore? savedTunes = null)
+        {
+            savedTunes ??= ServiceHelper.GetService<SavedTuneStore>();
+            IEnumerable<string> savedTitles = savedTunes?.Titles ?? Array.Empty<string>();
+            return new[] { HalfThroughSixteenthNotes }
                 .Concat(TuneLibrary.All.Select(t => t.Title))
+                .Concat(savedTitles)
                 .ToArray();
+        }
+
+        /// <summary>Resolves a Tunes-picker title to a <see cref="PracticeTune"/> (built-in or saved).</summary>
+        public static PracticeTune? TryResolvePracticeTune(string? title, SavedTuneStore? savedTunes = null)
+        {
+            if (string.IsNullOrWhiteSpace(title))
+                return null;
+
+            var builtIn = TuneLibrary.All.FirstOrDefault(t => t.Title == title);
+            if (builtIn != null)
+                return builtIn;
+
+            savedTunes ??= ServiceHelper.GetService<SavedTuneStore>();
+            return savedTunes?.GetByTitle(title);
+        }
 
         /// <summary>Scales picker: named scales only.</summary>
         public static string[] NamedScaleOptions => NoteSessionService.ScalePickerOptions;
@@ -90,10 +109,18 @@ namespace musicmate.Services
             => string.Equals(selectedTunePreference, HalfThroughSixteenthNotes, StringComparison.Ordinal)
                || string.Equals(selectedTunePreference, LegacyFixedTune, StringComparison.Ordinal);
 
-        /// <summary>True when the user explicitly chose a tune from the Tunes picker.</summary>
+        /// <summary>True when the user explicitly chose a built-in or saved tune from the Tunes picker.</summary>
         public static bool IsUserSelectedPracticeTuneTitle(string? selectedTunePreference)
-            => !string.IsNullOrEmpty(selectedTunePreference)
-               && TuneLibrary.All.Any(t => t.Title == selectedTunePreference);
+        {
+            if (string.IsNullOrEmpty(selectedTunePreference))
+                return false;
+            if (TuneLibrary.All.Any(t => t.Title == selectedTunePreference))
+                return true;
+            if (IsRhythmNoteTuneSelection(selectedTunePreference))
+                return false;
+            var store = ServiceHelper.GetService<SavedTuneStore>();
+            return store?.GetByTitle(selectedTunePreference) != null;
+        }
 
         /// <summary>True when the user explicitly chose an arpeggio from the Arpeggios picker.</summary>
         public static bool IsUserSelectedArpeggioTitle(string? selectedTunePreference)
@@ -116,10 +143,17 @@ namespace musicmate.Services
                 : value ?? string.Empty;
 
         public static void MigrateLegacySelectedTunePreference()
+            => MigrateLegacySelectedTunePreference(
+                () => Preferences.Default.Get<string?>("SelectedTune", null),
+                value => Preferences.Default.Set("SelectedTune", value));
+
+        public static void MigrateLegacySelectedTunePreference(
+            Func<string?> getSelectedTune,
+            Action<string> setSelectedTune)
         {
-            var saved = Preferences.Default.Get<string?>("SelectedTune", null);
+            var saved = getSelectedTune();
             if (string.Equals(saved, LegacyFixedTune, StringComparison.Ordinal))
-                Preferences.Default.Set("SelectedTune", HalfThroughSixteenthNotes);
+                setSelectedTune(HalfThroughSixteenthNotes);
         }
 
         public static string ResolveOtherSelection(NoteSessionService session, bool layoutTestTuneEnabled)
@@ -196,8 +230,9 @@ namespace musicmate.Services
             if (string.Equals(selectedTunePreference, RandomMelodic, StringComparison.Ordinal))
                 return (PlayModePickerCategory.Other, RandomMelodic);
 
-            if (string.Equals(selectedTunePreference, "Selected Scale", StringComparison.Ordinal)
-                && scaleSelectionMode == ScaleSelectionMode.ByLevel)
+            if (string.Equals(selectedTunePreference, NoteSessionService.ScaleSelectionByLevel, StringComparison.Ordinal)
+                || (string.Equals(selectedTunePreference, "Selected Scale", StringComparison.Ordinal)
+                    && scaleSelectionMode == ScaleSelectionMode.ByLevel))
                 return (PlayModePickerCategory.Other, NoteSessionService.ScaleSelectionByLevel);
 
             // Explicit Scales-picker choice (SelectedTune = "Major", etc.) wins over Assortment by Level mode.
@@ -332,7 +367,7 @@ namespace musicmate.Services
                 session.RepeatSameTune = false;
                 session.Tune = "Selected Scale";
                 session.TryApplyScalePickerSelection(NoteSessionService.ScaleSelectionByLevel, out _);
-                persistSelectedTune("Selected Scale");
+                persistSelectedTune(NoteSessionService.ScaleSelectionByLevel);
                 return;
             }
 
@@ -379,11 +414,103 @@ namespace musicmate.Services
         }
 
         /// <summary>
+        /// Restores Tune / scale / random / practice-tune state from the persisted
+        /// <c>SelectedTune</c> preference (and related session prefs already loaded).
+        /// Call on app start and when opening What to Play / Music.
+        /// </summary>
+        public static void ApplyPersistedSelection(
+            NoteSessionService session,
+            Func<string?>? getSelectedTune = null,
+            Action<string>? setSelectedTune = null)
+        {
+            ArgumentNullException.ThrowIfNull(session);
+            getSelectedTune ??= () => Preferences.Default.Get<string?>("SelectedTune", null);
+            setSelectedTune ??= value => Preferences.Default.Set("SelectedTune", value);
+
+            MigrateLegacySelectedTunePreference(getSelectedTune, setSelectedTune);
+            MigrateLegacySessionSelection(session, migrateSelectedTunePreference: false);
+
+            var saved = NormalizeRhythmNoteTunePreference(getSelectedTune());
+
+            // Assortment by Level used to be saved as "Selected Scale"; upgrade when mode says ByLevel.
+            if (string.IsNullOrEmpty(saved)
+                || string.Equals(saved, "Selected Scale", StringComparison.Ordinal))
+            {
+                if (session.ScaleSelectionMode == ScaleSelectionMode.ByLevel && !session.IsRandomMode
+                    && session.Tune != Tuner && session.Tune != "Practice Tune" && session.Tune != "Arpeggio")
+                {
+                    ApplyOtherSelection(session, NoteSessionService.ScaleSelectionByLevel, setSelectedTune);
+                    return;
+                }
+            }
+
+            if (string.IsNullOrEmpty(saved))
+                return;
+
+            if (string.Equals(saved, Tuner, StringComparison.Ordinal))
+            {
+                ApplyOtherSelection(session, Tuner, setSelectedTune);
+                return;
+            }
+
+            if (string.Equals(saved, RandomMelodic, StringComparison.Ordinal)
+                || string.Equals(saved, NoteSessionService.ScaleSelectionRandom, StringComparison.Ordinal))
+            {
+                ApplyOtherSelection(session, RandomMelodic, setSelectedTune);
+                return;
+            }
+
+            if (string.Equals(saved, NoteSessionService.ScaleSelectionByLevel, StringComparison.Ordinal))
+            {
+                ApplyOtherSelection(session, NoteSessionService.ScaleSelectionByLevel, setSelectedTune);
+                return;
+            }
+
+            if (IsRhythmNoteTuneSelection(saved))
+            {
+                ApplyRhythmNoteTuneSelection(session, setSelectedTune);
+                return;
+            }
+
+            if (IsUserSelectedPracticeTuneTitle(saved))
+            {
+                var tune = TryResolvePracticeTune(saved);
+                if (tune != null)
+                {
+                    session.IsRandomMode = false;
+                    session.SelectPracticeTune(tune);
+                    setSelectedTune(saved);
+                }
+                return;
+            }
+
+            if (NoteSessionService.IsNamedScaleOption(saved))
+            {
+                session.IsRandomMode = false;
+                session.RepeatSameTune = false;
+                session.Tune = "Selected Scale";
+                session.TryApplyScalePickerSelection(saved, out _);
+                setSelectedTune(saved);
+                return;
+            }
+
+            // Arpeggio labels are free-form; MusicPage wires concrete pattern selection.
+            if (IsUserSelectedArpeggioTitle(saved))
+            {
+                session.IsRandomMode = false;
+                setSelectedTune(saved);
+            }
+        }
+
+        /// <summary>
         /// Migrates legacy Scales-picker Random (level scale pool) to Assortment by Level in the Other picker.
         /// </summary>
-        public static void MigrateLegacySessionSelection(NoteSessionService session)
+        public static void MigrateLegacySessionSelection(
+            NoteSessionService session,
+            bool migrateSelectedTunePreference = true)
         {
-            MigrateLegacySelectedTunePreference();
+            if (migrateSelectedTunePreference)
+                MigrateLegacySelectedTunePreference();
 
             if (session.ScaleSelectionMode != ScaleSelectionMode.Random || session.IsRandomMode)
                 return;

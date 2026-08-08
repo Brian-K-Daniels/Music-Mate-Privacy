@@ -839,7 +839,17 @@ namespace musicmate.Services
                 var (dur, isRest) = measure[slotIdx];
                 if (isRest)
                 {
-                    measure[slotIdx] = new RhythmSlot(NoteDuration.Quarter, false);
+                    // Convert rest → note without changing capacity. Using a fixed Quarter here
+                    // used to overflow the bar when the rest was an Eighth/Sixteenth (e.g. 4.5 in 4/4).
+                    if (dur != NoteDuration.Quarter
+                        && TryReplaceSlotDuration(measure, slotIdx, NoteDuration.Quarter, TimeSignature.TotalBeats))
+                    {
+                        measure[slotIdx] = new RhythmSlot(NoteDuration.Quarter, false);
+                        NormalizeRhythmMeasure(measure, rng, durationWeights);
+                        return motifB;
+                    }
+
+                    measure[slotIdx] = new RhythmSlot(dur, false);
                     return motifB;
                 }
 

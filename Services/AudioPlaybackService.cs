@@ -1,5 +1,9 @@
 using System.Buffers.Binary;
+using System.Diagnostics;
 using Plugin.Maui.Audio;
+#if ANDROID
+using Android.Media;
+#endif
 
 namespace musicmate.Services
 {
@@ -7,7 +11,16 @@ namespace musicmate.Services
     {
         private readonly IAudioManager _audioManager;
         private CancellationTokenSource? _internalCts;
+        private readonly object _gate = new();
         private const int SampleRate = 44100;
+        /// <summary>Android MediaPlayer is unreliable below ~20 ms of PCM.</summary>
+        private const double MinToneSeconds = 0.020;
+        /// <summary>Short tones use AudioTrack on Android — MediaPlayer often stays silent for metronome clicks.</summary>
+        private const double AndroidAudioTrackMaxSeconds = 0.20;
+
+#if ANDROID
+        private AudioTrack? _activeTrack;
+#endif
 
         public AudioPlaybackService(IAudioManager audioManager)
         {
@@ -16,66 +29,227 @@ namespace musicmate.Services
 
         public async Task PlayAsync(IEnumerable<double> freqs, double noteSeconds, double gapSeconds, float volume, CancellationToken ct)
         {
-            // Cancel any previous internal token and create a new linked token
-            try
+            double duration = Math.Max(MinToneSeconds, noteSeconds);
+            float gain = Math.Clamp(volume, 0f, 1f);
+
+            CancellationTokenSource linked;
+            lock (_gate)
             {
-                _internalCts?.Cancel();
-                _internalCts?.Dispose();
+                try
+                {
+                    _internalCts?.Cancel();
+                    _internalCts?.Dispose();
+                }
+                catch { }
+
+                StopActiveAndroidTrack_NoLock();
+
+                linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                _internalCts = linked;
             }
-            catch { }
-            _internalCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            var token = _internalCts.Token;
+
+            var token = linked.Token;
 
             try
             {
                 foreach (var f in freqs)
                 {
                     token.ThrowIfCancellationRequested();
+                    if (f <= 0 || double.IsNaN(f) || double.IsInfinity(f))
+                        continue;
 
-                    await using var tone = BuildToneStream(f, noteSeconds, volume);
-                    using var player = _audioManager.CreatePlayer(tone);
-                    player.Volume = Math.Clamp(volume, 0f, 1f);
-                    await PlayToCompletionAsync(player, noteSeconds, token);
+                    await PlayOneToneAsync(f, duration, gain, token).ConfigureAwait(false);
 
                     if (gapSeconds > 0)
-                        await Task.Delay(TimeSpan.FromSeconds(gapSeconds), token);
+                        await Task.Delay(TimeSpan.FromSeconds(gapSeconds), token).ConfigureAwait(false);
                 }
             }
             finally
             {
-                try
+                lock (_gate)
                 {
-                    _internalCts?.Dispose();
+                    if (ReferenceEquals(_internalCts, linked))
+                        _internalCts = null;
                 }
-                catch { }
-                _internalCts = null;
+
+                try { linked.Dispose(); } catch { }
             }
         }
 
-        private static async Task PlayToCompletionAsync(IAudioPlayer player, double noteSeconds, CancellationToken ct)
+        private async Task PlayOneToneAsync(double freq, double durationSeconds, float volume, CancellationToken ct)
         {
-            player.Play();
+#if ANDROID
+            if (durationSeconds <= AndroidAudioTrackMaxSeconds)
+            {
+                await PlayOneToneAudioTrackAsync(freq, durationSeconds, volume, ct).ConfigureAwait(false);
+                return;
+            }
+#endif
+            await PlayOneToneMediaPlayerAsync(freq, durationSeconds, volume, ct).ConfigureAwait(false);
+        }
 
-            // Generated PCM matches noteSeconds exactly; wall-clock delay is more reliable
-            // on mobile than PlaybackEnded (often late or never fires for MemoryStream tones).
+        private async Task PlayOneToneMediaPlayerAsync(double freq, double durationSeconds, float volume, CancellationToken ct)
+        {
+            var tone = BuildToneWavStream(freq, durationSeconds, volume);
+            IAudioPlayer? player = null;
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(noteSeconds), ct).ConfigureAwait(false);
+                tone.Position = 0;
+                player = _audioManager.CreatePlayer(tone);
+                if (player == null)
+                    throw new InvalidOperationException("CreatePlayer returned null.");
+
+                player.Volume = 1f;
+                player.Play();
+
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(durationSeconds), ct).ConfigureAwait(false);
+                }
+                finally
+                {
+                    try { player.Stop(); } catch { }
+                }
             }
             finally
             {
-                try { player.Stop(); } catch { }
+                try { player?.Dispose(); } catch { }
+                try { await tone.DisposeAsync().ConfigureAwait(false); } catch { try { tone.Dispose(); } catch { } }
             }
         }
 
-        private static Stream BuildToneStream(double freq, double durationSeconds, float volume)
+#if ANDROID
+        private async Task PlayOneToneAudioTrackAsync(double freq, double durationSeconds, float volume, CancellationToken ct)
         {
-            int samples = (int)(SampleRate * durationSeconds);
-            var pcm = new byte[44 + samples * 2];
-            WriteWavHeader(pcm, samples);
+            short[] pcm = BuildPcm16(freq, durationSeconds, volume);
+            int byteCount = pcm.Length * 2;
+            int minBuf = AudioTrack.GetMinBufferSize(
+                SampleRate, ChannelOut.Mono, Android.Media.Encoding.Pcm16bit);
+            if (minBuf <= 0)
+                minBuf = byteCount;
 
-            // Fade in/out over 10 ms to eliminate click transients at note onset and release
-            int fadeSamples = Math.Min((int)(SampleRate * 0.010), samples / 4);
+            AudioTrack? track = null;
+            try
+            {
+                if (!OperatingSystem.IsAndroidVersionAtLeast(23))
+                {
+                    await PlayOneToneMediaPlayerAsync(freq, durationSeconds, volume, ct).ConfigureAwait(false);
+                    return;
+                }
+
+                var attrsBuilder = new AudioAttributes.Builder();
+                attrsBuilder.SetUsage(AudioUsageKind.Media);
+                attrsBuilder.SetContentType(AudioContentType.Music);
+                var attrs = attrsBuilder.Build()
+                    ?? throw new InvalidOperationException("AudioAttributes.Builder.Build returned null.");
+
+                var formatBuilder = new AudioFormat.Builder();
+                formatBuilder.SetSampleRate(SampleRate);
+                formatBuilder.SetEncoding(Android.Media.Encoding.Pcm16bit);
+                formatBuilder.SetChannelMask(ChannelOut.Mono);
+                var format = formatBuilder.Build()
+                    ?? throw new InvalidOperationException("AudioFormat.Builder.Build returned null.");
+
+                // STREAM: ready to Play immediately. STATIC starts as NoStaticData until Write —
+                // we previously treated that as failure and never wrote, so every click was silent.
+                var trackBuilder = new AudioTrack.Builder();
+                trackBuilder.SetAudioAttributes(attrs);
+                trackBuilder.SetAudioFormat(format);
+                trackBuilder.SetBufferSizeInBytes(Math.Max(minBuf * 2, byteCount));
+                trackBuilder.SetTransferMode(AudioTrackMode.Stream);
+                track = trackBuilder.Build()
+                    ?? throw new InvalidOperationException("AudioTrack.Builder.Build returned null.");
+
+                if (track.State == AudioTrackState.Uninitialized)
+                    throw new InvalidOperationException($"AudioTrack uninitialized (state={track.State}).");
+
+                lock (_gate)
+                {
+                    StopActiveAndroidTrack_NoLock();
+                    _activeTrack = track;
+                }
+
+                // PCM samples already include gain; keep track gain at unity.
+                track.SetVolume(1f);
+                track.Play();
+
+                int offset = 0;
+                while (offset < pcm.Length && !ct.IsCancellationRequested)
+                {
+                    int written = track.Write(pcm, offset, pcm.Length - offset);
+                    if (written < 0)
+                        throw new InvalidOperationException($"AudioTrack.Write failed ({written}).");
+                    if (written == 0)
+                        break;
+                    offset += written;
+                }
+
+                // Hold for the tone length so the buffer can drain.
+                await Task.Delay(TimeSpan.FromSeconds(durationSeconds), ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[AudioPlayback] AudioTrack click failed: {ex.Message}");
+                try
+                {
+                    await PlayOneToneMediaPlayerAsync(freq, durationSeconds, volume, ct).ConfigureAwait(false);
+                }
+                catch (Exception mpEx)
+                {
+                    Debug.WriteLine($"[AudioPlayback] MediaPlayer fallback failed: {mpEx.Message}");
+                }
+            }
+            finally
+            {
+                lock (_gate)
+                {
+                    if (ReferenceEquals(_activeTrack, track))
+                        _activeTrack = null;
+                }
+
+                try { track?.Pause(); } catch { }
+                try { track?.Stop(); } catch { }
+                try { track?.Release(); } catch { }
+                try { track?.Dispose(); } catch { }
+            }
+        }
+
+        private void StopActiveAndroidTrack_NoLock()
+        {
+            var track = _activeTrack;
+            _activeTrack = null;
+            if (track == null)
+                return;
+            try { track.Pause(); } catch { }
+            try { track.Stop(); } catch { }
+            try { track.Release(); } catch { }
+            try { track.Dispose(); } catch { }
+        }
+#else
+        private void StopActiveAndroidTrack_NoLock() { }
+#endif
+
+        private static MemoryStream BuildToneWavStream(double freq, double durationSeconds, float volume)
+        {
+            short[] pcm = BuildPcm16(freq, durationSeconds, volume);
+            var wav = new byte[44 + pcm.Length * 2];
+            WriteWavHeader(wav, pcm.Length);
+            for (int i = 0; i < pcm.Length; i++)
+                BinaryPrimitives.WriteInt16LittleEndian(wav.AsSpan(44 + i * 2), pcm[i]);
+            return new MemoryStream(wav, writable: false);
+        }
+
+        private static short[] BuildPcm16(double freq, double durationSeconds, float volume)
+        {
+            int samples = Math.Max(1, (int)(SampleRate * durationSeconds));
+            var pcm = new short[samples];
+
+            // Fade in/out over up to 10 ms (or 1/4 of the tone) to avoid clicks.
+            int fadeSamples = Math.Min((int)(SampleRate * 0.010), Math.Max(1, samples / 4));
 
             for (int i = 0; i < samples; i++)
             {
@@ -86,10 +260,10 @@ namespace musicmate.Services
                 else if (i >= samples - fadeSamples)
                     envelope = (double)(samples - 1 - i) / fadeSamples;
 
-                var sample = (short)(Math.Sin(2 * Math.PI * freq * t) * short.MaxValue * volume * envelope);
-                BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(44 + i * 2), sample);
+                pcm[i] = (short)(Math.Sin(2 * Math.PI * freq * t) * short.MaxValue * volume * envelope);
             }
-            return new MemoryStream(pcm);
+
+            return pcm;
         }
 
         private static void WriteWavHeader(byte[] buffer, int samples)
@@ -119,11 +293,11 @@ namespace musicmate.Services
 
         public void CancelPlayback()
         {
-            try
+            lock (_gate)
             {
-                _internalCts?.Cancel();
+                try { _internalCts?.Cancel(); } catch { }
+                StopActiveAndroidTrack_NoLock();
             }
-            catch { }
         }
     }
 }

@@ -189,6 +189,9 @@ namespace musicmate.Drawables
         /// <summary>Minimum ink gap between consecutive notes inside a beam group.</summary>
         private const float BeamedInternalInkGap = 2f;
 
+        /// <summary>Minimum ink gap before a note that carries a body accidental (keeps ♭/♯ with its head).</summary>
+        private const float AccidentalPairInkGap = 14f;
+
         /// <summary>Clear ink between body-accidental box and notehead left edge (px).</summary>
         private float BodyAccidentalRightGapPx =>
             Math.Max(3.5f * BodyAccidentalGlyphScale(), AccidentalRightGap * _layout.Sls * 0.1f);
@@ -1750,6 +1753,46 @@ namespace musicmate.Drawables
                 }
             }
 
+            // Beat midpoints (and the fit-scale above) can leave a body accidental overlapping the
+            // previous note — e.g. G then Gb eighths look like "♭G G". Push centers forward so
+            // each accidental's ink sits immediately left of its own notehead.
+            EnforceBeginnerCenterSpacing(
+                notes, indices, centers, isRestList, hasAccList, isFlatList, isNaturalList,
+                beatOrigin, segment.EndBeat);
+
+            // Spacing push can drive the last note into / past the following bar line.
+            // Keep trailing ink left of the bar, and the first note clear of the opening bar.
+            float barLineX = measureLeft + measureWidth;
+            float maxTrailing = barLineX - BarLeftPadding - BarStemClearance;
+            if (!isFirstMeasureOnStaff && sorted.Count > 0)
+            {
+                float barMin = measureLeft + BarLeftPadding + MeasureStartExtraPad + BarStemClearance
+                    + NoteCenterLeftReach(isRestList[0], hasAccList[0], isFlatList[0], isNaturalList[0]);
+                if (centers[0] < barMin)
+                    centers[0] = barMin;
+                // Re-apply forward spacing after the opening-bar floor so pairs stay clear.
+                EnforceBeginnerCenterSpacing(
+                    notes, indices, centers, isRestList, hasAccList, isFlatList, isNaturalList,
+                    beatOrigin, segment.EndBeat);
+            }
+
+            if (sorted.Count > 0)
+            {
+                int lastK = sorted.Count - 1;
+                float trailing = NoteTrailingRight(notes[indices[lastK]], centers[lastK]);
+                if (trailing > maxTrailing + 0.5f)
+                {
+                    float span = trailing - laneLeft;
+                    float available = Math.Max(8f, maxTrailing - laneLeft);
+                    if (span > 1f)
+                    {
+                        float fitScale = Math.Clamp(available / span, 0.35f, 1f);
+                        for (int k = 0; k < centers.Length; k++)
+                            centers[k] = laneLeft + (centers[k] - laneLeft) * fitScale;
+                    }
+                }
+            }
+
             for (int k = 0; k < sorted.Count; k++)
             {
                 int i = indices[k];
@@ -1763,6 +1806,47 @@ namespace musicmate.Drawables
                     IsRest = isRestList[k]
                 };
                 SyncAccidentalX(noteLayouts, i);
+            }
+        }
+
+        /// <summary>
+        /// Forward-only push so each note group's left ink (including accidentals) clears the
+        /// previous note's trailing ink. Critical for beamed pairs like G / Gb.
+        /// </summary>
+        private void EnforceBeginnerCenterSpacing(
+            IReadOnlyList<GeneratedNote> notes,
+            int[] indices,
+            float[] centers,
+            bool[] isRest,
+            bool[] hasAcc,
+            bool[] isFlat,
+            bool[] isNatural,
+            double beatOrigin,
+            double measureEndBeat)
+        {
+            if (centers.Length == 0)
+                return;
+
+            var beamGroups = ComputeLayoutBeamGroupIds(notes, indices, beatOrigin, measureEndBeat);
+            float prevRight = float.NegativeInfinity;
+            for (int k = 0; k < centers.Length; k++)
+            {
+                float inkGap = k > 0
+                    ? InkGapBetween(beamGroups, indices[k - 1], indices[k], _planInkGap)
+                    : _planInkGap;
+                // Accidental must read as belonging to this note, not the previous one.
+                if (hasAcc[k])
+                    inkGap = Math.Max(inkGap, AccidentalPairInkGap);
+
+                float curLeft = NoteGroupLeft(centers[k], isRest[k], hasAcc[k], isFlat[k], isNatural[k]);
+                if (prevRight > float.NegativeInfinity)
+                {
+                    float minLeft = prevRight + inkGap;
+                    if (curLeft < minLeft)
+                        centers[k] += minLeft - curLeft;
+                }
+
+                prevRight = NoteTrailingRight(notes[indices[k]], centers[k]);
             }
         }
 
@@ -2492,6 +2576,19 @@ namespace musicmate.Drawables
             if (expandLowerToFill)
                 PadLayoutGutterToLimit(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit);
 
+            // Child path used to skip bar/stem clearance; without it bars land on measure-starting notes.
+            // Use nudge + bar ink margins only — full RefinishMeasureSpacing would undo beat-proportional layout.
+            double upperBeatOrigin = GetStaffBeatOrigin(upperNotes, UpperBarBeats);
+            double lowerBeatOrigin = GetStaffBeatOrigin(lowerNotes, LowerBarBeats);
+            EnforceMeasureBarInkMargins(upperNotes, upperNoteLayouts, upperBarLayouts, UpperBarBeats, upperBeatOrigin);
+            EnforceMeasureBarInkMargins(lowerNotes, lowerNoteLayouts, lowerBarLayouts, LowerBarBeats, lowerBeatOrigin);
+            NudgeNotesClearOfBarlines(
+                upperNotes, upperNoteLayouts, upperBarLayouts, UpperBarBeats, upperBeatOrigin,
+                upperTop, upperMid, upperBot);
+            NudgeNotesClearOfBarlines(
+                lowerNotes, lowerNoteLayouts, lowerBarLayouts, LowerBarBeats, lowerBeatOrigin,
+                lowerTop, lowerMid, lowerBot);
+
             ReconcileFinalBarLayout(upperNoteLayouts, upperBarLayouts);
             ReconcileFinalBarLayout(lowerNoteLayouts, lowerBarLayouts);
             AlignIndependentStaffEndBars(upperBarLayouts, upperNoteLayouts, lowerBarLayouts, lowerNoteLayouts, layoutRightLimit);
@@ -2935,8 +3032,9 @@ namespace musicmate.Drawables
         }
 
         /// <summary>
-        /// Bar lines on a regular meter grid from accumulated beat duration.  Measure-index
-        /// transitions are used only when they place more boundaries (e.g. pickup/anacrusis).
+        /// Bar lines on a regular meter grid from accumulated beat duration.
+        /// Measure-index transitions are only used when a meter grid cannot be built
+        /// (avoids denser off-meter MeasureIndex values drawing bars every 2 beats in 4/4).
         /// </summary>
         private List<double> ResolveStaffBarBeats(
             IReadOnlyList<GeneratedNote> notes,
@@ -2953,22 +3051,21 @@ namespace musicmate.Drawables
                 beatOrigin);
 
 #if DEBUG
-            if (fromMeasures.Count > 0 && regular.Count > fromMeasures.Count)
+            if (fromMeasures.Count > regular.Count && regular.Count > 0)
             {
                 StaffLog(
-                    $"[LayoutTest] Bar beats: regular grid ({regular.Count}) replaces sparse measure-index ({fromMeasures.Count})");
+                    $"[LayoutTest] Bar beats: regular meter grid ({regular.Count}) preferred over denser measure-index ({fromMeasures.Count})");
             }
 #endif
 
-            // Prefer beat-duration meter grid when measure-index transitions skip boundaries
-            // (common after two-staff splits where only a note subset is on one staff).
-            if (regular.Count >= fromMeasures.Count && regular.Count > 0)
+            // Always prefer the display meter grid when it yields internal bars.
+            if (regular.Count > 0)
                 return regular;
 
             if (fromMeasures.Count > 0)
                 return fromMeasures;
 
-            return regular;
+            return barBeats ?? new List<double>();
         }
 
         private static List<double> BuildBarBeatsFromMeasureIndices(IReadOnlyList<GeneratedNote> notes)

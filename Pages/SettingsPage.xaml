@@ -118,6 +118,71 @@
           </VerticalStackLayout>
         </Border>
 
+        <!-- Waiting count-in -->
+        <Border Style="{StaticResource SettingsPanelBorder}">
+          <Border.StrokeShape>
+            <RoundRectangle CornerRadius="10"/>
+          </Border.StrokeShape>
+          <VerticalStackLayout Spacing="8">
+            <Label Text="Waiting Count-In" Style="{StaticResource SettingsPanelTitle}" />
+            <Grid ColumnDefinitions="200,*,60" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Count-in enabled" />
+              <Switch Grid.Column="1" IsToggled="{Binding CountInEnabled, Mode=TwoWay}"
+                      OnColor="{DynamicResource ThemeSlider}" HorizontalOptions="End" />
+            </Grid>
+            <Grid ColumnDefinitions="170,*,48" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Accented-beat volume" />
+              <Slider Grid.Column="1"
+                      Minimum="{Binding CountInMinVolume}"
+                      Maximum="{Binding CountInMaxVolume}"
+                      Value="{Binding CountInAccentedVolume, Mode=TwoWay}"
+                      Style="{StaticResource SliderStyle}" />
+              <Label Grid.Column="2" Text="{Binding CountInAccentedVolume, StringFormat='{0:0.00}'}"
+                     HorizontalTextAlignment="End" />
+            </Grid>
+            <Grid ColumnDefinitions="170,*,48" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Unaccented-beat volume" />
+              <Slider Grid.Column="1"
+                      Minimum="{Binding CountInMinVolume}"
+                      Maximum="{Binding CountInMaxVolume}"
+                      Value="{Binding CountInUnaccentedVolume, Mode=TwoWay}"
+                      Style="{StaticResource SliderStyle}" />
+              <Label Grid.Column="2" Text="{Binding CountInUnaccentedVolume, StringFormat='{0:0.00}'}"
+                     HorizontalTextAlignment="End" />
+            </Grid>
+            <Grid ColumnDefinitions="170,*,56" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Accented-beat pitch (Hz)" />
+              <Slider Grid.Column="1"
+                      Minimum="{Binding CountInMinPitchHz}"
+                      Maximum="{Binding CountInMaxPitchHz}"
+                      Value="{Binding CountInAccentedPitchHz, Mode=TwoWay}"
+                      Style="{StaticResource SliderStyle}" />
+              <Label Grid.Column="2" Text="{Binding CountInAccentedPitchHz, StringFormat='{0:0}'}"
+                     HorizontalTextAlignment="End" />
+            </Grid>
+            <Grid ColumnDefinitions="170,*,56" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Unaccented-beat pitch (Hz)" />
+              <Slider Grid.Column="1"
+                      Minimum="{Binding CountInMinPitchHz}"
+                      Maximum="{Binding CountInMaxPitchHz}"
+                      Value="{Binding CountInUnaccentedPitchHz, Mode=TwoWay}"
+                      Style="{StaticResource SliderStyle}" />
+              <Label Grid.Column="2" Text="{Binding CountInUnaccentedPitchHz, StringFormat='{0:0}'}"
+                     HorizontalTextAlignment="End" />
+            </Grid>
+            <Grid ColumnDefinitions="170,*,48" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Beat-sound duration (ms)" />
+              <Slider Grid.Column="1"
+                      Minimum="{Binding CountInMinDurationMs}"
+                      Maximum="{Binding CountInMaxDurationMs}"
+                      Value="{Binding CountInBeatDurationMs, Mode=TwoWay}"
+                      Style="{StaticResource SliderStyle}" />
+              <Label Grid.Column="2" Text="{Binding CountInBeatDurationMs, StringFormat='{0:0}'}"
+                     HorizontalTextAlignment="End" />
+            </Grid>
+          </VerticalStackLayout>
+        </Border>
+
         <!-- Tempo -->
         <Border Style="{StaticResource SettingsPanelBorder}">
           <Border.StrokeShape>

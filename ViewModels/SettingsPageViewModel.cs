@@ -653,6 +653,84 @@ namespace musicmate.ViewModels
             }
         }
 
+        public double CountInMinVolume => WaitingCountInSettings.MinVolume;
+        public double CountInMaxVolume => WaitingCountInSettings.MaxVolume;
+        public double CountInMinPitchHz => WaitingCountInSettings.MinPitchHz;
+        public double CountInMaxPitchHz => WaitingCountInSettings.MaxPitchHz;
+        public double CountInMinDurationMs => WaitingCountInSettings.MinBeatDurationMs;
+        public double CountInMaxDurationMs => WaitingCountInSettings.MaxBeatDurationMs;
+
+        public bool CountInEnabled
+        {
+            get => WaitingCountInSettings.Enabled;
+            set
+            {
+                if (WaitingCountInSettings.Enabled == value) return;
+                WaitingCountInSettings.Enabled = value;
+                OnPropertyChanged(nameof(CountInEnabled));
+            }
+        }
+
+        public double CountInAccentedVolume
+        {
+            get => WaitingCountInSettings.AccentedVolume;
+            set
+            {
+                float clamped = WaitingCountInSettings.ClampVolume((float)value);
+                if (Math.Abs(WaitingCountInSettings.AccentedVolume - clamped) < 0.0005f) return;
+                WaitingCountInSettings.AccentedVolume = clamped;
+                OnPropertyChanged(nameof(CountInAccentedVolume));
+            }
+        }
+
+        public double CountInUnaccentedVolume
+        {
+            get => WaitingCountInSettings.UnaccentedVolume;
+            set
+            {
+                float clamped = WaitingCountInSettings.ClampVolume((float)value);
+                if (Math.Abs(WaitingCountInSettings.UnaccentedVolume - clamped) < 0.0005f) return;
+                WaitingCountInSettings.UnaccentedVolume = clamped;
+                OnPropertyChanged(nameof(CountInUnaccentedVolume));
+            }
+        }
+
+        public double CountInAccentedPitchHz
+        {
+            get => WaitingCountInSettings.AccentedPitchHz;
+            set
+            {
+                double clamped = WaitingCountInSettings.ClampPitchHz(value);
+                if (Math.Abs(WaitingCountInSettings.AccentedPitchHz - clamped) < 0.5) return;
+                WaitingCountInSettings.AccentedPitchHz = clamped;
+                OnPropertyChanged(nameof(CountInAccentedPitchHz));
+            }
+        }
+
+        public double CountInUnaccentedPitchHz
+        {
+            get => WaitingCountInSettings.UnaccentedPitchHz;
+            set
+            {
+                double clamped = WaitingCountInSettings.ClampPitchHz(value);
+                if (Math.Abs(WaitingCountInSettings.UnaccentedPitchHz - clamped) < 0.5) return;
+                WaitingCountInSettings.UnaccentedPitchHz = clamped;
+                OnPropertyChanged(nameof(CountInUnaccentedPitchHz));
+            }
+        }
+
+        public double CountInBeatDurationMs
+        {
+            get => WaitingCountInSettings.BeatDurationMs;
+            set
+            {
+                int clamped = WaitingCountInSettings.ClampDurationMs((int)Math.Round(value));
+                if (WaitingCountInSettings.BeatDurationMs == clamped) return;
+                WaitingCountInSettings.BeatDurationMs = clamped;
+                OnPropertyChanged(nameof(CountInBeatDurationMs));
+            }
+        }
+
         public bool ShowSignaturesOnBothStaffs
         {
             get => _session?.ShowSignaturesOnBothStaffs ?? _showSignaturesOnBothStaffs;

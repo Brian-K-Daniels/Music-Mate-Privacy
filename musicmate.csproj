@@ -16,14 +16,13 @@
 
     <!-- Display name -->
     <ApplicationTitle>Music Mate</ApplicationTitle>
-
     <!-- App Identifier -->
     <ApplicationId>com.bkdaniels.musicmate</ApplicationId>
 
     <!-- Versions -->
-    <ApplicationDisplayVersion>1.22</ApplicationDisplayVersion>
-    <ApplicationVersion>22</ApplicationVersion>
-    <PackageVersion>1.22</PackageVersion>
+    <ApplicationDisplayVersion>1.23</ApplicationDisplayVersion>
+    <ApplicationVersion>23</ApplicationVersion>
+    <PackageVersion>1.23</PackageVersion>
 
     <WindowsPackageType>None</WindowsPackageType>
 
@@ -50,7 +49,10 @@
     <AndroidEnable16kBpages>true</AndroidEnable16kBpages>
   </PropertyGroup>
 
+  <!-- Debug: distinct app id/title so DEV can install beside Release; keep symbols. -->
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <ApplicationTitle>Music Mate DEV</ApplicationTitle>
+    <ApplicationId>com.bkdaniels.musicmate.dev</ApplicationId>
     <DebugSymbols>true</DebugSymbols>
     <DebugType>portable</DebugType>
     <Optimize>false</Optimize>

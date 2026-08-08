@@ -37,6 +37,7 @@ namespace musicmate
 #endif
             builder.Services.AddSingleton(AudioManager.Current);
             builder.Services.AddSingleton<IAudioPlaybackService, AudioPlaybackService>();
+            builder.Services.AddSingleton<ICountInClickService, CountInClickService>();
 
             string noteDbPath = Path.Combine(FileSystem.AppDataDirectory, "notestats.db3");
             string sessionDbPath = Path.Combine(FileSystem.AppDataDirectory, "sessions.db3");
@@ -53,6 +54,7 @@ namespace musicmate
             builder.Services.AddSingleton<SettingsResetService>();
             builder.Services.AddSingleton<StatisticsCacheService>();
             builder.Services.AddSingleton<NoteMasteryService>();
+            builder.Services.AddSingleton<SavedTuneStore>();
 
 #if ANDROID
             builder.Services.AddSingleton<ISafeAreaService, musicmate.Platforms.Android.SafeAreaService>();
