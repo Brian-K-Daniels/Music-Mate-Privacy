@@ -92,7 +92,10 @@ namespace musicmate.Drawables
             public List<GeneratedNote> UpperNotes { get; } = new();
             public List<GeneratedNote> LowerNotes { get; } = new();
             public int UpperMeasureCount { get; set; }
+            public int LowerMeasureCount { get; set; }
             public int TotalMeasureCount { get; set; }
+            /// <summary>Measures that did not fit on either staff at readable engraved width.</summary>
+            public int UnplacedMeasureCount { get; set; }
         }
 
         // ── Fixed horizontal constants ─────────────────────────────────────────
@@ -186,8 +189,18 @@ namespace musicmate.Drawables
         /// <summary>Minimum ink gap for beat-proportional child layout (levels 1–30).</summary>
         private const float BeginnerInkGap = 12f;
 
-        /// <summary>Minimum ink gap between consecutive notes inside a beam group.</summary>
-        private const float BeamedInternalInkGap = 2f;
+        /// <summary>
+        /// Minimum ink gap between consecutive notes inside a beam group.
+        /// Must stay near <see cref="MinInkGap"/> — 2px packing made beamed eighths/sixteenths
+        /// look like colliding clusters even when measure durations were exact.
+        /// </summary>
+        private const float BeamedInternalInkGap = 8f;
+
+        /// <summary>
+        /// Floor for uniform horizontal compress/scale. Below this, dense measures overlap
+        /// glyphs; prefer overflow / fewer measures per staff over crushing ink.
+        /// </summary>
+        private const float HorizontalCompressFloor = 0.85f;
 
         /// <summary>Minimum ink gap before a note that carries a body accidental (keeps ♭/♯ with its head).</summary>
         private const float AccidentalPairInkGap = 14f;
@@ -231,11 +244,11 @@ namespace musicmate.Drawables
             => AccidentalBoxRight(noteCenterX, isNatural) - BodyAccidentalDrawWidth(isFlat, isNatural);
 
         /// <summary>Leftmost ink edge of a note/rest group (accidental or notehead).</summary>
-        private float NoteGroupLeft(float centerX, bool isRest, bool hasAcc, bool isFlatAcc, bool isNaturalAcc = false)
-            => hasAcc ? AccidentalBoxLeft(centerX, isFlatAcc, isNaturalAcc) : centerX - NoteHalfWidth(isRest);
+        private float NoteGroupLeft(float centerX, bool isRest, bool hasAcc, bool isFlatAcc, bool isNaturalAcc = false, NoteDuration duration = NoteDuration.Quarter)
+            => hasAcc ? AccidentalBoxLeft(centerX, isFlatAcc, isNaturalAcc) : centerX - NoteHalfWidth(isRest, duration);
 
         private float NoteGroupLeftFromLayout(NoteLayout layout)
-            => NoteGroupLeft(layout.X, layout.IsRest, layout.HasAccidental, layout.AccidentalIsFlat, layout.AccidentalIsNatural);
+            => NoteGroupLeft(layout.X, layout.IsRest, layout.HasAccidental, layout.AccidentalIsFlat, layout.AccidentalIsNatural, layout.Duration);
 
         private static float BarLineRightEdge(BarLayout bar)
             => bar.X + (bar.IsDouble ? DoubleBarExtraWidth : 0f);
@@ -252,15 +265,17 @@ namespace musicmate.Drawables
         }
 
         /// <summary>Distance from note center to the left edge of its drawable group.</summary>
-        private float NoteCenterLeftReach(bool isRest, bool hasAcc, bool isFlatAcc, bool isNaturalAcc = false)
+        private float NoteCenterLeftReach(bool isRest, bool hasAcc, bool isFlatAcc, bool isNaturalAcc = false, NoteDuration duration = NoteDuration.Quarter)
             => hasAcc
                 ? _layout.NoteHeadR + BodyAccidentalRightGapPxFor(isNaturalAcc) + BodyAccidentalDrawWidth(isFlatAcc, isNaturalAcc)
                   + AccidentalLeadingInkPad + (isFlatAcc ? FlatAccidentalExtraInkPad : 0f)
-                : NoteHalfWidth(isRest);
+                : NoteHalfWidth(isRest, duration);
 
         /// <summary>Distance from note center to its right drawable edge.</summary>
-        private float NoteCenterTrailingReach(bool isRest)
-            => isRest ? _layout.NoteHeadR * 1.05f : _layout.NoteHeadR + Math.Max(5f, 3f * _layout.GlyphScale);
+        private float NoteCenterTrailingReach(bool isRest, NoteDuration duration = NoteDuration.Quarter)
+            => isRest
+                ? RestInkHalfWidth(duration)
+                : _layout.NoteHeadR + Math.Max(5f, 3f * _layout.GlyphScale);
 
         private void SyncAccidentalX(NoteLayout[] noteLayouts, int index)
         {
@@ -308,19 +323,30 @@ namespace musicmate.Drawables
 
         private float MinNoteGap(bool isRest) => _planInkGap;
 
-        private float NoteHalfWidth(bool isRest)
-            => isRest ? _layout.NoteHeadR * 0.95f : _layout.NoteHeadR + StemStrokeHalfWidth;
+        /// <summary>
+        /// Half-width of rest ink matching <see cref="SmuFLRestDrawer"/> (not notehead radius).
+        /// Under-reserving this was the main cause of rests overlapping neighbors.
+        /// </summary>
+        private float RestInkHalfWidth(NoteDuration duration)
+        {
+            _ = duration; // width is duration-agnostic in SmuFLRestDrawer today
+            float restScale = Math.Min(1f, CompactRestScale * Math.Max(0.5f, _layout.GlyphScale));
+            return SmuFLRestDrawer.GetInkWidth(_layout.Sls, restScale) * 0.5f;
+        }
+
+        private float NoteHalfWidth(bool isRest, NoteDuration duration = NoteDuration.Quarter)
+            => isRest ? RestInkHalfWidth(duration) : _layout.NoteHeadR + StemStrokeHalfWidth;
 
         /// <summary>Right edge after note/rest center (stem-ward for notes).</summary>
-        private float NoteTrailingRight(bool isRest, float centerX)
-            => centerX + NoteCenterTrailingReach(isRest);
+        private float NoteTrailingRight(bool isRest, float centerX, NoteDuration duration = NoteDuration.Quarter)
+            => centerX + NoteCenterTrailingReach(isRest, duration);
 
         private float NoteTrailingRight(GeneratedNote note, float centerX)
-            => NoteTrailingRight(note.IsRest, centerX);
+            => NoteTrailingRight(note.IsRest, centerX, note.Duration);
 
         /// <summary>Minimum center X after <paramref name="prevRight"/> for the next item.</summary>
-        private float MinCenterAfterPrevRight(float prevRight, bool isRest, bool hasAcc, bool isFlatAcc, bool isNaturalAcc = false, float? inkGap = null)
-            => prevRight + (inkGap ?? _planInkGap) + NoteCenterLeftReach(isRest, hasAcc, isFlatAcc, isNaturalAcc);
+        private float MinCenterAfterPrevRight(float prevRight, bool isRest, bool hasAcc, bool isFlatAcc, bool isNaturalAcc = false, float? inkGap = null, NoteDuration duration = NoteDuration.Quarter)
+            => prevRight + (inkGap ?? _planInkGap) + NoteCenterLeftReach(isRest, hasAcc, isFlatAcc, isNaturalAcc, duration);
 
         private float KeySigGlyphWidth() => KeySigSymbolWidth();
 
@@ -367,6 +393,7 @@ namespace musicmate.Drawables
             public bool AccidentalIsFlat; // flat vs sharp/natural box metrics
             public bool AccidentalIsNatural;
             public bool IsRest;
+            public NoteDuration Duration;
         }
 
         /// <summary>
@@ -773,9 +800,10 @@ namespace musicmate.Drawables
         }
 
         /// <summary>
-        /// Measure-based two-staff assignment: compute each measure's minimum width,
-        /// pack whole measures onto the upper staff until the next measure will not fit,
-        /// then place remaining measures on the lower staff.  Never splits a measure.
+        /// Measure-based two-staff assignment: compute each measure's minimum engraved width,
+        /// pack whole measures onto the upper staff until the next will not fit at readable
+        /// spacing, then pack as many remaining measures as fit on the lower staff.
+        /// Never splits a measure. Never compresses below readable ink to force more measures.
         /// </summary>
         public StaffMeasureSplitResult SplitMeasuresAcrossStaves(
     List<GeneratedNote> allNotes,
@@ -820,10 +848,17 @@ namespace musicmate.Drawables
                 Array.Empty<GeneratedNote>());
 
             _headerMetrics = ComputeHeaderMetrics(safeLeft);
+            // Width estimates must use the same ink gaps as live engraving.
+            _planInkGap = UseBeginnerHorizontalLayout
+                ? (_session.ChildLevel <= 30 ? BeginnerInkGap : MinInkGap)
+                : MinInkGap;
 
             float upperUsableWidth = Math.Max(
                 64f,
-                safeWidth - _headerMetrics.LeftMargin - RightMargin);
+                safeWidth - _headerMetrics.LeftMargin - RightMargin - BarRightPadding);
+            float lowerUsableWidth = Math.Max(
+                64f,
+                safeWidth - _headerMetrics.ClefOnlyLeftMargin - RightMargin - BarRightPadding);
 
             var notes = allNotes;
 
@@ -874,11 +909,18 @@ namespace musicmate.Drawables
                  measureIndex < segments.Count;
                  measureIndex++)
             {
-                minimumWidths[measureIndex] =
-                    ComputeMeasureMinWidth(
-                        notes,
-                        segments[measureIndex],
-                        beatOrigin);
+                // Must match PlanHorizontalLayout beginner min-width formula so packing
+                // decisions agree with the widths engraving will actually request.
+                double segBeats = segments[measureIndex].EndBeat - segments[measureIndex].StartBeat;
+                if (segBeats < 1e-9)
+                    segBeats = 1;
+                float beatLaneMin = (float)segBeats * (_layout.NoteHeadR * 2.2f + _planInkGap * 0.45f)
+                                    + BarLeftPadding * 2f;
+                float engraved = ComputeMeasureMinWidth(
+                    notes,
+                    segments[measureIndex],
+                    beatOrigin);
+                minimumWidths[measureIndex] = Math.Max(beatLaneMin, engraved);
             }
 
             int upperMeasureCount = PackMeasuresOntoStaff(
@@ -895,29 +937,147 @@ namespace musicmate.Drawables
             if (upperMeasureCount == 0 && segments.Count > 0)
                 upperMeasureCount = 1;
 
-            var upperIndices = new HashSet<int>();
+            upperMeasureCount = TrimMeasureCountToReadableFit(
+                notes, segments, barBeatsList, beatOrigin,
+                startMeasureIndex: 0,
+                measureCount: upperMeasureCount,
+                usableWidth: upperUsableWidth,
+                staffLeftMargin: _headerMetrics.LeftMargin,
+                useFullHeader: true);
 
-            for (int measureIndex = 0;
-                 measureIndex < upperMeasureCount;
-                 measureIndex++)
+            int lowerMeasureCount = 0;
+            if (upperMeasureCount < segments.Count)
+            {
+                lowerMeasureCount = PackMeasuresOntoStaff(
+                    segments,
+                    minimumWidths,
+                    lowerUsableWidth,
+                    startMeasureIndex: upperMeasureCount);
+                if (lowerMeasureCount == 0)
+                    lowerMeasureCount = 1;
+
+                lowerMeasureCount = TrimMeasureCountToReadableFit(
+                    notes, segments, barBeatsList, beatOrigin,
+                    startMeasureIndex: upperMeasureCount,
+                    measureCount: lowerMeasureCount,
+                    usableWidth: lowerUsableWidth,
+                    staffLeftMargin: _headerMetrics.ClefOnlyLeftMargin,
+                    useFullHeader: false);
+            }
+
+            int placedEnd = Math.Min(segments.Count, upperMeasureCount + lowerMeasureCount);
+            lowerMeasureCount = Math.Max(0, placedEnd - upperMeasureCount);
+
+            var upperIndices = new HashSet<int>();
+            var lowerIndices = new HashSet<int>();
+
+            for (int measureIndex = 0; measureIndex < upperMeasureCount; measureIndex++)
             {
                 foreach (int noteIndex in segments[measureIndex].NoteIndices)
                     upperIndices.Add(noteIndex);
             }
 
-            for (int noteIndex = 0;
-                 noteIndex < notes.Count;
-                 noteIndex++)
+            for (int measureIndex = upperMeasureCount; measureIndex < placedEnd; measureIndex++)
+            {
+                foreach (int noteIndex in segments[measureIndex].NoteIndices)
+                    lowerIndices.Add(noteIndex);
+            }
+
+            for (int noteIndex = 0; noteIndex < notes.Count; noteIndex++)
             {
                 if (upperIndices.Contains(noteIndex))
                     result.UpperNotes.Add(notes[noteIndex]);
-                else
+                else if (lowerIndices.Contains(noteIndex))
                     result.LowerNotes.Add(notes[noteIndex]);
             }
 
             result.UpperMeasureCount = upperMeasureCount;
+            result.LowerMeasureCount = lowerMeasureCount;
+            result.UnplacedMeasureCount = Math.Max(0, segments.Count - placedEnd);
 
             return result;
+        }
+
+        /// <summary>
+        /// Drops trailing measures until a real <see cref="PlanHorizontalLayout"/> pass
+        /// fits inside <paramref name="usableWidth"/> without relying on crush-below-floor.
+        /// Always keeps at least one measure.
+        /// </summary>
+        private int TrimMeasureCountToReadableFit(
+            List<GeneratedNote> allNotes,
+            List<MeasureSegment> segments,
+            List<double> barBeatsAbs,
+            double beatOrigin,
+            int startMeasureIndex,
+            int measureCount,
+            float usableWidth,
+            float staffLeftMargin,
+            bool useFullHeader)
+        {
+            if (measureCount <= 1)
+                return Math.Max(measureCount, segments.Count > startMeasureIndex ? 1 : 0);
+
+            while (measureCount > 1)
+            {
+                var trialNotes = CollectSegmentNotes(allNotes, segments, startMeasureIndex, measureCount);
+                if (trialNotes.Count == 0)
+                    return 0;
+
+                var trialBars = new List<double>();
+                for (int m = 1; m < measureCount; m++)
+                {
+                    int segIdx = startMeasureIndex + m - 1;
+                    if (segIdx < segments.Count)
+                        trialBars.Add(beatOrigin + segments[segIdx].EndBeat);
+                }
+
+                var (trialLayouts, trialBarLayouts, totalWidth) = PlanHorizontalLayout(
+                    trialNotes,
+                    trialBars,
+                    usableWidth,
+                    staffLeftMargin,
+                    useFullHeaderAnchor: useFullHeader,
+                    isFinalStaff: true,
+                    hasEndSingleBar: false);
+
+                // Prefer ink extent over totalWidth: proportional layout can push note trailing
+                // edges past the allocated measure strip while totalWidth still looks "exact".
+                float maxInkRight = staffLeftMargin;
+                for (int i = 0; i < trialNotes.Count; i++)
+                {
+                    float right = NoteTrailingRight(trialNotes[i], trialLayouts[i].X);
+                    if (trialLayouts[i].HasAccidental)
+                        maxInkRight = Math.Max(maxInkRight, trialLayouts[i].AccidentalX + 1f);
+                    maxInkRight = Math.Max(maxInkRight, right);
+                }
+
+                for (int b = 0; b < trialBarLayouts.Length; b++)
+                    maxInkRight = Math.Max(maxInkRight, BarLineRightEdge(trialBarLayouts[b]));
+
+                float content = Math.Max(totalWidth - staffLeftMargin - RightMargin, maxInkRight - staffLeftMargin);
+                if (content <= usableWidth + 1f)
+                    return measureCount;
+
+                measureCount--;
+            }
+
+            return 1;
+        }
+
+        private static List<GeneratedNote> CollectSegmentNotes(
+            List<GeneratedNote> allNotes,
+            List<MeasureSegment> segments,
+            int startMeasureIndex,
+            int measureCount)
+        {
+            var list = new List<GeneratedNote>();
+            int end = Math.Min(segments.Count, startMeasureIndex + measureCount);
+            for (int m = startMeasureIndex; m < end; m++)
+            {
+                foreach (int ni in segments[m].NoteIndices)
+                    list.Add(allNotes[ni]);
+            }
+            return list;
         }
 
         /// <summary>
@@ -1259,8 +1419,23 @@ namespace musicmate.Drawables
                && g1 == g2;
 
         private float InkGapBetween(
-            IReadOnlyDictionary<int, int> beamGroups, int prevIdx, int curIdx, float externalGap)
-            => ShareLayoutBeamGroup(beamGroups, prevIdx, curIdx) ? BeamedInternalInkGap : externalGap;
+            IReadOnlyDictionary<int, int> beamGroups,
+            int prevIdx,
+            int curIdx,
+            float externalGap,
+            bool needsAccidentalClearance = false,
+            bool eitherIsRest = false)
+        {
+            // Rests are never part of a beam group optically — never use the 2px beamed gap beside them.
+            float gap = (!eitherIsRest && ShareLayoutBeamGroup(beamGroups, prevIdx, curIdx))
+                ? BeamedInternalInkGap
+                : externalGap;
+            if (needsAccidentalClearance || eitherIsRest)
+                gap = Math.Max(gap, eitherIsRest ? Math.Max(externalGap, MinInkGap) : AccidentalPairInkGap);
+            if (needsAccidentalClearance)
+                gap = Math.Max(gap, AccidentalPairInkGap);
+            return gap;
+        }
 
         private float ComputeMeasureMinWidth(
             List<GeneratedNote> notes,
@@ -1286,17 +1461,21 @@ namespace musicmate.Drawables
                 {
                     double relBeat = (note.BeatPosition ?? 0.0) - beatOrigin - segment.StartBeat;
                     float startPad = BarStemClearance + (relBeat < 1e-6 ? MeasureStartExtraPad : 0f);
-                    width += NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural) + startPad;
+                    width += NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, note.Duration) + startPad;
                 }
                 else
                 {
-                    width += InkGapBetween(beamGroups, sorted[k - 1], i, MinNoteGap(note.IsRest))
-                             + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural);
+                    var prev = notes[sorted[k - 1]];
+                    width += InkGapBetween(
+                                 beamGroups, sorted[k - 1], i, MinNoteGap(note.IsRest),
+                                 needsAccidentalClearance: acc.HasAccidental,
+                                 eitherIsRest: note.IsRest || prev.IsRest)
+                             + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, note.Duration);
                 }
             }
 
             int lastIdx = sorted[^1];
-            width += NoteCenterTrailingReach(notes[lastIdx].IsRest) + BarLeftPadding * 0.5f;
+            width += NoteCenterTrailingReach(notes[lastIdx].IsRest, notes[lastIdx].Duration) + BarLeftPadding * 0.5f;
             return width;
         }
 
@@ -1380,12 +1559,17 @@ namespace musicmate.Drawables
                 float center;
                 if (k == 0)
                 {
-                    center = NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural);
+                    center = NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, note.Duration);
                 }
                 else
                 {
-                    float gap = InkGapBetween(beamGroups, sorted[k - 1], i, _planInkGap);
-                    center = MinCenterAfterPrevRight(prevRight, note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, gap);
+                    var prev = notes[sorted[k - 1]];
+                    float gap = InkGapBetween(
+                        beamGroups, sorted[k - 1], i, _planInkGap,
+                        needsAccidentalClearance: acc.HasAccidental,
+                        eitherIsRest: note.IsRest || prev.IsRest);
+                    center = MinCenterAfterPrevRight(
+                        prevRight, note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, gap, note.Duration);
                 }
 
                 lastRight = NoteTrailingRight(note, center);
@@ -1456,8 +1640,11 @@ namespace musicmate.Drawables
 
                 if (prevRight > float.NegativeInfinity)
                 {
-                    float minLeft = prevRight + inkGap;
-                    float curLeft = NoteGroupLeft(noteLayouts[i].X, isRest, hasAcc, isFlat, isNatural);
+                    float gap = inkGap;
+                    if (hasAcc)
+                        gap = Math.Max(gap, AccidentalPairInkGap);
+                    float minLeft = prevRight + gap;
+                    float curLeft = NoteGroupLeft(noteLayouts[i].X, isRest, hasAcc, isFlat, isNatural, note.Duration);
                     if (curLeft < minLeft)
                     {
                         noteLayouts[i].X += minLeft - curLeft;
@@ -1509,10 +1696,78 @@ namespace musicmate.Drawables
             float compressTarget = Math.Min(innerRight - BarLeftPadding * 0.5f, maxTrailing);
 
             EnforceMeasureNoteGaps(notes, noteLayouts, sorted);
-            CompressMeasureNoteSpan(notes, noteLayouts, sorted, compressTarget, beatOrigin, measureEndBeat);
+            RedistributeMeasureLeftoverSpace(notes, noteLayouts, sorted, innerLeft, maxTrailing, beatOrigin);
+            EnforceMeasureNoteGaps(notes, noteLayouts, sorted);
+
+            float trailing = NoteTrailingRight(notes[sorted[^1]], noteLayouts[sorted[^1]].X);
+            if (trailing > compressTarget + 0.5f)
+                CompressMeasureNoteSpan(notes, noteLayouts, sorted, compressTarget, beatOrigin, measureEndBeat);
+
             EnforceMeasureNoteGaps(notes, noteLayouts, sorted);
             ClampMeasureTrailingBeforeBar(notes, noteLayouts, sorted, maxTrailing, float.NegativeInfinity,
                 beatOrigin, measureEndBeat);
+        }
+
+        /// <summary>
+        /// After minimum ink gaps are satisfied, spreads any leftover interior width across
+        /// inter-note gaps in proportion to the beat distance between consecutive onsets so
+        /// sparse measures do not leave a single dead zone before the bar line.
+        /// </summary>
+        private void RedistributeMeasureLeftoverSpace(
+            IReadOnlyList<GeneratedNote> notes,
+            NoteLayout[] noteLayouts,
+            IReadOnlyList<int> sorted,
+            float innerLeft,
+            float maxTrailingRight,
+            double beatOrigin)
+        {
+            if (sorted.Count < 2)
+                return;
+
+            float firstGroupLeft = NoteGroupLeftFromLayout(noteLayouts[sorted[0]]);
+            if (innerLeft > float.NegativeInfinity && firstGroupLeft < innerLeft)
+            {
+                float dx = innerLeft - firstGroupLeft;
+                for (int k = 0; k < sorted.Count; k++)
+                {
+                    int i = sorted[k];
+                    noteLayouts[i].X += dx;
+                    SyncAccidentalX(noteLayouts, i);
+                }
+                firstGroupLeft = innerLeft;
+            }
+
+            float lastTrailing = NoteTrailingRight(notes[sorted[^1]], noteLayouts[sorted[^1]].X);
+            float packed = lastTrailing - firstGroupLeft;
+            float available = maxTrailingRight - firstGroupLeft;
+            float leftover = available - packed;
+            if (leftover < 1f || packed < 1f)
+                return;
+
+            var weights = new double[sorted.Count - 1];
+            double weightSum = 0.0;
+            for (int k = 0; k < sorted.Count - 1; k++)
+            {
+                double b0 = (notes[sorted[k]].BeatPosition ?? 0.0) - beatOrigin;
+                double b1 = (notes[sorted[k + 1]].BeatPosition ?? 0.0) - beatOrigin;
+                // Prefer onset gap; fall back to the leading event's duration so tied-onsets still get share.
+                double w = Math.Max(b1 - b0, notes[sorted[k]].BeatDuration);
+                w = Math.Max(w, 1e-3);
+                weights[k] = w;
+                weightSum += w;
+            }
+
+            if (weightSum < 1e-9)
+                return;
+
+            float cumulative = 0f;
+            for (int k = 1; k < sorted.Count; k++)
+            {
+                cumulative += leftover * (float)(weights[k - 1] / weightSum);
+                int i = sorted[k];
+                noteLayouts[i].X += cumulative;
+                SyncAccidentalX(noteLayouts, i);
+            }
         }
 
         /// <summary>Ensures no note/rest in a measure extends past the following bar line.</summary>
@@ -1579,15 +1834,17 @@ namespace musicmate.Drawables
             if (available <= 0f)
                 return Math.Min(1f, raw);
 
-            // When even MinInkGap packing cannot fit the measure, compress below MinInkGap.
+            // Never crush below readable ink. Prefer keeping the packed minimum span;
+            // when content cannot fit, keep HorizontalCompressFloor and allow overflow
+            // rather than overlapping noteheads/rests/accidentals.
             if (minSpan > available + 0.5f)
-                return Math.Clamp(raw, 0.25f, 1f);
+                return Math.Clamp(available / Math.Max(minSpan, 1f), HorizontalCompressFloor, 1f);
 
             float minScale = minSpan / span;
             if (minScale > 1f + 1e-5f)
                 return Math.Min(1f, raw);
 
-            float floor = Math.Min(1f, minScale);
+            float floor = Math.Max(HorizontalCompressFloor, Math.Min(1f, minScale));
             return Math.Clamp(raw, floor, 1f);
         }
 
@@ -1640,18 +1897,18 @@ namespace musicmate.Drawables
                 float center;
                 if (prevRight <= float.NegativeInfinity)
                 {
-                    center = innerLeft + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural);
+                    center = innerLeft + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, note.Duration);
                     if (isFirstMeasureOnStaff && k == 0)
                     {
                         float headerEdge = _planUseFullHeader
                             ? _headerMetrics.TimeSigRightRel
                             : _planStaffLeftMargin;
-                        center = Math.Max(center, headerEdge + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural));
+                        center = Math.Max(center, headerEdge + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, note.Duration));
                     }
                 }
                 else
                 {
-                    center = MinCenterAfterPrevRight(prevRight, note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural);
+                    center = MinCenterAfterPrevRight(prevRight, note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, duration: note.Duration);
                 }
 
                 noteLayouts[i] = new NoteLayout
@@ -1661,7 +1918,8 @@ namespace musicmate.Drawables
                     HasAccidental = acc.HasAccidental,
                     AccidentalIsFlat = acc.IsFlat,
                     AccidentalIsNatural = acc.IsNatural,
-                    IsRest = note.IsRest
+                    IsRest = note.IsRest,
+                    Duration = note.Duration
                 };
                 SyncAccidentalX(noteLayouts, i);
                 prevRight = NoteTrailingRight(note, center);
@@ -1747,7 +2005,7 @@ namespace musicmate.Drawables
                 float available = laneRight - laneLeft;
                 if (span > available + 0.5f && span > 1f)
                 {
-                    float fitScale = Math.Clamp(available / span, 0.35f, 1f);
+                    float fitScale = Math.Clamp(available / span, HorizontalCompressFloor, 1f);
                     for (int k = 0; k < centers.Length; k++)
                         centers[k] = laneLeft + (centers[k] - laneLeft) * fitScale;
                 }
@@ -1786,7 +2044,7 @@ namespace musicmate.Drawables
                     float available = Math.Max(8f, maxTrailing - laneLeft);
                     if (span > 1f)
                     {
-                        float fitScale = Math.Clamp(available / span, 0.35f, 1f);
+                        float fitScale = Math.Clamp(available / span, HorizontalCompressFloor, 1f);
                         for (int k = 0; k < centers.Length; k++)
                             centers[k] = laneLeft + (centers[k] - laneLeft) * fitScale;
                     }
@@ -1803,7 +2061,8 @@ namespace musicmate.Drawables
                     HasAccidental = hasAccList[k],
                     AccidentalIsFlat = isFlatList[k],
                     AccidentalIsNatural = isNaturalList[k],
-                    IsRest = isRestList[k]
+                    IsRest = isRestList[k],
+                    Duration = notes[i].Duration
                 };
                 SyncAccidentalX(noteLayouts, i);
             }
@@ -1832,13 +2091,16 @@ namespace musicmate.Drawables
             for (int k = 0; k < centers.Length; k++)
             {
                 float inkGap = k > 0
-                    ? InkGapBetween(beamGroups, indices[k - 1], indices[k], _planInkGap)
+                    ? InkGapBetween(
+                        beamGroups, indices[k - 1], indices[k], _planInkGap,
+                        needsAccidentalClearance: hasAcc[k],
+                        eitherIsRest: isRest[k] || isRest[k - 1])
                     : _planInkGap;
                 // Accidental must read as belonging to this note, not the previous one.
                 if (hasAcc[k])
                     inkGap = Math.Max(inkGap, AccidentalPairInkGap);
 
-                float curLeft = NoteGroupLeft(centers[k], isRest[k], hasAcc[k], isFlat[k], isNatural[k]);
+                float curLeft = NoteGroupLeft(centers[k], isRest[k], hasAcc[k], isFlat[k], isNatural[k], notes[indices[k]].Duration);
                 if (prevRight > float.NegativeInfinity)
                 {
                     float minLeft = prevRight + inkGap;
@@ -1884,8 +2146,8 @@ namespace musicmate.Drawables
             var accHistory = new Dictionary<(char, int), Accidental>();
             var barCancelled = new HashSet<(char, int)>();
             var firstAcc = ResolveLayoutAccidental(firstNote, accHistory, barCancelled);
-            float startCenter = innerLeft + NoteCenterLeftReach(firstNote.IsRest, firstAcc.HasAccidental, firstAcc.IsFlat, firstAcc.IsNatural);
-            float endCenter = innerRight - NoteCenterTrailingReach(lastNote.IsRest);
+            float startCenter = innerLeft + NoteCenterLeftReach(firstNote.IsRest, firstAcc.HasAccidental, firstAcc.IsFlat, firstAcc.IsNatural, firstNote.Duration);
+            float endCenter = innerRight - NoteCenterTrailingReach(lastNote.IsRest, lastNote.Duration);
             float spread = Math.Max(8f, endCenter - startCenter);
 
             float prevRight = float.NegativeInfinity;
@@ -1894,8 +2156,10 @@ namespace musicmate.Drawables
                 int i = sorted[k];
                 var note = notes[i];
                 double relBeat = (note.BeatPosition ?? 0.0) - beatOrigin - segment.StartBeat;
-                // Tiny per-index offset prevents identical beat positions mapping to the same X.
-                float frac = (float)Math.Clamp((relBeat + k * 1e-4) / measureBeats, 0.0, 1.0);
+                // Place at the duration midpoint so longer notes claim visual width
+                // (onset-only mapping left large trailing voids after halves/wholes).
+                double anchorBeat = relBeat + note.BeatDuration * 0.5;
+                float frac = (float)Math.Clamp((anchorBeat + k * 1e-4) / measureBeats, 0.0, 1.0);
 
                 var acc = k == 0
                     ? firstAcc
@@ -1906,7 +2170,7 @@ namespace musicmate.Drawables
                 if (relBeat < 1e-6)
                 {
                     float onBarMin = measureLeft + BarLeftPadding + MeasureStartExtraPad + BarStemClearance
-                                     + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural);
+                                     + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, note.Duration);
                     idealX = Math.Max(idealX, onBarMin);
 
                     if (isFirstMeasureOnStaff && k == 0)
@@ -1914,14 +2178,20 @@ namespace musicmate.Drawables
                         float headerEdge = _planUseFullHeader
                             ? _headerMetrics.TimeSigRightRel
                             : _planStaffLeftMargin;
-                        float headerMin = headerEdge + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural);
+                        float headerMin = headerEdge + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, note.Duration);
                         idealX = Math.Max(idealX, headerMin);
                     }
                 }
 
                 if (prevRight > float.NegativeInfinity)
                 {
-                    float minCenter = MinCenterAfterPrevRight(prevRight, note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural);
+                    float gap = acc.HasAccidental || note.IsRest
+                        ? Math.Max(_planInkGap, note.IsRest ? MinInkGap : AccidentalPairInkGap)
+                        : _planInkGap;
+                    if (acc.HasAccidental)
+                        gap = Math.Max(gap, AccidentalPairInkGap);
+                    float minCenter = MinCenterAfterPrevRight(
+                        prevRight, note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, gap, note.Duration);
                     idealX = Math.Max(idealX, minCenter);
                 }
 
@@ -1932,7 +2202,8 @@ namespace musicmate.Drawables
                     HasAccidental = acc.HasAccidental,
                     AccidentalIsFlat = acc.IsFlat,
                     AccidentalIsNatural = acc.IsNatural,
-                    IsRest = note.IsRest
+                    IsRest = note.IsRest,
+                    Duration = note.Duration
                 };
                 SyncAccidentalX(noteLayouts, i);
                 prevRight = NoteTrailingRight(note, noteLayouts[i].X);
@@ -1984,17 +2255,16 @@ namespace musicmate.Drawables
             {
                 _planInkGap = _session.ChildLevel <= 30 ? BeginnerInkGap : MinInkGap;
                 var minWidths = new float[segments.Count];
-                float equalShare = availableWidth / Math.Max(1, segments.Count);
                 for (int m = 0; m < segments.Count; m++)
                 {
                     double segBeats = segments[m].EndBeat - segments[m].StartBeat;
                     if (segBeats < 1e-9)
                         segBeats = 1;
+                    // Beat-lane floor only — never force equalShare into minWidths
+                    // (that made sum(min) always ≥ available and invited crush-to-fit).
                     float beatLaneMin = (float)segBeats * (_layout.NoteHeadR * 2.2f + _planInkGap * 0.45f)
                                         + BarLeftPadding * 2f;
-                    minWidths[m] = Math.Max(
-                        equalShare,
-                        Math.Max(beatLaneMin, ComputeMeasureMinWidth(notes, segments[m], beatOrigin)));
+                    minWidths[m] = Math.Max(beatLaneMin, ComputeMeasureMinWidth(notes, segments[m], beatOrigin));
                 }
 
                 measureWidths = AllocateMeasureWidths(segments, minWidths, availableWidth);
@@ -2011,7 +2281,11 @@ namespace musicmate.Drawables
                     sumMin += minWidths[m];
                 if (sumMin > availableWidth && sumMin > 0f)
                 {
-                    _planInkGap = MinInkGap * (availableWidth / sumMin);
+                    // Shrink gaps only down to HorizontalCompressFloor — never to near-zero,
+                    // which packed beams into collisions before whole-staff scale ran.
+                    _planInkGap = Math.Max(
+                        MinInkGap * HorizontalCompressFloor,
+                        MinInkGap * (availableWidth / sumMin));
                     for (int m = 0; m < segments.Count; m++)
                         minWidths[m] = ComputeMeasureMinWidth(notes, segments[m], beatOrigin);
                 }
@@ -2368,7 +2642,7 @@ namespace musicmate.Drawables
             {
                 if (safeContentSpan > 0f)
                     horizontalScale = Math.Min(horizontalScale, safeContentSpan / maxContentWidth);
-                horizontalScale = Math.Clamp(horizontalScale, 0.50f, 1f);
+                horizontalScale = Math.Clamp(horizontalScale, HorizontalCompressFloor, 1f);
                 StaffLog($"[Staff] Compression needed: contentWidth={maxContentWidth:F0}, " +
                       $"upperUsable={upperUsableWidth:F0}, lowerUsable={lowerUsableWidth:F0}, scale={horizontalScale:F3}");
 
@@ -2624,6 +2898,8 @@ namespace musicmate.Drawables
             float scale = contentSpan > usableWidth && contentSpan > 0f
                 ? usableWidth / contentSpan
                 : 1f;
+            // Prefer slight horizontal overflow over crushing beamed groups into overlaps.
+            scale = Math.Clamp(scale, HorizontalCompressFloor, 1f);
             MapStaffLayoutToScreen(noteLayouts, barLayouts, safeLeft, staffLeftMargin, scale);
         }
 
@@ -2635,11 +2911,11 @@ namespace musicmate.Drawables
             {
                 float relativeX = noteLayouts[i].X - staffLeftMargin;
                 noteLayouts[i].X = safeLeft + staffLeftMargin + (relativeX * scale);
+                // Recompute from the new center — never leave a stale AccidentalX after scale.
                 if (noteLayouts[i].HasAccidental)
-                {
-                    float relAcc = noteLayouts[i].AccidentalX - staffLeftMargin;
-                    noteLayouts[i].AccidentalX = safeLeft + staffLeftMargin + (relAcc * scale);
-                }
+                    SyncAccidentalX(noteLayouts, i);
+                else
+                    noteLayouts[i].AccidentalX = noteLayouts[i].X;
             }
 
             for (int i = 0; i < barLayouts.Length; i++)
@@ -2681,7 +2957,7 @@ namespace musicmate.Drawables
             float lastNoteRight = float.NegativeInfinity;
             for (int i = 0; i < noteLayouts.Length; i++)
             {
-                float right = NoteTrailingRight(noteLayouts[i].IsRest, noteLayouts[i].X);
+                float right = NoteTrailingRight(noteLayouts[i].IsRest, noteLayouts[i].X, noteLayouts[i].Duration);
                 if (right > lastNoteRight)
                     lastNoteRight = right;
             }
@@ -2776,7 +3052,7 @@ namespace musicmate.Drawables
             float lastNoteRight = float.NegativeInfinity;
             for (int i = 0; i < noteLayouts.Length; i++)
             {
-                float right = NoteTrailingRight(noteLayouts[i].IsRest, noteLayouts[i].X);
+                float right = NoteTrailingRight(noteLayouts[i].IsRest, noteLayouts[i].X, noteLayouts[i].Duration);
                 if (right > lastNoteRight)
                     lastNoteRight = right;
             }
@@ -2837,11 +3113,14 @@ namespace musicmate.Drawables
 
             if (span > avail)
             {
-                float s = avail / span;
+                float s = Math.Clamp(avail / span, HorizontalCompressFloor, 1f);
                 for (int i = 0; i < noteLayouts.Length; i++)
                 {
                     noteLayouts[i].X = floorCenter + (noteLayouts[i].X - minX) * s;
-                    noteLayouts[i].AccidentalX = floorCenter + (noteLayouts[i].AccidentalX - minX) * s;
+                    if (noteLayouts[i].HasAccidental)
+                        SyncAccidentalX(noteLayouts, i);
+                    else
+                        noteLayouts[i].AccidentalX = noteLayouts[i].X;
                 }
 
                 for (int i = 0; i < barLayouts.Length; i++)
@@ -2861,7 +3140,10 @@ namespace musicmate.Drawables
                 for (int i = 0; i < noteLayouts.Length; i++)
                 {
                     noteLayouts[i].X += shift;
-                    noteLayouts[i].AccidentalX += shift;
+                    if (noteLayouts[i].HasAccidental)
+                        SyncAccidentalX(noteLayouts, i);
+                    else
+                        noteLayouts[i].AccidentalX = noteLayouts[i].X;
                 }
 
                 for (int i = 0; i < barLayouts.Length; i++)
@@ -2902,7 +3184,10 @@ namespace musicmate.Drawables
             for (int i = 0; i < noteLayouts.Length; i++)
             {
                 noteLayouts[i].X = anchor + (noteLayouts[i].X - anchor) * stretch;
-                noteLayouts[i].AccidentalX = anchor + (noteLayouts[i].AccidentalX - anchor) * stretch;
+                if (noteLayouts[i].HasAccidental)
+                    SyncAccidentalX(noteLayouts, i);
+                else
+                    noteLayouts[i].AccidentalX = noteLayouts[i].X;
             }
 
             for (int i = 0; i < barLayouts.Length; i++)
@@ -2923,7 +3208,10 @@ namespace musicmate.Drawables
             for (int i = 0; i < noteLayouts.Length; i++)
             {
                 noteLayouts[i].X += delta;
-                noteLayouts[i].AccidentalX += delta;
+                if (noteLayouts[i].HasAccidental)
+                    SyncAccidentalX(noteLayouts, i);
+                else
+                    noteLayouts[i].AccidentalX = noteLayouts[i].X;
             }
 
             for (int i = 0; i < barLayouts.Length; i++)
@@ -2954,7 +3242,7 @@ namespace musicmate.Drawables
             float maxRight = float.NegativeInfinity;
             for (int i = 0; i < noteLayouts.Length; i++)
             {
-                float right = NoteTrailingRight(noteLayouts[i].IsRest, noteLayouts[i].X);
+                float right = NoteTrailingRight(noteLayouts[i].IsRest, noteLayouts[i].X, noteLayouts[i].Duration);
                 if (right > maxRight)
                     maxRight = right;
             }
@@ -3172,26 +3460,20 @@ namespace musicmate.Drawables
                 }
 
                 var sorted = SortIndicesByBeat(noteList, segments[m].NoteIndices, beatOrigin);
-                if (m == 0)
-                {
-                    EnforceMeasureNoteGaps(noteList, noteLayouts, sorted);
-                    ClampMeasureTrailingBeforeBar(noteList, noteLayouts, sorted,
-                        measureRight - BarLeftPadding, float.NegativeInfinity, beatOrigin, segments[m].EndBeat);
-                }
-                else
-                {
-                    var firstNote = noteList[sorted[0]];
-                    var firstAccHistory = new Dictionary<(char, int), Accidental>();
-                    var firstBarCancelled = new HashSet<(char, int)>();
-                    var firstAcc = ResolveLayoutAccidental(firstNote, firstAccHistory, firstBarCancelled);
-                    float firstReach = NoteCenterLeftReach(firstNote.IsRest, firstAcc.HasAccidental, firstAcc.IsFlat, firstAcc.IsNatural);
-                    float packInnerLeft = minGroupLeft - firstReach;
 
-                    LayoutNotesSequentialInMeasure(noteList, noteLayouts, sorted, packInnerLeft, measureRight, false,
-                        beatOrigin, segments[m].EndBeat);
-                    ClampMeasureTrailingBeforeBar(noteList, noteLayouts, sorted,
-                        measureRight - BarLeftPadding, minGroupLeft, beatOrigin, segments[m].EndBeat);
-                }
+                // Keep beat-proportional placement for every measure. Sequential MinInkGap
+                // repacking of m>0 destroyed within-bar rhythm spacing (clusters + voids).
+                ShiftMeasureIndicesToMinGroupLeft(noteLayouts, sorted, minGroupLeft);
+                EnforceMeasureNoteGaps(noteList, noteLayouts, sorted);
+                RedistributeMeasureLeftoverSpace(
+                    noteList, noteLayouts, sorted,
+                    minGroupLeft > float.NegativeInfinity ? minGroupLeft : NoteGroupLeftFromLayout(noteLayouts[sorted[0]]),
+                    measureRight - BarLeftPadding,
+                    beatOrigin);
+                ClampMeasureTrailingBeforeBar(noteList, noteLayouts, sorted,
+                    measureRight - BarLeftPadding,
+                    minGroupLeft > float.NegativeInfinity ? minGroupLeft : float.NegativeInfinity,
+                    beatOrigin, segments[m].EndBeat);
 
                 int lastIdx = sorted[^1];
                 prevMeasureTrailing = NoteTrailingRight(notes[lastIdx], noteLayouts[lastIdx].X);
@@ -3425,7 +3707,7 @@ namespace musicmate.Drawables
             float contentEndX = safeLeft + staffLeftMargin;
             for (int i = 0; i < noteLayouts.Length; i++)
             {
-                float noteRight = NoteTrailingRight(noteLayouts[i].IsRest, noteLayouts[i].X);
+                float noteRight = NoteTrailingRight(noteLayouts[i].IsRest, noteLayouts[i].X, noteLayouts[i].Duration);
                 if (noteRight > contentEndX)
                     contentEndX = noteRight;
             }
@@ -4614,7 +4896,7 @@ namespace musicmate.Drawables
             if (!TryResolveBodyAccidental(note, history, barCancelled, out var eff, out bool draw))
                 return;
 
-            if (history != null && draw && eff != Accidental.None)
+            if (history != null && eff != Accidental.None)
                 history[(note.Letter, note.Octave)] = eff;
 
             if (!draw || eff == Accidental.None)
@@ -4742,13 +5024,13 @@ namespace musicmate.Drawables
                 return true;
 
             // ♮ when cancelling a key-signature alteration, or a prior chromatic in this bar.
+            // Same ♮ already active for this letter+octave — carry (do not redraw).
             if (eff == Accidental.Natural)
             {
-                if (sigAcc != null)
-                    draw = true;
-                else if (history != null && history.TryGetValue(pitchKey, out var prior)
-                         && IsChromaticAccidental(prior))
-                    draw = true;
+                Accidental? priorNatural = null;
+                if (history != null && history.TryGetValue(pitchKey, out var priorNat))
+                    priorNatural = priorNat;
+                draw = MeasureAccidentalRules.ShouldDrawNatural(sigAcc, priorNatural);
                 return true;
             }
 
@@ -4831,7 +5113,9 @@ namespace musicmate.Drawables
                 return default;
 
             bool hasAcc = draw && eff != Accidental.None;
-            if (hasAcc)
+            // Always record the effective accidental for the rest of the measure,
+            // including carries where the glyph is omitted.
+            if (eff != Accidental.None)
                 history[(note.Letter, note.Octave)] = eff;
 
             return new LayoutAccidentalInfo
@@ -5127,15 +5411,16 @@ namespace musicmate.Drawables
                     Utilities.DebugTestLog.Write(
                         $"[MeasureLayoutTest] FAIL: measure {m + 1} appears on both staves");
                 }
-                else if (!onUpper && !onLower)
-                {
-                    singleStaffOk = false;
-                    Utilities.DebugTestLog.Write(
-                        $"[MeasureLayoutTest] FAIL: measure {m + 1} missing from both staves");
-                }
+            }
+            if (split.UpperMeasureCount + split.LowerMeasureCount < 1)
+            {
+                singleStaffOk = false;
+                Utilities.DebugTestLog.Write("[MeasureLayoutTest] FAIL: no measures placed");
             }
             if (singleStaffOk)
-                Utilities.DebugTestLog.Write("[MeasureLayoutTest] OK | no measure split across staves");
+                Utilities.DebugTestLog.Write(
+                    $"[MeasureLayoutTest] OK | packed upper={split.UpperMeasureCount} " +
+                    $"lower={split.LowerMeasureCount} unplaced={split.UnplacedMeasureCount}");
 
             var upperBarBeats = new List<double>();
             double upperOrigin = split.UpperNotes.Count > 0

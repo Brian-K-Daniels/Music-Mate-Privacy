@@ -404,6 +404,7 @@ namespace musicmate.Services
                     }
 
                     int replacement = PickPitch(rng, pool, prev, isPhraseEnding: false);
+                    replacement = ResolveSlotAccidental(rng, replacement, pool, prev);
                     measure.ReplaceGeneratedNote(
                         i,
                         BuildNote(
@@ -465,7 +466,9 @@ namespace musicmate.Services
                             isPhraseEnding))
                         continue;
 
-                    var dur = PickFittingDuration(rng, durationWeights, measure.BeatsRemaining, SmallestDuration);
+                    if (!TryPickFittingDuration(
+                            rng, durationWeights, measure.BeatsRemaining, SmallestDuration, out var dur))
+                        break;
                     bool isRest = ShouldSlotBeRest(rng);
                     bool isLastNoteOfMeasure = measure.BeatsRemaining - dur.ToBeatValue() < 1e-9;
                     AddRhythmSlot(rng, measure, ref localCursor, globalBeatCursor, absoluteMi,
@@ -595,6 +598,7 @@ namespace musicmate.Services
                     if (!canReuse)
                     {
                         pitch = PickPitch(rng, pool, prevPitch, isLastPhrasePitch);
+                        pitch = ResolveSlotAccidental(rng, pitch, pool, prevPitch);
                     }
                     else if (pitchedMidis.Count == 0)
                     {
@@ -603,6 +607,7 @@ namespace musicmate.Services
                     else if (isLastPhrasePitch)
                     {
                         pitch = PickPitch(rng, pool, prevPitch, isPhraseEnding: true);
+                        pitch = ResolveSlotAccidental(rng, pitch, pool, prevPitch);
                     }
                     else
                     {
@@ -710,8 +715,9 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// Independent per-slot accidental roll for remapped motif phrases.
-        /// Free <see cref="PickPitch"/> already uses pool weighting; only call this on contour reuse.
+        /// Per-slot accidental roll for random mode. At 0%, pitches stay diatonic to the
+        /// scale/key. At 100%, every eligible pitched slot receives a chromatic alteration
+        /// when a pool candidate exists. Free Random and motif reuse share this path.
         /// </summary>
         private int ResolveSlotAccidental(Random rng, int midi, List<int> pool, int prevMidi)
         {
@@ -891,7 +897,8 @@ namespace musicmate.Services
 
             while (beatsRemaining > 1e-9)
             {
-                var dur = PickFittingDuration(rng, durationWeights, beatsRemaining, SmallestDuration);
+                if (!TryPickFittingDuration(rng, durationWeights, beatsRemaining, SmallestDuration, out var dur))
+                    break;
                 slots.Add(new RhythmSlot(dur, ShouldSlotBeRest(rng)));
                 beatsRemaining -= dur.ToBeatValue();
             }
@@ -911,12 +918,19 @@ namespace musicmate.Services
             Dictionary<NoteDuration, int> durationWeights)
         {
             double measureBeats = TimeSignature.TotalBeats;
-            double sum = measure.Sum(s => s.Duration.ToBeatValue());
-            double remaining = measureBeats - sum;
 
+            // Trim overflow first (e.g. motif edits that lengthened a slot past the bar).
+            while (measure.Count > 0
+                   && measure.Sum(s => s.Duration.ToBeatValue()) > measureBeats + 1e-9)
+            {
+                measure.RemoveAt(measure.Count - 1);
+            }
+
+            double remaining = measureBeats - measure.Sum(s => s.Duration.ToBeatValue());
             while (remaining > 1e-9)
             {
-                var dur = PickFittingDuration(rng, durationWeights, remaining, SmallestDuration);
+                if (!TryPickFittingDuration(rng, durationWeights, remaining, SmallestDuration, out var dur))
+                    break;
                 measure.Add(new RhythmSlot(dur, true));
                 remaining -= dur.ToBeatValue();
             }
@@ -933,7 +947,8 @@ namespace musicmate.Services
             double remaining = TimeSignature.TotalBeats - localCursor;
             while (remaining > 1e-9)
             {
-                var dur = PickFittingDuration(rng, durationWeights, remaining, SmallestDuration);
+                if (!TryPickFittingDuration(rng, durationWeights, remaining, SmallestDuration, out var dur))
+                    break;
                 measure.AddNote(GeneratedNote.Rest(dur, absoluteMi, globalBeatBase + localCursor));
                 localCursor += dur.ToBeatValue();
                 remaining -= dur.ToBeatValue();
@@ -1178,15 +1193,21 @@ namespace musicmate.Services
 
         /// <summary>
         /// Picks a duration that both the weights table selects AND that fits within
-        /// <paramref name="beatsRemaining"/>.  Falls back to the shortest fitting
-        /// duration when the weighted pick doesn't fit.
+        /// <paramref name="beatsRemaining"/>. Falls back to the largest defined duration
+        /// that still fits. Returns false when nothing fits (never invents an overflowing value).
         /// </summary>
-        private static NoteDuration PickFittingDuration(
+        private static bool TryPickFittingDuration(
             Random rng,
             Dictionary<NoteDuration, int> weights,
             double beatsRemaining,
-            NoteDuration smallestAllowed = NoteDuration.Quarter)
+            NoteDuration smallestAllowed,
+            out NoteDuration duration)
         {
+            duration = NoteDuration.Quarter;
+            _ = smallestAllowed; // remainder fill may use shorter values than the variety floor
+            if (beatsRemaining <= 1e-9)
+                return false;
+
             // Filter to durations that fit.
             var fitting = weights
                 .Where(kv => kv.Key.ToBeatValue() <= beatsRemaining + 1e-9)
@@ -1194,14 +1215,24 @@ namespace musicmate.Services
 
             if (fitting.Count == 0)
             {
-                // No weight-table duration fits the remaining space.
-                // Search ALL defined durations (smallest to largest) and return
-                // the largest one that still fits, guaranteeing no measure overflow.
-                var allDurations = new[] { NoteDuration.Whole, NoteDuration.Half, NoteDuration.Quarter, NoteDuration.Eighth, NoteDuration.Sixteenth };
-                return allDurations
-                    .Where(d => d.ToBeatValue() <= beatsRemaining + 1e-9)
-                    .OrderByDescending(d => d.ToBeatValue())
-                    .FirstOrDefault(NoteDuration.Sixteenth);
+                // No weight-table duration fits. Prefer the largest legal duration that fits,
+                // including sixteenths so tiny remainders can still be filled when the
+                // weight table is too coarse. Never return a duration larger than remaining.
+                var allDurations = new[]
+                {
+                    NoteDuration.Whole, NoteDuration.Half, NoteDuration.Quarter,
+                    NoteDuration.Eighth, NoteDuration.Sixteenth
+                };
+                foreach (var candidate in allDurations.OrderByDescending(d => d.ToBeatValue()))
+                {
+                    if (candidate.ToBeatValue() <= beatsRemaining + 1e-9)
+                    {
+                        duration = candidate;
+                        return true;
+                    }
+                }
+
+                return false;
             }
 
             int total = fitting.Sum(kv => kv.Value);
@@ -1210,9 +1241,15 @@ namespace musicmate.Services
             foreach (var (dur, w) in fitting)
             {
                 acc += w;
-                if (pick < acc) return dur;
+                if (pick < acc)
+                {
+                    duration = dur;
+                    return true;
+                }
             }
-            return fitting[^1].Key;
+
+            duration = fitting[^1].Key;
+            return true;
         }
 
         /// <summary>
@@ -1246,7 +1283,10 @@ namespace musicmate.Services
                 if (scaleQueue != null && scaleQueue.Count > 0)
                     pitch = scaleQueue.Dequeue();
                 else
+                {
                     pitch = PickPitch(rng, pool, prevPitch, isPhraseEnding);
+                    pitch = ResolveSlotAccidental(rng, pitch, pool, prevPitch);
+                }
 
                 note = BuildNote(pitch, dur, absoluteMi,
                     globalBeatBase + localCursor, globalNoteIndex, prevPitch);
@@ -1553,14 +1593,8 @@ namespace musicmate.Services
             spelledName = finalSpelledName;
 
             int writtenMidi = midi;
-            if (accidental == Accidental.None)
-            {
-                int naturalMidi = NoteSessionService.NoteNameToMidi($"{letter}{octave}");
-                int keySigMidi = NoteSessionService.ApplyKeySignatureToMidi(
-                    spelledName, naturalMidi, Key, Scale);
-                if (keySigMidi == naturalMidi && midi != naturalMidi)
-                    writtenMidi = naturalMidi;
-            }
+            // Sounding pitch is always the chosen MIDI. Spelling/accidental describe how
+            // that pitch is written against the key — do not rewrite MIDI to the natural.
 
             return new GeneratedNote
             {

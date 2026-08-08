@@ -1086,12 +1086,14 @@ namespace musicmate.Pages
             }
 
             var result = new List<GeneratedNote>();
-            double beatCursor = 0.0;
+            double measureBeats = tune.TimeSignature.TotalBeats;
             int measureIndex = 0;
 
             foreach (var measure in tune.Measures)
             {
-                double measureBeat = beatCursor;
+                // Snap each notated bar to the meter grid so under/over-full legacy
+                // measures cannot shift subsequent bar lines.
+                double beatCursor = measureIndex * measureBeats;
                 foreach (var mn in measure.Notes)
                 {
                     GeneratedNote gn;
@@ -1521,23 +1523,63 @@ namespace musicmate.Pages
                     else
                     {
                         var (upperMc, lowerMc) = GetStaffMeasureCounts();
-                        StandardStaffGenResult genResult;
-                        using (PracticeSessionStartProfiler.Scope("StaffDisplay.SequenceGen"))
-                            genResult = await Task.Run(() => BuildStandardStaffNoteLists(upperMc, lowerMc));
+                        float canvasWidth = StaffGraphicsView?.Width > 0 ? (float)StaffGraphicsView.Width : 360f;
+                        float canvasHeight = StaffGraphicsView?.Height > 0 ? (float)StaffGraphicsView.Height : 480f;
+                        int desiredMeasures = Math.Max(1, upperMc + lowerMc);
 
-                        upperFlat = genResult.UpperFlat;
-                        upperBarBeats = genResult.UpperBarBeats;
-                        lowerFlat = genResult.LowerFlat;
-                        lowerBarBeats = genResult.LowerBarBeats;
-                        _seqNextMeasureIndex = genResult.SeqNextMeasureIndex;
-                        _seqNextBeatOffset = genResult.SeqNextBeatOffset;
-                        _seqNextGlobalNoteIndex = genResult.SeqNextGlobalNoteIndex;
-                        _lowerMeasureIndex = genResult.LowerMeasureIndex;
-                        _lowerBeatOffset = genResult.LowerBeatOffset;
-                        _lowerGlobalNoteIndex = genResult.LowerGlobalNoteIndex;
+                        // Generate a continuous page, then pack whole measures by engraved
+                        // width onto upper/lower — never force a fixed 3+3/4+4 onto a narrow
+                        // staff by crushing ink.
+                        MusicSequenceGenerator pageGen;
+                        List<GeneratedNote> pageFlat;
+                        double measureBeats;
+                        List<double> pageBars;
+                        using (PracticeSessionStartProfiler.Scope("StaffDisplay.SequenceGen"))
+                        {
+                            (pageGen, pageFlat, measureBeats, pageBars) = await Task.Run(() =>
+                            {
+                                var gen = BuildSequenceGenerator(desiredMeasures);
+                                var measures = gen.GenerateSequence();
+                                var flat = MusicSequenceGenerator.Flatten(measures);
+                                double beats = gen.TimeSignature.TotalBeats;
+                                var bars = ComputeStaffBarBeats(flat, beats, new HashSet<double>());
+                                return (gen, flat, beats, bars);
+                            });
+                        }
+
+                        ReportMasteryOmissionFallback(pageGen);
+
+                        var split = _staffDrawable!.SplitMeasuresAcrossStaves(
+                            pageFlat, pageBars, canvasWidth, canvasHeight);
+                        upperFlat = split.UpperNotes;
+                        lowerFlat = split.LowerNotes;
+
+                        double lowerBeatShift = lowerFlat.Count > 0 ? (lowerFlat[0].BeatPosition ?? 0.0) : 0.0;
+                        lowerFlat = ShiftStaffBeatPositions(lowerFlat, lowerBeatShift);
+
+                        upperBarBeats = ComputeStaffBarBeats(upperFlat, measureBeats, existingUpper);
+                        lowerBarBeats = ComputeStaffBarBeats(lowerFlat, measureBeats, existingLower);
+
+                        int placedMeasures = split.UpperMeasureCount + split.LowerMeasureCount;
+                        double upperBeats = upperFlat.Sum(n => n.BeatDuration);
+                        double lowerBeats = lowerFlat.Sum(n => n.BeatDuration);
+                        int upperPitches = upperFlat.Count(n => !n.IsRest);
+                        int lowerPitches = lowerFlat.Count(n => !n.IsRest);
+
+                        _seqNextMeasureIndex = placedMeasures;
+                        _seqNextBeatOffset = upperBeats + lowerBeats;
+                        _seqNextGlobalNoteIndex = upperPitches + lowerPitches;
+                        _lowerMeasureIndex = _seqNextMeasureIndex;
+                        _lowerBeatOffset = _seqNextBeatOffset;
+                        _lowerGlobalNoteIndex = _seqNextGlobalNoteIndex;
 
 #if DEBUG
-                        DebugLog.WriteLine($"[Staff Standard] L{_session.ChildLevel} upperMc={upperMc} lowerMc={lowerMc} Upper: {upperFlat.Count} notes ({upperFlat.Count(n => !n.IsRest)} pitched), Lower: {lowerFlat.Count} notes ({lowerFlat.Count(n => !n.IsRest)} pitched)");
+                        DebugLog.WriteLine(
+                            $"[Staff Standard] L{_session.ChildLevel} desired={desiredMeasures} " +
+                            $"packed upper={split.UpperMeasureCount} lower={split.LowerMeasureCount} " +
+                            $"unplaced={split.UnplacedMeasureCount} " +
+                            $"Upper: {upperFlat.Count} notes ({upperPitches} pitched), " +
+                            $"Lower: {lowerFlat.Count} notes ({lowerPitches} pitched)");
 #endif
                     }
 
@@ -2441,6 +2483,8 @@ namespace musicmate.Pages
                 Preferences.Default.Set("SelectedTune", fallback.Title);
                 RefreshPracticeTunePickers();
                 UpdatePracticePlayItemLabel();
+                // Title bar binds StatusMessage — label refresh alone leaves the deleted name visible.
+                StatusService.Instance.StatusMessage = GetCurrentPlayItemName();
                 await RegenerateNotesAsync();
                 await DisplayAlertAsync("Deleted", $"\"{title}\" was removed.", "OK");
             }
@@ -2469,24 +2513,71 @@ namespace musicmate.Pages
 
         private List<GeneratedNote> CollectDisplayedGeneratedNotes()
         {
-            var notes = new List<GeneratedNote>();
-            if (_staffDrawable != null)
-            {
-                if (_staffDrawable.UpperNotes != null)
-                    notes.AddRange(_staffDrawable.UpperNotes);
-                if (_staffDrawable.LowerNotes != null)
-                    notes.AddRange(_staffDrawable.LowerNotes);
-            }
+            if (_staffDrawable == null)
+                return new List<GeneratedNote>();
 
-            if (notes.Count == 0 && _session.NotesToDraw != null)
-            {
-                // NotesToDraw lacks full GeneratedNote rhythm metadata; avoid empty save when possible.
-            }
-
-            return notes
+            var upper = (_staffDrawable.UpperNotes ?? new List<GeneratedNote>())
                 .OrderBy(n => n.BeatPosition ?? 0.0)
                 .ThenBy(n => n.MeasureIndex ?? 0)
                 .ToList();
+            var lower = (_staffDrawable.LowerNotes ?? new List<GeneratedNote>())
+                .OrderBy(n => n.BeatPosition ?? 0.0)
+                .ThenBy(n => n.MeasureIndex ?? 0)
+                .ToList();
+
+            if (upper.Count == 0 && lower.Count == 0)
+                return new List<GeneratedNote>();
+
+            // Each staff row is laid out from beat 0 with its own MeasureIndex space.
+            // Saving must concatenate them into one chronological tune; otherwise
+            // overlapping indexes merge two bars into one over-full measure.
+            var result = new List<GeneratedNote>(upper.Count + lower.Count);
+            result.AddRange(upper);
+
+            if (lower.Count == 0)
+                return result;
+
+            double measureBeats = TimeSignature.FromDisplayString(_session.GetDisplayTimeSignature()).TotalBeats;
+            double upperEndBeat = 0.0;
+            int upperMeasureCount = 0;
+            foreach (var n in upper)
+            {
+                double end = (n.BeatPosition ?? 0.0) + n.BeatDuration;
+                if (end > upperEndBeat)
+                    upperEndBeat = end;
+                int mi = (n.MeasureIndex ?? 0) + 1;
+                if (mi > upperMeasureCount)
+                    upperMeasureCount = mi;
+            }
+
+            if (measureBeats > 1e-9)
+            {
+                int upperBars = Math.Max(
+                    upperMeasureCount,
+                    (int)Math.Ceiling(upperEndBeat / measureBeats - 1e-9));
+                upperEndBeat = Math.Max(upperEndBeat, upperBars * measureBeats);
+                upperMeasureCount = Math.Max(upperMeasureCount, upperBars);
+            }
+
+            foreach (var n in lower)
+            {
+                result.Add(new GeneratedNote
+                {
+                    MidiNumber = n.MidiNumber,
+                    Letter = n.Letter,
+                    Octave = n.Octave,
+                    Accidental = n.Accidental,
+                    SpelledName = n.SpelledName,
+                    TargetFrequency = n.TargetFrequency,
+                    Duration = n.Duration,
+                    IsRest = n.IsRest,
+                    MeasureIndex = (n.MeasureIndex ?? 0) + upperMeasureCount,
+                    BeatPosition = (n.BeatPosition ?? 0.0) + upperEndBeat,
+                    IsPlayedCorrectly = n.IsPlayedCorrectly,
+                });
+            }
+
+            return result;
         }
 
         private void RefreshPracticeTunePickers()

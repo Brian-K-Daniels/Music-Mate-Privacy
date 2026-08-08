@@ -97,7 +97,7 @@ namespace musicmate.Services
             if (IsBuiltInTuneTitle(tune.Title))
                 throw new InvalidOperationException("Cannot overwrite a built-in tune.");
 
-            var dto = FromPracticeTune(tune);
+            var dto = FromPracticeTune(NormalizeMeasureDurations(tune));
             lock (_gate)
             {
                 var list = LoadUnlocked();
@@ -170,7 +170,51 @@ namespace musicmate.Services
                         : new MusicNote(note.MidiNumber, note.SpelledName, note.Duration));
                 }
             }
-            return clone;
+            return NormalizeMeasureDurations(clone);
+        }
+
+        /// <summary>
+        /// Re-packs every measure so none exceeds <see cref="TimeSignature.TotalBeats"/>.
+        /// Used on save and load so older over-full Saved Tunes display correctly.
+        /// </summary>
+        public static PracticeTune NormalizeMeasureDurations(PracticeTune source)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            if (source.Measures.Count == 0)
+                return source;
+
+            double measureBeats = source.TimeSignature.TotalBeats;
+            var flat = new List<GeneratedNote>();
+            for (int mi = 0; mi < source.Measures.Count; mi++)
+            {
+                double local = 0.0;
+                foreach (var note in source.Measures[mi].Notes)
+                {
+                    double bp = mi * measureBeats + local;
+                    if (note.IsRest)
+                    {
+                        flat.Add(GeneratedNote.Rest(note.Duration, mi, bp));
+                    }
+                    else
+                    {
+                        flat.Add(new GeneratedNote
+                        {
+                            MidiNumber = note.MidiNumber,
+                            SpelledName = note.SpelledName,
+                            Duration = note.Duration,
+                            IsRest = false,
+                            MeasureIndex = mi,
+                            BeatPosition = bp,
+                        });
+                    }
+                    local += note.Duration.ToBeatValue();
+                }
+            }
+
+            if (flat.Count == 0)
+                return source;
+
+            return FromGeneratedNotes(source.Title, flat, source.TimeSignature, source.Key);
         }
 
         /// <summary>Builds a <see cref="PracticeTune"/> from staff/session generated notes.</summary>
@@ -184,47 +228,56 @@ namespace musicmate.Services
             if (notes.Count == 0)
                 throw new ArgumentException("Cannot save an empty tune.", nameof(notes));
 
+            // Prefer measure-index order, then beat position, so a single chronological
+            // staff sequence packs stably. Never leave a measure over the meter capacity:
+            // dual-staff capture used to GroupBy overlapping MeasureIndex values and
+            // produce 8-beat "bars" that later displayed as 3½ / 4½ visually.
             var ordered = notes
-                .OrderBy(n => n.BeatPosition ?? 0.0)
-                .ThenBy(n => n.MeasureIndex ?? 0)
+                .OrderBy(n => n.MeasureIndex ?? int.MaxValue)
+                .ThenBy(n => n.BeatPosition ?? 0.0)
                 .ToList();
 
             var tune = new PracticeTune(title, timeSignature, key);
-            bool hasMeasureIndex = ordered.Any(n => n.MeasureIndex.HasValue);
-
-            if (hasMeasureIndex)
-            {
-                foreach (var group in ordered.GroupBy(n => n.MeasureIndex ?? 0).OrderBy(g => g.Key))
-                {
-                    var measure = tune.AppendMeasure();
-                    foreach (var gn in group)
-                        measure.AddNote(ToMusicNote(gn));
-                }
-            }
-            else
-            {
-                double beatsPerMeasure = timeSignature.TotalBeats;
-                double cursor = 0.0;
-                Measure? measure = null;
-                double measureBeats = 0.0;
-
-                foreach (var gn in ordered)
-                {
-                    double dur = gn.Duration.ToBeatValue();
-                    if (measure == null || measureBeats + dur > beatsPerMeasure + 1e-9)
-                    {
-                        measure = tune.AppendMeasure();
-                        measureBeats = 0.0;
-                    }
-
-                    measure.AddNote(ToMusicNote(gn));
-                    measureBeats += dur;
-                    cursor += dur;
-                    _ = cursor;
-                }
-            }
-
+            PackNotesIntoMeteredMeasures(tune, ordered, timeSignature.TotalBeats);
             return tune;
+        }
+
+        /// <summary>
+        /// Appends notes into measures that never exceed <paramref name="beatsPerMeasure"/>.
+        /// When a MeasureIndex group (or flat stream) would overflow, starts a new measure.
+        /// </summary>
+        private static void PackNotesIntoMeteredMeasures(
+            PracticeTune tune,
+            IReadOnlyList<GeneratedNote> ordered,
+            double beatsPerMeasure)
+        {
+            Measure? measure = null;
+            double measureBeats = 0.0;
+            int? currentMeasureIndex = null;
+
+            foreach (var gn in ordered)
+            {
+                double dur = gn.Duration.ToBeatValue();
+                int? mi = gn.MeasureIndex;
+
+                bool newIndexGroup = mi.HasValue
+                    && currentMeasureIndex.HasValue
+                    && mi.Value != currentMeasureIndex.Value;
+                bool wouldOverflow = measure != null
+                    && measureBeats + dur > beatsPerMeasure + 1e-9;
+
+                if (measure == null || newIndexGroup || wouldOverflow)
+                {
+                    measure = tune.AppendMeasure();
+                    measureBeats = 0.0;
+                    currentMeasureIndex = mi;
+                }
+
+                measure.AddNote(ToMusicNote(gn));
+                measureBeats += dur;
+                if (!currentMeasureIndex.HasValue)
+                    currentMeasureIndex = mi;
+            }
         }
 
         private static MusicNote ToMusicNote(GeneratedNote gn)
@@ -304,7 +357,7 @@ namespace musicmate.Services
                         : new MusicNote(noteDto.MidiNumber, noteDto.SpelledName, duration));
                 }
             }
-            return tune;
+            return NormalizeMeasureDurations(tune);
         }
 
         private sealed class SavedTuneDto

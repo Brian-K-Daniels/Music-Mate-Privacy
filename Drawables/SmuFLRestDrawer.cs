@@ -92,6 +92,13 @@ namespace musicmate.Drawables
             }
         }
 
+        /// <summary>
+        /// Horizontal ink width of a rest glyph at the given staff space and scale.
+        /// Must stay in sync with <see cref="GetLayout"/> so packing reserves what drawing paints.
+        /// </summary>
+        internal static float GetInkWidth(float sls, float restScale)
+            => sls * 4.4f * restScale;
+
         private static void GetLayout(
             NoteDuration duration,
             float centerX,
@@ -105,7 +112,7 @@ namespace musicmate.Drawables
             out float height,
             out float fontSize)
         {
-            width = sls * 4.4f;
+            width = GetInkWidth(sls, restScale: 1f);
             left = centerX - width * 0.5f;
 
             switch (duration)
