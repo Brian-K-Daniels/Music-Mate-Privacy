@@ -1980,6 +1980,21 @@ namespace musicmate.Services
         public ObservableCollection<FeedbackItem> FeedbackViewModels { get; } = new();
         public readonly List<NoteInfo> NotesToDraw = new();
         public int CurrentNoteIndex { get; private set; }
+
+        /// <summary>
+        /// Restores the practice cursor after a visual-only staff width repack.
+        /// Does not clear feedback, statistics, or correct-note history.
+        /// </summary>
+        internal void RestoreCurrentNoteIndexAfterStaffRepack(int index)
+        {
+            if (NotesToDraw.Count == 0)
+            {
+                CurrentNoteIndex = 0;
+                return;
+            }
+
+            CurrentNoteIndex = Math.Clamp(index, 0, NotesToDraw.Count);
+        }
         public readonly HashSet<int> CorrectNoteIndices = new();
         /// <summary>
         /// The practice tune currently loaded into <see cref="NotesToDraw"/>.

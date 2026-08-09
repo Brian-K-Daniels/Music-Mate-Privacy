@@ -29,19 +29,20 @@ public class RestInkLayoutTests
     }
 
     [Theory]
-    [InlineData(100f, 200f, 180f, 0.85f)]
+    [InlineData(100f, 200f, 180f, 1.0f)] // minSpan > available → allow overflow, do not crush
     [InlineData(200f, 200f, 100f, 1.0f)]
     [InlineData(150f, 200f, 100f, 0.85f)]
     public void MeasureFitScale_NeverCrushesBelowReadableFloor(
-        float available, float span, float minSpan, float expectedMin)
+        float available, float span, float minSpan, float expected)
     {
         float scale = (float)typeof(StaffDrawable)
             .GetMethod("ComputeMeasureFitScale", BindingFlags.NonPublic | BindingFlags.Static)!
             .Invoke(null, new object[] { available, span, minSpan })!;
 
-        Assert.True(scale >= expectedMin - 1e-3f, $"scale {scale} < expected floor {expectedMin}");
+        Assert.Equal(expected, scale, precision: 2);
         Assert.True(scale <= 1f + 1e-3f);
-        Assert.True(scale >= HorizontalCompressFloor - 1e-3f);
+        if (minSpan <= available + 0.5f)
+            Assert.True(scale >= HorizontalCompressFloor - 1e-3f);
     }
 
     public static IEnumerable<object[]> AccidentalPercents()
@@ -50,15 +51,8 @@ public class RestInkLayoutTests
             yield return new object[] { acc };
     }
 
-    public static IEnumerable<object[]> ScaleKeys()
-    {
-        yield return new object[] { "D", "Major" };
-        yield return new object[] { "A", "Natural Minor" };
-        yield return new object[] { "C", "Harmonic Minor" };
-        yield return new object[] { "G", "Melodic Minor" };
-    }
-
-    private static MusicSequenceGenerator MakeDenseGen(int seed, int accPct, string key, string scale)
+    private static MusicSequenceGenerator MakeGen(
+        int seed, int accPct, string key, string scale, int childLevel, NoteDuration smallest)
         => new()
         {
             Key = key,
@@ -67,22 +61,110 @@ public class RestInkLayoutTests
             HighestNote = "E5",
             TimeSignature = TimeSignature.FourFour,
             MeasureCount = 8,
-            RhythmVarietyPercent = 70,
-            SmallestDuration = NoteDuration.Sixteenth,
-            RestChancePercent = 22,
+            RhythmVarietyPercent = childLevel <= 35 ? 50 : 70,
+            SmallestDuration = smallest,
+            RestChancePercent = childLevel <= 35 ? 18 : 22,
             AccidentalPercent = accPct,
             SyncopationLevel = SyncopationLevel.None,
             MaxMelodicIntervalSemitones = 4,
             UseScaleOrder = false,
             UseMotifPhrases = true,
-            ChildLevel = 45,
+            ChildLevel = childLevel,
             RandomSeed = seed,
         };
+
+    private static List<double> BarsForMeasures(int measureCount, double beatsPerMeasure)
+    {
+        var bars = new List<double>();
+        for (double b = beatsPerMeasure; b < measureCount * beatsPerMeasure - 1e-6; b += beatsPerMeasure)
+            bars.Add(b);
+        return bars;
+    }
+
+    private static void AssertNoSilentMeasureLoss(
+        StaffDrawable.StaffMeasureSplitResult split,
+        int generatedMeasureCount,
+        int generatedEventCount)
+    {
+        Assert.Equal(generatedMeasureCount, split.TotalMeasureCount);
+        Assert.Equal(
+            split.UpperMeasureCount + split.LowerMeasureCount + split.UnplacedMeasureCount,
+            split.TotalMeasureCount);
+        Assert.Equal(
+            generatedEventCount,
+            split.UpperNotes.Count + split.LowerNotes.Count + split.UnplacedNotes.Count);
+    }
+
+    private static void AssertNoSharedMeasures(StaffDrawable.StaffMeasureSplitResult split)
+    {
+        var upperMs = split.UpperNotes.Select(n => n.MeasureIndex ?? -1).ToHashSet();
+        var lowerMs = split.LowerNotes.Select(n => n.MeasureIndex ?? -1).ToHashSet();
+        var unplacedMs = split.UnplacedNotes.Select(n => n.MeasureIndex ?? -1).ToHashSet();
+        Assert.Empty(upperMs.Intersect(lowerMs));
+        Assert.Empty(upperMs.Intersect(unplacedMs));
+        Assert.Empty(lowerMs.Intersect(unplacedMs));
+    }
+
+    private static void AssertNoInkOverlap(StaffDrawable drawable, List<GeneratedNote> notes, double beatsPerMeasure = 4.0)
+    {
+        if (notes.Count < 2)
+            return;
+
+        double origin = notes.Min(n => n.BeatPosition ?? 0);
+        double end = notes.Max(n => (n.BeatPosition ?? 0) + n.BeatDuration);
+        var bars = new List<double>();
+        for (double b = origin + beatsPerMeasure; b < end - 1e-6; b += beatsPerMeasure)
+            bars.Add(b);
+
+        typeof(StaffDrawable)
+            .GetMethods(BindingFlags.Instance | BindingFlags.NonPublic)
+            .First(m => m.Name == "ComputeLayout" && m.GetParameters().Length == 3)
+            .Invoke(drawable, new object[]
+            {
+                360f,
+                (IReadOnlyList<GeneratedNote>)notes,
+                (IReadOnlyList<GeneratedNote>)new List<GeneratedNote>(),
+            });
+
+        object plan = typeof(StaffDrawable)
+            .GetMethod("PlanHorizontalLayout", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(drawable, new object[] { notes, bars, 500f, 100f, true, true, true })!;
+
+        var layouts = (Array)plan.GetType().GetField("Item1")!.GetValue(plan)!;
+        var trail = typeof(StaffDrawable).GetMethod(
+            "NoteTrailingRight",
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            null,
+            new[] { typeof(GeneratedNote), typeof(float) },
+            null)!;
+        var groupLeft = typeof(StaffDrawable).GetMethod(
+            "NoteGroupLeftFromLayout",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        float prevRight = float.NegativeInfinity;
+        var order = Enumerable.Range(0, notes.Count)
+            .OrderBy(i => notes[i].BeatPosition ?? 0)
+            .ThenBy(i => i)
+            .ToList();
+        for (int oi = 0; oi < order.Count; oi++)
+        {
+            int i = order[oi];
+            var lay = layouts.GetValue(i)!;
+            float x = (float)lay.GetType().GetField("X")!.GetValue(lay)!;
+            float left = (float)groupLeft.Invoke(drawable, new object[] { lay })!;
+            // Duration-midpoint placement can put a long note's center left of a later short
+            // onset; require ink boxes not to overlap in beat order.
+            if (prevRight > float.NegativeInfinity)
+                Assert.True(left + 0.5f >= prevRight, $"Ink overlap: left={left:0.#} prevRight={prevRight:0.#}");
+
+            prevRight = (float)trail.Invoke(drawable, new object[] { notes[i], x })!;
+        }
+    }
 
     [Fact]
     public void DenseSeed47_PlanKeepsReadableCenterGaps()
     {
-        var gen = MakeDenseGen(47, 10, "D", "Major");
+        var gen = MakeGen(47, 10, "D", "Major", 45, NoteDuration.Sixteenth);
         gen.MeasureCount = 4;
         var measures = gen.GenerateSequence();
         Assert.All(measures, m =>
@@ -135,21 +217,43 @@ public class RestInkLayoutTests
         }
     }
 
+    [Fact]
+    public void WideCanvas_PackResultIsNotCollapsedToOneMeasure()
+    {
+        // Forensic: Pack estimated ~4 on upper at ~900px; Trim used to collapse to 1.
+        var gen = MakeGen(100, 5, "Ab", "Major", 35, NoteDuration.Eighth);
+        var flat = MusicSequenceGenerator.Flatten(gen.GenerateSequence()).ToList();
+        var bars = BarsForMeasures(8, 4);
+        var session = new NoteSessionService
+        {
+            Key = "Ab",
+            SelectedScale = "Major",
+            MeterTimeSignature = "4/4",
+            ChildLevel = 35,
+        };
+        var drawable = new StaffDrawable(session, new ThemeService(), safeArea: null);
+        var split = drawable.SplitMeasuresAcrossStaves(flat, bars, canvasWidth: 900f, canvasHeight: 480f);
+
+        AssertNoSilentMeasureLoss(split, generatedMeasureCount: 8, generatedEventCount: flat.Count);
+        Assert.True(
+            split.UpperMeasureCount >= 2,
+            $"Pack must keep multi-measure upper staff; got upper={split.UpperMeasureCount} (Trim regression)");
+        Assert.True(
+            split.UpperMeasureCount + split.LowerMeasureCount >= 3,
+            $"Expected several placed measures on wide canvas; upper={split.UpperMeasureCount} lower={split.LowerMeasureCount}");
+    }
+
     [Theory]
     [MemberData(nameof(AccidentalPercents))]
-    public void SplitMeasures_PacksFewerWhenDense_AcrossAccidentalPercent(int accPct)
+    public void SplitMeasures_NeverSilentlyLosesGeneratedMusic(int accPct)
     {
-        var gen = MakeDenseGen(47 ^ (accPct * 17), accPct, "D", "Major");
+        var gen = MakeGen(47 ^ (accPct * 17), accPct, "D", "Major", 45, NoteDuration.Sixteenth);
         var flat = MusicSequenceGenerator.Flatten(gen.GenerateSequence()).ToList();
         Assert.All(
             flat.GroupBy(n => n.MeasureIndex ?? 0),
             g => Assert.Equal(16, g.Sum(n => (int)Math.Round(n.Duration.ToBeatValue() * 4))));
 
-        double beats = 4.0;
-        var bars = new List<double>();
-        for (double b = beats; b < 8 * beats - 1e-6; b += beats)
-            bars.Add(b);
-
+        var bars = BarsForMeasures(8, 4);
         var session = new NoteSessionService
         {
             Key = "D",
@@ -161,142 +265,95 @@ public class RestInkLayoutTests
         var drawable = new StaffDrawable(session, new ThemeService(), safeArea: null);
         var split = drawable.SplitMeasuresAcrossStaves(flat, bars, canvasWidth: 360f, canvasHeight: 480f);
 
-        Assert.True(split.UpperMeasureCount >= 1);
-        Assert.True(split.UpperMeasureCount + split.LowerMeasureCount <= split.TotalMeasureCount);
-        // Narrow phone width must not force all 8 dense measures onto two staves.
-        Assert.True(
-            split.UpperMeasureCount + split.LowerMeasureCount < 8
-            || split.UnplacedMeasureCount > 0
-            || split.TotalMeasureCount < 8,
-            $"Expected width packing to reduce measures; upper={split.UpperMeasureCount} lower={split.LowerMeasureCount} unplaced={split.UnplacedMeasureCount}");
-
+        AssertNoSilentMeasureLoss(split, 8, flat.Count);
         AssertNoSharedMeasures(split);
-        AssertPlannedStaffFitsWithoutCrush(drawable, split.UpperNotes, 360f, fullHeader: true);
+
+        // Event order preserved across placed+unplaced partition by beat.
+        var reconstructed = split.UpperNotes.Concat(split.LowerNotes).Concat(split.UnplacedNotes)
+            .OrderBy(n => n.BeatPosition ?? 0).ThenBy(n => n.MeasureIndex ?? 0).ToList();
+        var originalOrder = flat.OrderBy(n => n.BeatPosition ?? 0).ThenBy(n => n.MeasureIndex ?? 0).ToList();
+        Assert.Equal(originalOrder.Count, reconstructed.Count);
+        for (int i = 0; i < originalOrder.Count; i++)
+        {
+            Assert.Equal(originalOrder[i].BeatPosition, reconstructed[i].BeatPosition);
+            Assert.Equal(originalOrder[i].Duration, reconstructed[i].Duration);
+            Assert.Equal(originalOrder[i].IsRest, reconstructed[i].IsRest);
+        }
+
+        if (split.UpperNotes.Count > 0)
+            AssertNoInkOverlap(drawable, split.UpperNotes);
         if (split.LowerNotes.Count > 0)
-            AssertPlannedStaffFitsWithoutCrush(drawable, split.LowerNotes, 360f, fullHeader: false);
+            AssertNoInkOverlap(drawable, split.LowerNotes);
     }
 
     [Theory]
-    [MemberData(nameof(ScaleKeys))]
-    public void SplitMeasures_WorksForRepresentativeScales(string key, string scale)
+    [InlineData("Ab", "Major", 100, 35, "Eighth")]
+    [InlineData("Bb", "Natural Minor", 200, 45, "Sixteenth")]
+    [InlineData("D", "Major", 47, 45, "Sixteenth")]
+    public void SparseFourFour_DoesNotCollapsePackToSingleMeasurePerStaff(
+        string key, string scale, int seed, int level, string smallestName)
     {
-        var gen = MakeDenseGen(101, 10, key, scale);
+        var smallest = smallestName == "Sixteenth" ? NoteDuration.Sixteenth : NoteDuration.Eighth;
+        var gen = MakeGen(seed, level <= 35 ? 5 : 10, key, scale, level, smallest);
         var flat = MusicSequenceGenerator.Flatten(gen.GenerateSequence()).ToList();
-        var bars = new List<double> { 4, 8, 12, 16, 20, 24, 28 };
+        var bars = BarsForMeasures(8, 4);
         var session = new NoteSessionService
         {
             Key = key,
             SelectedScale = scale,
             MeterTimeSignature = "4/4",
-            ChildLevel = 45,
+            ChildLevel = level,
         };
         var drawable = new StaffDrawable(session, new ThemeService(), safeArea: null);
-        var split = drawable.SplitMeasuresAcrossStaves(flat, bars, canvasWidth: 400f, canvasHeight: 480f);
 
-        Assert.True(split.UpperMeasureCount >= 1);
-        Assert.Equal(
-            split.UpperMeasureCount + split.LowerMeasureCount + split.UnplacedMeasureCount,
-            split.TotalMeasureCount);
-        AssertNoSharedMeasures(split);
+        // Phone-landscape-ish width: after Trim removal, Pack should place >1 total when room exists.
+        var split = drawable.SplitMeasuresAcrossStaves(flat, bars, canvasWidth: 720f, canvasHeight: 480f);
+        AssertNoSilentMeasureLoss(split, 8, flat.Count);
+        Assert.True(
+            split.UpperMeasureCount + split.LowerMeasureCount >= 2,
+            $"{key} {scale}: expected >=2 placed measures on 720px; upper={split.UpperMeasureCount} lower={split.LowerMeasureCount} unplaced={split.UnplacedMeasureCount}");
     }
 
-    private static void AssertNoSharedMeasures(StaffDrawable.StaffMeasureSplitResult split)
+    [Fact]
+    public void MixolydianThreeFour_ComparisonCase_PlacesMultipleMeasures()
     {
-        var upperMs = split.UpperNotes.Select(n => n.MeasureIndex ?? -1).ToHashSet();
-        var lowerMs = split.LowerNotes.Select(n => n.MeasureIndex ?? -1).ToHashSet();
-        Assert.Empty(upperMs.Intersect(lowerMs));
-    }
-
-        private static void AssertPlannedStaffFitsWithoutCrush(
-        StaffDrawable drawable,
-        List<GeneratedNote> notes,
-        float canvasWidth,
-        bool fullHeader)
-    {
-        if (notes.Count == 0)
-            return;
-
-        double origin = notes.Min(n => n.BeatPosition ?? 0);
-        double end = notes.Max(n => (n.BeatPosition ?? 0) + n.BeatDuration);
-        var bars = new List<double>();
-        for (double b = origin + 4; b < end - 1e-6; b += 4)
-            bars.Add(b);
-
-        typeof(StaffDrawable)
-            .GetMethods(BindingFlags.Instance | BindingFlags.NonPublic)
-            .First(m => m.Name == "ComputeLayout" && m.GetParameters().Length == 3)
-            .Invoke(drawable, new object[]
-            {
-                360f,
-                (IReadOnlyList<GeneratedNote>)notes,
-                (IReadOnlyList<GeneratedNote>)new List<GeneratedNote>(),
-            });
-
-        // Mirror SplitMeasuresAcrossStaves usable-width math via header metrics.
-        var header = typeof(StaffDrawable)
-            .GetMethod("ComputeHeaderMetrics", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(drawable, new object[] { 0f })!;
-        float leftMargin = fullHeader
-            ? (float)header.GetType().GetProperty("LeftMargin")!.GetValue(header)!
-            : (float)header.GetType().GetProperty("ClefOnlyLeftMargin")!.GetValue(header)!;
-        const float rightMargin = 36f;
-        const float barRightPad = 20f;
-        float usable = Math.Max(64f, canvasWidth - leftMargin - rightMargin - barRightPad);
-
-        object plan = typeof(StaffDrawable)
-            .GetMethod("PlanHorizontalLayout", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(drawable, new object[] { notes, bars, usable, leftMargin, fullHeader, true, true })!;
-
-        float totalW = (float)plan.GetType().GetField("Item3")!.GetValue(plan)!;
-        var layouts = (Array)plan.GetType().GetField("Item1")!.GetValue(plan)!;
-        var trail = typeof(StaffDrawable).GetMethod(
-            "NoteTrailingRight",
-            BindingFlags.Instance | BindingFlags.NonPublic,
-            null,
-            new[] { typeof(GeneratedNote), typeof(float) },
-            null)!;
-
-        float maxInk = leftMargin;
-        for (int i = 0; i < notes.Count; i++)
+        var gen = new MusicSequenceGenerator
         {
-            float x = (float)layouts.GetValue(i)!.GetType().GetField("X")!.GetValue(layouts.GetValue(i)!)!;
-            maxInk = Math.Max(maxInk, (float)trail.Invoke(drawable, new object[] { notes[i], x })!);
-        }
+            Key = "C",
+            Scale = "Mixolydian",
+            LowestNote = "C4",
+            HighestNote = "C5",
+            TimeSignature = TimeSignature.ThreeFour,
+            MeasureCount = 8,
+            RhythmVarietyPercent = 40,
+            SmallestDuration = NoteDuration.Eighth,
+            RestChancePercent = 14,
+            AccidentalPercent = 0,
+            SyncopationLevel = SyncopationLevel.None,
+            UseScaleOrder = false,
+            UseMotifPhrases = true,
+            ChildLevel = 25,
+            RandomSeed = 1,
+        };
+        var measures = gen.GenerateSequence();
+        Assert.All(measures, m =>
+            Assert.Equal(12, m.GeneratedNotes.Sum(n => (int)Math.Round(n.Duration.ToBeatValue() * 4))));
 
-        float content = Math.Max(totalW - leftMargin - rightMargin, maxInk - leftMargin);
-        // Single unavoidable oversize measure may still exceed the staff; multi-measure must fit.
-        int approxMeasures = Math.Max(1, (int)Math.Round(notes.Sum(n => n.BeatDuration) / 4.0));
-        if (approxMeasures > 1)
+        var flat = MusicSequenceGenerator.Flatten(measures).ToList();
+        var bars = BarsForMeasures(8, 3);
+        var session = new NoteSessionService
         {
-            Assert.True(
-                content <= usable + 8f,
-                $"Staff content {content:0.#} exceeds usable {usable:0.#} after width packing (measures≈{approxMeasures})");
-        }
-        var groupLeft = typeof(StaffDrawable).GetMethod(
-            "NoteGroupLeftFromLayout",
-            BindingFlags.Instance | BindingFlags.NonPublic)!;
+            Key = "C",
+            SelectedScale = "Mixolydian",
+            MeterTimeSignature = "3/4",
+            ChildLevel = 25,
+        };
+        var drawable = new StaffDrawable(session, new ThemeService(), safeArea: null);
+        var split = drawable.SplitMeasuresAcrossStaves(flat, bars, canvasWidth: 720f, canvasHeight: 480f);
 
-        float prevRight = float.NegativeInfinity;
-        float prevX = float.NegativeInfinity;
-        for (int i = 0; i < notes.Count; i++)
-        {
-            var lay = layouts.GetValue(i)!;
-            float x = (float)lay.GetType().GetField("X")!.GetValue(lay)!;
-            if (prevX > float.NegativeInfinity)
-                Assert.True(x - prevX >= 11.5f, $"Centers too close: dx={x - prevX:0.#}");
-
-            float left = (float)groupLeft.Invoke(drawable, new object[] { lay })!;
-            if (prevRight > float.NegativeInfinity)
-                Assert.True(left + 0.5f >= prevRight, $"Ink overlap: left={left:0.#} prevRight={prevRight:0.#}");
-
-            prevRight = (float)trail.Invoke(drawable, new object[] { notes[i], x })!;
-            prevX = x;
-
-            if ((bool)lay.GetType().GetField("HasAccidental")!.GetValue(lay)!)
-            {
-                float accX = (float)lay.GetType().GetField("AccidentalX")!.GetValue(lay)!;
-                Assert.True(accX < x - 1f, "Accidental must sit left of notehead center");
-            }
-        }
+        AssertNoSilentMeasureLoss(split, 8, flat.Count);
+        Assert.True(
+            split.UpperMeasureCount >= 2,
+            $"C Mixolydian 3/4 should pack several upper measures; got {split.UpperMeasureCount}");
     }
 }

@@ -81,8 +81,15 @@ namespace musicmate.Pages
         private bool _allowStaffLayoutSettle;
         private const string ChildLevelPrefKey = "ChildPractice.Level";
         private readonly Dictionary<string, ArpeggioPickerChoice> _arpeggioPickerChoices = new(StringComparer.Ordinal);
-        /// <summary>Canvas width last used to build/pack staff notes (0 = unknown).</summary>
+        /// <summary>
+        /// Canvas width last used to create the current packed staff layout (0 = unknown).
+        /// Updated only after an actual pack/repack — never stamped from a settle skip.
+        /// </summary>
         private double _staffWidthUsedForLayout;
+        /// <summary>Cached generated page for width-only re-Split (no regeneration).</summary>
+        private StaffPagePackState? _staffPagePack;
+        /// <summary>True when settle wanted a repack but freeze/hold blocked it.</summary>
+        private bool _pendingStaffWidthRepack;
 
         // ── Tuner reference-tone (tuning fork) ─────────────────────────────────
         private bool _isReferenceTonePlaying;
@@ -1340,6 +1347,7 @@ namespace musicmate.Pages
 
                 if (LayoutTestTune.IsEnabled)
                 {
+                    ClearStaffPagePack();
                     var testTune = LayoutTestTune.Create();
                     LayoutTestTune.LogContents(testTune);
 
@@ -1371,6 +1379,7 @@ namespace musicmate.Pages
                 }
                 else if (_session.Tune == "Practice Tune" && _session.CurrentTune != null)
                 {
+                    ClearStaffPagePack();
                     // Split tune measures between upper and lower staff.
                     var allNotes = BuildNotesFromTune(_session.CurrentTune);
                     var allMeasures = _session.CurrentTune.Measures.Count;
@@ -1401,6 +1410,7 @@ namespace musicmate.Pages
                 }
                 else if (_session.Tune == "Arpeggio")
                 {
+                    ClearStaffPagePack();
                     var pattern = ArpeggioCatalog.All.FirstOrDefault(p => p.Id == _session.SelectedArpeggioId)
                         ?? ArpeggioCatalog.MajorTriad;
                     var allNotes = await _session.LoadArpeggioAsync(pattern, _session.SelectedArpeggioRoot);
@@ -1459,8 +1469,7 @@ namespace musicmate.Pages
                         // Sequence generation is CPU-heavy; keep it off the UI thread.
                         // Staff split/layout stays on this path so drawable state is not
                         // mutated concurrently with Draw.
-                        float canvasWidth = StaffGraphicsView?.Width > 0 ? (float)StaffGraphicsView.Width : 360f;
-                        float canvasHeight = StaffGraphicsView?.Height > 0 ? (float)StaffGraphicsView.Height : 480f;
+                        var (canvasWidth, canvasHeight, isProvisional) = ResolveStaffCanvasSize();
 
                         var generated = await Task.Run(() =>
                         {
@@ -1477,29 +1486,14 @@ namespace musicmate.Pages
                         double measureBeats = generated.beats;
                         var allBarBeats = generated.bars;
 
-                        var split = _staffDrawable!.SplitMeasuresAcrossStaves(allNotes, allBarBeats, canvasWidth, canvasHeight);
-                        upperFlat = split.UpperNotes;
-                        lowerFlat = split.LowerNotes;
+                        StoreStaffPagePack(
+                            allNotes, allBarBeats, measureBeats,
+                            isTwoOctaveScaleCut: true,
+                            canvasWidth, canvasHeight, isProvisional);
 
-                        // Drop notes once the descending walk turns back upward — that
-                        // signals the start of the next cycle.  The generator intentionally
-                        // stops one step above the bottom tonic (e.g. D4 for C Major) so
-                        // the bottom tonic never appears in the lower half; searching for
-                        // loMidi would find the C4 that starts the *next* cycle instead.
-                        int cutIdx = lowerFlat.Count;
-                        int prevPitchMidi = -1;
-                        for (int li = 0; li < lowerFlat.Count; li++)
-                        {
-                            if (lowerFlat[li].IsRest) continue;
-                            int m = lowerFlat[li].MidiNumber;
-                            if (prevPitchMidi >= 0 && m > prevPitchMidi)
-                            {
-                                cutIdx = li;   // stop before the ascending restart
-                                break;
-                            }
-                            prevPitchMidi = m;
-                        }
-                        lowerFlat = lowerFlat.Take(cutIdx).ToList();
+                        var split = StaffPageWidthPolicy.SplitTwoOctaveScaleAtPeak(allNotes);
+                        upperFlat = split.UpperNotes;
+                        lowerFlat = StaffPageWidthPolicy.ApplyTwoOctaveLowerCut(split.LowerNotes);
 
                         double lowerBeatShift = lowerFlat.Count > 0 ? (lowerFlat[0].BeatPosition ?? 0.0) : 0.0;
                         lowerFlat = ShiftStaffBeatPositions(lowerFlat, lowerBeatShift);
@@ -1523,8 +1517,7 @@ namespace musicmate.Pages
                     else
                     {
                         var (upperMc, lowerMc) = GetStaffMeasureCounts();
-                        float canvasWidth = StaffGraphicsView?.Width > 0 ? (float)StaffGraphicsView.Width : 360f;
-                        float canvasHeight = StaffGraphicsView?.Height > 0 ? (float)StaffGraphicsView.Height : 480f;
+                        var (canvasWidth, canvasHeight, isProvisional) = ResolveStaffCanvasSize();
                         int desiredMeasures = Math.Max(1, upperMc + lowerMc);
 
                         // Generate a continuous page, then pack whole measures by engraved
@@ -1548,6 +1541,11 @@ namespace musicmate.Pages
                         }
 
                         ReportMasteryOmissionFallback(pageGen);
+
+                        StoreStaffPagePack(
+                            pageFlat, pageBars, measureBeats,
+                            isTwoOctaveScaleCut: false,
+                            canvasWidth, canvasHeight, isProvisional);
 
                         var split = _staffDrawable!.SplitMeasuresAcrossStaves(
                             pageFlat, pageBars, canvasWidth, canvasHeight);
@@ -1577,7 +1575,8 @@ namespace musicmate.Pages
                         DebugLog.WriteLine(
                             $"[Staff Standard] L{_session.ChildLevel} desired={desiredMeasures} " +
                             $"packed upper={split.UpperMeasureCount} lower={split.LowerMeasureCount} " +
-                            $"unplaced={split.UnplacedMeasureCount} " +
+                            $"unplaced={split.UnplacedMeasureCount} (events retained={split.UnplacedNotes.Count}) " +
+                            $"provisional={isProvisional} width={canvasWidth:F0} " +
                             $"Upper: {upperFlat.Count} notes ({upperPitches} pitched), " +
                             $"Lower: {lowerFlat.Count} notes ({lowerPitches} pitched)");
 #endif
@@ -1650,7 +1649,9 @@ namespace musicmate.Pages
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
                     ApplyStaffHeight();
-                    if (StaffGraphicsView?.Width > 0)
+                    // Width stamp happens only in StoreStaffPagePack / RepackStaffPageAtWidth
+                    // for width-packed pages. Other modes record the live view width here.
+                    if (_staffPagePack == null && StaffGraphicsView?.Width > 0)
                         _staffWidthUsedForLayout = StaffGraphicsView.Width;
                     StaffGraphicsView?.Invalidate();
                 });
@@ -2931,8 +2932,8 @@ namespace musicmate.Pages
         }
         /// <summary>
         /// After navigation, wait until StaffGraphicsView width stops changing, then
-        /// re-apply staff layout so the first post-WhatToPlay paint is not based on a
-        /// transient/zero width.
+        /// re-pack the same generated page at the settled width when the prior pack
+        /// was provisional or used a materially different width.
         /// </summary>
         private void ScheduleStaffLayoutSettleRefresh()
         {
@@ -2980,29 +2981,51 @@ namespace musicmate.Pages
                 if (settledWidth <= 0)
                     return;
 
-                bool widthChanged = _staffWidthUsedForLayout <= 0
-                    || Math.Abs(settledWidth - _staffWidthUsedForLayout) >= 2.0;
+                bool needsRepack =
+                    _pendingStaffWidthRepack
+                    || StaffPageWidthPolicy.NeedsRepackForSettledWidth(
+                        _staffPagePack, _staffWidthUsedForLayout, settledWidth);
 
-                if (widthChanged && !_isRunning && !_freezeStaff && !_holdResultForChildSession)
+                if (needsRepack && _staffPagePack != null)
                 {
-                    _staffWidthUsedForLayout = settledWidth;
-                    // Use the full regenerate path so ChildMeasureBatchSize / note range
-                    // match the appear path (bare UpdateStaffDisplayAsync skipped level apply).
-                    await RegenerateNotesAsync();
-                    await MainThread.InvokeOnMainThreadAsync(UpdateTitlePlayButtonPosition);
-                }
-                else
-                {
-                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    if (!StaffPageWidthPolicy.CanRepackNow(_freezeStaff, _holdResultForChildSession))
                     {
-                        _staffDrawable?.InvalidateLayoutCache();
-                        ApplyStaffHeight();
-                        if (settledWidth > 0)
-                            _staffWidthUsedForLayout = settledWidth;
-                        StaffGraphicsView?.Invalidate();
-                        UpdateTitlePlayButtonPosition();
-                    });
+                        _pendingStaffWidthRepack = true;
+                        DebugLog.WriteLine(
+                            $"[StaffLayoutSettle] Defer width repack (freeze={_freezeStaff} hold={_holdResultForChildSession}); " +
+                            $"packedAt={_staffWidthUsedForLayout:F0} settled={settledWidth:F0} provisional={_staffPagePack.IsProvisional}");
+                        await MainThread.InvokeOnMainThreadAsync(() =>
+                        {
+                            _staffDrawable?.InvalidateLayoutCache();
+                            ApplyStaffHeight();
+                            StaffGraphicsView?.Invalidate();
+                            UpdateTitlePlayButtonPosition();
+                        });
+                        return;
+                    }
+
+                    // Visual-only: same generated page, even while listening / AutoStart.
+                    float height = StaffGraphicsView?.Height > 0
+                        ? (float)StaffGraphicsView.Height
+                        : StaffPageWidthPolicy.FallbackHeightDip;
+                    bool repacked = await RepackStaffPageAtWidthAsync(
+                        (float)settledWidth, height, preserveSessionProgress: true);
+                    DebugLog.WriteLine(
+                        $"[StaffLayoutSettle] Width repack {(repacked ? "ok" : "skipped")} " +
+                        $"settled={settledWidth:F0} running={_isRunning} provisionalWas={_staffPagePack?.IsProvisional}");
+                    await MainThread.InvokeOnMainThreadAsync(UpdateTitlePlayButtonPosition);
+                    return;
                 }
+
+                // No width-driven pack change — refresh draw only. Never stamp
+                // _staffWidthUsedForLayout here (it must match an actual pack).
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    _staffDrawable?.InvalidateLayoutCache();
+                    ApplyStaffHeight();
+                    StaffGraphicsView?.Invalidate();
+                    UpdateTitlePlayButtonPosition();
+                });
             }
             catch (OperationCanceledException)
             {
@@ -3012,6 +3035,272 @@ namespace musicmate.Pages
             {
                 DebugLog.WriteLine($"[StaffLayoutSettle] ERROR: {ex}");
             }
+        }
+
+        private (float Width, float Height, bool IsProvisional) ResolveStaffCanvasSize()
+            => StaffPageWidthPolicy.ResolveCanvasSize(
+                StaffGraphicsView?.Width ?? 0,
+                StaffGraphicsView?.Height ?? 0);
+
+        private void ClearStaffPagePack()
+        {
+            _staffPagePack = null;
+            _pendingStaffWidthRepack = false;
+        }
+
+        private void StoreStaffPagePack(
+            List<GeneratedNote> pageNotes,
+            List<double> pageBars,
+            double measureBeats,
+            bool isTwoOctaveScaleCut,
+            float canvasWidth,
+            float canvasHeight,
+            bool isProvisional)
+        {
+            _staffPagePack = new StaffPagePackState
+            {
+                PageNotes = pageNotes,
+                PageBarBeats = pageBars,
+                MeasureBeats = measureBeats,
+                IsTwoOctaveScaleCut = isTwoOctaveScaleCut,
+                IsProvisional = isProvisional,
+                PackedCanvasWidth = canvasWidth,
+                PackedCanvasHeight = canvasHeight,
+            };
+            _staffWidthUsedForLayout = StaffPageWidthPolicy.WidthRecordedAfterPack(canvasWidth);
+            _pendingStaffWidthRepack = false;
+
+            if (isProvisional)
+            {
+                DebugLog.WriteLine(
+                    $"[StaffPack] Provisional layout at fallback width {canvasWidth:F0} DIP " +
+                    $"(GraphicsView.Width unknown); will repack when settled.");
+            }
+        }
+
+        /// <summary>
+        /// Re-runs <see cref="StaffDrawable.SplitMeasuresAcrossStaves"/> on the cached page
+        /// at <paramref name="canvasWidth"/>. Does not call the sequence generator.
+        /// </summary>
+        private async Task<bool> RepackStaffPageAtWidthAsync(
+            float canvasWidth,
+            float canvasHeight,
+            bool preserveSessionProgress)
+        {
+            if (_staffDrawable == null || _staffPagePack == null || canvasWidth <= 0)
+                return false;
+
+            var state = _staffPagePack;
+            var split = StaffPageWidthPolicy.SplitCachedPage(
+                _staffDrawable, state, canvasWidth, canvasHeight);
+
+            var upperFlat = split.UpperNotes.ToList();
+            var lowerFlat = state.IsTwoOctaveScaleCut
+                ? StaffPageWidthPolicy.ApplyTwoOctaveLowerCut(split.LowerNotes)
+                : split.LowerNotes.ToList();
+
+            double lowerBeatShift = lowerFlat.Count > 0 ? (lowerFlat[0].BeatPosition ?? 0.0) : 0.0;
+            lowerFlat = ShiftStaffBeatPositions(lowerFlat, lowerBeatShift);
+
+            var existingUpper = new HashSet<double>();
+            var existingLower = new HashSet<double>();
+            var upperBarBeats = ComputeStaffBarBeats(upperFlat, state.MeasureBeats, existingUpper);
+            var lowerBarBeats = ComputeStaffBarBeats(lowerFlat, state.MeasureBeats, existingLower);
+
+            int placedMeasures = split.UpperMeasureCount + split.LowerMeasureCount;
+            if (state.IsTwoOctaveScaleCut)
+            {
+                // Keep generation cursor at full generated walk length (unchanged by width).
+            }
+            else
+            {
+                double upperBeats = upperFlat.Sum(n => n.BeatDuration);
+                double lowerBeats = lowerFlat.Sum(n => n.BeatDuration);
+                int upperPitches = upperFlat.Count(n => !n.IsRest);
+                int lowerPitches = lowerFlat.Count(n => !n.IsRest);
+                _seqNextMeasureIndex = placedMeasures;
+                _seqNextBeatOffset = upperBeats + lowerBeats;
+                _seqNextGlobalNoteIndex = upperPitches + lowerPitches;
+                _lowerMeasureIndex = _seqNextMeasureIndex;
+                _lowerBeatOffset = _seqNextBeatOffset;
+                _lowerGlobalNoteIndex = _seqNextGlobalNoteIndex;
+            }
+
+            int preservedCurrent = _session.CurrentNoteIndex;
+            var preservedFeedback = preserveSessionProgress
+                ? _session.FeedbackViewModels.ToList()
+                : null;
+            var preservedCorrect = preserveSessionProgress
+                ? new HashSet<int>(_session.CorrectNoteIndices)
+                : null;
+
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                ApplyStaffSplitToDrawable(
+                    upperFlat, lowerFlat, upperBarBeats, lowerBarBeats,
+                    resetNoteStates: !preserveSessionProgress);
+
+                if (preserveSessionProgress)
+                    RebuildNotesToDrawPreservingProgress(
+                        upperFlat, lowerFlat, preservedCurrent, preservedFeedback, preservedCorrect);
+                else
+                    RebuildNotesToDrawFresh(upperFlat, lowerFlat);
+
+                state.IsProvisional = false;
+                state.PackedCanvasWidth = canvasWidth;
+                state.PackedCanvasHeight = canvasHeight;
+                _staffWidthUsedForLayout = StaffPageWidthPolicy.WidthRecordedAfterPack(canvasWidth);
+                _pendingStaffWidthRepack = false;
+
+                ApplyStaffHeight();
+                StaffGraphicsView?.Invalidate();
+            });
+
+#if DEBUG
+            DebugLog.WriteLine(
+                $"[StaffRepack] same page → upper={split.UpperMeasureCount} lower={split.LowerMeasureCount} " +
+                $"unplaced={split.UnplacedMeasureCount} width={canvasWidth:F0} " +
+                $"preserve={preserveSessionProgress} current={_session.CurrentNoteIndex}");
+#endif
+            return true;
+        }
+
+        private void ApplyStaffSplitToDrawable(
+            List<GeneratedNote> upperFlat,
+            List<GeneratedNote> lowerFlat,
+            List<double> upperBarBeats,
+            List<double> lowerBarBeats,
+            bool resetNoteStates)
+        {
+            var v3 = _staffDrawable;
+            if (v3 == null)
+                return;
+
+            v3.UpperNotes = upperFlat;
+            v3.LowerNotes = lowerFlat;
+            v3.UpperBarBeats = upperBarBeats;
+            v3.LowerBarBeats = lowerBarBeats;
+            v3.InvalidateLayoutCache();
+            _sessionUpperPitchCount = upperFlat.Count(n => !n.IsRest);
+
+            if (resetNoteStates)
+            {
+                v3.UpperNoteStates = new StaffNoteState[upperFlat.Count];
+                v3.LowerNoteStates = new StaffNoteState[lowerFlat.Count];
+                v3.IsUpperActive = true;
+                v3.ActiveNoteIndex = 0;
+                v3.UpperAlpha = 1f;
+                v3.LowerAlpha = 1f;
+                for (int i = 0; i < upperFlat.Count; i++)
+                {
+                    if (!upperFlat[i].IsRest)
+                    {
+                        v3.UpperNoteStates[i] = StaffNoteState.Current;
+                        v3.ActiveNoteIndex = i;
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                // Keep lengths aligned; SyncStaffNoteStates refreshes colors from session.
+                if (v3.UpperNoteStates == null || v3.UpperNoteStates.Length != upperFlat.Count)
+                    v3.UpperNoteStates = new StaffNoteState[upperFlat.Count];
+                if (v3.LowerNoteStates == null || v3.LowerNoteStates.Length != lowerFlat.Count)
+                    v3.LowerNoteStates = new StaffNoteState[lowerFlat.Count];
+                SyncStaffNoteStates();
+            }
+        }
+
+        private void RebuildNotesToDrawFresh(
+            List<GeneratedNote> upperFlat,
+            List<GeneratedNote> lowerFlat)
+        {
+            var rhythmOrder = upperFlat.Concat(lowerFlat).ToList();
+            var rhythmSlots = RhythmStartGate.BuildSlots(rhythmOrder);
+            int sessionIdx = 0;
+            int pitchIdx = 0;
+            _session.NotesToDraw.Clear();
+            _session.FeedbackViewModels.Clear();
+            var (noteKey, noteScale) = _session.GetNotationKeyAndScale();
+            foreach (var gn in rhythmOrder)
+            {
+                if (gn.IsRest) continue;
+                var slot = rhythmSlots[pitchIdx++];
+                var (midi, name) = NoteSessionService.ResolveTargetPitch(gn, noteKey, noteScale);
+                _session.NotesToDraw.Add(new NoteInfo
+                {
+                    Midi = midi,
+                    Name = name,
+                    TargetFreq = 440.0 * Math.Pow(2.0, (midi - 69) / 12.0),
+                    X = 0f,
+                    Duration = gn.Duration,
+                    StartBeat = slot.StartBeat,
+                    DurationBeats = slot.DurationBeats,
+                    GateBeatsAfterPrevious = slot.GateBeatsAfterPrevious,
+                });
+                _session.FeedbackViewModels.Add(new FeedbackItem(sessionIdx++, 0, 0, false));
+            }
+
+            _session.ConfigureRhythmStartGates();
+            _sessionUpperPitchCount = upperFlat.Count(n => !n.IsRest);
+        }
+
+        private void RebuildNotesToDrawPreservingProgress(
+            List<GeneratedNote> upperFlat,
+            List<GeneratedNote> lowerFlat,
+            int preservedCurrent,
+            List<FeedbackItem>? preservedFeedback,
+            HashSet<int>? preservedCorrect)
+        {
+            var rhythmOrder = upperFlat.Concat(lowerFlat).ToList();
+            var rhythmSlots = RhythmStartGate.BuildSlots(rhythmOrder);
+            int sessionIdx = 0;
+            int pitchIdx = 0;
+            _session.NotesToDraw.Clear();
+            _session.FeedbackViewModels.Clear();
+            var (noteKey, noteScale) = _session.GetNotationKeyAndScale();
+            foreach (var gn in rhythmOrder)
+            {
+                if (gn.IsRest) continue;
+                var slot = rhythmSlots[pitchIdx++];
+                var (midi, name) = NoteSessionService.ResolveTargetPitch(gn, noteKey, noteScale);
+                _session.NotesToDraw.Add(new NoteInfo
+                {
+                    Midi = midi,
+                    Name = name,
+                    TargetFreq = 440.0 * Math.Pow(2.0, (midi - 69) / 12.0),
+                    X = 0f,
+                    Duration = gn.Duration,
+                    StartBeat = slot.StartBeat,
+                    DurationBeats = slot.DurationBeats,
+                    GateBeatsAfterPrevious = slot.GateBeatsAfterPrevious,
+                });
+
+                if (preservedFeedback != null && sessionIdx < preservedFeedback.Count)
+                    _session.FeedbackViewModels.Add(preservedFeedback[sessionIdx]);
+                else
+                    _session.FeedbackViewModels.Add(new FeedbackItem(sessionIdx, 0, 0, false));
+                sessionIdx++;
+            }
+
+            _session.ConfigureRhythmStartGates();
+            _session.RestoreCurrentNoteIndexAfterStaffRepack(preservedCurrent);
+            _sessionUpperPitchCount = upperFlat.Count(n => !n.IsRest);
+
+            // CorrectNoteIndices are index-based; prefix indices remain valid when packing
+            // places earlier measures first. Drop any that fall outside the new list.
+            if (preservedCorrect != null)
+            {
+                _session.CorrectNoteIndices.Clear();
+                foreach (int idx in preservedCorrect)
+                {
+                    if (idx >= 0 && idx < _session.NotesToDraw.Count)
+                        _session.CorrectNoteIndices.Add(idx);
+                }
+            }
+
+            SyncStaffNoteStates();
         }
         protected override void OnNavigatedTo(NavigatedToEventArgs args)
         {
