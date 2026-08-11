@@ -20,8 +20,6 @@ namespace musicmate.Pages
         private int _noteDurationMs = IntervalEarTrainingLogic.DefaultNoteDurationMs;
         private IntervalDirectionMode _directionMode = IntervalEarTrainingLogic.DefaultDirectionMode;
         private readonly Dictionary<int, Button> _intervalButtons = new();
-        private Button _playRandomButton = null!;
-        private Button _playAgainButton = null!;
         private int _playGeneration;
 
         public IntervalEarTrainingPage()
@@ -80,12 +78,12 @@ namespace musicmate.Pages
             _intervalButtons.Clear();
 
             const int columns = 3;
-            const int rows = 5; // intervals 0–12 fill [0,0]…[0,4]; play controls at [1,4] and [2,4]
+            var intervals = IntervalEarTrainingCatalog.Intervals;
+            int rows = (intervals.Count + columns - 1) / columns;
             for (int r = 0; r < rows; r++)
                 IntervalButtonsHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             var gridStyle = (Style)Resources["EarTrainButton"];
-            var intervals = IntervalEarTrainingCatalog.Intervals;
             for (int i = 0; i < intervals.Count; i++)
             {
                 int semitones = intervals[i].Semitones;
@@ -101,25 +99,6 @@ namespace musicmate.Pages
                 IntervalButtonsHost.Children.Add(btn);
                 _intervalButtons[semitones] = btn;
             }
-
-            _playRandomButton = CreateGridButton(
-                "Play Random",
-                gridStyle,
-                "Play a random interval and wait for your answer");
-            _playRandomButton.Clicked += OnPlayRandomClicked;
-            Grid.SetColumn(_playRandomButton, 1);
-            Grid.SetRow(_playRandomButton, 4);
-            IntervalButtonsHost.Children.Add(_playRandomButton);
-
-            _playAgainButton = CreateGridButton(
-                "Play Again",
-                gridStyle,
-                "Replay the last interval with the same pitches");
-            _playAgainButton.IsEnabled = false;
-            _playAgainButton.Clicked += OnPlayAgainClicked;
-            Grid.SetColumn(_playAgainButton, 2);
-            Grid.SetRow(_playAgainButton, 4);
-            IntervalButtonsHost.Children.Add(_playAgainButton);
         }
 
         private static Button CreateGridButton(string text, Style style, string semanticDescription)
@@ -146,16 +125,16 @@ namespace musicmate.Pages
             }
         }
 
-        private async Task ScrollToTopControlsAsync()
+        private async Task ScrollToPlayControlsAsync()
         {
             try
             {
                 await Task.Delay(50);
-                await MainScroll.ScrollToAsync(TopControlsSection, ScrollToPosition.Start, animated: true);
+                await MainScroll.ScrollToAsync(PlayControlsSection, ScrollToPosition.Start, animated: true);
             }
             catch (Exception ex)
             {
-                Utils.Log($"[EarTraining] Scroll to top controls: {ex}");
+                Utils.Log($"[EarTraining] Scroll to play controls: {ex}");
             }
         }
 
@@ -231,7 +210,7 @@ namespace musicmate.Pages
         }
 
         private void UpdatePlayAgainEnabled()
-            => _playAgainButton.IsEnabled = _lastPitches.HasValue && !_showingFeedback;
+            => PlayAgainButton.IsEnabled = _lastPitches.HasValue && !_showingFeedback;
 
         private void UpdateStatus(string message)
             => StatusLabel.Text = message;
@@ -403,12 +382,12 @@ namespace musicmate.Pages
             _showingFeedback = false;
             SetControlsEnabled(true);
             UpdatePlayAgainEnabled();
-            await ScrollToTopControlsAsync();
+            await ScrollToPlayControlsAsync();
         }
 
         private void SetControlsEnabled(bool enabled)
         {
-            _playRandomButton.IsEnabled = enabled;
+            PlayRandomButton.IsEnabled = enabled;
             DurationSlider.IsEnabled = enabled;
             DirectionAscendingButton.IsEnabled = enabled;
             DirectionDescendingButton.IsEnabled = enabled;

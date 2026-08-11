@@ -1751,8 +1751,10 @@ namespace musicmate.Pages
         /// </summary>
         private void ApplyStaffHeight()
         {
-            // Measure available height: window height minus shell nav bar.
-            // In two-staff mode the pickers row is hidden so the staff fills the full content area.
+            // Measure available height: window height minus shell nav bar and the
+            // bottom chrome that scrolls with the staff (level / save-delete / pickers).
+            // Everything stays in one ScrollView; this only keeps that chrome reachable
+            // without forcing a pinned footer.
             float availH = 300f;
             try
             {
@@ -1760,8 +1762,9 @@ namespace musicmate.Pages
                 if (win != null)
                 {
                     double winH = win.Height;
-                    // Subtract shell nav bar (~50 dp) to get usable content area.
-                    availH = (float)Math.Max(100, winH - 50);
+                    const double navBar = 50;
+                    double bottomChrome = EstimateMusicBottomChromeHeight();
+                    availH = (float)Math.Max(160, winH - navBar - bottomChrome);
                 }
             }
             catch { /* keep default */ }
@@ -1771,6 +1774,22 @@ namespace musicmate.Pages
             StaffGraphicsView.HeightRequest = h;
             StaffBorder.HeightRequest = h;
             UpdateTitlePlayButtonPosition();
+        }
+
+        /// <summary>
+        /// Approximate height of Child Level + Save/Delete + bottom pickers rows that
+        /// follow the staff in <see cref="MainPageMainLayout"/>.
+        /// </summary>
+        private double EstimateMusicBottomChromeHeight()
+        {
+            double h = 0;
+            if (IsChildLevelSliderVisible)
+                h += 52; // border + margins
+            if (IsBottomButtonRowVisible)
+                h += 48 + 60; // save/delete row + bottom pickers row
+            // MainPageMainLayout Spacing between staff and chrome sections
+            h += 16 * 2;
+            return Math.Max(h, 8);
         }
         /// <summary>
         /// Size the equal-width tuner panels short enough that both green borders and

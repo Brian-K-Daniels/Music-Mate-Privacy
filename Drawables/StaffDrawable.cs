@@ -86,6 +86,27 @@ namespace musicmate.Drawables
         /// </summary>
         public bool UpperHasEndBar { get; set; } = false;
 
+        /// <summary>
+        /// When true, vertical layout and drawing use the upper staff only.
+        /// Used by Interval Sight Training. Default false so Music is unchanged.
+        /// Independent of Tuner mode (which also uses a single staff for other reasons).
+        /// </summary>
+        public bool SingleStaffLayout { get; set; }
+
+        /// <summary>
+        /// Optional key for Sight Training engraving/key signature without mutating
+        /// <see cref="NoteSessionService.Key"/> (Music session). Null = use session key.
+        /// </summary>
+        public string? NotationKeyOverride { get; set; }
+
+        /// <summary>
+        /// Optional scale for Sight Training key-signature rules. Null = use session scale.
+        /// </summary>
+        public string? NotationScaleOverride { get; set; }
+
+        private string ActiveNotationKey
+            => !string.IsNullOrWhiteSpace(NotationKeyOverride) ? NotationKeyOverride! : _session.Key;
+
         /// <summary>Result of assigning whole measures to upper/lower staves by width.</summary>
         public sealed class StaffMeasureSplitResult
         {
@@ -108,6 +129,11 @@ namespace musicmate.Drawables
         // ── Fixed horizontal constants ─────────────────────────────────────────
           //  2026.07.09 1912  private const float ScrollPxPerBeat = 42f;   // reduced from 48 for better fit
         private const float RightMargin = 36f;
+        /// <summary>Tighter trailing gutter for single-staff Sight Training (more usable width).</summary>
+        private const float SingleStaffRightMargin = 8f;
+
+        private float EffectiveRightMargin
+            => SingleStaffLayout ? SingleStaffRightMargin : RightMargin;
 
         // Uniform spacing constants
         private const float ItemSpacing = 46f;   // fixed horizontal spacing per item (reduced from 52)
@@ -551,10 +577,8 @@ namespace musicmate.Drawables
                 UpperHasEndBar = UpperHasEndBar,
                 BeginnerLayout = UseBeginnerHorizontalLayout,
                 ChildLevel = _session.ChildLevel,
-                SessionKey = _session.Key ?? string.Empty,
-                SessionScale = string.IsNullOrWhiteSpace(_session.EffectiveScale)
-                    ? (_session.SelectedScale ?? string.Empty)
-                    : _session.EffectiveScale,
+                SessionKey = ActiveNotationKey ?? string.Empty,
+                SessionScale = ActiveKeySignatureScale() ?? string.Empty,
                 SessionTune = _session.Tune ?? string.Empty,
                 TimeSig = _session.GetDisplayTimeSignature(),
                 MusicBpm = _session.MusicBpm,
@@ -746,7 +770,7 @@ namespace musicmate.Drawables
                 upperNoteLayouts, upperBarLayouts,
                 safeLeft, safeRight, layoutRightLimit, upperStaffMargin);
 
-            if (_session.Tune != "Tuner")
+            if (_session.Tune != "Tuner" && !SingleStaffLayout)
             {
                 DrawStaffLinesAndBars(canvas, ink, lowerTop, lowerMid, lowerBot,
                     lowerNoteLayouts, lowerBarLayouts,
@@ -760,15 +784,19 @@ namespace musicmate.Drawables
             float lowerTop, float lowerMid, float lowerBot)
         {
             // BPM marking stays on the upper staff only; key/time may repeat on lower.
+            // Interval Sight Training (SingleStaffLayout): clef + key only — no tempo or time sig.
             DrawStaffHeaderChrome(canvas, ink, upperTop, upperMid, upperBot,
-                drawKeyAndTimeSig: true, drawBpmMarking: true);
-            if (_session.Tune != "Tuner")
+                drawKeyAndTimeSig: true,
+                drawBpmMarking: !SingleStaffLayout,
+                drawTimeSignature: !SingleStaffLayout);
+            if (_session.Tune != "Tuner" && !SingleStaffLayout)
             {
                 bool drawLowerSignatures = UpperNotes.Count == 0
                     || _session.ShowSignaturesOnBothStaffs;
                 DrawStaffHeaderChrome(canvas, ink, lowerTop, lowerMid, lowerBot,
                     drawKeyAndTimeSig: drawLowerSignatures,
-                    drawBpmMarking: UpperNotes.Count == 0);
+                    drawBpmMarking: UpperNotes.Count == 0,
+                    drawTimeSignature: drawLowerSignatures);
             }
         }
 
@@ -788,7 +816,7 @@ namespace musicmate.Drawables
                 UpperAlpha, IsUpperActive, IsUpperActive ? ActiveNoteIndex : -1,
                 safeLeft, safeRight, layoutRightLimit, upperStaffMargin);
 
-            if (_session.Tune != "Tuner")
+            if (_session.Tune != "Tuner" && !SingleStaffLayout)
             {
                 DrawStaffDynamic(canvas, dirtyRect, ink, lowerTop, lowerMid, lowerBot,
                     LowerNotes, LowerNoteStates, lowerNoteLayouts, lowerBarLayouts,
@@ -1228,32 +1256,37 @@ namespace musicmate.Drawables
             int eA2 = Math.Max(0, -4 - minS2) + breathing;
             int eB2 = Math.Max(0, maxS2 - 4) + breathing;
 
-            // Reserve room for the BPM marking above the upper staff.
-            if (_session.Tune != "Tuner")
+            // Reserve room for the BPM marking above the upper staff (Music only).
+            if (_session.Tune != "Tuner" && !SingleStaffLayout)
                 eA1 = Math.Max(eA1, 9);
 
-            bool tunerSingleStaff = _session.Tune == "Tuner";
+            bool tunerSingleStaff = SingleStaffLayout || _session.Tune == "Tuner";
 
             float totalHalfSpaces = tunerSingleStaff
                 ? 8f + eA1 + eB1
                 : 8f + eA1 + eB1 + 8f + eA2 + eB2;
 
             float sls = usableH / (totalHalfSpaces / 2f);
-            sls = Math.Clamp(sls, 6f, 12f);
+            // Sight Training: allow substantially larger staff spacing for readability.
+            sls = SingleStaffLayout
+                ? Math.Clamp(sls, 8f, 22f)
+                : Math.Clamp(sls, 6f, 12f);
 
             float hs = sls / 2f;
 
             float compactNoteHeadR = sls * CompactNoteHeadRRatio;
 
-            float noteHeadR = UseBeginnerNotationScale
+            float noteHeadR = SingleStaffLayout
                 ? sls * BeginnerNoteHeadSpaceRatio / NoteHeadHeightFactor
-                : _session.ChildLevel > 30
-                    ? sls * MidLevelNoteHeadRRatio
-                    : compactNoteHeadR;
+                : UseBeginnerNotationScale
+                    ? sls * BeginnerNoteHeadSpaceRatio / NoteHeadHeightFactor
+                    : _session.ChildLevel > 30
+                        ? sls * MidLevelNoteHeadRRatio
+                        : compactNoteHeadR;
 
             float glyphScale = noteHeadR / compactNoteHeadR;
 
-            float stemLen = UseBeginnerNotationScale
+            float stemLen = (UseBeginnerNotationScale || SingleStaffLayout)
                 ? 3.5f * sls
                 : sls * CompactStemLenRatio * glyphScale;
 
@@ -1265,7 +1298,7 @@ namespace musicmate.Drawables
             float lowerMid = lowerTop + 2f * sls;
             float lowerBot = lowerTop + 4f * sls;
 
-            float contentH = tunerSingleStaff
+            float contentH = (SingleStaffLayout || _session.Tune == "Tuner")
                 ? upperBot + eB1 * hs
                 : lowerBot + eB2 * hs;
 
@@ -1896,7 +1929,7 @@ namespace musicmate.Drawables
                     if (isFirstMeasureOnStaff && k == 0)
                     {
                         float headerEdge = _planUseFullHeader
-                            ? _headerMetrics.TimeSigRightRel
+                            ? _headerMetrics.FullHeaderRightRel
                             : _planStaffLeftMargin;
                         center = Math.Max(center, headerEdge + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, note.Duration));
                     }
@@ -1994,7 +2027,7 @@ namespace musicmate.Drawables
             if (isFirstMeasureOnStaff)
             {
                 float headerEdge = _planUseFullHeader
-                    ? _headerMetrics.TimeSigRightRel
+                    ? _headerMetrics.FullHeaderRightRel
                     : _planStaffLeftMargin;
                 for (int k = 0; k < sorted.Count; k++)
                 {
@@ -2159,7 +2192,7 @@ namespace musicmate.Drawables
                     if (isFirstMeasureOnStaff && k == 0)
                     {
                         float headerEdge = _planUseFullHeader
-                            ? _headerMetrics.TimeSigRightRel
+                            ? _headerMetrics.FullHeaderRightRel
                             : _planStaffLeftMargin;
                         float headerMin = headerEdge + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, note.Duration);
                         idealX = Math.Max(idealX, headerMin);
@@ -2321,7 +2354,7 @@ namespace musicmate.Drawables
             }
 
             float totalWidth = barList.Count > 0
-                ? barList.Max(b => b.X) + RightMargin
+                ? barList.Max(b => b.X) + EffectiveRightMargin
                 : staffLeftMargin + availableWidth;
 
             LastComputedPxPerBeat = totalBeats > 0 ? availableWidth / (float)totalBeats : 42f;
@@ -2488,13 +2521,16 @@ namespace musicmate.Drawables
             var insets = _safeArea?.GetSafeAreaInsets() ?? (0f, 0f, 0f, 0f);
             float viewRight = dirtyRect.X + dirtyRect.Width;
             float effectiveRightInset = Math.Max(0f, insets.Right - RelaxCutoutInsetRightDp);
-            float safeLeft = dirtyRect.X + insets.Left;
+            // Sight Training pages already apply safe-area padding on the ScrollView; do not
+            // inset again or the clef sits far to the right of the title.
+            float safeLeft = ResolveDrawSafeLeft(dirtyRect.X, insets.Left);
             float safeRight = viewRight - effectiveRightInset;
             float layoutRightLimit = safeRight - LayoutRightPad;
             float safeWidth = layoutRightLimit - safeLeft;
 
             var layoutCacheKey = BuildLayoutCacheKey(dirtyRect.Width, dirtyRect.Height, insets.Left, insets.Right);
-            if (TryDrawFromLayoutCache(canvas, dirtyRect, ink, layoutCacheKey))
+            // Pair-pan depends on Current note states; skip cache for single-staff Sight Training.
+            if (!SingleStaffLayout && TryDrawFromLayoutCache(canvas, dirtyRect, ink, layoutCacheKey))
                 return;
 
             StaffLog($"[Staff] Canvas={dirtyRect.Width:F0}x{dirtyRect.Height:F0}, " +
@@ -2524,8 +2560,9 @@ namespace musicmate.Drawables
             float lowerBot = _layout.LowerBot;
 
             // Step 2: Compute horizontal layout for both staffs
-            float upperUsableWidth = safeWidth - upperStaffMargin - RightMargin;
-            float lowerUsableWidth = safeWidth - lowerStaffMargin - RightMargin;
+            float rightGutter = EffectiveRightMargin;
+            float upperUsableWidth = safeWidth - upperStaffMargin - rightGutter;
+            float lowerUsableWidth = safeWidth - lowerStaffMargin - rightGutter;
 
             var (upperNoteLayouts, upperBarLayouts, upperTotalWidth) = PlanHorizontalLayout(
                 UpperNotes, UpperBarBeats, upperUsableWidth,
@@ -2583,6 +2620,16 @@ namespace musicmate.Drawables
                         upperNoteLayouts, safeLeft, upperStaffMargin, layoutRightLimit);
                 }
 
+                if (SingleStaffLayout)
+                    upperBarLayouts = Array.Empty<BarLayout>();
+
+                EnsureActivePairVisible(
+                    UpperNotes, UpperNoteStates, upperNoteLayouts, upperBarLayouts,
+                    safeLeft, upperStaffMargin, layoutRightLimit);
+
+                if (SingleStaffLayout)
+                    upperBarLayouts = FinalizeSingleStaffEndBar(upperNoteLayouts);
+
                 LogStaffLayoutDiagnostics("Upper", UpperNotes, upperNoteLayouts, upperPreScaleX,
                     upperTop, upperMid, upperBot);
                 LogStaffLayoutDiagnostics("Lower", LowerNotes, lowerNoteLayouts, lowerPreScaleX,
@@ -2593,11 +2640,14 @@ namespace musicmate.Drawables
 
                 double upperBeatOriginBeginner = GetStaffBeatOrigin(UpperNotes, UpperBarBeats);
                 double lowerBeatOriginBeginner = GetStaffBeatOrigin(LowerNotes, LowerBarBeats);
-                StoreLayoutCache(layoutCacheKey, dirtyRect, ink,
-                    upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
-                    upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
-                    upperBeatOriginBeginner, lowerBeatOriginBeginner,
-                    safeLeft, safeRight, layoutRightLimit, upperStaffMargin, lowerStaffMargin);
+                if (!SingleStaffLayout)
+                {
+                    StoreLayoutCache(layoutCacheKey, dirtyRect, ink,
+                        upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
+                        upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
+                        upperBeatOriginBeginner, lowerBeatOriginBeginner,
+                        safeLeft, safeRight, layoutRightLimit, upperStaffMargin, lowerStaffMargin);
+                }
                 if (_layoutCache != null)
                 {
                     BlitStaticChromeOrDrawFallback(canvas, dirtyRect, ink, _layoutCache,
@@ -2677,7 +2727,7 @@ namespace musicmate.Drawables
             ClampLayoutToSafeRight(upperNoteLayouts, upperBarLayouts, layoutRightLimit, safeLeft, upperStaffMargin);
             ClampLayoutToSafeRight(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit, safeLeft, lowerStaffMargin);
 
-            if (!compressed)
+            if (!compressed && !SingleStaffLayout)
             {
                 ExpandLayoutToFillSafeRight(upperNoteLayouts, upperBarLayouts, layoutRightLimit, safeLeft, upperStaffMargin);
                 if (lowerFillsWidth)
@@ -2690,9 +2740,12 @@ namespace musicmate.Drawables
 
             ReconcileFinalBarLayout(upperNoteLayouts, upperBarLayouts);
             ReconcileFinalBarLayout(lowerNoteLayouts, lowerBarLayouts);
-            PadLayoutGutterToLimit(upperNoteLayouts, upperBarLayouts, layoutRightLimit);
-            if (lowerFillsWidth)
-                PadLayoutGutterToLimit(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit);
+            if (!SingleStaffLayout)
+            {
+                PadLayoutGutterToLimit(upperNoteLayouts, upperBarLayouts, layoutRightLimit);
+                if (lowerFillsWidth)
+                    PadLayoutGutterToLimit(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit);
+            }
             ReconcileFinalBarLayout(upperNoteLayouts, upperBarLayouts);
             ReconcileFinalBarLayout(lowerNoteLayouts, lowerBarLayouts);
             AlignIndependentStaffEndBars(upperBarLayouts, upperNoteLayouts, lowerBarLayouts, lowerNoteLayouts, layoutRightLimit);
@@ -2709,6 +2762,11 @@ namespace musicmate.Drawables
             FinalizeStaffBarClearance(UpperNotes, upperNoteLayouts, upperBarLayouts, UpperBarBeats, upperBeatOrigin, upperTop, upperMid, upperBot);
             FinalizeStaffBarClearance(LowerNotes, lowerNoteLayouts, lowerBarLayouts, LowerBarBeats, lowerBeatOrigin, lowerTop, lowerMid, lowerBot);
 
+            // Sight Training: drop internal bars before final spacing so phantom bars cannot
+            // nudge notes past the eventual double bar (root cause of stray end notation).
+            if (SingleStaffLayout)
+                upperBarLayouts = Array.Empty<BarLayout>();
+
             SanitizeLayoutPositions(upperNoteLayouts, upperBarLayouts);
             SanitizeLayoutPositions(lowerNoteLayouts, lowerBarLayouts);
 
@@ -2721,6 +2779,16 @@ namespace musicmate.Drawables
                 upperBarLayouts = Array.Empty<BarLayout>();
                 CenterTunerReferenceNote(
                     upperNoteLayouts, safeLeft, upperStaffMargin, layoutRightLimit);
+            }
+
+            EnsureActivePairVisible(
+                UpperNotes, UpperNoteStates, upperNoteLayouts, upperBarLayouts,
+                safeLeft, upperStaffMargin, layoutRightLimit);
+
+            if (SingleStaffLayout)
+            {
+                // Absolute last layout step: snug double bar after final note ink (post-spacing/pan).
+                upperBarLayouts = FinalizeSingleStaffEndBar(upperNoteLayouts);
             }
 
             LogStaffLayoutDiagnostics("Upper", UpperNotes, upperNoteLayouts, upperPreScaleX,
@@ -2738,11 +2806,14 @@ namespace musicmate.Drawables
                   $"LayoutLimit={layoutRightLimit:F0}, gutter={(layoutRightLimit - contentRight):F1}, " +
                   $"pastSafeRight={(contentRight > safeRight ? contentRight - safeRight : 0f):F1}");
 
-            StoreLayoutCache(layoutCacheKey, dirtyRect, ink,
-                upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
-                upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
-                upperBeatOrigin, lowerBeatOrigin,
-                safeLeft, safeRight, layoutRightLimit, upperStaffMargin, lowerStaffMargin);
+            if (!SingleStaffLayout)
+            {
+                StoreLayoutCache(layoutCacheKey, dirtyRect, ink,
+                    upperTop, upperMid, upperBot, lowerTop, lowerMid, lowerBot,
+                    upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
+                    upperBeatOrigin, lowerBeatOrigin,
+                    safeLeft, safeRight, layoutRightLimit, upperStaffMargin, lowerStaffMargin);
+            }
             if (_layoutCache != null)
             {
                 BlitStaticChromeOrDrawFallback(canvas, dirtyRect, ink, _layoutCache,
@@ -2762,6 +2833,152 @@ namespace musicmate.Drawables
                 upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
                 upperBeatOrigin, lowerBeatOrigin,
                 safeLeft, safeRight, layoutRightLimit, upperStaffMargin, lowerStaffMargin);
+        }
+
+        /// <summary>
+        /// Sight Training already pads the page for cutouts; Music still uses the inset.
+        /// </summary>
+        private float ResolveDrawSafeLeft(float dirtyX, float insetLeft)
+            => SingleStaffLayout ? dirtyX : dirtyX + insetLeft;
+
+        /// <summary>
+        /// Horizontally pans single-staff content so the yellow/red answer pair stays in view
+        /// near the left of the open staff (after the header), avoiding a lone yellow at the
+        /// far right edge when earlier measures have filled the width.
+        /// </summary>
+        private void EnsureActivePairVisible(
+            List<GeneratedNote> notes,
+            StaffNoteState[] states,
+            NoteLayout[] noteLayouts,
+            BarLayout[] barLayouts,
+            float safeLeft,
+            float staffLeftMargin,
+            float layoutRightLimit)
+        {
+            if (!SingleStaffLayout
+                || notes == null
+                || noteLayouts == null
+                || notes.Count == 0
+                || noteLayouts.Length != notes.Count)
+            {
+                return;
+            }
+
+            var pairIdx = new List<int>(2);
+            int stateLen = states?.Length ?? 0;
+            for (int i = 0; i < notes.Count; i++)
+            {
+                var state = i < stateLen ? states![i] : StaffNoteState.Pending;
+                if (state == StaffNoteState.Current || state == StaffNoteState.Wrong)
+                    pairIdx.Add(i);
+            }
+
+            // If only one highlighted note made it into states, still try to keep its
+            // within-measure partner on-screen (the usual "lone yellow at the end" case).
+            if (pairIdx.Count == 1)
+            {
+                int only = pairIdx[0];
+                int measure = notes[only].MeasureIndex ?? 0;
+                for (int j = only + 1; j < notes.Count; j++)
+                {
+                    if (notes[j].IsRest)
+                        continue;
+                    if ((notes[j].MeasureIndex ?? 0) != measure)
+                        break;
+                    pairIdx.Add(j);
+                    break;
+                }
+
+                if (pairIdx.Count == 1)
+                {
+                    for (int j = only - 1; j >= 0; j--)
+                    {
+                        if (notes[j].IsRest)
+                            continue;
+                        if ((notes[j].MeasureIndex ?? 0) != measure)
+                            break;
+                        pairIdx.Insert(0, j);
+                        break;
+                    }
+                }
+            }
+
+            if (pairIdx.Count == 0)
+                return;
+
+            float head = Math.Max(4f, _layout.NoteHeadR);
+            float pairLeft = float.PositiveInfinity;
+            float pairRight = float.NegativeInfinity;
+            for (int p = 0; p < pairIdx.Count; p++)
+            {
+                int i = pairIdx[p];
+                float left = noteLayouts[i].HasAccidental
+                    ? Math.Min(noteLayouts[i].X, noteLayouts[i].AccidentalX) - head
+                    : noteLayouts[i].X - head * 2f;
+                float right = NoteTrailingRight(notes[i], noteLayouts[i].X);
+                if (left < pairLeft)
+                    pairLeft = left;
+                if (right > pairRight)
+                    pairRight = right;
+            }
+
+            if (!float.IsFinite(pairLeft) || !float.IsFinite(pairRight) || pairRight <= pairLeft)
+                return;
+
+            float visibleLeft = safeLeft + staffLeftMargin + BarLeftPadding;
+            float visibleRight = layoutRightLimit - BarRightPadding;
+            float visibleWidth = visibleRight - visibleLeft;
+            if (visibleWidth < 48f)
+                return;
+
+            float pad = head * 2f;
+            float desiredLeft = visibleLeft + pad;
+            float pairWidth = pairRight - pairLeft;
+            float shift;
+
+            if (pairWidth >= visibleWidth - pad)
+            {
+                shift = desiredLeft - pairLeft;
+            }
+            else if (pairLeft >= visibleLeft - 1f && pairRight <= visibleRight + 1f)
+            {
+                // Both fit already — still pull left when the pair sits in the right half
+                // so the next Play-style glance isn't a single yellow at the far edge.
+                float mid = (visibleLeft + visibleRight) * 0.5f;
+                if (pairLeft <= mid)
+                    return;
+                shift = desiredLeft - pairLeft;
+                if (pairRight + shift > visibleRight)
+                    shift = visibleRight - pairRight;
+            }
+            else
+            {
+                shift = desiredLeft - pairLeft;
+                if (pairRight + shift > visibleRight)
+                    shift = visibleRight - pairRight;
+            }
+
+            if (Math.Abs(shift) < 0.5f)
+                return;
+
+            ShiftNoteAndBarLayouts(noteLayouts, barLayouts, shift);
+            StaffLog($"[Staff] Sight pair pan shift={shift:F1} pair=[{pairLeft:F0},{pairRight:F0}] " +
+                     $"visible=[{visibleLeft:F0},{visibleRight:F0}] count={pairIdx.Count}");
+        }
+
+        private void ShiftNoteAndBarLayouts(NoteLayout[] noteLayouts, BarLayout[] barLayouts, float shift)
+        {
+            for (int i = 0; i < noteLayouts.Length; i++)
+            {
+                noteLayouts[i].X += shift;
+                if (noteLayouts[i].HasAccidental)
+                    SyncAccidentalX(noteLayouts, i);
+                else
+                    noteLayouts[i].AccidentalX = noteLayouts[i].X;
+            }
+
+            for (int i = 0; i < barLayouts.Length; i++)
+                barLayouts[i].X += shift;
         }
 
         private static void SanitizeLayoutPositions(NoteLayout[] noteLayouts, BarLayout[] barLayouts)
@@ -2894,10 +3111,10 @@ namespace musicmate.Drawables
             float totalWidth,
             float usableWidth)
         {
-            // totalWidth includes RightMargin after the last bar; usableWidth is the measure lane.
+            // totalWidth includes EffectiveRightMargin after the last bar; usableWidth is the measure lane.
             // Do not treat that accounting pad as overflow (it falsely scaled every staff ~5%).
             float contentSpan = totalWidth - staffLeftMargin;
-            float allowedSpan = usableWidth + RightMargin;
+            float allowedSpan = usableWidth + EffectiveRightMargin;
             float scale = contentSpan > allowedSpan + 0.5f && contentSpan > 0f
                 ? Math.Clamp(allowedSpan / contentSpan, HorizontalCompressFloor, 1f)
                 : 1f;
@@ -2967,6 +3184,39 @@ namespace musicmate.Drawables
             endX = Math.Min(endX, maxBarX);
             upperBarLayouts[^1].X = endX;
             lowerBarLayouts[^1].X = endX;
+        }
+
+        /// <summary>
+        /// Sight Training: replace all bars with a single double bar placed after the last
+        /// note's trailing ink (including accidentals). Called only after final spacing/pan.
+        /// </summary>
+        private BarLayout[] FinalizeSingleStaffEndBar(NoteLayout[] noteLayouts)
+        {
+            float endX = RequiredEndBarX(noteLayouts);
+            if (endX <= float.NegativeInfinity)
+                endX = _headerMetrics.LeftMargin + 40f;
+
+            // Include accidental left/right reach so nothing paints past the bar.
+            for (int i = 0; i < noteLayouts.Length; i++)
+            {
+                float right = NoteTrailingRight(noteLayouts[i].IsRest, noteLayouts[i].X, noteLayouts[i].Duration);
+                if (noteLayouts[i].HasAccidental)
+                    right = Math.Max(right, noteLayouts[i].X + _layout.NoteHeadR);
+                endX = Math.Max(endX, right + BarRightPadding);
+            }
+
+            return new[] { new BarLayout { X = endX, IsDouble = true } };
+        }
+
+        /// <summary>Legacy helper retained for call sites that mutate an existing bar array.</summary>
+        private void EnsureSingleStaffDoubleEndBar(NoteLayout[] noteLayouts, BarLayout[] barLayouts)
+        {
+            var finalized = FinalizeSingleStaffEndBar(noteLayouts);
+            if (barLayouts.Length == 0)
+                return;
+            for (int i = 0; i < barLayouts.Length - 1; i++)
+                barLayouts[i].IsDouble = false;
+            barLayouts[^1] = finalized[0];
         }
 
         private float RequiredEndBarX(NoteLayout[] noteLayouts)
@@ -3788,15 +4038,34 @@ namespace musicmate.Drawables
                     contentEndX = noteRight;
             }
 
+            BarLayout? finalDouble = null;
             for (int i = 0; i < barLayouts.Length; i++)
             {
+                // Sight Training: ignore internal bars for extent and drawing.
+                if (SingleStaffLayout && !barLayouts[i].IsDouble)
+                    continue;
+
                 float barRight = BarLineRightEdge(barLayouts[i]);
                 if (barRight > contentEndX)
                     contentEndX = barRight;
+                if (barLayouts[i].IsDouble)
+                    finalDouble = barLayouts[i];
             }
 
-            float staffLineEndX = Math.Max(contentEndX + 8f, layoutRightLimit - safeEdgePad);
-            staffLineEndX = Math.Min(staffLineEndX, safeRight - safeEdgePad);
+            float staffLineEndX;
+            if (SingleStaffLayout)
+            {
+                // Terminate staff lines at the double-bar right edge — no overhang.
+                staffLineEndX = finalDouble.HasValue
+                    ? BarLineRightEdge(finalDouble.Value)
+                    : contentEndX;
+                staffLineEndX = Math.Min(staffLineEndX, safeRight - safeEdgePad);
+            }
+            else
+            {
+                staffLineEndX = Math.Max(contentEndX + 8f, layoutRightLimit - safeEdgePad);
+                staffLineEndX = Math.Min(staffLineEndX, safeRight - safeEdgePad);
+            }
             staffLineEndX = Math.Max(staffLineEndX, safeLeft + staffLeftMargin);
 
             canvas.StrokeColor = ink;
@@ -3812,9 +4081,12 @@ namespace musicmate.Drawables
             {
                 if (!float.IsFinite(bar.X))
                     continue;
+                if (SingleStaffLayout && !bar.IsDouble)
+                    continue;
 
                 if (bar.IsDouble)
                 {
+                    // Same double-bar appearance as Music final staff end.
                     canvas.StrokeSize = 2f;
                     canvas.DrawLine(bar.X, staffTop - 2f, bar.X, staffBot + 2f);
                     canvas.StrokeSize = 4f;
@@ -3833,7 +4105,8 @@ namespace musicmate.Drawables
             ICanvas canvas, Color ink,
             float staffTop, float staffMid, float staffBot,
             bool drawKeyAndTimeSig,
-            bool drawBpmMarking = true)
+            bool drawBpmMarking = true,
+            bool drawTimeSignature = true)
         {
             canvas.SaveState();
             canvas.FontColor = ink;
@@ -3843,13 +4116,13 @@ namespace musicmate.Drawables
                 HorizontalAlignment.Left, VerticalAlignment.Top);
             canvas.RestoreState();
 
-            if (drawBpmMarking && drawKeyAndTimeSig)
+            if (drawBpmMarking && drawKeyAndTimeSig && drawTimeSignature)
                 DrawMusicBpmMarking(canvas, ink, staffTop);
 
             if (drawKeyAndTimeSig)
             {
                 float keySigEndX = DrawKeySignature(canvas, staffTop, staffMid, ink);
-                if (_session.Tune != "Tuner")
+                if (drawTimeSignature && _session.Tune != "Tuner")
                     DrawTimeSignature(canvas, staffTop, staffMid, ink, keySigEndX + KeySigTimeSigGap);
             }
         }
@@ -3952,7 +4225,7 @@ namespace musicmate.Drawables
                 return;
             }
 
-            if (_session.ShowConductorCues && _session.Tune != "Tuner"
+            if (_session.ShowConductorCues && _session.Tune != "Tuner" && !SingleStaffLayout
                 && ConductorBeatHelper.TryParseDisplayTimeSignature(_session.GetDisplayTimeSignature(), out var conductorTs))
             {
                 double? highlightedBeat = GetHighlightedConductedBeatRel(
@@ -4657,6 +4930,11 @@ namespace musicmate.Drawables
             public float TimeSigX { get; init; }
             /// <summary>Right edge of the time signature, relative to <c>safeLeft</c>.</summary>
             public float TimeSigRightRel { get; init; }
+            /// <summary>
+            /// Right edge of drawn header content (clef/key/time as applicable), relative to safeLeft.
+            /// Used to clear the first note of the staff.
+            /// </summary>
+            public float FullHeaderRightRel { get; init; }
             /// <summary>Offset from <c>safeLeft</c> to the first note beat-0 anchor (center X).</summary>
             public float LeftMargin { get; init; }
             /// <summary>Clef-only anchor for lower staff (no key/time repeat).</summary>
@@ -4672,7 +4950,7 @@ namespace musicmate.Drawables
             float clefOnlyRightRel = clefPad + clefWidth;
             float clefOnlyLeftMargin = clefOnlyRightRel + _layout.NoteHeadR + _layout.NoteHeadR;
 
-            string key = _session.Key;
+            string key = ActiveNotationKey;
             string scale = ActiveKeySignatureScale();
             bool suppressKeySig = _session.Tune == "Tuner"
                 || _session.Tune == "Practice Tune"
@@ -4684,11 +4962,28 @@ namespace musicmate.Drawables
             float keySigEndX = keySigStartX + KeySigDrawnWidth(accCount);
             float timeSigX = keySigEndX + KeySigTimeSigGap;
             float timeSigRightRel = timeSigX - safeLeft + timeSigW;
-            // Gap from time sig to first item (note/rest/accidental) ≈ one note-head width.
-            bool suppressTimeSig = _session.Tune == "Tuner";
-            float leftMargin = suppressTimeSig
-                ? clefOnlyLeftMargin
-                : timeSigRightRel + _layout.NoteHeadR + _layout.NoteHeadR;
+            // Gap from header (time sig, or key/clef when time is omitted) to first note.
+            // Sight Training omits time signature; Tuner omits key+time.
+            bool suppressTimeSig = _session.Tune == "Tuner" || SingleStaffLayout;
+            float fullHeaderRightRel;
+            float leftMargin;
+            if (_session.Tune == "Tuner")
+            {
+                fullHeaderRightRel = clefOnlyRightRel;
+                leftMargin = clefOnlyLeftMargin;
+            }
+            else if (suppressTimeSig)
+            {
+                fullHeaderRightRel = suppressKeySig
+                    ? clefOnlyRightRel
+                    : (keySigEndX - safeLeft);
+                leftMargin = fullHeaderRightRel + _layout.NoteHeadR + _layout.NoteHeadR;
+            }
+            else
+            {
+                fullHeaderRightRel = timeSigRightRel;
+                leftMargin = timeSigRightRel + _layout.NoteHeadR + _layout.NoteHeadR;
+            }
 
             return new StaffHeaderMetrics
             {
@@ -4698,6 +4993,7 @@ namespace musicmate.Drawables
                 KeySigEndX = keySigEndX,
                 TimeSigX = timeSigX,
                 TimeSigRightRel = timeSigRightRel,
+                FullHeaderRightRel = fullHeaderRightRel,
                 LeftMargin = leftMargin,
                 ClefOnlyLeftMargin = clefOnlyLeftMargin
             };
@@ -5343,6 +5639,8 @@ namespace musicmate.Drawables
 
         private string ActiveKeySignatureScale()
         {
+            if (!string.IsNullOrWhiteSpace(NotationScaleOverride))
+                return NotationScaleOverride!;
             if (_session.Tune == "Arpeggio")
                 return "Major";
             return string.IsNullOrWhiteSpace(_session.EffectiveScale)
@@ -5360,13 +5658,14 @@ namespace musicmate.Drawables
                 || (_session.Tune != "Arpeggio" && ActiveKeySignatureScale() == "Chromatic"))
                 return _headerMetrics.KeySigStartX;
 
-            int accCount = KeySignatureRules.GetAccidentalCount(_session.Key, ActiveKeySignatureScale());
+            string key = ActiveNotationKey;
+            int accCount = KeySignatureRules.GetAccidentalCount(key, ActiveKeySignatureScale());
             if (accCount == 0)
                 return _headerMetrics.KeySigStartX;
 
-            StaffLog($"[Staff] KeySig key={_session.Key} scale={ActiveKeySignatureScale()} count={accCount}");
+            StaffLog($"[Staff] KeySig key={key} scale={ActiveKeySignatureScale()} count={accCount}");
 
-            bool useFlats = KeySignatureRules.KeySignatureUsesFlats(_session.Key, ActiveKeySignatureScale());
+            bool useFlats = KeySignatureRules.KeySignatureUsesFlats(key, ActiveKeySignatureScale());
             string glyph = useFlats ? "\uE260" : "\uE262";
             float fontSize = KeySigAccidentalFontSize(useFlats);
             var pitches = useFlats ? KeySigFlatPitches : KeySigSharpPitches;
@@ -5435,20 +5734,20 @@ namespace musicmate.Drawables
         }
 
         private string? GetSignatureAccidentalForLetter(char letter)
-            => KeySignatureRules.GetSignatureAccidentalForLetter(letter, _session.Key, ActiveKeySignatureScale());
+            => KeySignatureRules.GetSignatureAccidentalForLetter(letter, ActiveNotationKey, ActiveKeySignatureScale());
 
         private bool IsAccidentalInKeySig(Accidental accidental, char letter)
         {
             if (accidental == Accidental.None || accidental == Accidental.Natural) return false;
 
             string scale = ActiveKeySignatureScale();
-            bool useFlats = KeySignatureRules.KeySignatureUsesFlats(_session.Key, scale);
+            bool useFlats = KeySignatureRules.KeySignatureUsesFlats(ActiveNotationKey, scale);
             bool typeMatch = useFlats
                 ? accidental == Accidental.Flat
                 : accidental == Accidental.Sharp;
             if (!typeMatch) return false;
 
-            return KeySignatureRules.IsLetterInKeySignature(letter, _session.Key, scale);
+            return KeySignatureRules.IsLetterInKeySignature(letter, ActiveNotationKey, scale);
         }
 
         /// <summary>
@@ -5459,7 +5758,7 @@ namespace musicmate.Drawables
         /// cancelling the key sig within the bar.
         /// </summary>
         private bool IsNoteInKeySig(GeneratedNote note)
-            => KeySignatureRules.IsLetterInKeySignature(note.Letter, _session.Key, ActiveKeySignatureScale());
+            => KeySignatureRules.IsLetterInKeySignature(note.Letter, ActiveNotationKey, ActiveKeySignatureScale());
 
 #if DEBUG
         private static void StaffLog(string message)

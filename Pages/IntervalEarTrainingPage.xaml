@@ -51,6 +51,26 @@
                 HorizontalOptions="Fill">
       <VerticalStackLayout x:Name="MainContent" Spacing="10" HorizontalOptions="Fill">
 
+        <!-- Play controls stay at the top so post-answer scroll can bring them into view. -->
+        <Grid x:Name="PlayControlsSection"
+              ColumnDefinitions="*,*"
+              ColumnSpacing="6"
+              HorizontalOptions="Fill">
+          <Button x:Name="PlayRandomButton"
+                  Grid.Column="0"
+                  Style="{StaticResource EarTrainButton}"
+                  Text="Play Random"
+                  Clicked="OnPlayRandomClicked"
+                  SemanticProperties.Description="Play a random interval and wait for your answer" />
+          <Button x:Name="PlayAgainButton"
+                  Grid.Column="1"
+                  Style="{StaticResource EarTrainButton}"
+                  Text="Play Again"
+                  IsEnabled="False"
+                  Clicked="OnPlayAgainClicked"
+                  SemanticProperties.Description="Replay the last interval with the same pitches" />
+        </Grid>
+
         <VerticalStackLayout x:Name="TopControlsSection" Spacing="10" HorizontalOptions="Fill">
           <Label x:Name="StatusLabel"
                  Text="Tap an interval to hear it, or Play Random to quiz yourself."

@@ -103,15 +103,16 @@
     </Style>
     <Style x:Key="CompactBrownButton" TargetType="Button">
       <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
-      <Setter Property="TextColor" Value="{DynamicResource ThemeButtonText}" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeContrastingText}" />
       <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontAttributes" Value="Bold" />
       <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="HeightRequest" Value="44" />
+      <Setter Property="HeightRequest" Value="40" />
+      <Setter Property="MinimumHeightRequest" Value="40" />
       <Setter Property="Padding" Value="8,4" />
-      <Setter Property="BorderColor" Value="Black" />
-      <Setter Property="BorderWidth" Value="2" />
+      <Setter Property="BorderWidth" Value="0" />
       <Setter Property="VerticalOptions" Value="Center" />
-      <Setter Property="HorizontalOptions" Value="Center" />
+      <Setter Property="HorizontalOptions" Value="Fill" />
     </Style>
     <!-- Tuner chrome: shared radius/height/padding; no borders. Fonts set per control. -->
     <x:Double x:Key="TunerControlHeight">36</x:Double>
@@ -673,7 +674,7 @@
             </Grid>
           </Border>
 
-          <!-- Save / delete user practice tunes -->
+          <!-- Save / delete user practice tunes (scrolls with staff) -->
           <Grid x:Name="SavedTuneButtonRow"
                 Margin="8,4,8,0"
                 ColumnDefinitions="*,*"

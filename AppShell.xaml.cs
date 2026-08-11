@@ -21,6 +21,8 @@ namespace musicmate
                 GoPracticeCommand = new Command(async () => await GoToAsync("//HomePage"));
                 BindingContext = this;
                 Navigating += OnShellNavigating;
+                Navigated += OnShellNavigated;
+                Loaded += (_, _) => EnsureFlyoutItemsVisible();
 
                 var theme = ServiceHelper.GetService<ThemeService>();
                 if (theme != null)
@@ -31,6 +33,7 @@ namespace musicmate
 #if DEBUG
                 RegisterDebugFlyoutItem();
 #endif
+                EnsureFlyoutItemsVisible();
                 // All page routes are declared via Route="..." on ShellContent in AppShell.xaml,
                 // so no additional Routing.RegisterRoute calls are needed here.  The previous
                 // calls silently threw ArgumentException (duplicate route) on every cold start.
@@ -38,6 +41,54 @@ namespace musicmate
             catch (Exception ex)
             {
                 Utils.Log($"Error initializing AppShell: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// WinUI/Shell can leave a FlyoutItem invisible after visiting its page when the
+        /// flyout ItemTemplate binds a null FlyoutIcon Image, or after NavBar visibility
+        /// flips. Re-assert visibility so menu rows never disappear after use.
+        /// </summary>
+        private void OnShellNavigated(object? sender, ShellNavigatedEventArgs e)
+            => EnsureFlyoutItemsVisible();
+
+        /// <summary>Public entry for pages that need to re-assert flyout rows after appear.</summary>
+        public void EnsureFlyoutItemsVisiblePublic()
+            => EnsureFlyoutItemsVisible();
+
+        private void EnsureFlyoutItemsVisible()
+        {
+            try
+            {
+                if (FlyoutBehavior != FlyoutBehavior.Flyout)
+                    FlyoutBehavior = FlyoutBehavior.Flyout;
+
+                foreach (var item in Items)
+                {
+                    if (item is not FlyoutItem flyoutItem)
+                        continue;
+
+                    Shell.SetFlyoutItemIsVisible(flyoutItem, true);
+                    flyoutItem.IsVisible = true;
+                    if (string.IsNullOrWhiteSpace(flyoutItem.Title)
+                        && flyoutItem.CurrentItem?.Title is { Length: > 0 } contentTitle)
+                    {
+                        flyoutItem.Title = contentTitle;
+                    }
+                }
+
+                // Named Sight Training item: keep title and visibility even if Shell cleared them.
+                if (SightTrainingFlyoutItem != null)
+                {
+                    if (string.IsNullOrWhiteSpace(SightTrainingFlyoutItem.Title))
+                        SightTrainingFlyoutItem.Title = "Interval Sight Training";
+                    Shell.SetFlyoutItemIsVisible(SightTrainingFlyoutItem, true);
+                    SightTrainingFlyoutItem.IsVisible = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Utils.Log($"[AppShell] EnsureFlyoutItemsVisible: {ex.Message}");
             }
         }
 

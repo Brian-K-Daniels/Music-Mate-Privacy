@@ -28,19 +28,12 @@
 
   <Shell.ItemTemplate>
     <DataTemplate x:DataType="BaseShellItem">
+      <!-- Title-only row: no FlyoutIcon is set on any item; a null Image Source has
+           caused WinUI flyout rows to drop out of the list after navigation. -->
       <Grid
                 HeightRequest="48"
-                Padding="12,0,0,0"
-                ColumnDefinitions="40,*">
-
-        <Image
-                    Source="{Binding FlyoutIcon}"
-                    HeightRequest="24"
-                    WidthRequest="24"
-                    VerticalOptions="Center" />
-
+                Padding="20,0,12,0">
         <Label
-                    Grid.Column="1"
                     Text="{Binding Title}"
                     FontSize="16"
                     TextColor="{DynamicResource ThemeContrastingText}"
@@ -75,11 +68,23 @@
         ContentTemplate="{DataTemplate local:MusicPage}" />
   </FlyoutItem>
 
-  <FlyoutItem Title="Interval Ear Training" Route="EarTraining">
+  <FlyoutItem Title="Interval Ear Training"
+              Route="EarTraining"
+              FlyoutDisplayOptions="AsSingleItem">
     <ShellContent
         Title="Interval Ear Training"
         Route="IntervalEarTrainingPage"
         ContentTemplate="{DataTemplate local:IntervalEarTrainingPage}" />
+  </FlyoutItem>
+
+  <FlyoutItem x:Name="SightTrainingFlyoutItem"
+              Title="Interval Sight Training"
+              Route="IntervalSightTraining"
+              FlyoutDisplayOptions="AsSingleItem">
+    <ShellContent
+        Title="Interval Sight Training"
+        Route="IntervalSightTrainingPage"
+        ContentTemplate="{DataTemplate local:IntervalSightTrainingPage}" />
   </FlyoutItem>
 
   <FlyoutItem Title="My Progress" Route="Statistics">
