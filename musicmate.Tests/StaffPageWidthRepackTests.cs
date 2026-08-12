@@ -82,7 +82,8 @@ public class StaffPageWidthRepackTests
     [Fact]
     public void Deterministic_360To835_SamePage_NarrowIsSparse_WideIsFull()
     {
-        // C Major quarters: at 360 → 1+1 with 6 unplaced; at 835 → ~5+3 with 0 unplaced.
+        // C Major quarters: at 360 → 1+1 with 6 unplaced; at 835 → 3+3 with 2 unplaced
+        // (Sls cap 18 widens measures vs the former 4+4 at Sls=12).
         var (page, bars, drawable, _) = BuildDeterministicCMajorPage(seed: 11);
         var state = new StaffPagePackState
         {
@@ -108,15 +109,13 @@ public class StaffPageWidthRepackTests
         Assert.Same(page, state.PageNotes);
 
         int widePlaced = wide.UpperMeasureCount + wide.LowerMeasureCount;
-        Assert.True(widePlaced >= 7,
-            $"Expected ~4+4 / 5+3 at {WideW}; got U{wide.UpperMeasureCount}+L{wide.LowerMeasureCount}");
-        Assert.Equal(0, wide.UnplacedMeasureCount);
+        Assert.True(widePlaced >= 6,
+            $"Expected ~3+3 at {WideW} with larger notation; got U{wide.UpperMeasureCount}+L{wide.LowerMeasureCount}");
+        Assert.Equal(2, wide.UnplacedMeasureCount);
         Assert.Equal(page.Count, wide.UpperNotes.Count + wide.LowerNotes.Count + wide.UnplacedNotes.Count);
-        Assert.True(wide.UpperMeasureCount >= 4);
-        Assert.True(wide.LowerMeasureCount >= 2);
-        // Balanced cut prefers 4+4 over greedy 5+3 when both place all 8.
-        Assert.Equal(4, wide.UpperMeasureCount);
-        Assert.Equal(4, wide.LowerMeasureCount);
+        // Balanced cut prefers 3+3 over greedy 4+2 when both place 6 (8 no longer fit at Sls=18).
+        Assert.Equal(3, wide.UpperMeasureCount);
+        Assert.Equal(3, wide.LowerMeasureCount);
     }
 
     [Fact]
@@ -194,7 +193,8 @@ public class StaffPageWidthRepackTests
         };
 
         var wide = StaffPageWidthPolicy.SplitCachedPage(drawable, state, WideW, CanvasH);
-        Assert.True(wide.UpperMeasureCount + wide.LowerMeasureCount >= 4);
+        Assert.True(wide.UpperMeasureCount + wide.LowerMeasureCount >= 2,
+            $"Dense Ab Blues at Sls=18 may pack fewer measures; got U{wide.UpperMeasureCount}+L{wide.LowerMeasureCount}");
 
         if (wide.UpperNotes.Count >= 2)
             AssertStaffGaps(drawable, session, wide.UpperNotes);

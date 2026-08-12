@@ -67,7 +67,7 @@ public class IntervalSightTrainingLogicTests
     }
 
     [Fact]
-    public void NeverPairsAcrossBarLine()
+    public void PairsAcrossBarLine_WhenMelodyIsConsecutive()
     {
         var notes = new List<GeneratedNote>
         {
@@ -82,6 +82,11 @@ public class IntervalSightTrainingLogicTests
 
         Assert.True(logic.SubmitAnswer(2));
         Assert.True(logic.HasCurrentPair);
+        Assert.Equal(1, logic.CurrentPair!.Value.AnchorFlatIndex);
+        Assert.Equal(2, logic.CurrentPair!.Value.TargetFlatIndex);
+        Assert.Equal(2, logic.CurrentPair!.Value.AbsoluteSemitones);
+
+        Assert.True(logic.SubmitAnswer(2));
         Assert.Equal(2, logic.CurrentPair!.Value.AnchorFlatIndex);
         Assert.Equal(3, logic.CurrentPair!.Value.TargetFlatIndex);
         Assert.Equal(1, logic.CurrentPair!.Value.AbsoluteSemitones);
@@ -149,7 +154,7 @@ public class IntervalSightTrainingLogicTests
     }
 
     [Fact]
-    public void SkipsMeasureWithFewerThanTwoPitchedNotes()
+    public void ConsecutivePitchedNotes_PairAcrossRestAndBar()
     {
         var notes = new List<GeneratedNote>
         {
@@ -159,8 +164,39 @@ public class IntervalSightTrainingLogicTests
             Pitched(62, 1, 5),
         };
         var logic = new IntervalSightTrainingLogic(notes);
-        Assert.Equal(2, logic.CurrentPair!.Value.AnchorFlatIndex);
-        Assert.Equal(3, logic.CurrentPair!.Value.TargetFlatIndex);
+        Assert.Equal(0, logic.CurrentPair!.Value.AnchorFlatIndex);
+        Assert.Equal(2, logic.CurrentPair!.Value.TargetFlatIndex);
+        Assert.Equal(0, logic.CurrentPair!.Value.AbsoluteSemitones);
+    }
+
+    [Fact]
+    public void CSharpOnStaff_IsMinorSecond_EvenWhenStoredMidiIsMajorSecond()
+    {
+        // Staff: C4 then C♯4 (minor second). Stale MIDI 60→62 would quiz a major second.
+        var notes = new List<GeneratedNote>
+        {
+            Spelled(60, 'C', 4, Accidental.None, "C4"),
+            Spelled(62, 'C', 4, Accidental.Sharp, "C#4"),
+        };
+        var logic = new IntervalSightTrainingLogic(notes, "G", "Major");
+        Assert.Equal(1, logic.CurrentPair!.Value.AbsoluteSemitones);
+        Assert.False(logic.SubmitAnswer(2));
+        Assert.True(logic.SubmitAnswer(1));
+        Assert.True(logic.IsSessionComplete);
+    }
+
+    [Fact]
+    public void KeySignatureFSharp_ToG_IsMinorSecond()
+    {
+        // G major: F on the F line is F♯. F♯→G is one semitone, not F♮→G.
+        var notes = new List<GeneratedNote>
+        {
+            Spelled(65, 'F', 4, Accidental.None, "F4"),
+            Spelled(67, 'G', 4, Accidental.None, "G4"),
+        };
+        var logic = new IntervalSightTrainingLogic(notes, "G", "Major");
+        Assert.Equal(1, logic.CurrentPair!.Value.AbsoluteSemitones);
+        Assert.True(logic.SubmitAnswer(1));
     }
 
     [Fact]
@@ -193,6 +229,23 @@ public class IntervalSightTrainingLogicTests
             Octave = midi / 12 - 1,
             Accidental = Accidental.None,
             SpelledName = $"N{midi}",
+            Duration = NoteDuration.Quarter,
+            IsRest = false,
+            MeasureIndex = measure,
+            BeatPosition = beat,
+            TargetFrequency = 440,
+        };
+
+    private static GeneratedNote Spelled(
+        int midi, char letter, int octave, Accidental accidental, string spelledName,
+        int measure = 0, double beat = 0)
+        => new()
+        {
+            MidiNumber = midi,
+            Letter = letter,
+            Octave = octave,
+            Accidental = accidental,
+            SpelledName = spelledName,
             Duration = NoteDuration.Quarter,
             IsRest = false,
             MeasureIndex = measure,

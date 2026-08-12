@@ -42,7 +42,9 @@ namespace musicmate.Pages
         {
             base.OnAppearing();
             _orientation?.ForceLandscape();
+            FeedbackOverlay.IsVisible = false;
             ApplySafeAreaPadding();
+            EnsureStaffDrawable();
             SyncStaffAvailableHeight();
             InitSightLevelFromSession();
             _excludeFirstMagnitude = null;
@@ -57,6 +59,8 @@ namespace musicmate.Pages
                 SetButtonsEnabled(false);
             }
 
+            await ScrollStaffIntoViewAsync();
+
             if (Shell.Current is AppShell shell)
                 shell.EnsureFlyoutItemsVisiblePublic();
         }
@@ -64,6 +68,7 @@ namespace musicmate.Pages
         protected override void OnDisappearing()
         {
             _feedbackCts?.Cancel();
+            FeedbackOverlay.IsVisible = false;
             base.OnDisappearing();
             if (_staffDrawable != null)
             {
@@ -121,35 +126,99 @@ namespace musicmate.Pages
         private void ApplySafeAreaPadding()
         {
             var insets = _safeArea?.GetSafeAreaInsets() ?? (0f, 0f, 0f, 0f);
+            // Extra top pad keeps ledger lines / stems clear of the nav bar and cutout.
             const double leftPad = 4;
             const double rightPad = 4;
-            MainLayout.Padding = new Thickness(
+            const double topPad = 12;
+            const double bottomPad = 12;
+            MainScroll.Padding = new Thickness(
                 leftPad + insets.Left,
-                2 + insets.Top,
+                topPad + insets.Top,
                 rightPad + insets.Right,
-                4 + insets.Bottom);
+                bottomPad + insets.Bottom);
+            MainLayout.Padding = new Thickness(0, 4, 0, 8);
+        }
+
+        private async Task ScrollStaffIntoViewAsync()
+        {
+            try
+            {
+                await MainScroll.ScrollToAsync(0, 0, animated: false);
+            }
+            catch
+            {
+                // Ignore if the scroll view is not ready yet.
+            }
+        }
+
+        private void EnsureStaffDrawable()
+        {
+            if (_staffDrawable != null)
+            {
+                if (StaffGraphicsView.Drawable != _staffDrawable)
+                    StaffGraphicsView.Drawable = _staffDrawable;
+                return;
+            }
+
+            float staffH = ResolveStaffHeightPx();
+            _staffDrawable = new StaffDrawable(_session, _theme, _safeArea)
+            {
+                SingleStaffLayout = true,
+                AvailableHeight = staffH,
+            };
+            StaffGraphicsView.Drawable = _staffDrawable;
+        }
+
+        /// <summary>
+        /// Staff height leaves the interval buttons and Level row on-screen without scrolling.
+        /// </summary>
+        private float ResolveStaffHeightPx()
+        {
+            double pageH = Height;
+            if (pageH <= 1)
+            {
+                var win = Application.Current?.Windows?.FirstOrDefault();
+                if (win != null)
+                    pageH = win.Height;
+            }
+
+            // Buttons: 3×36 + 2×2 row gaps; Level: 32; stack spacing/padding cushion.
+            const double buttonsBlock = 3 * 36 + 2 * 2;
+            const double levelRow = 32;
+            const double stackChrome = 8 + 8 + 2 + 12; // spacing + margins under staff
+            const double bottomControls = buttonsBlock + levelRow + stackChrome;
+
+            double h;
+            if (pageH > 1)
+            {
+                double topChrome = MainScroll.Padding.VerticalThickness + 44; // title / safe area
+                h = Math.Max(96, pageH - topChrome - bottomControls);
+            }
+            else if (StaffGraphicsView.Height > 1)
+            {
+                h = StaffGraphicsView.Height;
+            }
+            else
+            {
+                h = 120;
+            }
+
+            if (Math.Abs(StaffGraphicsView.HeightRequest - h) > 0.5)
+                StaffGraphicsView.HeightRequest = h;
+
+            return (float)h;
         }
 
         private void SyncStaffAvailableHeight()
         {
-            double h = StaffGraphicsView.Height;
-            if (h <= 1 && Height > 1)
-            {
-                const double toolbarRow = 32 + 4;
-                const double buttonBlock = 3 * 36 + 2 * 2 + 8;
-                h = Math.Max(96, Height - toolbarRow - buttonBlock - MainLayout.Padding.VerticalThickness - 48);
-            }
-
-            if (h <= 1)
+            float avail = ResolveStaffHeightPx();
+            if (_staffDrawable == null)
                 return;
 
-            float avail = (float)h;
-            if (_staffDrawable != null)
-            {
-                _staffDrawable.AvailableHeight = avail;
-                _staffDrawable.InvalidateLayoutCache();
-                StaffGraphicsView.Invalidate();
-            }
+            _staffDrawable.SingleStaffLayout = true;
+            _staffDrawable.AvailableHeight = avail;
+            _staffDrawable.InvalidateLayoutCache();
+            StaffGraphicsView.Invalidate();
         }
 
         private void BuildIntervalButtons()
@@ -224,6 +293,13 @@ namespace musicmate.Pages
         {
             SetStatus("Generating Sight Training tune…");
             SetButtonsEnabled(false);
+            EnsureStaffDrawable();
+            SyncStaffAvailableHeight();
+
+            // Match Music: wait for Shell/orientation to give the GraphicsView a real width.
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (StaffGraphicsView.Width <= 0 && sw.ElapsedMilliseconds < 1500)
+                await Task.Delay(40);
             SyncStaffAvailableHeight();
 
             int level = Math.Clamp(_sightLevel, 1, 100);
@@ -237,19 +313,12 @@ namespace musicmate.Pages
                     childLevelOverride: level));
 
             _notes = exercise.Notes;
-            _logic = new IntervalSightTrainingLogic(_notes);
+            _logic = new IntervalSightTrainingLogic(_notes, exercise.Key, exercise.Scale);
             _excludeFirstMagnitude = exercise.FinalIntervalMagnitude;
 
-            float staffH = StaffGraphicsView.Height > 1
-                ? (float)StaffGraphicsView.Height
-                : 160f;
-
-            _staffDrawable ??= new StaffDrawable(_session, _theme, _safeArea)
-            {
-                SingleStaffLayout = true,
-                AvailableHeight = staffH,
-            };
-            _staffDrawable.SingleStaffLayout = true;
+            float staffH = ResolveStaffHeightPx();
+            EnsureStaffDrawable();
+            _staffDrawable!.SingleStaffLayout = true;
             _staffDrawable.AvailableHeight = staffH;
             _staffDrawable.NotationKeyOverride = exercise.Key;
             _staffDrawable.NotationScaleOverride = exercise.Scale;
@@ -266,6 +335,11 @@ namespace musicmate.Pages
 
             RefreshStaffStates();
             StaffGraphicsView.Invalidate();
+            // Post-layout pass: first Invalidate can run while Height is still 0 after ForceLandscape.
+            await Task.Delay(50);
+            SyncStaffAvailableHeight();
+            StaffGraphicsView.Invalidate();
+            await ScrollStaffIntoViewAsync();
 
             if (_logic.IsSessionComplete || !_logic.HasCurrentPair)
             {

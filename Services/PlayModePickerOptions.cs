@@ -279,6 +279,110 @@ namespace musicmate.Services
             return AbbreviateDisplayedSelection(category, selection);
         }
 
+        /// <summary>
+        /// Music status / practice label for the exercise currently on the staff.
+        /// Assortment by Level keeps the What To Play picker on that mode, but composition
+        /// may assign a practice tune or arpeggio — status must name that exercise, not the
+        /// leftover level-default scale (e.g. Blues at L62).
+        /// </summary>
+        public static string ResolveExerciseStatusLabel(
+            bool layoutTestTuneEnabled,
+            string tune,
+            ScaleSelectionMode scaleSelectionMode,
+            bool isRandomMode,
+            string? practiceTuneTitle,
+            string? arpeggioDisplay,
+            string key,
+            string effectiveScale,
+            string? selectedScale,
+            string? selectedTunePreference)
+        {
+            if (layoutTestTuneEnabled)
+                return HalfThroughSixteenthNotes;
+
+            if (string.Equals(tune, Tuner, StringComparison.Ordinal))
+                return Tuner;
+
+            bool assortmentAssigned =
+                scaleSelectionMode == ScaleSelectionMode.ByLevel
+                && !IsUserSelectedPracticeTuneTitle(selectedTunePreference)
+                && !IsUserSelectedArpeggioTitle(selectedTunePreference);
+
+            if (string.Equals(tune, "Practice Tune", StringComparison.Ordinal)
+                && !string.IsNullOrWhiteSpace(practiceTuneTitle))
+            {
+                return assortmentAssigned
+                    ? $"{practiceTuneTitle} (Assortment by Level)"
+                    : practiceTuneTitle;
+            }
+
+            if (string.Equals(tune, "Arpeggio", StringComparison.Ordinal))
+            {
+                string arp = string.IsNullOrWhiteSpace(arpeggioDisplay) ? "Arpeggio" : arpeggioDisplay;
+                return assortmentAssigned
+                    ? $"{arp} (Assortment by Level)"
+                    : arp;
+            }
+
+            var (category, selection) = ResolveDisplayedPicker(
+                layoutTestTuneEnabled,
+                selectedTunePreference,
+                scaleSelectionMode,
+                selectedScale);
+
+            if (category == PlayModePickerCategory.Other
+                && selection == NoteSessionService.ScaleSelectionByLevel)
+                return $"{key} {effectiveScale} (Assortment by Level)";
+
+            if (category == PlayModePickerCategory.Other
+                && selection == RandomMelodic)
+                return FormatEffectiveScaleDisplay(
+                    scaleSelectionMode, isRandomMode, key, effectiveScale, selectedScale);
+
+            if (category == PlayModePickerCategory.Scales
+                && !string.IsNullOrWhiteSpace(selection))
+                return selection;
+
+            if (category == PlayModePickerCategory.Tunes
+                && !string.IsNullOrWhiteSpace(selection))
+                return selection;
+
+            if (category == PlayModePickerCategory.Arpeggios
+                && !string.IsNullOrWhiteSpace(selection))
+                return selection;
+
+            if (category == PlayModePickerCategory.Other
+                && !string.IsNullOrWhiteSpace(selection))
+                return selection;
+
+            if (isRandomMode)
+                return FormatEffectiveScaleDisplay(
+                    scaleSelectionMode, isRandomMode, key, effectiveScale, selectedScale);
+
+            if (scaleSelectionMode == ScaleSelectionMode.ByLevel)
+                return $"{key} {effectiveScale} (Assortment by Level)";
+
+            if (scaleSelectionMode == ScaleSelectionMode.Random)
+                return FormatEffectiveScaleDisplay(
+                    scaleSelectionMode, isRandomMode, key, effectiveScale, selectedScale);
+
+            return string.IsNullOrWhiteSpace(selectedScale) ? "Selected Scale" : selectedScale;
+        }
+
+        private static string FormatEffectiveScaleDisplay(
+            ScaleSelectionMode scaleSelectionMode,
+            bool isRandomMode,
+            string key,
+            string effectiveScale,
+            string? selectedScale)
+            => scaleSelectionMode switch
+            {
+                ScaleSelectionMode.ByLevel => $"{key} {effectiveScale} (Assortment by Level)",
+                ScaleSelectionMode.Random => $"Random — {key} {effectiveScale}",
+                _ when isRandomMode => $"Random — {key} {effectiveScale}",
+                _ => $"{key} {selectedScale}"
+            };
+
         /// <summary>Abbreviated label for session statistics (What column).</summary>
         public static string AbbreviateDisplayedSelection(
             PlayModePickerCategory category,

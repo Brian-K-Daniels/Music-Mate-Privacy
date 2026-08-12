@@ -199,9 +199,9 @@ public class TwoOctaveScaleSplitTests
         var drawable = new StaffDrawable(session, new ThemeService(), safeArea: null);
 
         var split = drawable.SplitMeasuresAcrossStaves(page, bars, CanvasW, CanvasH);
-        Assert.Equal(4, split.UpperMeasureCount);
-        Assert.Equal(4, split.LowerMeasureCount);
-        Assert.Equal(0, split.UnplacedMeasureCount);
+        Assert.Equal(3, split.UpperMeasureCount);
+        Assert.Equal(3, split.LowerMeasureCount);
+        Assert.Equal(2, split.UnplacedMeasureCount);
     }
 
     [Fact]

@@ -503,18 +503,19 @@ namespace musicmate.ViewModels
         public List<string> SyncopationSettingOptions { get; } = new() { "None", "Simple", "Full" };
         public List<string> NoteNameDisplayOptions { get; } = new() { "Current only", "All notes", "Off" };
 
-        public List<double> AboutFontSizeOptions { get; } = new() { 6, 8, 10, 12, 14, 16, 18 };
+        public List<double> AboutFontSizeOptions { get; } = AboutFontSizes.CreateList();
 
-        private double _aboutFontSize = SessionPreferences.Get(AboutPageViewModel.FontSizePreferenceKey, 14.0);
+        private double _aboutFontSize = AboutFontSizes.ClampOrDefault(
+            SessionPreferences.Get(AboutFontSizes.PreferenceKey, AboutFontSizes.Default));
         public double AboutFontSize
         {
             get => _aboutFontSize;
             set
             {
                 if (_aboutFontSize == value) return;
-                if (!AboutFontSizeOptions.Contains(value)) return;
+                if (!AboutFontSizes.Contains(value)) return;
                 _aboutFontSize = value;
-                SessionPreferences.Set(AboutPageViewModel.FontSizePreferenceKey, value);
+                SessionPreferences.Set(AboutFontSizes.PreferenceKey, value);
                 OnPropertyChanged(nameof(AboutFontSize));
                 NotifyFactoryDefaultsMayHaveChanged();
             }

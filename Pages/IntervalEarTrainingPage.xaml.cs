@@ -364,13 +364,24 @@ namespace musicmate.Pages
             FeedbackOverlay.Opacity = 0;
             await FeedbackOverlay.FadeToAsync(1, 120);
 
+            if (!correct)
+                await ScrollToPlayControlsAsync();
+
+            SetFeedbackWaitVisible(true);
             _feedbackCts?.Cancel();
             _feedbackCts = new CancellationTokenSource();
             try
             {
-                await Task.Delay(1600, _feedbackCts.Token);
+                await Task.WhenAll(
+                    FeedbackWaitProgress.ProgressTo(1, 1600, Easing.Linear),
+                    Task.Delay(1600, _feedbackCts.Token));
             }
             catch (OperationCanceledException) { }
+
+            SetFeedbackWaitVisible(false);
+
+            if (correct)
+                await ScrollToPlayControlsAsync();
 
             try
             {
@@ -382,7 +393,15 @@ namespace musicmate.Pages
             _showingFeedback = false;
             SetControlsEnabled(true);
             UpdatePlayAgainEnabled();
-            await ScrollToPlayControlsAsync();
+        }
+
+        private void SetFeedbackWaitVisible(bool visible)
+        {
+            FeedbackWaitIndicator.IsVisible = visible;
+            FeedbackWaitIndicator.IsRunning = visible;
+            FeedbackWaitProgress.IsVisible = visible;
+            if (visible)
+                FeedbackWaitProgress.Progress = 0;
         }
 
         private void SetControlsEnabled(bool enabled)

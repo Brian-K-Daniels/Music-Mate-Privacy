@@ -77,10 +77,15 @@
         ContentTemplate="{DataTemplate local:IntervalEarTrainingPage}" />
   </FlyoutItem>
 
+  <!--
+    Do not use FlyoutDisplayOptions=AsSingleItem here. On WinUI/Shell that mode can
+    clear the FlyoutItem title or drop the row after the page is visited once.
+    One ShellContent under a normal FlyoutItem keeps a single persistent menu entry.
+  -->
   <FlyoutItem x:Name="SightTrainingFlyoutItem"
               Title="Interval Sight Training"
               Route="IntervalSightTraining"
-              FlyoutDisplayOptions="AsSingleItem">
+              Shell.FlyoutItemIsVisible="True">
     <ShellContent
         Title="Interval Sight Training"
         Route="IntervalSightTrainingPage"

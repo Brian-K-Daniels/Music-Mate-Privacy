@@ -43,6 +43,70 @@ namespace musicmate.Services
             return pool;
         }
 
+        /// <summary>
+        /// One shuffled copy of 0…maxAbs. When <paramref name="avoidFirst"/> is set and the
+        /// pool has more than one value, the first slot is swapped if it would repeat that magnitude.
+        /// </summary>
+        public static List<int> CreateShuffledCycle(
+            int maxAbsSemitones,
+            Random rng,
+            int? avoidFirst = null)
+        {
+            ArgumentNullException.ThrowIfNull(rng);
+            var pool = CreateIntervalPool(maxAbsSemitones);
+            Shuffle(pool, rng);
+            if (avoidFirst is int excl && pool.Count > 1 && pool[0] == excl)
+            {
+                int j = 1 + rng.Next(pool.Count - 1);
+                (pool[0], pool[j]) = (pool[j], pool[0]);
+            }
+            return pool;
+        }
+
+        /// <summary>
+        /// True when <paramref name="magnitudes"/> is a permutation of 0…maxAbs
+        /// (each available interval once, none missing, none repeated).
+        /// </summary>
+        public static bool IsCompleteCycle(IReadOnlyList<int> magnitudes, int maxAbsSemitones)
+        {
+            ArgumentNullException.ThrowIfNull(magnitudes);
+            maxAbsSemitones = ResolveMaxAbsIntervalSemitones(maxAbsSemitones);
+            int pool = maxAbsSemitones + 1;
+            if (magnitudes.Count != pool)
+                return false;
+            var seen = new HashSet<int>();
+            foreach (int mag in magnitudes)
+            {
+                if (mag < 0 || mag > maxAbsSemitones)
+                    return false;
+                if (!seen.Add(mag))
+                    return false;
+            }
+            return seen.Count == pool;
+        }
+
+        /// <summary>
+        /// Splits a magnitude stream into successive complete cycles (permutations of 0…maxAbs).
+        /// A trailing partial cycle is ignored.
+        /// </summary>
+        public static List<List<int>> SplitCompleteCycles(
+            IReadOnlyList<int> magnitudes,
+            int maxAbsSemitones)
+        {
+            ArgumentNullException.ThrowIfNull(magnitudes);
+            maxAbsSemitones = ResolveMaxAbsIntervalSemitones(maxAbsSemitones);
+            int pool = maxAbsSemitones + 1;
+            var cycles = new List<List<int>>();
+            for (int i = 0; i + pool <= magnitudes.Count; i += pool)
+            {
+                var slice = magnitudes.Skip(i).Take(pool).ToList();
+                if (!IsCompleteCycle(slice, maxAbsSemitones))
+                    break;
+                cycles.Add(slice);
+            }
+            return cycles;
+        }
+
         public static List<int> CollectMagnitudes(IReadOnlyList<Models.GeneratedNote> notes)
         {
             var pitched = new List<int>();
@@ -59,8 +123,9 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// True when every consecutive magnitude is unique, within 0…maxAbs, and the first
-        /// magnitude is not <paramref name="excludeFirstMagnitude"/> (when provided).
+        /// True when consecutive magnitudes stay in 0…maxAbs, do not repeat until the pool
+        /// is exhausted, and the first magnitude is not <paramref name="excludeFirstMagnitude"/>
+        /// (when provided). Complete-cycle checks use <see cref="IsCompleteCycle"/>.
         /// </summary>
         public static bool TryValidateUniqueMagnitudes(
             IReadOnlyList<Models.GeneratedNote> notes,
@@ -77,15 +142,24 @@ namespace musicmate.Services
             if (excludeFirstMagnitude is int excl && magnitudes[0] == excl)
                 return false;
 
-            var seen = new HashSet<int>();
-            foreach (int mag in magnitudes)
-            {
-                if (mag < 0 || mag > maxAbsSemitones)
-                    return false;
-                if (!seen.Add(mag))
-                    return false;
-            }
+            return HasNoRepeatsUntilPoolExhausted(magnitudes, maxAbsSemitones);
+        }
 
+        /// <summary>
+        /// True when the melody is one complete shuffled cycle (every 0…maxAbs once)
+        /// and the first magnitude is not <paramref name="excludeFirstMagnitude"/> when set.
+        /// </summary>
+        public static bool TryValidateCompleteCycle(
+            IReadOnlyList<Models.GeneratedNote> notes,
+            int maxAbsSemitones,
+            int? excludeFirstMagnitude,
+            out List<int> magnitudes)
+        {
+            magnitudes = CollectMagnitudes(notes);
+            if (!IsCompleteCycle(magnitudes, maxAbsSemitones))
+                return false;
+            if (excludeFirstMagnitude is int excl && magnitudes[0] == excl)
+                return false;
             return true;
         }
 
@@ -123,8 +197,10 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// Picks signed MIDI steps with unique absolute magnitudes (no repeats in the list).
-        /// Direction is chosen randomly when both up and down fit.
+        /// Picks signed MIDI steps from successive shuffled cycles of 0…maxAbs.
+        /// Each cycle tests every magnitude once before any repeat. Direction is random
+        /// when both fit; if a magnitude cannot land from the current pitch, the opposite
+        /// direction or a new starting note is used — the magnitude is never skipped.
         /// </summary>
         public static List<int> PickIntervalsWithoutRepetition(
             int startMidi,
@@ -144,6 +220,8 @@ namespace musicmate.Services
 
             var allowed = BuildAllowedSet(lowMidi, highMidi, allowedMidis);
             startMidi = Math.Clamp(startMidi, lowMidi, highMidi);
+            if (allowed.Count == 0)
+                allowed = Enumerable.Range(lowMidi, highMidi - lowMidi + 1).ToHashSet();
             if (!allowed.Contains(startMidi))
             {
                 startMidi = allowed
@@ -153,38 +231,55 @@ namespace musicmate.Services
             }
 
             maxAbsSemitones = ResolveMaxAbsIntervalSemitones(maxAbsSemitones);
+            var magnitudes = BuildCycledMagnitudeSequence(
+                stepCount, maxAbsSemitones, rng, excludeFirstMagnitude);
 
-            var chosen = new List<int>(stepCount);
-            var bag = Shuffle(CreateIntervalPool(maxAbsSemitones), rng);
-            if (excludeFirstMagnitude is int excl)
-                bag.RemoveAll(m => m == excl);
-
-            int bagIndex = 0;
-            int pitch = startMidi;
-            var usedMags = new HashSet<int>();
-
-            for (int step = 0; step < stepCount; step++)
+            if (!TryRealizeMagnitudeSequence(
+                    magnitudes, startMidi, lowMidi, highMidi, rng, allowed, out var signed))
             {
-                if (bagIndex >= bag.Count)
+                var chromatic = Enumerable.Range(lowMidi, highMidi - lowMidi + 1).ToHashSet();
+                if (!TryRealizeMagnitudeSequence(
+                        magnitudes, startMidi, lowMidi, highMidi, rng, chromatic, out signed))
                 {
-                    var remaining = CreateIntervalPool(maxAbsSemitones)
-                        .Where(m => !usedMags.Contains(m))
-                        .ToList();
-                    if (remaining.Count == 0)
-                        break;
-                    bag = Shuffle(remaining, rng);
-                    bagIndex = 0;
+                    // This permutation cannot be realized in range — reshuffle cycles, never drop a mag.
+                    for (int reshuffle = 0; reshuffle < 12 && signed.Count == 0; reshuffle++)
+                    {
+                        magnitudes = BuildCycledMagnitudeSequence(
+                            stepCount, maxAbsSemitones, rng, excludeFirstMagnitude);
+                        TryRealizeMagnitudeSequence(
+                            magnitudes, startMidi, lowMidi, highMidi, rng, chromatic, out signed);
+                    }
                 }
-
-                int signed = TakeFittingMagnitude(
-                    bag, ref bagIndex, pitch, lowMidi, highMidi, maxAbsSemitones, rng, usedMags, allowed);
-                int mag = Math.Abs(signed);
-                usedMags.Add(mag);
-                chosen.Add(signed);
-                pitch += signed;
             }
 
-            return chosen;
+            return signed;
+        }
+
+        /// <summary>
+        /// Concatenates shuffled complete cycles until <paramref name="stepCount"/> magnitudes
+        /// are filled. The first magnitude of a new cycle avoids the previous cycle's last
+        /// when the pool has more than one value.
+        /// </summary>
+        public static List<int> BuildCycledMagnitudeSequence(
+            int stepCount,
+            int maxAbsSemitones,
+            Random rng,
+            int? excludeFirstMagnitude = null)
+        {
+            ArgumentNullException.ThrowIfNull(rng);
+            maxAbsSemitones = ResolveMaxAbsIntervalSemitones(maxAbsSemitones);
+            var seq = new List<int>(Math.Max(0, stepCount));
+            int? avoidFirst = excludeFirstMagnitude;
+            while (seq.Count < stepCount)
+            {
+                var cycle = CreateShuffledCycle(maxAbsSemitones, rng, avoidFirst);
+                seq.AddRange(cycle);
+                avoidFirst = cycle[^1];
+            }
+
+            if (seq.Count > stepCount)
+                seq.RemoveRange(stepCount, seq.Count - stepCount);
+            return seq;
         }
 
         public static List<int> BuildMidiChain(int startMidi, IReadOnlyList<int> signedIntervals)
@@ -200,21 +295,31 @@ namespace musicmate.Services
             return midis;
         }
 
-        /// <summary>True when all absolute magnitudes in the list are unique.</summary>
+        /// <summary>
+        /// True when absolute magnitudes do not repeat until 0…maxAbs have all appeared
+        /// (a new cycle may then repeat). Signed or unsigned lists are accepted.
+        /// </summary>
         public static bool HasNoRepeatsUntilPoolExhausted(
             IReadOnlyList<int> signedIntervals,
             int maxAbsSemitones)
         {
             ArgumentNullException.ThrowIfNull(signedIntervals);
             maxAbsSemitones = ResolveMaxAbsIntervalSemitones(maxAbsSemitones);
+            int pool = maxAbsSemitones + 1;
             var seen = new HashSet<int>();
+            int inCycle = 0;
             foreach (int d in signedIntervals)
             {
                 int mag = Math.Abs(d);
                 if (mag > maxAbsSemitones)
                     return false;
+                if (inCycle == 0)
+                    seen.Clear();
                 if (!seen.Add(mag))
                     return false;
+                inCycle++;
+                if (inCycle >= pool)
+                    inCycle = 0;
             }
             return true;
         }
@@ -317,99 +422,114 @@ namespace musicmate.Services
             return preferred[rng.Next(preferred.Count)];
         }
 
-        private static int TakeFittingMagnitude(
-            List<int> bag,
-            ref int bagIndex,
-            int pitch,
+        private static bool TryRealizeMagnitudeSequence(
+            IReadOnlyList<int> magnitudes,
+            int startMidi,
             int lowMidi,
             int highMidi,
-            int maxAbsSemitones,
             Random rng,
-            HashSet<int> usedMags,
-            HashSet<int> allowed)
+            HashSet<int> allowed,
+            out List<int> signed)
         {
-            for (int attempt = bagIndex; attempt < bag.Count; attempt++)
-            {
-                int mag = bag[attempt];
-                if (usedMags.Contains(mag))
-                    continue;
-                if (!TryResolveSignedDelta(mag, pitch, lowMidi, highMidi, rng, allowed, out int signed))
-                    continue;
+            signed = new List<int>();
+            if (magnitudes.Count == 0)
+                return true;
 
-                (bag[bagIndex], bag[attempt]) = (bag[attempt], bag[bagIndex]);
-                bagIndex++;
-                return signed;
-            }
-
-            var fittingMags = new List<int>();
-            foreach (int mag in CreateIntervalPool(maxAbsSemitones))
+            var starts = BuildStartCandidates(allowed, lowMidi, highMidi, startMidi, rng);
+            var path = new List<int>(magnitudes.Count);
+            foreach (int start in starts)
             {
-                if (usedMags.Contains(mag))
-                    continue;
-                if (TryResolveSignedDelta(mag, pitch, lowMidi, highMidi, rng, allowed, out _))
-                    fittingMags.Add(mag);
-            }
-
-            if (fittingMags.Count == 0)
-            {
-                // Last resort: any unused magnitude that fits the hard range (ignore allowed set).
-                foreach (int mag in CreateIntervalPool(maxAbsSemitones))
+                path.Clear();
+                if (TryRealizeFrom(start, 0, magnitudes, lowMidi, highMidi, allowed, rng, path))
                 {
-                    if (usedMags.Contains(mag))
-                        continue;
-                    if (TryResolveSignedDelta(mag, pitch, lowMidi, highMidi, rng, allowed: null, out int signedAny))
-                    {
-                        bagIndex = bag.Count;
-                        return signedAny;
-                    }
+                    signed = new List<int>(path);
+                    return true;
                 }
-
-                bagIndex = bag.Count;
-                return 0;
             }
 
-            bag.Clear();
-            bag.AddRange(Shuffle(fittingMags, rng));
-            bagIndex = 1;
-            TryResolveSignedDelta(bag[0], pitch, lowMidi, highMidi, rng, allowed, out int fallback);
-            return fallback;
+            return false;
         }
 
-        private static bool TryResolveSignedDelta(
-            int magnitude,
-            int pitch,
+        private static List<int> BuildStartCandidates(
+            HashSet<int> allowed,
             int lowMidi,
             int highMidi,
-            Random rng,
-            HashSet<int>? allowed,
-            out int signedDelta)
+            int preferredStart,
+            Random rng)
         {
-            signedDelta = 0;
-            if (magnitude == 0)
+            var starts = allowed.ToList();
+            Shuffle(starts, rng);
+            int idx = starts.IndexOf(preferredStart);
+            if (idx > 0)
             {
-                if (pitch < lowMidi || pitch > highMidi)
-                    return false;
-                if (allowed != null && !allowed.Contains(pitch))
-                    return false;
-                signedDelta = 0;
-                return true;
+                (starts[0], starts[idx]) = (starts[idx], starts[0]);
+            }
+            else if (idx < 0 && preferredStart >= lowMidi && preferredStart <= highMidi)
+            {
+                starts.Insert(0, preferredStart);
             }
 
-            bool upOk = pitch + magnitude <= highMidi
-                && (allowed == null || allowed.Contains(pitch + magnitude));
-            bool downOk = pitch - magnitude >= lowMidi
-                && (allowed == null || allowed.Contains(pitch - magnitude));
-            if (!upOk && !downOk)
-                return false;
+            const int maxStarts = 32;
+            if (starts.Count > maxStarts)
+                starts.RemoveRange(maxStarts, starts.Count - maxStarts);
 
-            if (upOk && downOk)
-                signedDelta = rng.Next(2) == 0 ? magnitude : -magnitude;
-            else if (upOk)
-                signedDelta = magnitude;
+            return starts;
+        }
+
+        private static bool TryRealizeFrom(
+            int pitch,
+            int index,
+            IReadOnlyList<int> magnitudes,
+            int lowMidi,
+            int highMidi,
+            HashSet<int> allowed,
+            Random rng,
+            List<int> path)
+        {
+            if (index >= magnitudes.Count)
+                return true;
+
+            int mag = magnitudes[index];
+            var candidates = new List<int>(2);
+            if (mag == 0)
+            {
+                if (pitch >= lowMidi && pitch <= highMidi && allowed.Contains(pitch))
+                    candidates.Add(0);
+            }
             else
-                signedDelta = -magnitude;
+            {
+                int up = pitch + mag;
+                int down = pitch - mag;
+                bool upOk = up <= highMidi && allowed.Contains(up);
+                bool downOk = down >= lowMidi && allowed.Contains(down);
+                if (upOk && downOk)
+                {
+                    if (rng.Next(2) == 0)
+                    {
+                        candidates.Add(mag);
+                        candidates.Add(-mag);
+                    }
+                    else
+                    {
+                        candidates.Add(-mag);
+                        candidates.Add(mag);
+                    }
+                }
+                else if (upOk)
+                    candidates.Add(mag);
+                else if (downOk)
+                    candidates.Add(-mag);
+            }
 
-            return true;
+            foreach (int signed in candidates)
+            {
+                path.Add(signed);
+                if (TryRealizeFrom(pitch + signed, index + 1, magnitudes, lowMidi, highMidi, allowed, rng, path))
+                    return true;
+                path.RemoveAt(path.Count - 1);
+            }
+
+            return false;
         }
 
         private static List<int> Shuffle(List<int> values, Random rng)

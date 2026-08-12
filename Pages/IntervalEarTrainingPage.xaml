@@ -188,6 +188,21 @@
                  HorizontalTextAlignment="Center"
                  LineBreakMode="WordWrap"
                  TextColor="{DynamicResource ThemeContrastingText}" />
+          <ActivityIndicator x:Name="FeedbackWaitIndicator"
+                             IsRunning="False"
+                             IsVisible="False"
+                             Color="{DynamicResource ThemeContrastingText}"
+                             WidthRequest="36"
+                             HeightRequest="36"
+                             HorizontalOptions="Center"
+                             SemanticProperties.Description="Waiting" />
+          <ProgressBar x:Name="FeedbackWaitProgress"
+                       Progress="0"
+                       IsVisible="False"
+                       ProgressColor="{DynamicResource ThemeSlider}"
+                       HeightRequest="8"
+                       HorizontalOptions="Fill"
+                       SemanticProperties.Description="Waiting for the next view" />
         </VerticalStackLayout>
       </Border>
     </Grid>

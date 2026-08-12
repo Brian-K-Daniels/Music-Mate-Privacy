@@ -13,16 +13,14 @@ namespace musicmate.ViewModels
         private Color _backgroundColor = Colors.White;
         private double _selectedFontSize;
         ThemeService? _themeService;
-        private const string AboutFontSizeKey = "About_FontSize";
         private readonly IStoreService? _storeService;
 
         public AboutPageViewModel(ThemeService theme)
         {
-            FontSizeOptions = new ObservableCollection<double> { 6, 8, 10, 12, 14, 16, 18 };
+            FontSizeOptions = AboutFontSizes.CreateCollection();
             // Default selection from preferences or fallback to 12
-            var defaultSize = FontSizeOptions[3];
-            var saved = Preferences.Get(AboutFontSizeKey, defaultSize);
-            SelectedFontSize = FontSizeOptions.Contains(saved) ? saved : defaultSize;
+            var saved = Preferences.Get(AboutFontSizes.PreferenceKey, AboutFontSizes.Default);
+            SelectedFontSize = AboutFontSizes.ClampOrDefault(saved);
 
             _themeService = theme;
             _backgroundColor = _themeService.PanelBackgroundColor;
@@ -88,7 +86,7 @@ namespace musicmate.ViewModels
                 if (_selectedFontSize != value)
                 {
                     _selectedFontSize = value;
-                    Preferences.Set(AboutFontSizeKey, value);
+                    Preferences.Set(AboutFontSizes.PreferenceKey, value);
                     OnPropertyChanged(nameof(SelectedFontSize));
                 }
             }
@@ -97,14 +95,13 @@ namespace musicmate.ViewModels
         /// <summary>
         /// Preference key shared with Settings → Display ("Font used in About page").
         /// </summary>
-        public const string FontSizePreferenceKey = AboutFontSizeKey;
+        public const string FontSizePreferenceKey = AboutFontSizes.PreferenceKey;
 
         /// <summary>Re-reads the About font size after it may have been changed in Settings.</summary>
         public void ReloadFontSizeFromPreferences()
         {
-            var defaultSize = FontSizeOptions[3];
-            var saved = Preferences.Get(AboutFontSizeKey, defaultSize);
-            var next = FontSizeOptions.Contains(saved) ? saved : defaultSize;
+            var saved = Preferences.Get(AboutFontSizes.PreferenceKey, AboutFontSizes.Default);
+            var next = AboutFontSizes.ClampOrDefault(saved);
             if (_selectedFontSize == next)
                 return;
             _selectedFontSize = next;

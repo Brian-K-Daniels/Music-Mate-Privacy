@@ -1160,6 +1160,18 @@ namespace musicmate.Drawables
         // ── Ordered layout pipeline ──────────────────────────────────────────────
         // Approximate height of the iOS/Android system Practice-indicator bar at the bottom of the screen.
         private const float BottomBarReserve = 34f;
+        /// <summary>Music two-staff minimum staff-line spacing (px).</summary>
+        private const float MusicMinStaffLineSpacing = 6f;
+        /// <summary>
+        /// Music two-staff maximum staff-line spacing (px). Was 12, which left extra
+        /// canvas height as empty vertical slack. 18 enlarges staff spacing, noteheads,
+        /// clefs, accidentals, rests, stems, beams and labels together. Pack and draw
+        /// both hit this cap on typical phone heights, so MinInkGap packing stays aligned.
+        /// Sight Training uses a separate single-staff clamp.
+        /// </summary>
+        internal const float MusicMaxStaffLineSpacing = 18f;
+        private const float SingleStaffMinStaffLineSpacing = 8f;
+        private const float SingleStaffMaxStaffLineSpacing = 22f;
 
         /// <summary>Minimum gap between a note-name label and the top/bottom safe drawing edge.</summary>
         internal const float NoteNameMinEdgeClearancePx = 10f;
@@ -1269,8 +1281,8 @@ namespace musicmate.Drawables
             float sls = usableH / (totalHalfSpaces / 2f);
             // Sight Training: allow substantially larger staff spacing for readability.
             sls = SingleStaffLayout
-                ? Math.Clamp(sls, 8f, 22f)
-                : Math.Clamp(sls, 6f, 12f);
+                ? Math.Clamp(sls, SingleStaffMinStaffLineSpacing, SingleStaffMaxStaffLineSpacing)
+                : Math.Clamp(sls, MusicMinStaffLineSpacing, MusicMaxStaffLineSpacing);
 
             float hs = sls / 2f;
 
@@ -2500,7 +2512,8 @@ namespace musicmate.Drawables
 
             if (UpperNotes.Count == 0 && LowerNotes.Count == 0)
             {
-                if (_session.Tune == "Tuner")
+                // Sight Training / Tuner: show an empty staff instead of a blank panel.
+                if (SingleStaffLayout || _session.Tune == "Tuner")
                 {
                     DrawTunerEmptyStaff(canvas, dirtyRect, ink);
                     return;
@@ -5508,10 +5521,11 @@ namespace musicmate.Drawables
             try
             {
                 canvas.FontColor = ApplyAlpha(ink, fadeAlpha);
-                canvas.FontSize = 11;
+                float nameScale = Math.Clamp(_layout.Sls / 12f, 0.5f, 2.5f);
+                canvas.FontSize = 11f * nameScale;
                 var label = ResolveNoteNameLabelLayout(
                     x, ny, _layout.NoteHeadR, staffTop, staffBot,
-                    safeTop, safeBottom, NoteNameMinEdgeClearancePx);
+                    safeTop, safeBottom, NoteNameMinEdgeClearancePx, nameScale);
                 canvas.DrawString(note.SpelledName, label.X, label.Y, label.Width, label.Height,
                     HorizontalAlignment.Center, VerticalAlignment.Top);
             }
@@ -5532,31 +5546,38 @@ namespace musicmate.Drawables
             float staffBot,
             float safeTop,
             float safeBottom,
-            float minEdgeClearance = NoteNameMinEdgeClearancePx)
+            float minEdgeClearance = NoteNameMinEdgeClearancePx,
+            float sizeScale = 1f)
         {
-            float aboveY = noteY - noteHeadR - NoteNameAboveGap;
-            float belowY = noteY + noteHeadR + NoteNameBelowGap;
+            float scale = sizeScale > 0.01f ? sizeScale : 1f;
+            float labelW = NoteNameLabelWidth * scale;
+            float labelH = NoteNameLabelHeight * scale;
+            float aboveGap = NoteNameAboveGap * scale;
+            float belowGap = NoteNameBelowGap * scale;
+            float besideGap = NoteNameBesideGap * scale;
+            float aboveY = noteY - noteHeadR - aboveGap;
+            float belowY = noteY + noteHeadR + belowGap;
             float mid = (staffTop + staffBot) / 2f;
             bool preferBelow = noteY > mid;
 
             bool FitsVertically(float labelY)
                 => labelY >= safeTop + minEdgeClearance
-                   && labelY + NoteNameLabelHeight <= safeBottom - minEdgeClearance;
+                   && labelY + labelH <= safeBottom - minEdgeClearance;
 
             if (preferBelow)
             {
                 if (FitsVertically(belowY))
                 {
                     return new NoteNameLabelLayout(
-                        noteX - NoteNameLabelWidth * 0.5f, belowY,
-                        NoteNameLabelWidth, NoteNameLabelHeight, NoteNameLabelSide.Below);
+                        noteX - labelW * 0.5f, belowY,
+                        labelW, labelH, NoteNameLabelSide.Below);
                 }
 
                 if (FitsVertically(aboveY))
                 {
                     return new NoteNameLabelLayout(
-                        noteX - NoteNameLabelWidth * 0.5f, aboveY,
-                        NoteNameLabelWidth, NoteNameLabelHeight, NoteNameLabelSide.Above);
+                        noteX - labelW * 0.5f, aboveY,
+                        labelW, labelH, NoteNameLabelSide.Above);
                 }
             }
             else
@@ -5564,23 +5585,23 @@ namespace musicmate.Drawables
                 if (FitsVertically(aboveY))
                 {
                     return new NoteNameLabelLayout(
-                        noteX - NoteNameLabelWidth * 0.5f, aboveY,
-                        NoteNameLabelWidth, NoteNameLabelHeight, NoteNameLabelSide.Above);
+                        noteX - labelW * 0.5f, aboveY,
+                        labelW, labelH, NoteNameLabelSide.Above);
                 }
 
                 if (FitsVertically(belowY))
                 {
                     return new NoteNameLabelLayout(
-                        noteX - NoteNameLabelWidth * 0.5f, belowY,
-                        NoteNameLabelWidth, NoteNameLabelHeight, NoteNameLabelSide.Below);
+                        noteX - labelW * 0.5f, belowY,
+                        labelW, labelH, NoteNameLabelSide.Below);
                 }
             }
 
             // Neither vertical side is safe — place beside the notehead (prefer right:
             // body accidentals are drawn to the left).
-            float besideY = noteY - NoteNameLabelHeight * 0.5f;
+            float besideY = noteY - labelH * 0.5f;
             float minY = safeTop + minEdgeClearance;
-            float maxY = safeBottom - minEdgeClearance - NoteNameLabelHeight;
+            float maxY = safeBottom - minEdgeClearance - labelH;
             if (maxY >= minY)
             {
                 besideY = Math.Clamp(besideY, minY, maxY);
@@ -5589,16 +5610,16 @@ namespace musicmate.Drawables
             {
                 // Canvas band shorter than label+clearance — keep the box inside the canvas.
                 float looseMin = safeTop;
-                float looseMax = safeBottom - NoteNameLabelHeight;
+                float looseMax = safeBottom - labelH;
                 besideY = looseMax >= looseMin
                     ? Math.Clamp(besideY, looseMin, looseMax)
                     : safeTop;
             }
 
-            float rightX = noteX + noteHeadR + NoteNameBesideGap;
+            float rightX = noteX + noteHeadR + besideGap;
             return new NoteNameLabelLayout(
                 rightX, besideY,
-                NoteNameLabelWidth, NoteNameLabelHeight, NoteNameLabelSide.BesideRight);
+                labelW, labelH, NoteNameLabelSide.BesideRight);
         }
 
         /// <summary>

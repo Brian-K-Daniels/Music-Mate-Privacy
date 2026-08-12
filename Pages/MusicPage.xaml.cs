@@ -139,8 +139,7 @@ namespace musicmate.Pages
             }
         }
 
-        private float[] _pitchBuffer = Array.Empty<float>();
-        private int _pitchBufferPos = 0;
+        private readonly PitchWindowAccumulator _pitchWindow = new();
 
         private static readonly HashSet<string> FreeKeys = new() { "C", "F", "Bb", "G", "D" };
         private int _lastFreeKeyIndex = 0;
@@ -434,7 +433,13 @@ namespace musicmate.Pages
                 {
                     if (_session?.Tune == "Tuner")
                         ApplyTunerHeight();
+                    else
+                        ApplyStaffHeight();
                 };
+                if (PickersContainer != null)
+                    PickersContainer.SizeChanged += (_, _) => ApplyStaffHeight();
+                if (SessionResultBanner != null)
+                    SessionResultBanner.SizeChanged += (_, _) => ApplyStaffHeight();
 
                 // ColorPickerDialog event: update theme color for all pages
                 ColorPickerDialog.AppColorPicked += (s, e) =>
@@ -805,8 +810,7 @@ namespace musicmate.Pages
                 }
 #endif
 
-                if (_session.Tune == "Arpeggio" || _session.IsRandomMode)
-                    SyncPlayItemStatusMessage();
+                SyncPlayItemStatusMessage();
             }
             finally
             {
@@ -1751,25 +1755,33 @@ namespace musicmate.Pages
         /// </summary>
         private void ApplyStaffHeight()
         {
-            // Measure available height: window height minus shell nav bar and the
-            // bottom chrome that scrolls with the staff (level / save-delete / pickers).
-            // Everything stays in one ScrollView; this only keeps that chrome reachable
-            // without forcing a pinned footer.
+            if (_session != null && PlayModePickerOptions.IsTunerMode(_session))
+                return;
+
+            // Staff fills the content viewport minus the top picker row so both staves
+            // stay on-screen. Level / Save / bottom pickers stay in the same ScrollView
+            // below the staff and may sit below the fold.
             float availH = 300f;
             try
             {
-                var win = Application.Current?.Windows?.FirstOrDefault();
-                if (win != null)
+                double viewport = 0;
+                if (MainPageRootGrid?.Height > 1)
+                    viewport = MainPageRootGrid.Height;
+                else if (Height > 1)
+                    viewport = Height;
+                else
                 {
-                    double winH = win.Height;
-                    const double navBar = 50;
-                    double bottomChrome = EstimateMusicBottomChromeHeight();
-                    availH = (float)Math.Max(160, winH - navBar - bottomChrome);
+                    var win = Application.Current?.Windows?.FirstOrDefault();
+                    if (win != null)
+                        viewport = win.Height - 50;
                 }
+
+                availH = (float)Math.Max(160, viewport - EstimateMusicTopChromeHeight());
             }
             catch { /* keep default */ }
 
-            _staffDrawable?.AvailableHeight = availH;
+            if (_staffDrawable != null)
+                _staffDrawable.AvailableHeight = availH;
             var h = _staffDrawable?.ComputeRequiredHeight() ?? 0;
             StaffGraphicsView.HeightRequest = h;
             StaffBorder.HeightRequest = h;
@@ -1777,19 +1789,30 @@ namespace musicmate.Pages
         }
 
         /// <summary>
-        /// Approximate height of Child Level + Save/Delete + bottom pickers rows that
-        /// follow the staff in <see cref="MainPageMainLayout"/>.
+        /// Height of Music-page chrome above the staff (instrument/key/scale row and
+        /// optional banners) plus the layout spacing before the staff. Bottom Level /
+        /// Save controls are not reserved — they may scroll below the fold.
         /// </summary>
-        private double EstimateMusicBottomChromeHeight()
+        private double EstimateMusicTopChromeHeight()
         {
-            double h = 0;
-            if (IsChildLevelSliderVisible)
-                h += 52; // border + margins
-            if (IsBottomButtonRowVisible)
-                h += 48 + 60; // save/delete row + bottom pickers row
-            // MainPageMainLayout Spacing between staff and chrome sections
-            h += 16 * 2;
-            return Math.Max(h, 8);
+            double top = 0;
+            if (PickersContainer?.IsVisible == true)
+            {
+                double ph = PickersContainer.Height;
+                top += ph > 1 ? ph : 48;
+            }
+
+            if (SessionResultBanner?.IsVisible == true)
+            {
+                double bh = SessionResultBanner.Height;
+                top += (bh > 1 ? bh : 32) + SessionResultBanner.Margin.Top
+                    + SessionResultBanner.Margin.Bottom;
+            }
+
+            if (top > 0 && MainPageMainLayout != null)
+                top += MainPageMainLayout.Spacing;
+
+            return top;
         }
         /// <summary>
         /// Size the equal-width tuner panels short enough that both green borders and
@@ -2254,75 +2277,26 @@ namespace musicmate.Pages
         }
         private string GetCurrentPlayItemName()
         {
-            if (LayoutTestTune.IsEnabled)
-                return PlayModePickerOptions.HalfThroughSixteenthNotes;
-
-            if (_session.Tune == "Tuner")
-                return "Tuner";
-
-            // Keep the Music status/picker label aligned with WhatToPlay's resolved choice.
-            var (category, selection) = PlayModePickerOptions.ResolveDisplayedPicker(
-                _session, LayoutTestTune.IsEnabled);
-
-            if (category == PlayModePickerCategory.Other
-                && selection == NoteSessionService.ScaleSelectionByLevel)
-                return $"{_session.Key} {_session.EffectiveScale} (Assortment by Level)";
-
-            if (category == PlayModePickerCategory.Other
-                && selection == PlayModePickerOptions.RandomMelodic)
-                return _session.EffectiveScaleDisplay;
-
-            if (category == PlayModePickerCategory.Scales
-                && !string.IsNullOrWhiteSpace(selection))
-                return selection;
-
-            if (category == PlayModePickerCategory.Tunes
-                && !string.IsNullOrWhiteSpace(selection))
-                return selection;
-
-            if (category == PlayModePickerCategory.Arpeggios
-                && !string.IsNullOrWhiteSpace(selection))
-                return selection;
-
-            if (category == PlayModePickerCategory.Other
-                && !string.IsNullOrWhiteSpace(selection))
-                return selection;
-
-            if (_session.Tune == "Arpeggio")
-                return string.IsNullOrWhiteSpace(_session.SelectedArpeggioDisplay)
-                    ? "Arpeggio"
-                    : _session.SelectedArpeggioDisplay;
-
-            if (_session.Tune == "Practice Tune")
+            string? practiceTitle = _session.CurrentTune?.Title;
+            if (string.IsNullOrWhiteSpace(practiceTitle) && _session.Tune == "Practice Tune")
             {
-                if (!string.IsNullOrWhiteSpace(_session.CurrentTune?.Title))
-                {
-                    if (_session.ScaleSelectionMode == ScaleSelectionMode.ByLevel
-                        && !PlayModePickerOptions.IsUserSelectedPracticeTuneTitle(
-                            Preferences.Default.Get<string?>("SelectedTune", null)))
-                        return $"{_session.CurrentTune.Title} (Assortment by Level)";
-
-                    return _session.CurrentTune.Title;
-                }
-
                 var savedTitle = Preferences.Default.Get<string?>("SelectedTune", null);
                 if (!string.IsNullOrWhiteSpace(savedTitle)
                     && musicmate.Models.TuneLibrary.All.Any(t => t.Title == savedTitle))
-                    return savedTitle;
-
-                return _session.EffectiveScaleDisplay;
+                    practiceTitle = savedTitle;
             }
 
-            if (_session.IsRandomMode)
-                return _session.EffectiveScaleDisplay;
-
-            if (_session.ScaleSelectionMode == ScaleSelectionMode.ByLevel)
-                return $"{_session.Key} {_session.EffectiveScale} (Assortment by Level)";
-
-            if (_session.ScaleSelectionMode == ScaleSelectionMode.Random)
-                return _session.EffectiveScaleDisplay;
-
-            return _session.SelectedScale ?? "Selected Scale";
+            return PlayModePickerOptions.ResolveExerciseStatusLabel(
+                LayoutTestTune.IsEnabled,
+                _session.Tune ?? string.Empty,
+                _session.ScaleSelectionMode,
+                _session.IsRandomMode,
+                practiceTitle,
+                _session.SelectedArpeggioDisplay,
+                _session.Key,
+                _session.EffectiveScale,
+                _session.SelectedScale,
+                Preferences.Default.Get<string?>("SelectedTune", null));
         }
         private async Task ApplyChildLevelAndRefreshAsync(int level)
         {
@@ -3424,6 +3398,12 @@ namespace musicmate.Pages
             UpdatePlayButtonVisibility();
             await StartListeningAndEvaluatingAsync(playBack: true);
         }
+        private void ResetPitchCapture()
+        {
+            _pitchWindow.Reset();
+            _isBelowThreshold = true;
+        }
+
         private void OnAudioBlock(short[] pcm16)
         {
             var buf = new float[pcm16.Length];
@@ -3435,24 +3415,32 @@ namespace musicmate.Pages
             var rms = PitchDetectionService.ComputeRms(buf);
             _session.ObserveLoudness(rms);
 
-            if (rms < _session.RmsThreshold)
+            // Don't accumulate audio during ignore period — ensures the first
+            // detection after cooldown uses entirely fresh samples
+            bool ignoreAudio = _session.ShouldIgnoreAudio(DateTime.UtcNow);
+            _pitchWindow.EnsureWindowSize(_session.PitchWindowSize);
+            var ingest = _pitchWindow.Ingest(buf, rms, _session.RmsThreshold, ignoreAudio);
+
+            if (ingest.Kind == PitchWindowIngestKind.IgnoredQuiet
+                || ingest.Kind == PitchWindowIngestKind.DiscardedIgnorePeriod)
             {
-                if (!_isBelowThreshold)
-                {
-                    DebugLog.WriteLine("[Audio] Below RMS threshold, ignoring");
-                    _isBelowThreshold = true;
-                    // Unlock next note: volume fell below the note-on threshold
-                    _session.NotifySilence();
-                }
-                _pitchBufferPos = 0;
                 return;
             }
 
-            bool firstSoundAfterSilence = _isBelowThreshold;
-            _isBelowThreshold = false;
-
-            if (firstSoundAfterSilence)
+            if (ingest.Kind == PitchWindowIngestKind.BecameSilent)
             {
+                if (!_isBelowThreshold)
+                {
+                    DebugLog.WriteLine("[Audio] Sustained quiet — resetting pitch window");
+                    _isBelowThreshold = true;
+                    _session.NotifySilence();
+                }
+                return;
+            }
+
+            if (ingest.StartedNewOnset)
+            {
+                _isBelowThreshold = false;
                 // Fresh onset after silence — completes same-pitch re-trigger arming.
                 _session.NotifyNoteAttack();
 
@@ -3465,35 +3453,13 @@ namespace musicmate.Pages
                 }
             }
 
-            // Don't accumulate audio during ignore period — ensures the first
-            // detection after cooldown uses entirely fresh samples
-            if (_session.ShouldIgnoreAudio(DateTime.UtcNow))
-            {
-                _pitchBufferPos = 0;
-                return;
-            }
-
-            // Accumulate samples into a larger window for reliable low-frequency detection
-            var windowSize = _session.PitchWindowSize;
-            if (_pitchBuffer.Length != windowSize)
-            {
-                _pitchBuffer = new float[windowSize];
-                _pitchBufferPos = 0;
-            }
-
-            var toCopy = Math.Min(buf.Length, windowSize - _pitchBufferPos);
-            Array.Copy(buf, 0, _pitchBuffer, _pitchBufferPos, toCopy);
-            _pitchBufferPos += toCopy;
-
-            if (_pitchBufferPos < windowSize)
+            if (ingest.Kind != PitchWindowIngestKind.WindowReady)
                 return;
 
             // Hop-based overlap: shift the buffer by half so subsequent
             // detections reuse the stable tail of the previous window,
             // reducing transient/attack bias that causes flat readings.
-            int hopSize = windowSize / 2;
-            Array.Copy(_pitchBuffer, hopSize, _pitchBuffer, 0, windowSize - hopSize);
-            _pitchBufferPos = windowSize - hopSize;
+            _pitchWindow.HopHalf();
 
             var now = DateTime.UtcNow;
             if ((now - _lastProcess).TotalMilliseconds < _session.CooldownMs)
@@ -3508,7 +3474,8 @@ namespace musicmate.Pages
 
                 _lastProcess = now;
 
-                double freq = PitchDetectionService.DetectPitchMcLeod(_pitchBuffer, _pitchBuffer.Length, _session.SampleRate);
+                double freq = PitchDetectionService.DetectPitchMcLeod(
+                    _pitchWindow.Buffer, _pitchWindow.WindowSize, _session.SampleRate);
                 freq = freq * Math.Pow(2, _session.PitchOffsetCents / 1200.0);
 
                 if (freq == 0)
@@ -3580,8 +3547,7 @@ namespace musicmate.Pages
 
                         StopWaitingCountIn();
                         _session.StartListeningClock();
-                        _pitchBufferPos = 0;
-                        _isBelowThreshold = true;
+                        ResetPitchCapture();
                         if (!_audio.IsCapturing
                             && !_audio.TryStartCapture(OnAudioBlock, out var capErr))
                         {
@@ -3662,8 +3628,7 @@ namespace musicmate.Pages
                 if (myGen != Volatile.Read(ref _waitingCountInGeneration) || ct.IsCancellationRequested)
                     return;
 
-                _pitchBufferPos = 0;
-                _isBelowThreshold = true;
+                ResetPitchCapture();
                 if (!_audio.TryStartCapture(OnAudioBlock, out var startCapErr))
                     DebugLog.WriteLine($"[CountIn] initial capture failed: {startCapErr}");
 
@@ -3682,8 +3647,7 @@ namespace musicmate.Pages
                 // Keep mic open if still waiting for the first note.
                 if (_isRunning && _waitingCountInActive && !_audio.IsCapturing)
                 {
-                    _pitchBufferPos = 0;
-                    _isBelowThreshold = true;
+                    ResetPitchCapture();
                     if (!_audio.TryStartCapture(OnAudioBlock, out var err))
                         DebugLog.WriteLine($"[CountIn] post-loop capture failed: {err}");
                 }
@@ -3721,7 +3685,7 @@ namespace musicmate.Pages
             {
                 DebugLog.WriteLine("[Restart] Restarting audio capture (session preserved)...");
                 _audio.StopCapture();
-                _pitchBufferPos = 0;
+                ResetPitchCapture();
                 await _audio.EnsurePermissionAsync();
                 if (!_audio.TryStartCapture(OnAudioBlock, out var restartErr))
                 {
@@ -4018,9 +3982,8 @@ namespace musicmate.Pages
                     StopWaitingCountIn();
 
                     _lastProcess = DateTime.MinValue;
-                    _isBelowThreshold = true;
                     _dismissedResultBannerForFirstSound = false;
-                    _pitchBufferPos = 0;
+                    ResetPitchCapture();
                     _session.Reset();
                 }
 
@@ -4248,9 +4211,8 @@ namespace musicmate.Pages
             }
 
             try { _audio.StopCapture(); } catch { }
-            _pitchBufferPos = 0;
+            ResetPitchCapture();
             _lastProcess = DateTime.MinValue;
-            _isBelowThreshold = true;
 
             DebugLog.WriteLine("[Tuner] microphone start requested");
             if (!_audio.TryStartCapture(OnAudioBlock, out var tunerCapErr))
@@ -5469,9 +5431,8 @@ namespace musicmate.Pages
                 DebugLog.WriteLine("[Tuner] resume microphone after reference tone");
                 await _audio.EnsurePermissionAsync();
                 try { _audio.StopCapture(); } catch { }
-                _pitchBufferPos = 0;
+                ResetPitchCapture();
                 _lastProcess = DateTime.MinValue;
-                _isBelowThreshold = true;
                 if (!_audio.TryStartCapture(OnAudioBlock, out var resumeErr))
                 {
                     DebugLog.WriteLine($"[Tuner] resume mic failed: {resumeErr}");

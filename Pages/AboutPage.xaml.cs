@@ -29,6 +29,8 @@ namespace musicmate.Pages
 
         // Track whether we've asked the app to pause listening while searching
         private bool _aboutPausedListening = false;
+        private double _aboutLastWebViewWidth = -1;
+        private CancellationTokenSource? _aboutWebViewSizeCts;
 
 
         public AboutPage()
@@ -38,18 +40,14 @@ namespace musicmate.Pages
             _themeService = ServiceHelper.GetService<ThemeService>()!;
             var vm = new AboutPageViewModel(_themeService);
             BindingContext = vm;
-            // Set 9mm left margin on the outermost ScrollView
-            var mainLayout = this.FindByName<VerticalStackLayout>("AboutMainLayout");
-            //if (mainLayout != null)
-            //    musicmate.Utilities.MarginUtils.SetLeftMarginMM(mainLayout, 9, 0, 0, 0);  //  2026.04.02 1719   out
-
-           
+            SyncAboutSearchRowHeight();
 
             // Reload WebView only when appearance settings change — not on IsPremium, etc.
             // Premium checks were wiping search highlights by reloading the whole document.
             vm.PropertyChanged += OnAboutViewModelPropertyChanged;
             _themeService.PropertyChanged += OnThemeServicePropertyChanged;
             AboutWebView.Navigated += OnAboutWebViewNavigated;
+            AboutWebView.SizeChanged += OnAboutWebViewSizeChanged;
 
             // Ensure Find Next button initial state
             var nextBtn = this.FindByName<Button>("AboutFindNextButton");
@@ -67,6 +65,8 @@ namespace musicmate.Pages
                 or nameof(AboutPageViewModel.PanelBackgroundColor)
                 or nameof(AboutPageViewModel.ContrastingTextColor))
             {
+                if (e.PropertyName is null or nameof(AboutPageViewModel.SelectedFontSize))
+                    SyncAboutSearchRowHeight();
                 _ = LoadAboutHtmlAsync();
             }
         }
@@ -85,11 +85,126 @@ namespace musicmate.Pages
         {
             _aboutHtmlReady = e.Result == WebNavigationResult.Success;
 
+            if (_aboutHtmlReady)
+                _ = SizeAboutWebViewToContentAsync();
+
             // Re-apply an active query after the document is (re)loaded.
             if (_aboutHtmlReady && !string.IsNullOrEmpty(AboutSearchEntry?.Text))
             {
                 var q = AboutSearchEntry.Text;
                 _ = SearchAboutPageAsync(q);
+            }
+        }
+
+        private void OnAboutWebViewSizeChanged(object? sender, EventArgs e)
+        {
+            if (!_aboutHtmlReady || AboutWebView == null)
+                return;
+
+            // Width changes (rotation / window) reflow the HTML; remeasure height.
+            if (Math.Abs(AboutWebView.Width - _aboutLastWebViewWidth) < 0.5)
+                return;
+
+            _ = SizeAboutWebViewToContentAsync();
+        }
+
+        /// <summary>
+        /// Sizes the WebView to the full HTML document height so the outer ScrollView
+        /// scrolls search, Premium, and the guide together (no nested WebView scrollbar).
+        /// </summary>
+        private async Task SizeAboutWebViewToContentAsync()
+        {
+            _aboutWebViewSizeCts?.Cancel();
+            _aboutWebViewSizeCts?.Dispose();
+            var cts = new CancellationTokenSource();
+            _aboutWebViewSizeCts = cts;
+
+            try
+            {
+                // Let layout + WebView paint settle before reading scrollHeight.
+                await Task.Delay(50, cts.Token);
+
+                var web = AboutWebView;
+                if (web == null || !_aboutHtmlReady)
+                    return;
+
+#if ANDROID
+                ApplyAboutWebViewOuterScrollSupport(web);
+#endif
+
+                const string js = @"(function(){
+        try {
+            var body = document.body;
+            var html = document.documentElement;
+            if (!body || !html) return '0';
+            var h = Math.max(
+                body.scrollHeight || 0,
+                body.offsetHeight || 0,
+                html.clientHeight || 0,
+                html.scrollHeight || 0,
+                html.offsetHeight || 0
+            );
+            return String(Math.ceil(h));
+        } catch (e) {
+            return '0';
+        }
+    })();";
+
+                string? result = null;
+                try
+                {
+                    result = await web.EvaluateJavaScriptAsync(js);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[AboutScroll] Height measure failed: {ex.Message}");
+                }
+
+                cts.Token.ThrowIfCancellationRequested();
+
+                if (!TryParseJavaScriptInteger(result, out var contentHeight) || contentHeight <= 0)
+                    return;
+
+                // CSS px ≈ MAUI dp with device-width viewport (see InjectCssIntoHtml).
+                double height = Math.Max(120, contentHeight + 8);
+                if (Math.Abs(web.HeightRequest - height) < 1)
+                {
+                    _aboutLastWebViewWidth = web.Width;
+                    return;
+                }
+
+                web.HeightRequest = height;
+                _aboutLastWebViewWidth = web.Width;
+
+                // Second pass: fonts/layout sometimes settle after the first paint.
+                await Task.Delay(150, cts.Token);
+                string? result2 = null;
+                try
+                {
+                    result2 = await web.EvaluateJavaScriptAsync(js);
+                }
+                catch
+                {
+                    return;
+                }
+
+                cts.Token.ThrowIfCancellationRequested();
+                if (TryParseJavaScriptInteger(result2, out var contentHeight2)
+                    && contentHeight2 > 0
+                    && Math.Abs(contentHeight2 - contentHeight) >= 2)
+                {
+                    web.HeightRequest = Math.Max(120, contentHeight2 + 8);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // A newer measure replaced this one.
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[AboutScroll] SizeAboutWebViewToContentAsync: {ex.Message}");
             }
         }
 
@@ -102,14 +217,58 @@ namespace musicmate.Pages
             if (BindingContext is AboutPageViewModel vm)
                 vm.ReloadFontSizeFromPreferences();
 
+            SyncAboutSearchRowHeight();
             _ = LoadAboutHtmlAsync();
             _ = CheckPremiumStatusAsync();
+        }
+
+        /// <summary>
+        /// Search Entry/Next must be taller than the font: Shell TitleView used to clip
+        /// large sizes; the in-page row still needs an explicit height for platform Entry chrome.
+        /// </summary>
+        private void SyncAboutSearchRowHeight()
+        {
+            double font = DefaultFontSize;
+            if (BindingContext is AboutPageViewModel vm)
+                font = vm.SelectedFontSize;
+
+            // Line box (~1.35×) + Entry internal padding + border stroke.
+            double entryH = Math.Max(36, Math.Ceiling(font * 1.45) + 16);
+
+            if (AboutSearchEntry != null)
+            {
+                AboutSearchEntry.HeightRequest = entryH;
+                AboutSearchEntry.MinimumHeightRequest = entryH;
+            }
+
+            var border = this.FindByName<Border>("AboutSearchBorder");
+            if (border != null)
+            {
+                border.HeightRequest = entryH;
+                border.MinimumHeightRequest = entryH;
+            }
+
+            if (AboutFindNextButton != null)
+            {
+                AboutFindNextButton.HeightRequest = entryH;
+                AboutFindNextButton.MinimumHeightRequest = entryH;
+            }
+
+            var row = this.FindByName<Grid>("AboutSearchRow");
+            if (row != null)
+            {
+                double rowH = entryH + row.Padding.Top + row.Padding.Bottom;
+                row.MinimumHeightRequest = rowH;
+            }
         }
         protected override void OnDisappearing()
         {
             _aboutSearchDebounceCts?.Cancel();
             _aboutSearchDebounceCts?.Dispose();
             _aboutSearchDebounceCts = null;
+            _aboutWebViewSizeCts?.Cancel();
+            _aboutWebViewSizeCts?.Dispose();
+            _aboutWebViewSizeCts = null;
             // Do not AllowAutorotate here — destination landscape pages ForceLandscape in
             // OnAppearing; unlocking mid-navigation causes a portrait flash.
 
@@ -204,6 +363,7 @@ namespace musicmate.Pages
                 var fg = vm?.ContrastingTextColor ?? Colors.Black;
                 var fontSize = vm?.SelectedFontSize ?? DefaultFontSize;
                 var fontFamily = "-apple-system, BlinkMacSystemFont, \"Segoe UI Symbol\", \"Segoe UI Emoji\", \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, \"Times New Roman\", serif";
+                // height:auto + overflow:visible so content grows; MAUI ScrollView scrolls.
                 var css =    $"html, body {{ " +
                              $"background: {ColorToHex(bg)} !important; " +
                              $"color: {ColorToHex(fg)} !important; " +
@@ -214,15 +374,10 @@ namespace musicmate.Pages
                              $"padding: 8px; " +
                              $"font-family: {fontFamily}; " +
                              $"box-sizing: border-box; " +
-                             $"}} " +
-                             $"html {{ " +
-                             $"height: 100%; " +
-                             $"overflow-x: hidden; " +
-                             $"overflow-y: auto; " +
-                             $"}} " +
-                             $"body {{ " +
-                             $"min-height: 100%; " +
-                             $"overflow-x: hidden; " +
+                             $"height: auto !important; " +
+                             $"min-height: 0 !important; " +
+                             $"overflow-x: hidden !important; " +
+                             $"overflow-y: visible !important; " +
                              $"}} ";
                 // Force ALL elements to inherit fg color so inline style="color:#000000" from
                 // Word-generated HTML cannot make text invisible against a dark background.
@@ -246,8 +401,12 @@ namespace musicmate.Pages
                 _aboutHtmlReady = false;
                 _aboutMatchCount = 0;
                 _aboutCurrentIndex = -1;
+                _aboutLastWebViewWidth = -1;
                 UpdateAboutSearchControls();
+                web.HeightRequest = 400;
                 web.Source = new HtmlWebViewSource { Html = styled };
+                if (AboutScrollView != null)
+                    _ = AboutScrollView.ScrollToAsync(0, 0, false);
 #if ANDROID
                 // Android accessibility font scale otherwise inflates WebView text far beyond the
                 // Settings "Font used in About page" size (email/contact text looked huge).
@@ -276,6 +435,7 @@ namespace musicmate.Pages
                         native.Settings.JavaScriptEnabled = true;
                         native.Settings.DomStorageEnabled = true;
                         native.Settings.TextZoom = 100;
+                        ApplyAboutWebViewOuterScrollSupport(web);
                     }
                 }
                 catch
@@ -288,6 +448,39 @@ namespace musicmate.Pages
                 Apply();
             else
                 web.HandlerChanged += (_, _) => Apply();
+        }
+
+        /// <summary>
+        /// When the WebView is fully expanded inside a ScrollView, stop it from stealing
+        /// vertical pans so the page chrome can scroll away with the guide.
+        /// </summary>
+        private static void ApplyAboutWebViewOuterScrollSupport(Microsoft.Maui.Controls.WebView web)
+        {
+            try
+            {
+                if (web.Handler?.PlatformView is not Android.Webkit.WebView native)
+                    return;
+
+                native.OverScrollMode = Android.Views.OverScrollMode.Never;
+                native.VerticalScrollBarEnabled = false;
+                native.HorizontalScrollBarEnabled = false;
+                native.SetOnTouchListener(new AboutWebViewPassTouchesToParentListener());
+            }
+            catch
+            {
+                // Best effort.
+            }
+        }
+
+        private sealed class AboutWebViewPassTouchesToParentListener
+            : Java.Lang.Object, Android.Views.View.IOnTouchListener
+        {
+            public bool OnTouch(Android.Views.View? v, Android.Views.MotionEvent? e)
+            {
+                // Let the parent ScrollView handle vertical scrolling.
+                v?.Parent?.RequestDisallowInterceptTouchEvent(false);
+                return false;
+            }
         }
 #endif
 
@@ -555,7 +748,6 @@ namespace musicmate.Pages
         unwrapHighlights();
 
         if (!q) {{
-            window.scrollTo(0, 0);
             return '0';
         }}
 
@@ -674,6 +866,8 @@ namespace musicmate.Pages
 
             if (_aboutMatchCount > 0)
                 await ScrollToAboutMatchAsync(0);
+            else if (string.IsNullOrEmpty(query))
+                await ScrollAboutPageToAsync(0);
         }
 
         private static string ToJavaScriptStringLiteral(string value)
@@ -716,6 +910,7 @@ namespace musicmate.Pages
 
             _aboutCurrentIndex = matchIndex;
 
+            // Highlight the match and return its Y in the document (outer ScrollView scrolls).
             var js = $@"(function(){{
         var matches = document.querySelectorAll('.about-search-highlight');
         for (var i = 0; i < matches.length; i++)
@@ -724,27 +919,33 @@ namespace musicmate.Pages
         var current = document.querySelector(
             '.about-search-highlight[data-about-index=""{matchIndex}""]');
         if (!current)
-            return 'false';
+            return '-1';
 
         current.classList.add('about-search-current');
 
         try {{
-            current.scrollIntoView({{ behavior: 'auto', block: 'center', inline: 'nearest' }});
+            var top = current.getBoundingClientRect().top
+                + (window.pageYOffset || document.documentElement.scrollTop || 0);
+            return String(Math.round(top));
         }}
         catch (error) {{
-            try {{
-                var top = current.getBoundingClientRect().top + (window.pageYOffset || document.documentElement.scrollTop || 0);
-                window.scrollTo(0, Math.max(0, top - (window.innerHeight / 3)));
-            }}
-            catch (e2) {{
-                return 'false';
-            }}
+            return '-1';
         }}
-
-        return 'true';
     }})();";
 
-            await web.EvaluateJavaScriptAsync(js);
+            string? result = null;
+            try
+            {
+                result = await web.EvaluateJavaScriptAsync(js);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[AboutSearch] ScrollToAboutMatch failed: {ex.Message}");
+            }
+
+            if (TryParseJavaScriptInteger(result, out var matchTop) && matchTop >= 0)
+                await ScrollAboutPageToMatchAsync(matchTop);
 
             UpdateAboutSearchControls();
         }
@@ -783,35 +984,49 @@ namespace musicmate.Pages
             if (_aboutCurrentIndex < 0 || _aboutCurrentIndex >= _aboutMatchCount)
                 _aboutCurrentIndex = 0;
 
-            var js = $@"(function(){{
-        var matches = document.querySelectorAll('.about-search-highlight');
-        for (var i = 0; i < matches.length; i++)
-            matches[i].classList.remove('about-search-current');
+            await ScrollToAboutMatchAsync(_aboutCurrentIndex);
+        }
 
-        var current = document.querySelector(
-            '.about-search-highlight[data-about-index=""{_aboutCurrentIndex}""]');
-        if (!current)
-            return 'false';
+        /// <summary>
+        /// Scrolls the page ScrollView so a match (Y within the WebView document) is in view.
+        /// </summary>
+        private async Task ScrollAboutPageToMatchAsync(double matchTopInDocument)
+        {
+            var scroll = AboutScrollView;
+            var web = AboutWebView;
+            if (scroll == null || web == null)
+                return;
 
-        current.classList.add('about-search-current');
+            // Wait a layout pass so Bounds.Top reflects search/premium chrome height.
+            await Task.Yield();
 
-        try {{
-            current.scrollIntoView({{ behavior: 'auto', block: 'center' }});
-        }}
-        catch (error) {{
-            try {{
-                var top = current.getBoundingClientRect().top + (window.pageYOffset || document.documentElement.scrollTop || 0);
-                window.scrollTo(0, Math.max(0, top - (window.innerHeight / 3)));
-            }}
-            catch (e2) {{ }}
-        }}
+            double webOffset = web.Bounds.Top;
+            if (webOffset <= 0 && AboutMainLayout != null)
+            {
+                // Fallback before first layout of Bounds: sum chrome above the WebView.
+                webOffset = AboutSearchRow.Height + AboutPremiumRow.Height + web.Margin.Top;
+            }
 
-        return 'true';
-    }})();";
+            double viewport = scroll.Height > 0 ? scroll.Height : 300;
+            double targetY = Math.Max(0, webOffset + matchTopInDocument - (viewport / 3.0));
+            await ScrollAboutPageToAsync(targetY);
+        }
 
-            await web.EvaluateJavaScriptAsync(js);
+        private async Task ScrollAboutPageToAsync(double y)
+        {
+            var scroll = AboutScrollView;
+            if (scroll == null)
+                return;
 
-            UpdateAboutSearchControls();
+            try
+            {
+                await scroll.ScrollToAsync(0, Math.Max(0, y), false);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[AboutScroll] ScrollToAsync failed: {ex.Message}");
+            }
         }
         private void UpdateAboutSearchControls()
         {

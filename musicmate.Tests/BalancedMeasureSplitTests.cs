@@ -118,7 +118,7 @@ public class BalancedMeasureSplitTests
     }
 
     [Fact]
-    public void SplitMeasuresAcrossStaves_CMajor_UsesFourPlusFour_NotFivePlusThree()
+    public void SplitMeasuresAcrossStaves_CMajor_UsesBalancedCut_AtLargerNotationScale()
     {
         var gen = new MusicSequenceGenerator
         {
@@ -152,11 +152,15 @@ public class BalancedMeasureSplitTests
         var drawable = new StaffDrawable(session, new ThemeService(), safeArea: null);
         var split = drawable.SplitMeasuresAcrossStaves(page, bars, 835f, 480f);
 
-        Assert.Equal(0, split.UnplacedMeasureCount);
-        Assert.Equal(8, split.UpperMeasureCount + split.LowerMeasureCount);
-        Assert.Equal(4, split.UpperMeasureCount);
-        Assert.Equal(4, split.LowerMeasureCount);
-        Assert.Equal(page.Count, split.UpperNotes.Count + split.LowerNotes.Count);
+        // Sls cap 18 (was 12) widens engraved min-widths; 8 quarters no longer fit at 835.
+        // Balanced cut still maximizes placed music then equalizes staves (3+3, not 4+2).
+        Assert.Equal(2, split.UnplacedMeasureCount);
+        Assert.Equal(6, split.UpperMeasureCount + split.LowerMeasureCount);
+        Assert.Equal(3, split.UpperMeasureCount);
+        Assert.Equal(3, split.LowerMeasureCount);
+        Assert.Equal(
+            page.Count,
+            split.UpperNotes.Count + split.LowerNotes.Count + split.UnplacedNotes.Count);
         AssertMeasureOrderPreserved(page, split);
     }
 

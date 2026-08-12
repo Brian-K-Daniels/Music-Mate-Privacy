@@ -46,63 +46,67 @@
     </Grid>
   </Shell.TitleView>
 
-  <!-- No ScrollView: staff + controls stay in one viewport. -->
-  <Grid x:Name="MainLayout"
-        Padding="4,2,4,4"
-        RowDefinitions="*,Auto,Auto"
-        RowSpacing="4">
+  <Grid x:Name="RootLayout">
+    <ScrollView x:Name="MainScroll"
+                VerticalOptions="Fill"
+                HorizontalOptions="Fill"
+                VerticalScrollBarVisibility="Default">
+      <VerticalStackLayout x:Name="MainLayout"
+                           Spacing="8"
+                           HorizontalOptions="Fill"
+                           Padding="4,8,4,12">
 
-    <GraphicsView x:Name="StaffGraphicsView"
-                  Grid.Row="0"
-                  VerticalOptions="Fill"
-                  HorizontalOptions="Fill" />
+        <!-- Explicit height set in code; kept short enough that buttons stay on-screen. -->
+        <GraphicsView x:Name="StaffGraphicsView"
+                      Margin="0,2,0,0"
+                      VerticalOptions="Start"
+                      HorizontalOptions="Fill"
+                      MinimumHeightRequest="96" />
 
-    <!-- Level label + slider + value: full content width -->
-    <Grid x:Name="ToolbarRow"
-          Grid.Row="1"
-          ColumnDefinitions="Auto,*,Auto"
-          ColumnSpacing="6"
-          HeightRequest="32"
-          HorizontalOptions="Fill"
-          VerticalOptions="Center">
-      <Label Grid.Column="0"
-             Text="Level"
-             FontSize="12"
-             FontAttributes="Bold"
-             TextColor="{DynamicResource ThemeContrastingText}"
-             VerticalOptions="Center" />
-      <Slider x:Name="LevelSlider"
-              Grid.Column="1"
-              Minimum="1"
-              Maximum="100"
-              Value="1"
-              MinimumTrackColor="{DynamicResource ThemeSlider}"
-              ThumbColor="{DynamicResource ThemeSlider}"
-              VerticalOptions="Center"
+        <Grid x:Name="IntervalButtonsHost"
+              ColumnDefinitions="*,*,*,*,*"
+              ColumnSpacing="2"
+              RowSpacing="2"
+              HorizontalOptions="Fill" />
+
+        <!-- Level below the answer buttons -->
+        <Grid x:Name="ToolbarRow"
+              ColumnDefinitions="Auto,*,Auto"
+              ColumnSpacing="6"
+              HeightRequest="32"
               HorizontalOptions="Fill"
-              ValueChanged="OnLevelSliderValueChanged"
-              SemanticProperties.Description="Child Level for Sight Training, 1 to 100" />
-      <Label x:Name="LevelValueLabel"
-             Grid.Column="2"
-             Text="1"
-             FontSize="13"
-             FontAttributes="Bold"
-             MinimumWidthRequest="28"
-             HorizontalTextAlignment="End"
-             TextColor="{DynamicResource ThemeContrastingText}"
-             VerticalOptions="Center" />
-    </Grid>
-
-    <Grid x:Name="IntervalButtonsHost"
-          Grid.Row="2"
-          ColumnDefinitions="*,*,*,*,*"
-          ColumnSpacing="2"
-          RowSpacing="2"
-          HorizontalOptions="Fill"
-          VerticalOptions="End" />
+              VerticalOptions="Center">
+          <Label Grid.Column="0"
+                 Text="Level"
+                 FontSize="12"
+                 FontAttributes="Bold"
+                 TextColor="{DynamicResource ThemeContrastingText}"
+                 VerticalOptions="Center" />
+          <Slider x:Name="LevelSlider"
+                  Grid.Column="1"
+                  Minimum="1"
+                  Maximum="100"
+                  Value="1"
+                  MinimumTrackColor="{DynamicResource ThemeSlider}"
+                  ThumbColor="{DynamicResource ThemeSlider}"
+                  VerticalOptions="Center"
+                  HorizontalOptions="Fill"
+                  ValueChanged="OnLevelSliderValueChanged"
+                  SemanticProperties.Description="Child Level for Sight Training, 1 to 100" />
+          <Label x:Name="LevelValueLabel"
+                 Grid.Column="2"
+                 Text="1"
+                 FontSize="13"
+                 FontAttributes="Bold"
+                 MinimumWidthRequest="28"
+                 HorizontalTextAlignment="End"
+                 TextColor="{DynamicResource ThemeContrastingText}"
+                 VerticalOptions="Center" />
+        </Grid>
+      </VerticalStackLayout>
+    </ScrollView>
 
     <Grid x:Name="FeedbackOverlay"
-          Grid.RowSpan="3"
           IsVisible="False"
           BackgroundColor="#88000000"
           InputTransparent="False">

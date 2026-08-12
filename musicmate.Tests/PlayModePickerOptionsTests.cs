@@ -449,6 +449,79 @@ public class PlayModePickerOptionsTests
         Assert.Equal("Dorian", session.EffectiveScale);
     }
 
+    [Fact]
+    public void ResolveExerciseStatusLabel_ByLevelCompositionTune_NamesTheTuneNotLevelDefaultScale()
+    {
+        // L62 default scale is Blues; composition assigned Mary Had a Little Lamb.
+        Assert.Equal(
+            "Mary Had a Little Lamb (Assortment by Level)",
+            PlayModePickerOptions.ResolveExerciseStatusLabel(
+                layoutTestTuneEnabled: false,
+                tune: "Practice Tune",
+                scaleSelectionMode: ScaleSelectionMode.ByLevel,
+                isRandomMode: false,
+                practiceTuneTitle: "Mary Had a Little Lamb",
+                arpeggioDisplay: null,
+                key: "C",
+                effectiveScale: "Blues",
+                selectedScale: "Blues",
+                selectedTunePreference: NoteSessionService.ScaleSelectionByLevel));
+    }
+
+    [Fact]
+    public void ResolveExerciseStatusLabel_ByLevelScaleExercise_StillShowsEffectiveScale()
+    {
+        Assert.Equal(
+            "G Blues (Assortment by Level)",
+            PlayModePickerOptions.ResolveExerciseStatusLabel(
+                layoutTestTuneEnabled: false,
+                tune: "Selected Scale",
+                scaleSelectionMode: ScaleSelectionMode.ByLevel,
+                isRandomMode: false,
+                practiceTuneTitle: null,
+                arpeggioDisplay: null,
+                key: "G",
+                effectiveScale: "Blues",
+                selectedScale: "Blues",
+                selectedTunePreference: NoteSessionService.ScaleSelectionByLevel));
+    }
+
+    [Fact]
+    public void ResolveExerciseStatusLabel_ByLevelCompositionArpeggio_NamesTheArpeggio()
+    {
+        Assert.Equal(
+            "C major triad (Assortment by Level)",
+            PlayModePickerOptions.ResolveExerciseStatusLabel(
+                layoutTestTuneEnabled: false,
+                tune: "Arpeggio",
+                scaleSelectionMode: ScaleSelectionMode.ByLevel,
+                isRandomMode: false,
+                practiceTuneTitle: null,
+                arpeggioDisplay: "C major triad",
+                key: "C",
+                effectiveScale: "Blues",
+                selectedScale: "Blues",
+                selectedTunePreference: NoteSessionService.ScaleSelectionByLevel));
+    }
+
+    [Fact]
+    public void ResolveExerciseStatusLabel_UserPickedTune_OmitsAssortmentSuffix()
+    {
+        Assert.Equal(
+            "Mary Had a Little Lamb",
+            PlayModePickerOptions.ResolveExerciseStatusLabel(
+                layoutTestTuneEnabled: false,
+                tune: "Practice Tune",
+                scaleSelectionMode: ScaleSelectionMode.ByLevel,
+                isRandomMode: false,
+                practiceTuneTitle: "Mary Had a Little Lamb",
+                arpeggioDisplay: null,
+                key: "C",
+                effectiveScale: "Blues",
+                selectedScale: "Blues",
+                selectedTunePreference: "Mary Had a Little Lamb"));
+    }
+
     [Theory]
     [InlineData(PlayModePickerCategory.Other, "Assortment by Level", "ByLvl")]
     [InlineData(PlayModePickerCategory.Other, "Random", "Rnd")]

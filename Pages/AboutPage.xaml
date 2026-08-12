@@ -62,14 +62,13 @@
   </ContentPage.Resources>
 
   <!--
-        Title bar:
-        About title, search Entry, Next button and match-position label.
+        Title bar stays short (Shell nav height is fixed). Search lives in page content
+        so large About font sizes are never clipped by the nav chrome.
     -->
   <Shell.TitleView>
 
     <Grid
-            ColumnDefinitions="Auto,*,Auto,Auto"
-            ColumnSpacing="6"
+            ColumnDefinitions="*,Auto"
             HeightRequest="44"
             Padding="0,0,8,0"
             VerticalOptions="Center">
@@ -79,115 +78,162 @@
                 Text="About"
                 FontAttributes="Bold"
                 FontSize="16"
+                FontAutoScalingEnabled="False"
                 TextColor="{DynamicResource ThemeContrastingText}"
                 VerticalOptions="Center" />
 
       <Border
                 Grid.Column="1"
-                Stroke="{DynamicResource ThemePickerBorder}"
-                StrokeThickness="1"
-                StrokeShape="RoundRectangle 8"
-                Padding="4,0"
+                Style="{StaticResource TitleLogoBorder}"
                 VerticalOptions="Center"
-                HorizontalOptions="Fill">
-
-        <Entry
-                    x:Name="AboutSearchEntry"
-                    Placeholder="Search"
-                    ReturnType="Search"
-                    ClearButtonVisibility="WhileEditing"
-                    IsSpellCheckEnabled="False"
-                    IsTextPredictionEnabled="False"
-                    Focused="OnAboutSearchEntryFocused"
-                    TextChanged="OnAboutSearchEntryTextChanged"
-                    Completed="OnAboutSearchEntryCompleted"
-                    TextColor="{DynamicResource ThemeEntryText}"
-                    PlaceholderColor="{DynamicResource ThemeContrastingText}"
-                    BackgroundColor="{DynamicResource ThemeEntryBackground}"
-                    HorizontalOptions="Fill"
-                    VerticalOptions="Center"
-                    FontSize="{Binding SelectedFontSize}" />
-
+                HorizontalOptions="End">
+        <Image Source="logo.png" Aspect="AspectFill" />
       </Border>
-
-      <Button
-                x:Name="AboutFindNextButton"
-                Grid.Column="2"
-                Text="Next"
-                IsEnabled="False"
-                Clicked="OnAboutFindNextClicked"
-                FontSize="{Binding SelectedFontSize}"
-                Padding="8,4"
-                VerticalOptions="Center" />
-
-      <Label
-                x:Name="AboutFindPositionLabel"
-                Grid.Column="3"
-                Text=""
-                FontSize="{Binding SelectedFontSize}"
-                VerticalOptions="Center"
-                HorizontalOptions="Center"
-                MinimumWidthRequest="36" />
 
     </Grid>
 
   </Shell.TitleView>
 
-  <Grid RowDefinitions="Auto,*">
+  <!--
+        One page scroll: search, Premium, and the guide all move together so more
+        guide text can fill the screen after the chrome scrolls away.
+        The WebView is sized to its full HTML height (no nested scrollbar).
+    -->
+  <ScrollView
+      x:Name="AboutScrollView"
+      Orientation="Vertical"
+      VerticalScrollBarVisibility="Default"
+      HorizontalScrollBarVisibility="Never"
+      Padding="0"
+      HorizontalOptions="Fill"
+      VerticalOptions="Fill">
 
-    <!-- Premium purchase controls -->
-    <Grid
-        Grid.Row="0"
-        ColumnDefinitions="Auto,Auto,*"
-        ColumnSpacing="10"
-        VerticalOptions="Center"
-        Padding="8,6,8,4">
-
-      <Button
-            Grid.Column="0"
-            Text="Get Premium"
-            Command="{Binding BuyPremiumCommand}"
-            IsVisible="{Binding NotIsPremium}"
-            TextColor="{DynamicResource ThemeContrastingText}"
-            FontSize="13"
-            FontAutoScalingEnabled="False"
-            Padding="8,4" />
-
-      <Button
-            Grid.Column="2"
-            Text="🔄 Remove Premium (debug)"
-            Command="{Binding RestorePurchasesCommand}"
-            IsVisible="{Binding IsDebugRestoreVisible}"
-            BackgroundColor="{DynamicResource ThemeButtonBackground}"
-            TextColor="#888888"
-            BorderColor="#555555"
-            BorderWidth="1"
-            CornerRadius="6"
-            FontSize="11"
-            FontAutoScalingEnabled="False"
-            HorizontalOptions="End"
-            Padding="8,4" />
-
-      <Label
-            Grid.Column="0"
-            Grid.ColumnSpan="2"
-            Text="⭐ You have all premium privileges"
-            IsVisible="{Binding IsPremium}"
-            FontAttributes="Bold"
-            FontSize="13"
-            FontAutoScalingEnabled="False"
-            TextColor="#FFD700"
-            VerticalOptions="Center" />
-
-    </Grid>
-
-    <WebView
-        x:Name="AboutWebView"
-        Grid.Row="1"
-        Margin="0,4,0,0"
+    <VerticalStackLayout
+        x:Name="AboutMainLayout"
+        Spacing="0"
         HorizontalOptions="Fill"
-        VerticalOptions="Fill" />
+        VerticalOptions="Start">
 
-  </Grid>
+      <!-- Search: sized in code for SelectedFontSize so glyphs are never clipped. -->
+      <Grid
+          x:Name="AboutSearchRow"
+          ColumnDefinitions="*,Auto,Auto"
+          ColumnSpacing="6"
+          Padding="8,6,8,4"
+          VerticalOptions="Start">
+
+        <Border
+            x:Name="AboutSearchBorder"
+            Grid.Column="0"
+            Stroke="{DynamicResource ThemePickerBorder}"
+            StrokeThickness="1"
+            StrokeShape="RoundRectangle 8"
+            Padding="8,0"
+            VerticalOptions="Fill"
+            HorizontalOptions="Fill">
+
+          <Entry
+              x:Name="AboutSearchEntry"
+              Placeholder="Search"
+              ReturnType="Search"
+              ClearButtonVisibility="WhileEditing"
+              IsSpellCheckEnabled="False"
+              IsTextPredictionEnabled="False"
+              Focused="OnAboutSearchEntryFocused"
+              TextChanged="OnAboutSearchEntryTextChanged"
+              Completed="OnAboutSearchEntryCompleted"
+              TextColor="{DynamicResource ThemeEntryText}"
+              PlaceholderColor="{DynamicResource ThemeContrastingText}"
+              BackgroundColor="{DynamicResource ThemeEntryBackground}"
+              HorizontalOptions="Fill"
+              VerticalOptions="Fill"
+              VerticalTextAlignment="Center"
+              FontAutoScalingEnabled="False"
+              FontSize="{Binding SelectedFontSize}" />
+
+        </Border>
+
+        <Button
+            x:Name="AboutFindNextButton"
+            Grid.Column="1"
+            Text="Next"
+            IsEnabled="False"
+            Clicked="OnAboutFindNextClicked"
+            FontAutoScalingEnabled="False"
+            FontSize="{Binding SelectedFontSize}"
+            Padding="10,4"
+            VerticalOptions="Fill" />
+
+        <Label
+            x:Name="AboutFindPositionLabel"
+            Grid.Column="2"
+            Text=""
+            FontAutoScalingEnabled="False"
+            FontSize="{Binding SelectedFontSize}"
+            VerticalOptions="Center"
+            VerticalTextAlignment="Center"
+            HorizontalOptions="Center"
+            MinimumWidthRequest="52"
+            LineBreakMode="NoWrap" />
+
+      </Grid>
+
+      <!-- Premium purchase controls -->
+      <Grid
+          x:Name="AboutPremiumRow"
+          ColumnDefinitions="Auto,Auto,*"
+          ColumnSpacing="10"
+          VerticalOptions="Start"
+          Padding="8,2,8,4">
+
+        <Button
+              Grid.Column="0"
+              Text="Get Premium"
+              Command="{Binding BuyPremiumCommand}"
+              IsVisible="{Binding NotIsPremium}"
+              TextColor="{DynamicResource ThemeContrastingText}"
+              FontSize="13"
+              FontAutoScalingEnabled="False"
+              Padding="8,4" />
+
+        <Button
+              Grid.Column="2"
+              Text="🔄 Remove Premium (debug)"
+              Command="{Binding RestorePurchasesCommand}"
+              IsVisible="{Binding IsDebugRestoreVisible}"
+              BackgroundColor="{DynamicResource ThemeButtonBackground}"
+              TextColor="#888888"
+              BorderColor="#555555"
+              BorderWidth="1"
+              CornerRadius="6"
+              FontSize="11"
+              FontAutoScalingEnabled="False"
+              HorizontalOptions="End"
+              Padding="8,4" />
+
+        <Label
+              Grid.Column="0"
+              Grid.ColumnSpan="2"
+              Text="⭐ You have all premium privileges"
+              IsVisible="{Binding IsPremium}"
+              FontAttributes="Bold"
+              FontSize="13"
+              FontAutoScalingEnabled="False"
+              TextColor="#FFD700"
+              VerticalOptions="Center" />
+
+      </Grid>
+
+      <WebView
+          x:Name="AboutWebView"
+          Margin="0,4,0,0"
+          MinimumHeightRequest="120"
+          HeightRequest="400"
+          HorizontalOptions="Fill"
+          VerticalOptions="Start" />
+
+    </VerticalStackLayout>
+
+  </ScrollView>
 
 </ContentPage>

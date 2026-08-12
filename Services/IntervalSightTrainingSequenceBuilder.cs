@@ -133,6 +133,7 @@ namespace musicmate.Services
                     childLevelOverride: level);
                 var flat = MusicSequenceGenerator.Flatten(gen.GenerateSequence()).ToList();
                 flat.RemoveAll(n => n.IsRest);
+                EnsureMinimumPitchedSlots(flat, maxPitchedNotes, key, scale, low);
                 TrimToMaxPitchedNotes(flat, maxPitchedNotes);
 
                 if (flat.Count < 2)
@@ -142,7 +143,7 @@ namespace musicmate.Services
                     flat, key, scale, low, high, maxAbs, accidentalPercent,
                     attemptSeed ^ 0xA11CE, excludeFirstMagnitude);
 
-                if (!IntervalSightTrainingMelody.TryValidateUniqueMagnitudes(
+                if (!IntervalSightTrainingMelody.TryValidateCompleteCycle(
                         flat, maxAbs, excludeFirstMagnitude, out var mags))
                 {
                     continue;
@@ -165,8 +166,8 @@ namespace musicmate.Services
                 childLevelOverride: level);
             var fallbackFlat = MusicSequenceGenerator.Flatten(fallbackGen.GenerateSequence()).ToList();
             fallbackFlat.RemoveAll(n => n.IsRest);
+            EnsureMinimumPitchedSlots(fallbackFlat, maxPitchedNotes, key, scale, low);
             TrimToMaxPitchedNotes(fallbackFlat, maxPitchedNotes);
-            EnsureMinimumPitchedSlots(fallbackFlat, Math.Min(maxPitchedNotes, 2), key, scale, low);
 
             ApplyTrainingIntervals(
                 fallbackFlat, key, scale, low, high, maxAbs, accidentalPercent,
@@ -283,9 +284,10 @@ namespace musicmate.Services
                     return false;
             }
 
-            // Prefer chains that used most of the pool when enough steps were requested.
-            int expected = Math.Min(steps, maxAbs + 1 - (excludeFirst.HasValue ? 1 : 0));
-            return seen.Count >= Math.Max(1, expected - 1);
+            int pool = maxAbs + 1;
+            if (steps >= pool)
+                return seen.Count == pool;
+            return seen.Count == steps;
         }
 
         private static void TrimToMaxPitchedNotes(List<GeneratedNote> notes, int maxPitched)
@@ -349,11 +351,36 @@ namespace musicmate.Services
             string scale,
             int prevMidi)
         {
-            string spelledName = NoteSessionService.SpellWrittenPitch(midi, key, scale, prevMidi);
+            bool preferFlats = KeySignatureRules.KeySignatureUsesFlats(key, scale);
+            string spelledName = EnsureSpellingMatchesMidi(
+                NoteSessionService.SpellWrittenPitch(midi, key, scale, prevMidi),
+                midi,
+                preferFlats);
+
             char letter = char.ToUpperInvariant(spelledName[0]);
-            int octave = int.TryParse(spelledName[^1].ToString(), out var o) ? o : 4;
+            int octave = NoteSessionService.ParseOctaveFromSpelledName(spelledName);
             var (accidental, finalSpelledName) = NoteSessionService.ResolveAccidentalAndSpelling(
                 spelledName, midi, letter, octave, key, scale);
+
+            int written = IntervalSightTrainingLogic.SightSoundingMidi(
+                new GeneratedNote
+                {
+                    MidiNumber = midi,
+                    Letter = letter,
+                    Octave = octave,
+                    Accidental = accidental,
+                    SpelledName = finalSpelledName,
+                },
+                key,
+                scale);
+            if (written != midi)
+            {
+                spelledName = NoteSessionService.MidiToNoteName(midi, preferFlats);
+                letter = char.ToUpperInvariant(spelledName[0]);
+                octave = NoteSessionService.ParseOctaveFromSpelledName(spelledName);
+                (accidental, finalSpelledName) = NoteSessionService.ResolveAccidentalAndSpelling(
+                    spelledName, midi, letter, octave, key, scale);
+            }
 
             return new GeneratedNote
             {
@@ -369,6 +396,45 @@ namespace musicmate.Services
                 BeatPosition = template.BeatPosition,
                 IsPlayedCorrectly = false,
             };
+        }
+
+        /// <summary>
+        /// Sight Training quizzes what the staff shows. Reject spellings that do not
+        /// round-trip to <paramref name="midi"/> (e.g. C♯ for MIDI 62) and prefer
+        /// single-accidental chromatic names over double sharps/flats.
+        /// </summary>
+        private static string EnsureSpellingMatchesMidi(string spelledName, int midi, bool preferFlats)
+        {
+            if (string.IsNullOrWhiteSpace(spelledName)
+                || spelledName.Contains("##", StringComparison.Ordinal)
+                || spelledName.Contains("bb", StringComparison.Ordinal)
+                || !TryParseSpelledMidi(spelledName, out int parsed)
+                || parsed != midi)
+            {
+                return NoteSessionService.MidiToNoteName(midi, preferFlats);
+            }
+
+            return spelledName;
+        }
+
+        private static bool TryParseSpelledMidi(string spelled, out int midi)
+        {
+            midi = 0;
+            if (string.IsNullOrWhiteSpace(spelled) || spelled.Length < 2 || !char.IsDigit(spelled[^1]))
+                return false;
+            try
+            {
+                midi = NoteSessionService.NoteNameToMidi(spelled);
+                return midi > 0;
+            }
+            catch (FormatException)
+            {
+                return false;
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                return false;
+            }
         }
 
         private static List<double> BuildBarBeats(List<GeneratedNote> flat, double beatsPerMeasure)
