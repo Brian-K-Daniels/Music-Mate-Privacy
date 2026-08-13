@@ -37,13 +37,13 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// Click duration cannot exceed a fraction of the beat so clicks do not overlap at fast tempi.
+        /// Click length = beat duration × percent / 100 (percent of the beat at the current tempo).
         /// </summary>
-        public static double ResolveClickDurationSeconds(int beatDurationMs, double msPerBeat)
+        public static double ResolveClickDurationSeconds(int beatDurationPercent, double msPerBeat)
         {
-            int ms = WaitingCountInSettings.ClampDurationMs(beatDurationMs);
-            double maxMs = Math.Max(8.0, msPerBeat * 0.45);
-            return Math.Min(ms, maxMs) / 1000.0;
+            int pct = WaitingCountInSettings.ClampDurationPercent(beatDurationPercent);
+            double beatMs = Math.Max(1.0, msPerBeat);
+            return (beatMs * pct / 100.0) / 1000.0;
         }
 
         public static ClickSpec BuildClick(
@@ -53,7 +53,7 @@ namespace musicmate.Services
             float unaccentedVolume,
             double accentedPitchHz,
             double unaccentedPitchHz,
-            int beatDurationMs,
+            int beatDurationPercent,
             int tempoBpm)
         {
             bool accent = IsAccentedBeat(absoluteBeatIndex, beatsPerMeasure);
@@ -61,7 +61,7 @@ namespace musicmate.Services
             return new ClickSpec(
                 FrequencyHz: WaitingCountInSettings.ClampPitchHz(accent ? accentedPitchHz : unaccentedPitchHz),
                 Volume: WaitingCountInSettings.ClampVolume(accent ? accentedVolume : unaccentedVolume),
-                DurationSeconds: ResolveClickDurationSeconds(beatDurationMs, msPerBeat),
+                DurationSeconds: ResolveClickDurationSeconds(beatDurationPercent, msPerBeat),
                 IsAccented: accent);
         }
 

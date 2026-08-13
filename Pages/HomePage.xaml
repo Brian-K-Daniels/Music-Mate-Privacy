@@ -104,7 +104,9 @@
                        Text="Beginner"
                        FontSize="15"
                        TextColor="{DynamicResource ThemeContrastingText}"
-                       HorizontalOptions="Center" />
+                       HorizontalOptions="Center"
+                       HorizontalTextAlignment="Center"
+                       LineBreakMode="WordWrap" />
             </VerticalStackLayout>
 
             <!-- Start button -->

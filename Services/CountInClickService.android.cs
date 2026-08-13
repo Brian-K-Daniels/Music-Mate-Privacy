@@ -6,6 +6,7 @@ namespace musicmate.Services
 {
     /// <summary>
     /// Android ToneGenerator clicks — audible while AudioRecord is open (unlike AudioTrack/MediaPlayer).
+    /// Pitch Hz is supplied for API parity; ToneGenerator uses fixed accent / unaccented tones.
     /// </summary>
     public sealed class CountInClickService : ICountInClickService
     {
@@ -15,9 +16,15 @@ namespace musicmate.Services
         private int _accentedVol = -1;
         private int _unaccentedVol = -1;
 
-        public async Task PlayClickAsync(bool accented, int durationMs, float volume, CancellationToken ct)
+        public async Task PlayClickAsync(
+            bool accented,
+            int durationMs,
+            float volume,
+            double frequencyHz,
+            CancellationToken ct)
         {
-            int dur = Math.Clamp(durationMs, 20, 200);
+            _ = frequencyHz;
+            int dur = Math.Clamp(durationMs, 20, 2000);
             int vol = Math.Clamp((int)Math.Round(Math.Clamp(volume, 0f, 1f) * 100), 1, 100);
 
             lock (_gate)

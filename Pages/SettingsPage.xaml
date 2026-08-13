@@ -171,13 +171,13 @@
                      HorizontalTextAlignment="End" />
             </Grid>
             <Grid ColumnDefinitions="170,*,48" ColumnSpacing="4" VerticalOptions="Center">
-              <Label Grid.Column="0" Text="Beat-sound duration (ms)" />
+              <Label Grid.Column="0" Text="Beat-sound duration (% of beat)" />
               <Slider Grid.Column="1"
-                      Minimum="{Binding CountInMinDurationMs}"
-                      Maximum="{Binding CountInMaxDurationMs}"
-                      Value="{Binding CountInBeatDurationMs, Mode=TwoWay}"
+                      Minimum="{Binding CountInMinDurationPercent}"
+                      Maximum="{Binding CountInMaxDurationPercent}"
+                      Value="{Binding CountInBeatDurationPercent, Mode=TwoWay}"
                       Style="{StaticResource SliderStyle}" />
-              <Label Grid.Column="2" Text="{Binding CountInBeatDurationMs, StringFormat='{0:0}'}"
+              <Label Grid.Column="2" Text="{Binding CountInBeatDurationPercent, StringFormat='{0:0}%'}"
                      HorizontalTextAlignment="End" />
             </Grid>
           </VerticalStackLayout>

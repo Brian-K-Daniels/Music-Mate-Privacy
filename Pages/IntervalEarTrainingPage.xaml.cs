@@ -38,6 +38,18 @@ namespace musicmate.Pages
             SizeChanged += (_, _) => ApplySafeAreaPadding();
         }
 
+        private async void OnNavigateMusicClicked(object? sender, EventArgs e)
+        {
+            try
+            {
+                await Shell.Current.GoToAsync("//MusicPage");
+            }
+            catch (Exception ex)
+            {
+                Utils.Log($"[EarTraining] Navigate to Music ERROR: {ex.Message}");
+            }
+        }
+
         protected override void OnAppearing()
         {
             base.OnAppearing();

@@ -214,8 +214,12 @@ namespace musicmate.Pages
         {
             LevelLabel.Text = _selectedLevel.ToString();
 
-            LevelDescLabel.Text =
-                $"{DifficultyLevelMapper.GetStageLabel(_selectedLevel)} — {DifficultyLevelMapper.GetMainFocus(_selectedLevel)}";
+            var stage = DifficultyLevelMapper.GetStageLabel(_selectedLevel);
+            var focus = DifficultyLevelMapper.GetMainFocus(_selectedLevel);
+            // Keep "C Major" intact on the second line (Beginner band).
+            LevelDescLabel.Text = _selectedLevel <= 10
+                ? $"{stage} — More notes,\nC Major, quarter notes"
+                : $"{stage} — {focus}";
 
             LevelDownButton.IsEnabled = _selectedLevel > 1;
             LevelUpButton.IsEnabled = _selectedLevel < 100;

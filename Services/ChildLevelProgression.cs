@@ -34,7 +34,7 @@ namespace musicmate.Services
             level = Math.Clamp(level, 1, 100);
             return ((level - 1) / 10) switch
             {
-                0 => "More notes, C major, quarter notes",
+                0 => "More notes, C Major, quarter notes",
                 1 => "More keys, longer note values",
                 2 => "Rests and natural minor",
                 3 => "Minor scales and sixteenth notes",

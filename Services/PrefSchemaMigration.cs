@@ -5,7 +5,7 @@ namespace musicmate.Services
     /// </summary>
     internal static class PrefSchemaMigration
     {
-        public const int CurrentSchemaVersion = 4;
+        public const int CurrentSchemaVersion = 5;
 
         private const string SchemaKey = "musicmate.PrefSchemaVersion";
         private const string ButtonBackgroundKey = ThemeService.ColorPreferencePrefix + nameof(AppColorTarget.ButtonBackground);
@@ -33,6 +33,16 @@ namespace musicmate.Services
             if (schema < 4)
             {
                 MigrateOmitMsAvgThreshold();
+            }
+
+            if (schema < 5)
+            {
+                // Beat-sound duration is now % of beat (5–50), not milliseconds.
+                Preferences.Remove(WaitingCountInSettings.LegacyBeatDurationMsKey);
+                if (!Preferences.ContainsKey(WaitingCountInSettings.BeatDurationPercentKey))
+                    Preferences.Set(
+                        WaitingCountInSettings.BeatDurationPercentKey,
+                        WaitingCountInSettings.DefaultBeatDurationPercent);
             }
 
             Preferences.Set(SchemaKey, CurrentSchemaVersion);

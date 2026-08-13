@@ -2507,6 +2507,10 @@ namespace musicmate.Drawables
             UpperBarBeats ??= new();
             LowerBarBeats ??= new();
 
+            // Tuner must show at most one note on a single staff — never leftover Music notes.
+            if (_session.Tune == "Tuner")
+                EnforceTunerSingleNoteDisplay();
+
             if (dirtyRect.Width < 32f || dirtyRect.Height < 32f)
                 return;
 
@@ -4307,7 +4311,7 @@ namespace musicmate.Drawables
                              out float stemTipX, out float stemTipY);
 
                     if (isBeamed)
-                        beamStemTips[i] = (stemTipX, stemTipY, GetNoteColor(state, ink, fadeAlpha), note.Duration);
+                        beamStemTips[i] = (stemTipX, stemTipY, ResolveDrawnNoteColor(state, ink, fadeAlpha), note.Duration);
 
                     DrawLedgerLines(canvas, note, layout.X, staffTop, staffBot, ink, fadeAlpha);
                     DrawAccidental(canvas, note, layout, ny, ink, accHistory, barCancelledAccidentals, fadeAlpha, headerRightAbs);
@@ -5119,8 +5123,70 @@ namespace musicmate.Drawables
 
         // ── Drawing primitives ────────────────────────────────────────────────────
 
+        /// <summary>
+        /// Tuner reference staff: keep exactly one pitched note (or none) and hide the lower staff.
+        /// Does not run for Music / Sight Training.
+        /// </summary>
+        private void EnforceTunerSingleNoteDisplay()
+        {
+            if (LowerNotes.Count > 0)
+            {
+                LowerNotes = new List<GeneratedNote>();
+                LowerBarBeats = new List<double>();
+                LowerNoteStates = Array.Empty<StaffNoteState>();
+                LowerAlpha = 0f;
+            }
+
+            if (UpperNotes.Count <= 1)
+            {
+                if (UpperNotes.Count == 1
+                    && (UpperNoteStates == null || UpperNoteStates.Length != 1))
+                {
+                    UpperNoteStates = new[] { StaffNoteState.Correct };
+                }
+                return;
+            }
+
+            GeneratedNote? keep = null;
+            for (int i = 0; i < UpperNotes.Count; i++)
+            {
+                if (!UpperNotes[i].IsRest)
+                {
+                    keep = UpperNotes[i];
+                    break;
+                }
+            }
+
+            UpperNotes = keep != null
+                ? new List<GeneratedNote> { keep }
+                : new List<GeneratedNote>();
+            UpperBarBeats = new List<double>();
+            UpperNoteStates = UpperNotes.Count > 0
+                ? new[] { StaffNoteState.Correct }
+                : Array.Empty<StaffNoteState>();
+            UpperHasEndBar = false;
+            ActiveNoteIndex = UpperNotes.Count > 0 ? 0 : -1;
+            IsUpperActive = true;
+        }
+
         private static Color ApplyAlpha(Color c, byte alpha)
             => Color.FromRgba(c.Red, c.Green, c.Blue, alpha / 255f);
+
+        /// <summary>Tuner notes are always green; other pages keep their existing note colors.</summary>
+        private Color ResolveDrawnNoteColor(StaffNoteState state, Color ink, byte fadeAlpha)
+        {
+            if (_session.Tune == "Tuner")
+                return ApplyAlpha(Color.FromArgb("#22AA44"), fadeAlpha);
+
+            // Match the historical DrawNote palette (Current = Gold on Music/Sight).
+            return state switch
+            {
+                StaffNoteState.Current => ApplyAlpha(Colors.Gold, fadeAlpha),
+                StaffNoteState.Correct => ApplyAlpha(Color.FromArgb("#22AA44"), fadeAlpha),
+                StaffNoteState.Wrong => ApplyAlpha(Color.FromArgb("#CC2222"), fadeAlpha),
+                _ => ApplyAlpha(Colors.Black, (byte)(fadeAlpha * 0.85f))
+            };
+        }
 
         private static Color GetNoteColor(StaffNoteState state, Color ink, byte fadeAlpha) => state switch
         {
@@ -5141,22 +5207,7 @@ namespace musicmate.Drawables
             canvas.SaveState();
             try
             {
-                Color noteColor;
-                switch (state)
-                {
-                    case StaffNoteState.Current:
-                        noteColor = ApplyAlpha(Colors.Gold, fadeAlpha);  //  2026.06.13 1601  Color.FromArgb("#007BFF"), fadeAlpha);
-                        break;
-                    case StaffNoteState.Correct:
-                        noteColor = ApplyAlpha(Color.FromArgb("#22AA44"), fadeAlpha);
-                        break;
-                    case StaffNoteState.Wrong:
-                        noteColor = ApplyAlpha(Color.FromArgb("#CC2222"), fadeAlpha);
-                        break;
-                    default:
-                        noteColor = ApplyAlpha(Colors.Black, (byte)(fadeAlpha * 0.85f));
-                        break;
-                }
+                Color noteColor = ResolveDrawnNoteColor(state, ink, fadeAlpha);
 
                 float stroke = 2f * _layout.GlyphScale;
                 canvas.StrokeColor = noteColor;

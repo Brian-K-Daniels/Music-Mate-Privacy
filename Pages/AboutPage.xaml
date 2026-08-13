@@ -62,33 +62,82 @@
   </ContentPage.Resources>
 
   <!--
-        Title bar stays short (Shell nav height is fixed). Search lives in page content
-        so large About font sizes are never clipped by the nav chrome.
+        Shell provides the hamburger. TitleView: ← Music | About | Next | Back | Clear.
+        Search Entry stays in page content so large fonts are never clipped by the nav chrome.
     -->
   <Shell.TitleView>
 
     <Grid
-            ColumnDefinitions="*,Auto"
+            ColumnDefinitions="Auto,*,Auto,Auto,Auto"
+            ColumnSpacing="6"
             HeightRequest="44"
             Padding="0,0,8,0"
             VerticalOptions="Center">
 
-      <Label
+      <Button
                 Grid.Column="0"
+                Style="{StaticResource MusicNavBackButton}"
+                Clicked="OnNavigateMusicClicked"
+                SemanticProperties.Description="Go to Music page" />
+
+      <Label
+                Grid.Column="1"
                 Text="About"
                 FontAttributes="Bold"
                 FontSize="16"
                 FontAutoScalingEnabled="False"
                 TextColor="{DynamicResource ThemeContrastingText}"
-                VerticalOptions="Center" />
-
-      <Border
-                Grid.Column="1"
-                Style="{StaticResource TitleLogoBorder}"
                 VerticalOptions="Center"
-                HorizontalOptions="End">
-        <Image Source="logo.png" Aspect="AspectFill" />
-      </Border>
+                LineBreakMode="TailTruncation"
+                MaxLines="1" />
+
+      <Button
+                x:Name="AboutTitleFindNextButton"
+                Grid.Column="2"
+                Text="Next"
+                IsEnabled="False"
+                Clicked="OnAboutFindNextClicked"
+                FontAutoScalingEnabled="False"
+                FontSize="13"
+                FontAttributes="Bold"
+                Padding="10,4"
+                HeightRequest="36"
+                MinimumHeightRequest="36"
+                VerticalOptions="Center"
+                HorizontalOptions="End"
+                SemanticProperties.Description="Go to the next search match" />
+
+      <Button
+                x:Name="AboutTitleFindBackButton"
+                Grid.Column="3"
+                Text="Back"
+                IsEnabled="False"
+                Clicked="OnAboutFindBackClicked"
+                FontAutoScalingEnabled="False"
+                FontSize="13"
+                FontAttributes="Bold"
+                Padding="10,4"
+                HeightRequest="36"
+                MinimumHeightRequest="36"
+                VerticalOptions="Center"
+                HorizontalOptions="End"
+                SemanticProperties.Description="Go to the previous search match" />
+
+      <Button
+                x:Name="AboutTitleClearSearchButton"
+                Grid.Column="4"
+                Text="Clear"
+                IsEnabled="False"
+                Clicked="OnAboutClearSearchClicked"
+                FontAutoScalingEnabled="False"
+                FontSize="13"
+                FontAttributes="Bold"
+                Padding="10,4"
+                HeightRequest="36"
+                MinimumHeightRequest="36"
+                VerticalOptions="Center"
+                HorizontalOptions="End"
+                SemanticProperties.Description="Clear the About search and remove highlights" />
 
     </Grid>
 
@@ -114,10 +163,10 @@
         HorizontalOptions="Fill"
         VerticalOptions="Start">
 
-      <!-- Search: sized in code for SelectedFontSize so glyphs are never clipped. -->
+      <!-- Search field + match position (Next/Clear live in the title bar). -->
       <Grid
           x:Name="AboutSearchRow"
-          ColumnDefinitions="*,Auto,Auto"
+          ColumnDefinitions="*,Auto"
           ColumnSpacing="6"
           Padding="8,6,8,4"
           VerticalOptions="Start">
@@ -153,20 +202,9 @@
 
         </Border>
 
-        <Button
-            x:Name="AboutFindNextButton"
-            Grid.Column="1"
-            Text="Next"
-            IsEnabled="False"
-            Clicked="OnAboutFindNextClicked"
-            FontAutoScalingEnabled="False"
-            FontSize="{Binding SelectedFontSize}"
-            Padding="10,4"
-            VerticalOptions="Fill" />
-
         <Label
             x:Name="AboutFindPositionLabel"
-            Grid.Column="2"
+            Grid.Column="1"
             Text=""
             FontAutoScalingEnabled="False"
             FontSize="{Binding SelectedFontSize}"

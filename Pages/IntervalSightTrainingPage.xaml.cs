@@ -38,6 +38,18 @@ namespace musicmate.Pages
             StaffGraphicsView.SizeChanged += (_, _) => SyncStaffAvailableHeight();
         }
 
+        private async void OnNavigateMusicClicked(object? sender, EventArgs e)
+        {
+            try
+            {
+                await Shell.Current.GoToAsync("//MusicPage");
+            }
+            catch (Exception ex)
+            {
+                Utils.Log($"[SightTraining] Navigate to Music ERROR: {ex.Message}");
+            }
+        }
+
         protected override async void OnAppearing()
         {
             base.OnAppearing();

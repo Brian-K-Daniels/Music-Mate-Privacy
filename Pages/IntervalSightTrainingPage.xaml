@@ -26,18 +26,24 @@
   </ContentPage.Resources>
 
   <Shell.TitleView>
-    <Grid ColumnDefinitions="*,Auto"
+    <Grid ColumnDefinitions="Auto,*,Auto"
+          ColumnSpacing="8"
           HeightRequest="44"
           Padding="0,0,8,0"
           VerticalOptions="Center">
-      <Label Grid.Column="0"
+      <Button Grid.Column="0"
+              Style="{StaticResource MusicNavBackButton}"
+              Clicked="OnNavigateMusicClicked"
+              SemanticProperties.Description="Go to Music page" />
+      <Label Grid.Column="1"
              Text="Interval (in semitones) Sight Training"
              FontAttributes="Bold"
              FontSize="16"
              LineBreakMode="TailTruncation"
+             MaxLines="1"
              TextColor="{DynamicResource ThemeContrastingText}"
              VerticalOptions="Center" />
-      <Border Grid.Column="1"
+      <Border Grid.Column="2"
               Style="{StaticResource TitleLogoBorder}"
               VerticalOptions="Center"
               HorizontalOptions="End">

@@ -98,7 +98,7 @@ namespace musicmate.Pages
 
                 InitializePlayModePickers();
 
-                UpdatePlayModePickersFromSession(suppressClear: true);
+                UpdatePlayModePickersFromSession();
 
 
 
@@ -155,8 +155,6 @@ namespace musicmate.Pages
 
             UpdateRepeatButtonColors();
 
-            UpdateRandomModeWarning();
-
         }
         protected override void OnDisappearing()
 
@@ -197,8 +195,6 @@ namespace musicmate.Pages
 
                         UpdatePlayModePickersFromSession();
 
-                        UpdateRandomModeWarning();
-
                         break;
 
                     case nameof(NoteSessionService.CurrentTune):
@@ -229,8 +225,6 @@ namespace musicmate.Pages
 
                         UpdatePlayModePickersFromSession();
 
-                        UpdateRandomModeWarning();
-
                         break;
 
                 }
@@ -245,8 +239,6 @@ namespace musicmate.Pages
             PlayModePickerOptions.ApplyPersistedSelection(_session);
 
             UpdatePlayModePickersFromSession();
-
-            UpdateRandomModeWarning();
 
         }
         private void InitializePlayModePickers()
@@ -495,7 +487,7 @@ namespace musicmate.Pages
             _ => key
 
         };
-        private void UpdatePlayModePickersFromSession(bool suppressClear = false)
+        private void UpdatePlayModePickersFromSession()
 
         {
 
@@ -580,12 +572,6 @@ namespace musicmate.Pages
                 _suppressPickerSync = false;
 
             }
-
-
-
-            if (!suppressClear)
-
-                UpdateRandomModeWarning();
 
         }
         //private Picker? GetActivePlayModePicker()  //  2026.08.01 1542  method out
@@ -777,13 +763,6 @@ namespace musicmate.Pages
             finally { _localPlayModeChange = false; }
 
         }
-        private void UpdateRandomModeWarning()
-
-        {
-
-            RandomModeWarningLabel.IsVisible = _session.IsRandomMode && _session.Tune == "Practice Tune";
-
-        }
         private void UpdateRepeatButtonsVisibility()
 
         {
@@ -858,8 +837,6 @@ namespace musicmate.Pages
 
                 UpdateRepeatButtonsVisibility();
 
-                UpdateRandomModeWarning();
-
                 await NavigateIfNewSelectionAsync(
 
                     previousSelection,
@@ -897,8 +874,6 @@ namespace musicmate.Pages
             Preferences.Default.Set("SelectedTune", selected);
 
             UpdateRepeatButtonsVisibility();
-
-            UpdateRandomModeWarning();
 
             await NavigateIfNewSelectionAsync(
 
@@ -997,7 +972,7 @@ namespace musicmate.Pages
 
             // Always resync after apply — an awaited premium prompt can leave the
             // picker visually stale even when session state updated correctly.
-            UpdatePlayModePickersFromSession(suppressClear: true);
+            UpdatePlayModePickersFromSession();
 
 #if DEBUG
 
@@ -1006,8 +981,6 @@ namespace musicmate.Pages
 #endif
 
             UpdateRepeatButtonsVisibility();
-
-            UpdateRandomModeWarning();
 
             if (rejectionReason == null)
 
@@ -1074,8 +1047,6 @@ namespace musicmate.Pages
 
             UpdateRepeatButtonsVisibility();
 
-            UpdateRandomModeWarning();
-
             await NavigateIfNewSelectionAsync(
 
                 previousSelection,
@@ -1127,11 +1098,9 @@ namespace musicmate.Pages
 
                         PlayModePickerOptions.ApplyOtherSelection(_session, selected));
 
-                    UpdatePlayModePickersFromSession(suppressClear: true);
+                    UpdatePlayModePickersFromSession();
 
                     UpdateRepeatButtonsVisibility();
-
-                    UpdateRandomModeWarning();
 
                     return;
 
@@ -1165,11 +1134,9 @@ namespace musicmate.Pages
 
 
 
-            UpdatePlayModePickersFromSession(suppressClear: true);
+            UpdatePlayModePickersFromSession();
 
             UpdateRepeatButtonsVisibility();
-
-            UpdateRandomModeWarning();
 
             await NavigateIfNewSelectionAsync(previousSelection, nextSelection);
 

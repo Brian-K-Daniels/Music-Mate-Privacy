@@ -4473,6 +4473,7 @@ namespace musicmate.Services
             }
 
             CurrentTune = tune;
+            IsRandomMode = false;
             Tune = "Practice Tune";
             OnPropertyChanged(nameof(CurrentTune));
         }

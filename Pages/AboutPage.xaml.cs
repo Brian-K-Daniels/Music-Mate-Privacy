@@ -31,6 +31,7 @@ namespace musicmate.Pages
         private bool _aboutPausedListening = false;
         private double _aboutLastWebViewWidth = -1;
         private CancellationTokenSource? _aboutWebViewSizeCts;
+        private bool _suppressAboutSearchTextChanged;
 
 
         public AboutPage()
@@ -49,13 +50,28 @@ namespace musicmate.Pages
             AboutWebView.Navigated += OnAboutWebViewNavigated;
             AboutWebView.SizeChanged += OnAboutWebViewSizeChanged;
 
-            // Ensure Find Next button initial state
-            var nextBtn = this.FindByName<Button>("AboutFindNextButton");
-            if (nextBtn != null)
-                nextBtn.IsEnabled = false;
+            // Ensure Find Next / Back / Clear initial state
+            if (AboutTitleFindNextButton != null)
+                AboutTitleFindNextButton.IsEnabled = false;
+            if (AboutTitleFindBackButton != null)
+                AboutTitleFindBackButton.IsEnabled = false;
+            if (AboutTitleClearSearchButton != null)
+                AboutTitleClearSearchButton.IsEnabled = false;
             var posLbl = this.FindByName<Label>("AboutFindPositionLabel");
             if (posLbl != null)
                 posLbl.Text = string.Empty;
+        }
+
+        private async void OnNavigateMusicClicked(object? sender, EventArgs e)
+        {
+            try
+            {
+                await Shell.Current.GoToAsync("//MusicPage");
+            }
+            catch (Exception ex)
+            {
+                Utils.Log($"[AboutPage] Navigate to Music ERROR: {ex.Message}");
+            }
         }
 
         private void OnAboutViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -246,12 +262,6 @@ namespace musicmate.Pages
             {
                 border.HeightRequest = entryH;
                 border.MinimumHeightRequest = entryH;
-            }
-
-            if (AboutFindNextButton != null)
-            {
-                AboutFindNextButton.HeightRequest = entryH;
-                AboutFindNextButton.MinimumHeightRequest = entryH;
             }
 
             var row = this.FindByName<Grid>("AboutSearchRow");
@@ -567,6 +577,49 @@ namespace musicmate.Pages
             }
         }
 
+        private async void OnAboutFindBackClicked(object? sender, EventArgs e)
+        {
+            try
+            {
+                await MoveToPreviousAboutMatchAsync();
+            }
+            catch
+            {
+                await ShowAboutSearchErrorAsync();
+            }
+            finally
+            {
+                HideAboutSearchKeyboard(AboutSearchEntry);
+            }
+        }
+
+        private async void OnAboutClearSearchClicked(object? sender, EventArgs e)
+        {
+            try
+            {
+                _aboutSearchDebounceCts?.Cancel();
+
+                _suppressAboutSearchTextChanged = true;
+                try
+                {
+                    if (AboutSearchEntry != null)
+                        AboutSearchEntry.Text = string.Empty;
+                }
+                finally
+                {
+                    _suppressAboutSearchTextChanged = false;
+                }
+
+                // Unwrap highlights / reset index without forcing a scroll-to-top.
+                await SearchAboutPageAsync(string.Empty, scrollToMatchOrTop: false);
+                HideAboutSearchKeyboard(AboutSearchEntry);
+            }
+            catch
+            {
+                await ShowAboutSearchErrorAsync();
+            }
+        }
+
         /// <summary>
         /// Dismisses the About search Entry focus and soft keyboard (Android IME).
         /// </summary>
@@ -670,6 +723,9 @@ namespace musicmate.Pages
         }
         private async void OnAboutSearchEntryTextChanged(object? sender, TextChangedEventArgs e)
         {
+            if (_suppressAboutSearchTextChanged)
+                return;
+
             _aboutSearchDebounceCts?.Cancel();
             _aboutSearchDebounceCts?.Dispose();
 
@@ -694,7 +750,10 @@ namespace musicmate.Pages
                 await ShowAboutSearchErrorAsync();
             }
         }
-        private async Task SearchAboutPageAsync( string? searchText,  CancellationToken cancellationToken = default)
+        private async Task SearchAboutPageAsync(
+            string? searchText,
+            CancellationToken cancellationToken = default,
+            bool scrollToMatchOrTop = true)
         {
             var query = searchText?.Trim() ?? string.Empty;
 
@@ -864,6 +923,9 @@ namespace musicmate.Pages
 
             UpdateAboutSearchControls();
 
+            if (!scrollToMatchOrTop)
+                return;
+
             if (_aboutMatchCount > 0)
                 await ScrollToAboutMatchAsync(0);
             else if (string.IsNullOrEmpty(query))
@@ -952,11 +1014,38 @@ namespace musicmate.Pages
 
         private async Task MoveToNextAboutMatchAsync()
         {
-            var web = AboutWebView;
-            if (web == null)
+            if (!await EnsureAboutMatchesReadyAsync())
                 return;
 
-            // If the document was reloaded, rebuild highlights before advancing.
+            _aboutCurrentIndex++;
+            if (_aboutCurrentIndex < 0 || _aboutCurrentIndex >= _aboutMatchCount)
+                _aboutCurrentIndex = 0;
+
+            await ScrollToAboutMatchAsync(_aboutCurrentIndex);
+        }
+
+        private async Task MoveToPreviousAboutMatchAsync()
+        {
+            if (!await EnsureAboutMatchesReadyAsync())
+                return;
+
+            _aboutCurrentIndex--;
+            if (_aboutCurrentIndex < 0)
+                _aboutCurrentIndex = _aboutMatchCount - 1;
+
+            await ScrollToAboutMatchAsync(_aboutCurrentIndex);
+        }
+
+        /// <summary>
+        /// Ensures highlight nodes exist in the WebView DOM; rebuilds from the search box if needed.
+        /// </summary>
+        private async Task<bool> EnsureAboutMatchesReadyAsync()
+        {
+            var web = AboutWebView;
+            if (web == null)
+                return false;
+
+            // If the document was reloaded, rebuild highlights before navigating.
             string? domCountResult = null;
             try
             {
@@ -972,19 +1061,14 @@ namespace musicmate.Pages
             {
                 var text = AboutSearchEntry?.Text?.Trim();
                 if (string.IsNullOrEmpty(text))
-                    return;
+                    return false;
 
                 await SearchAboutPageAsync(text);
-                return;
+                return _aboutMatchCount > 0;
             }
 
             _aboutMatchCount = domCount;
-
-            _aboutCurrentIndex++;
-            if (_aboutCurrentIndex < 0 || _aboutCurrentIndex >= _aboutMatchCount)
-                _aboutCurrentIndex = 0;
-
-            await ScrollToAboutMatchAsync(_aboutCurrentIndex);
+            return true;
         }
 
         /// <summary>
@@ -1030,13 +1114,25 @@ namespace musicmate.Pages
         }
         private void UpdateAboutSearchControls()
         {
-            AboutFindNextButton.IsEnabled =
-                _aboutMatchCount > 0;
+            bool hasMatches = _aboutMatchCount > 0;
+            bool hasSearchText = !string.IsNullOrWhiteSpace(AboutSearchEntry?.Text);
 
-            AboutFindPositionLabel.Text =
-                _aboutMatchCount > 0
-                    ? $"{_aboutCurrentIndex + 1}/{_aboutMatchCount}"
-                    : string.Empty;
+            if (AboutTitleFindNextButton != null)
+                AboutTitleFindNextButton.IsEnabled = hasMatches;
+
+            if (AboutTitleFindBackButton != null)
+                AboutTitleFindBackButton.IsEnabled = hasMatches;
+
+            if (AboutTitleClearSearchButton != null)
+                AboutTitleClearSearchButton.IsEnabled = hasSearchText || hasMatches;
+
+            if (AboutFindPositionLabel != null)
+            {
+                AboutFindPositionLabel.Text =
+                    hasMatches
+                        ? $"{_aboutCurrentIndex + 1}/{_aboutMatchCount}"
+                        : string.Empty;
+            }
         }
         private static bool TryParseJavaScriptInteger( string? result, out int value)
         {

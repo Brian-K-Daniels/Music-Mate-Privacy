@@ -6,7 +6,13 @@ namespace musicmate.Services
     /// </summary>
     public interface ICountInClickService
     {
-        Task PlayClickAsync(bool accented, int durationMs, float volume, CancellationToken ct);
+        Task PlayClickAsync(
+            bool accented,
+            int durationMs,
+            float volume,
+            double frequencyHz,
+            CancellationToken ct);
+
         void Stop();
     }
 }

@@ -48,12 +48,14 @@ public class WaitingCountInLogicTests
             unaccentedVolume: 0.2f,
             accentedPitchHz: 1760,
             unaccentedPitchHz: 880,
-            beatDurationMs: 35,
+            beatDurationPercent: 20,
             tempoBpm: 100);
 
         Assert.True(click.IsAccented);
         Assert.Equal(0.5f, click.Volume);
         Assert.Equal(1760, click.FrequencyHz);
+        // 60_000/100 = 600 ms/beat × 20% = 120 ms
+        Assert.Equal(0.120, click.DurationSeconds, 3);
     }
 
     [Fact]
@@ -66,7 +68,7 @@ public class WaitingCountInLogicTests
             unaccentedVolume: 0.2f,
             accentedPitchHz: 1760,
             unaccentedPitchHz: 880,
-            beatDurationMs: 35,
+            beatDurationPercent: 20,
             tempoBpm: 100);
 
         Assert.False(click.IsAccented);
@@ -86,11 +88,19 @@ public class WaitingCountInLogicTests
             WaitingCountInLogic.ShouldStopForFirstNote(evaluateCorrect, countInActive, currentNoteIndex));
 
     [Fact]
-    public void ResolveClickDuration_CapsToBeatFraction()
+    public void ResolveClickDuration_IsPercentOfBeat()
     {
-        double msPerBeat = WaitingCountInLogic.MsPerBeat(180); // fast
-        double seconds = WaitingCountInLogic.ResolveClickDurationSeconds(80, msPerBeat);
-        Assert.True(seconds * 1000 <= msPerBeat * 0.45 + 0.001);
+        double msPerBeat = WaitingCountInLogic.MsPerBeat(120); // 500 ms
+        double seconds = WaitingCountInLogic.ResolveClickDurationSeconds(20, msPerBeat);
+        Assert.Equal(0.100, seconds, 3);
+    }
+
+    [Fact]
+    public void ResolveClickDuration_ClampsPercentRange()
+    {
+        double msPerBeat = WaitingCountInLogic.MsPerBeat(60); // 1000 ms
+        Assert.Equal(0.050, WaitingCountInLogic.ResolveClickDurationSeconds(1, msPerBeat), 3);
+        Assert.Equal(0.500, WaitingCountInLogic.ResolveClickDurationSeconds(99, msPerBeat), 3);
     }
 }
 
@@ -115,7 +125,7 @@ public class WaitingCountInSettingsTests : IDisposable
         WaitingCountInSettings.UnaccentedVolume = 0.1f;
         WaitingCountInSettings.AccentedPitchHz = 2000;
         WaitingCountInSettings.UnaccentedPitchHz = 1000;
-        WaitingCountInSettings.BeatDurationMs = 60;
+        WaitingCountInSettings.BeatDurationPercent = 40;
 
         WaitingCountInSettings.ResetToFactoryDefaults();
 
@@ -124,7 +134,7 @@ public class WaitingCountInSettingsTests : IDisposable
         Assert.Equal(WaitingCountInSettings.DefaultUnaccentedVolume, WaitingCountInSettings.UnaccentedVolume);
         Assert.Equal(WaitingCountInSettings.DefaultAccentedPitchHz, WaitingCountInSettings.AccentedPitchHz);
         Assert.Equal(WaitingCountInSettings.DefaultUnaccentedPitchHz, WaitingCountInSettings.UnaccentedPitchHz);
-        Assert.Equal(WaitingCountInSettings.DefaultBeatDurationMs, WaitingCountInSettings.BeatDurationMs);
+        Assert.Equal(WaitingCountInSettings.DefaultBeatDurationPercent, WaitingCountInSettings.BeatDurationPercent);
     }
 
     [Fact]
@@ -135,14 +145,14 @@ public class WaitingCountInSettingsTests : IDisposable
         WaitingCountInSettings.UnaccentedVolume = 0.11f;
         WaitingCountInSettings.AccentedPitchHz = 1500;
         WaitingCountInSettings.UnaccentedPitchHz = 900;
-        WaitingCountInSettings.BeatDurationMs = 40;
+        WaitingCountInSettings.BeatDurationPercent = 25;
 
         Assert.True(WaitingCountInSettings.Enabled);
         Assert.Equal(0.33f, WaitingCountInSettings.AccentedVolume, 3);
         Assert.Equal(0.11f, WaitingCountInSettings.UnaccentedVolume, 3);
         Assert.Equal(1500, WaitingCountInSettings.AccentedPitchHz, 0);
         Assert.Equal(900, WaitingCountInSettings.UnaccentedPitchHz, 0);
-        Assert.Equal(40, WaitingCountInSettings.BeatDurationMs);
+        Assert.Equal(25, WaitingCountInSettings.BeatDurationPercent);
     }
 
     [Theory]
@@ -160,11 +170,11 @@ public class WaitingCountInSettingsTests : IDisposable
         => Assert.Equal(expected, WaitingCountInSettings.ClampPitchHz(input));
 
     [Theory]
-    [InlineData(1, 30)]
-    [InlineData(200, 120)]
-    [InlineData(55, 55)]
-    public void ClampDurationMs(int input, int expected)
-        => Assert.Equal(expected, WaitingCountInSettings.ClampDurationMs(input));
+    [InlineData(1, 5)]
+    [InlineData(200, 50)]
+    [InlineData(20, 20)]
+    public void ClampDurationPercent(int input, int expected)
+        => Assert.Equal(expected, WaitingCountInSettings.ClampDurationPercent(input));
 }
 
 [Collection("SessionPreferences")]
@@ -217,7 +227,12 @@ public class WaitingCountInPlayerTests : IDisposable
         public int StopCount;
         public int PlayCount;
 
-        public async Task PlayClickAsync(bool accented, int durationMs, float volume, CancellationToken ct)
+        public async Task PlayClickAsync(
+            bool accented,
+            int durationMs,
+            float volume,
+            double frequencyHz,
+            CancellationToken ct)
         {
             Interlocked.Increment(ref PlayCount);
             await Task.Delay(Math.Max(1, durationMs), ct);

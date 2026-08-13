@@ -417,6 +417,21 @@
         <Setter Property="SelectedTabColor" Value="{AppThemeBinding Light={StaticResource Gray950}, Dark={StaticResource Gray200}}" />
     </Style>
 
+    <!-- Music-page back arrow used in Shell TitleViews (Settings Advanced pattern). -->
+    <Style x:Key="MusicNavBackButton" TargetType="Button">
+        <Setter Property="Text" Value="←" />
+        <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
+        <Setter Property="TextColor" Value="{DynamicResource ThemeContrastingText}" />
+        <Setter Property="FontSize" Value="18" />
+        <Setter Property="Padding" Value="12,0" />
+        <Setter Property="WidthRequest" Value="56" />
+        <Setter Property="MinimumWidthRequest" Value="56" />
+        <Setter Property="MinimumHeightRequest" Value="36" />
+        <Setter Property="HeightRequest" Value="36" />
+        <Setter Property="VerticalOptions" Value="Center" />
+        <Setter Property="FontAutoScalingEnabled" Value="False" />
+    </Style>
+
     <!-- Circular gold frame for logo.png (masks the square white PNG background). -->
     <Style x:Key="TitleLogoBorder" TargetType="Border">
         <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />

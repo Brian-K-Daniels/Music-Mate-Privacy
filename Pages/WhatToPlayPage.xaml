@@ -178,13 +178,6 @@
             </Border>
           </VerticalStackLayout>
         </Grid>
-
-        <Label x:Name="RandomModeWarningLabel"
-               Text="⚠ Random mode works best with a scale selected"
-               FontSize="12"
-               TextColor="DarkRed"
-               IsVisible="False"
-               HorizontalOptions="Center" />
       </VerticalStackLayout>
 
       <!-- Repeat / Background Color buttons -->

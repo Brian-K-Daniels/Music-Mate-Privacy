@@ -658,8 +658,8 @@ namespace musicmate.ViewModels
         public double CountInMaxVolume => WaitingCountInSettings.MaxVolume;
         public double CountInMinPitchHz => WaitingCountInSettings.MinPitchHz;
         public double CountInMaxPitchHz => WaitingCountInSettings.MaxPitchHz;
-        public double CountInMinDurationMs => WaitingCountInSettings.MinBeatDurationMs;
-        public double CountInMaxDurationMs => WaitingCountInSettings.MaxBeatDurationMs;
+        public double CountInMinDurationPercent => WaitingCountInSettings.MinBeatDurationPercent;
+        public double CountInMaxDurationPercent => WaitingCountInSettings.MaxBeatDurationPercent;
 
         public bool CountInEnabled
         {
@@ -720,15 +720,15 @@ namespace musicmate.ViewModels
             }
         }
 
-        public double CountInBeatDurationMs
+        public double CountInBeatDurationPercent
         {
-            get => WaitingCountInSettings.BeatDurationMs;
+            get => WaitingCountInSettings.BeatDurationPercent;
             set
             {
-                int clamped = WaitingCountInSettings.ClampDurationMs((int)Math.Round(value));
-                if (WaitingCountInSettings.BeatDurationMs == clamped) return;
-                WaitingCountInSettings.BeatDurationMs = clamped;
-                OnPropertyChanged(nameof(CountInBeatDurationMs));
+                int clamped = WaitingCountInSettings.ClampDurationPercent((int)Math.Round(value));
+                if (WaitingCountInSettings.BeatDurationPercent == clamped) return;
+                WaitingCountInSettings.BeatDurationPercent = clamped;
+                OnPropertyChanged(nameof(CountInBeatDurationPercent));
             }
         }
 

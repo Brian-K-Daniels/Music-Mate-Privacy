@@ -319,9 +319,9 @@
                               Margin="0" />
               </Border>
 
-              <!-- Tuner mode: equal-width staff | controls; sized short enough that both borders stay on-screen -->
+              <!-- Tuner mode: narrower staff | wider Metronome controls -->
               <Grid x:Name="TunerGrid"
-                    ColumnDefinitions="*,*"
+                    ColumnDefinitions="2*,3*"
                     ColumnSpacing="8"
                     IsVisible="False"
                     Margin="0"
@@ -358,184 +358,70 @@
                                        Spacing="{StaticResource TunerVerticalSpacing}"
                                        HorizontalOptions="Fill"
                                        VerticalOptions="Start"
-                                       Padding="0,0,0,6">
-                    <Label x:Name="TunerModeStatusLabel"
-                           Text="Metronome"
-                           FontSize="16"
-                           FontAttributes="Bold"
-                           HorizontalOptions="Center"
-                           VerticalOptions="Start"
-                           Margin="0,0,0,0"
-                           TextColor="#000000"
-                           IsVisible="True" />
-
-                    <!-- Note chooser: ◀  WrittenPicker  ▶ -->
-                    <VerticalStackLayout Spacing="{StaticResource TunerVerticalSpacing}"
-                                         HorizontalOptions="Fill"
-                                         Margin="0,0,0,0">
-                      <Label x:Name="TunerNoteChooserHint"
-                             Text="Note to play – tap list or use ◀ ▶"
-                             FontSize="10"
-                             HorizontalOptions="Fill"
-                             HorizontalTextAlignment="Center"
-                             LineBreakMode="NoWrap"
+                                       Padding="4,2,4,6">
+                    <!-- Note Heard [written note for selected instrument] -->
+                    <Grid ColumnDefinitions="Auto,*"
+                          ColumnSpacing="{StaticResource TunerControlSpacing}"
+                          HorizontalOptions="Fill">
+                      <Label Grid.Column="0"
+                             Text="Note Heard"
+                             FontSize="12"
+                             FontAttributes="Bold"
+                             VerticalOptions="Center"
+                             TextColor="#000000" />
+                      <Label x:Name="TunerNoteHeardValueLabel"
+                             Grid.Column="1"
+                             Text="—"
+                             FontSize="14"
+                             FontAttributes="Bold"
+                             VerticalOptions="Center"
+                             HorizontalTextAlignment="Start"
+                             LineBreakMode="TailTruncation"
                              MaxLines="1"
-                             TextColor="#444444"
-                             Margin="0" />
-                      <Grid ColumnDefinitions="Auto,*,Auto"
-                            ColumnSpacing="{StaticResource TunerControlSpacing}"
-                            HeightRequest="{StaticResource TunerControlHeight}"
-                            HorizontalOptions="Fill">
-                        <Button x:Name="TunerLowerNoteButton"
-                                Grid.Column="0"
-                                Style="{StaticResource TunerControlButton}"
-                                Text="◀"
-                                FontSize="14"
-                                FontAttributes="Bold"
-                                WidthRequest="36"
-                                Padding="0"
-                                Clicked="OnTunerLowerNoteClicked"
-                                SemanticProperties.Description="Lower the note to play by one semitone" />
-                        <Border x:Name="TunerNoteChooserChip"
-                                Grid.Column="1"
-                                Style="{StaticResource TunerPickerChrome}">
-                          <Border.GestureRecognizers>
-                            <TapGestureRecognizer Tapped="OnTunerNoteChooserTapped" />
-                          </Border.GestureRecognizers>
-                          <Grid ColumnDefinitions="*,Auto" InputTransparent="True">
-                            <Label x:Name="TunerReferenceNoteDisplayLabel"
-                                   Grid.Column="0"
-                                   Text="Written —"
-                                   FontSize="14"
-                                   FontAttributes="Bold"
-                                   TextColor="#000000"
-                                   VerticalOptions="Fill"
-                                   HorizontalOptions="Fill"
-                                   VerticalTextAlignment="Center"
-                                   HorizontalTextAlignment="Center"
-                                   LineBreakMode="TailTruncation"
-                                   MaxLines="1" />
-                            <Label x:Name="TunerNoteChooserChevron"
-                                   Grid.Column="1"
-                                   Text="▾"
-                                   FontSize="14"
-                                   FontAttributes="Bold"
-                                   TextColor="#8B4513"
-                                   VerticalOptions="Center"
-                                   Margin="4,0,0,0"
-                                   SemanticProperties.Description="Opens the note list" />
-                          </Grid>
-                        </Border>
-                        <Button x:Name="TunerHigherNoteButton"
-                                Grid.Column="2"
-                                Style="{StaticResource TunerControlButton}"
-                                Text="▶"
-                                FontSize="14"
-                                FontAttributes="Bold"
-                                WidthRequest="36"
-                                Padding="0"
-                                Clicked="OnTunerHigherNoteClicked"
-                                SemanticProperties.Description="Raise the note to play by one semitone" />
-                      </Grid>
-                      <!-- Code-built rows with StyleId=midi (CollectionView BindingContext is unreliable on WinUI). -->
-                      <Border x:Name="TunerNoteListBorder"
-                              IsVisible="False"
-                              Style="{StaticResource TunerPickerChrome}"
-                              BackgroundColor="White"
-                              Padding="0"
-                              HeightRequest="288"
-                              MinimumHeightRequest="72"
-                              HorizontalOptions="Fill">
-                        <ScrollView x:Name="TunerNoteListScroll"
-                                    VerticalOptions="Fill"
-                                    HorizontalOptions="Fill">
-                          <VerticalStackLayout x:Name="TunerNoteListStack"
-                                               Spacing="0"
-                                               Padding="0" />
-                        </ScrollView>
-                      </Border>
-                    </VerticalStackLayout>
+                             TextColor="#000000" />
+                    </Grid>
 
-                    <VerticalStackLayout Spacing="{StaticResource TunerVerticalSpacing}"
-                                         HorizontalOptions="Fill"
-                                         Margin="0">
-                      <Grid ColumnDefinitions="*,*"
-                            ColumnSpacing="{StaticResource TunerControlSpacing}"
-                            HorizontalOptions="Fill"
-                            Margin="0">
-                        <Label Grid.Column="0"
-                               Text="{Binding TunerLastDetectedFreq, StringFormat='Heard: {0:F1} Hz'}"
-                               FontSize="10"
-                               HorizontalOptions="Start"
-                               HorizontalTextAlignment="Start"
-                               LineBreakMode="TailTruncation"
-                               MaxLines="1"
-                               TextColor="#000000" />
-                        <Label Grid.Column="1"
-                               Text="{Binding TunerLastNearestFreq, StringFormat='Nearest: {0:F1} Hz'}"
-                               FontSize="10"
-                               HorizontalOptions="End"
-                               HorizontalTextAlignment="End"
-                               LineBreakMode="TailTruncation"
-                               MaxLines="1"
-                               TextColor="#000000" />
-                      </Grid>
-                      <!-- Tempo | Start | From Settings — taller row so picker text is not clipped -->
-                      <Grid ColumnDefinitions="Auto,*,Auto"
-                            ColumnSpacing="{StaticResource TunerControlSpacing}"
-                            HeightRequest="{StaticResource TunerActionRowHeight}"
-                            MinimumHeightRequest="{StaticResource TunerActionRowHeight}"
-                            HorizontalOptions="Fill">
-                        <Border Grid.Column="0"
-                                Style="{StaticResource TunerPickerChrome}"
-                                HeightRequest="{StaticResource TunerActionRowHeight}"
-                                MinimumHeightRequest="{StaticResource TunerActionRowHeight}"
-                                WidthRequest="56"
-                                Padding="4,0"
-                                HorizontalOptions="Start">
-                          <Picker x:Name="TunerTempoPicker"
-                                  Title="BPM"
-                                  FontSize="12"
-                                  FontAttributes="Bold"
-                                  VerticalOptions="Center"
-                                  HorizontalOptions="Fill"
-                                  HeightRequest="{StaticResource TunerActionRowHeight}"
-                                  MinimumHeightRequest="{StaticResource TunerActionRowHeight}"
-                                  BackgroundColor="Transparent"
-                                  TextColor="{DynamicResource ThemeContrastingText}"
-                                  SelectedIndexChanged="OnTunerTempoPickerChanged"
-                                  SemanticProperties.Description="Tempo for repeated reference note playback" />
-                        </Border>
-                        <Button x:Name="TunerPlayNoteButton"
-                                Grid.Column="1"
-                                Style="{StaticResource TunerControlButton}"
-                                HeightRequest="{StaticResource TunerActionRowHeight}"
-                                MinimumHeightRequest="{StaticResource TunerActionRowHeight}"
-                                Text="Start"
-                                FontSize="12"
-                                FontAttributes="Bold"
-                                Clicked="OnTunerPlayNoteClicked"
-                                SemanticProperties.Description="Start or stop repeated reference note playback" />
-                        <Button x:Name="TunerUseSettingsTempoButton"
-                                Grid.Column="2"
-                                Style="{StaticResource TunerControlButton}"
-                                HeightRequest="{StaticResource TunerActionRowHeight}"
-                                MinimumHeightRequest="{StaticResource TunerActionRowHeight}"
-                                Text="From Settings"
-                                FontSize="10"
-                                FontAttributes="Bold"
-                                WidthRequest="150"
-                                HorizontalOptions="End"
-                                Clicked="OnTunerUseSettingsTempoClicked"
-                                SemanticProperties.Description="Copy tempo from Settings into the Tuner tempo picker" />
-                      </Grid>
-                      <Grid Padding="0,14">
-                        <Border Style="{StaticResource TunerPickerChrome}"
+                    <!-- Heard / Nearest frequencies (small font) -->
+                    <Grid ColumnDefinitions="*,*"
+                          ColumnSpacing="{StaticResource TunerControlSpacing}"
+                          HorizontalOptions="Fill"
+                          Margin="0">
+                      <Label Grid.Column="0"
+                             Text="{Binding TunerLastDetectedFreq, StringFormat='Heard: {0:F1} Hz'}"
+                             FontSize="10"
+                             HorizontalOptions="Start"
+                             HorizontalTextAlignment="Start"
+                             LineBreakMode="TailTruncation"
+                             MaxLines="1"
+                             TextColor="#000000" />
+                      <Label Grid.Column="1"
+                             Text="{Binding TunerLastNearestFreq, StringFormat='Nearest: {0:F1} Hz'}"
+                             FontSize="10"
+                             HorizontalOptions="End"
+                             HorizontalTextAlignment="End"
+                             LineBreakMode="TailTruncation"
+                             MaxLines="1"
+                             TextColor="#000000" />
+                    </Grid>
+
+                    <!-- Instrument picker -->
+                    <Grid ColumnDefinitions="Auto,*"
+                          ColumnSpacing="{StaticResource TunerControlSpacing}"
+                          HeightRequest="{StaticResource TunerActionRowHeight}"
+                          MinimumHeightRequest="{StaticResource TunerActionRowHeight}"
+                          HorizontalOptions="Fill"
+                          Margin="0,4,0,0">
+                      <Label Grid.Column="0"
+                             Text="Instrument"
+                             FontSize="12"
+                             FontAttributes="Bold"
+                             VerticalOptions="Center"
+                             TextColor="#000000" />
+                      <Border Grid.Column="1"
+                              Style="{StaticResource TunerPickerChrome}"
                               HeightRequest="{StaticResource TunerActionRowHeight}"
                               MinimumHeightRequest="{StaticResource TunerActionRowHeight}"
-                              HorizontalOptions="Center"
-                              WidthRequest="220"
-                              Margin="0,0,0,4">
+                              HorizontalOptions="Fill">
                         <Picker x:Name="TunerInstrumentPicker"
                                 Title="Instrument"
                                 FontSize="10"
@@ -548,9 +434,88 @@
                                 BackgroundColor="Transparent"
                                 TextColor="{DynamicResource ThemeContrastingText}"
                                 SelectedIndexChanged="TunerInstrumentPicker_SelectedIndexChanged" />
-                        </Border>
-                      </Grid>
-                    </VerticalStackLayout>
+                      </Border>
+                    </Grid>
+
+                    <Label x:Name="TunerModeStatusLabel"
+                           Text="Metronome"
+                           FontSize="16"
+                           FontAttributes="Bold"
+                           HorizontalOptions="Center"
+                           VerticalOptions="Start"
+                           Margin="0,6,0,0"
+                           TextColor="#000000"
+                           IsVisible="True" />
+
+                    <Label Text="(Setup in Settings / Waiting Count-In)"
+                           FontSize="10"
+                           HorizontalOptions="Center"
+                           HorizontalTextAlignment="Center"
+                           LineBreakMode="WordWrap"
+                           TextColor="#444444"
+                           Margin="0,0,0,2" />
+
+                    <!-- Tempo | picker | bpm | Start -->
+                    <Grid ColumnDefinitions="Auto,Auto,Auto,*"
+                          ColumnSpacing="{StaticResource TunerControlSpacing}"
+                          HeightRequest="{StaticResource TunerActionRowHeight}"
+                          MinimumHeightRequest="{StaticResource TunerActionRowHeight}"
+                          HorizontalOptions="Fill">
+                      <Label Grid.Column="0"
+                             Text="Tempo"
+                             FontSize="12"
+                             FontAttributes="Bold"
+                             VerticalOptions="Center"
+                             VerticalTextAlignment="Center"
+                             LineBreakMode="NoWrap"
+                             MaxLines="1"
+                             TextColor="#000000" />
+                      <Border Grid.Column="1"
+                              Style="{StaticResource TunerPickerChrome}"
+                              HeightRequest="{StaticResource TunerActionRowHeight}"
+                              MinimumHeightRequest="{StaticResource TunerActionRowHeight}"
+                              WidthRequest="56"
+                              Padding="4,0"
+                              HorizontalOptions="Start">
+                        <Picker x:Name="TunerTempoPicker"
+                                Title="BPM"
+                                FontSize="12"
+                                FontAttributes="Bold"
+                                VerticalOptions="Center"
+                                HorizontalOptions="Fill"
+                                HeightRequest="{StaticResource TunerActionRowHeight}"
+                                MinimumHeightRequest="{StaticResource TunerActionRowHeight}"
+                                BackgroundColor="Transparent"
+                                TextColor="{DynamicResource ThemeContrastingText}"
+                                SelectedIndexChanged="OnTunerTempoPickerChanged"
+                                SemanticProperties.Description="Tempo for Tuner metronome" />
+                      </Border>
+                      <Label Grid.Column="2"
+                             Text="bpm"
+                             FontSize="12"
+                             FontAttributes="Bold"
+                             VerticalOptions="Center"
+                             VerticalTextAlignment="Center"
+                             LineBreakMode="NoWrap"
+                             MaxLines="1"
+                             TextColor="#000000" />
+                      <Button x:Name="TunerPlayNoteButton"
+                              Grid.Column="3"
+                              Style="{StaticResource TunerControlButton}"
+                              HeightRequest="{StaticResource TunerActionRowHeight}"
+                              MinimumHeightRequest="{StaticResource TunerActionRowHeight}"
+                              Text="Start"
+                              FontSize="12"
+                              FontAttributes="Bold"
+                              TextColor="White"
+                              BackgroundColor="#2E8B57"
+                              WidthRequest="72"
+                              MinimumWidthRequest="64"
+                              Padding="4,0"
+                              HorizontalOptions="End"
+                              Clicked="OnTunerPlayNoteClicked"
+                              SemanticProperties.Description="Start or stop Tuner metronome" />
+                    </Grid>
                   </VerticalStackLayout>
                 </Border>
               </Grid>

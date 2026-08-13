@@ -37,15 +37,12 @@ namespace musicmate.Services
             float unaccentedVolume,
             double accentedPitchHz,
             double unaccentedPitchHz,
-            int beatDurationMs,
+            int beatDurationPercent,
             CancellationToken externalCt,
             Func<CancellationToken, Task>? beforeClickAsync = null,
-            Func<CancellationToken, Task>? afterClickAsync = null)
+            Func<CancellationToken, Task>? afterClickAsync = null,
+            Func<int>? getTempoBpm = null)
         {
-            // Pitch args kept for API compatibility / settings UI; ToneGenerator uses fixed accent tones.
-            _ = accentedPitchHz;
-            _ = unaccentedPitchHz;
-
             Stop();
             int gen = Volatile.Read(ref _generation);
             _cts = CancellationTokenSource.CreateLinkedTokenSource(externalCt);
@@ -55,13 +52,14 @@ namespace musicmate.Services
             try
             {
                 beatsPerMeasure = Math.Max(1, beatsPerMeasure);
-                double msPerBeat = WaitingCountInLogic.MsPerBeat(tempoBpm);
                 var clock = Stopwatch.StartNew();
                 double nextBeatStartMs = 0;
                 long beatIndex = 0;
 
                 while (!ct.IsCancellationRequested && Volatile.Read(ref _generation) == gen)
                 {
+                    int tempo = getTempoBpm?.Invoke() ?? tempoBpm;
+                    double msPerBeat = WaitingCountInLogic.MsPerBeat(tempo);
                     var click = WaitingCountInLogic.BuildClick(
                         beatIndex,
                         beatsPerMeasure,
@@ -69,8 +67,8 @@ namespace musicmate.Services
                         unaccentedVolume,
                         accentedPitchHz,
                         unaccentedPitchHz,
-                        beatDurationMs,
-                        tempoBpm);
+                        beatDurationPercent,
+                        tempo);
 
                     double waitMs = nextBeatStartMs - clock.Elapsed.TotalMilliseconds;
                     if (waitMs > 1)
@@ -92,6 +90,7 @@ namespace musicmate.Services
                             click.IsAccented,
                             durationMs,
                             click.Volume,
+                            click.FrequencyHz,
                             ct).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested

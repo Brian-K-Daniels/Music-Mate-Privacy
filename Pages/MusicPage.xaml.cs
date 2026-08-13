@@ -106,7 +106,6 @@ namespace musicmate.Pages
         private bool _isUpdatingTunerTempoPicker;
         private const string PrefTunerTempoKey = "musicmate.TunerTempo";
         /// <summary>Fraction of each beat that the reference note sounds (remainder is silence).</summary>
-        private const double ReferenceToneNoteOnFraction = 0.70;
 
         // ── Waiting count-in (Music practice) ─────────────────────────────────
         private WaitingCountInPlayer? _waitingCountInPlayer;
@@ -1682,6 +1681,9 @@ namespace musicmate.Pages
         private void SyncStaffNoteStates()
         {
             if (_staffDrawable == null) return;
+            // Tuner owns its own single-note display colors via UpdateTunerStaffDisplay.
+            if (_session.Tune == "Tuner")
+                return;
 
             int upperPitchCount = _sessionUpperPitchCount;
             int currentSession = _session.CurrentNoteIndex;
@@ -1815,8 +1817,9 @@ namespace musicmate.Pages
             return top;
         }
         /// <summary>
-        /// Size the equal-width tuner panels short enough that both green borders and
+        /// Size the tuner panels short enough that both green borders and
         /// their contents stay fully visible without scrolling (portrait and landscape).
+        /// Staff is ~40% width; Metronome controls ~60%.
         /// </summary>
         private void ApplyTunerHeight()
         {
@@ -1859,33 +1862,12 @@ namespace musicmate.Pages
                 double usableH = Math.Max(160, availH - edge * 2 - bottomReserve);
 
                 bool landscape = availW > availH && availW > 0;
-                bool noteListOpen = TunerNoteListBorder?.IsVisible == true;
 
-                // Right-panel content needs ~200dp closed (title + note + action rows).
-                // Use nearly all usable height so the instrument row is not clipped.
+                // Right-panel content needs ~200dp (Note Heard + freqs + instrument + metronome).
                 const double minContentH = 200;
                 double panelH = landscape
                     ? Math.Min(usableH, Math.Max(minContentH, usableH * 0.98))
                     : Math.Min(usableH, Math.Max(minContentH, Math.Min(280, usableH * 0.72)));
-                if (noteListOpen)
-                {
-                    panelH = landscape
-                        ? Math.Min(usableH, Math.Max(panelH, usableH * 0.98))
-                        : Math.Min(usableH, Math.Max(panelH, Math.Min(420, usableH * 0.90)));
-                }
-
-                // Note list shares the right column. Show ~7–8 rows when open so scrolling
-                // is easier (row height is 36); keep a modest size when closed (unused).
-                if (TunerNoteListBorder != null)
-                {
-                    const double chromeAboveList = 72;
-                    const double chromeBelowList = 96; // Heard + action row + instrument + padding
-                    double listMax = landscape ? 216 : 288; // 6 or 8 × 36px rows
-                    double listH = noteListOpen
-                        ? Math.Clamp(panelH - chromeAboveList - chromeBelowList, 144, listMax)
-                        : Math.Clamp(panelH - 110, 72, landscape ? 140 : 120);
-                    TunerNoteListBorder.HeightRequest = listH;
-                }
 
                 MainPageMainLayout.Spacing = 0;
                 if (MainScrollView != null)
@@ -3618,7 +3600,7 @@ namespace musicmate.Pages
                     $"[CountIn] starting beats/measure={beats} tempo={_session.Tempo} " +
                     $"accentHz={WaitingCountInSettings.AccentedPitchHz:F0} " +
                     $"vol={WaitingCountInSettings.AccentedVolume:F2}/{WaitingCountInSettings.UnaccentedVolume:F2} " +
-                    $"durMs={WaitingCountInSettings.BeatDurationMs}");
+                    $"durPct={WaitingCountInSettings.BeatDurationPercent}");
 
                 // Mic stays open for the whole count-in so Mary can be heard.
                 // Clicks use ToneGenerator on Android (audible with mic open) — no per-beat mic thrashing.
@@ -3639,7 +3621,7 @@ namespace musicmate.Pages
                     unaccentedVolume: WaitingCountInSettings.UnaccentedVolume,
                     accentedPitchHz: WaitingCountInSettings.AccentedPitchHz,
                     unaccentedPitchHz: WaitingCountInSettings.UnaccentedPitchHz,
-                    beatDurationMs: WaitingCountInSettings.BeatDurationMs,
+                    beatDurationPercent: WaitingCountInSettings.BeatDurationPercent,
                     externalCt: ct);
 
                 DebugLog.WriteLine("[CountIn] loop ended");
@@ -4541,8 +4523,6 @@ namespace musicmate.Pages
                 {
                     BuildReferenceNoteChoices();
                     SelectReferenceNote(_referenceWrittenMidi, stopTone: false);
-                    if (TunerNoteListBorder?.IsVisible == true)
-                        RebuildTunerNoteListButtons();
                 }
             }
             if (e.PropertyName == nameof(NoteSessionService.AutoRepeat)
@@ -4897,8 +4877,6 @@ namespace musicmate.Pages
                 ? _referenceWrittenMidi
                 : LoadPersistedReferenceWrittenMidi();
             SelectReferenceNote(keep, stopTone: false);
-            if (TunerNoteListBorder?.IsVisible == true)
-                RebuildTunerNoteListButtons();
             UpdateTunerStaffDisplay();
         }
 
@@ -4909,62 +4887,16 @@ namespace musicmate.Pages
                 profile,
                 PreferFlatsForReferenceSpelling());
 
-            // Defer MaterialButton creation until the list is opened — building the full
-            // practical range eagerly on Tuner enter janks the UI thread and floods logcat.
-            InvalidateTunerNoteListButtons();
+            // Note-list UI removed from Tuner panel; choices still support staff spelling.
         }
 
-        /// <summary>
-        /// Clears cached list rows so the next open rebuilds against current choices.
-        /// </summary>
-        private void InvalidateTunerNoteListButtons()
-        {
-            TunerNoteListStack?.Children.Clear();
-        }
-
-        /// <summary>
-        /// Build note rows in code. Uses Border+Label (not Button) so Android does not
-        /// inflate dozens of MaterialButtons. StyleId holds WrittenMidi for selection.
-        /// </summary>
-        private void RebuildTunerNoteListButtons()
-        {
-            if (TunerNoteListStack == null)
-                return;
-
-            TunerNoteListStack.Children.Clear();
-            var themeBg = Color.FromArgb("#F7F7F7");
-            foreach (var choice in _referenceNoteChoices)
-            {
-                var row = new Border
-                {
-                    StyleId = choice.WrittenMidi.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    BackgroundColor = themeBg,
-                    StrokeThickness = 0,
-                    StrokeShape = new RoundRectangle { CornerRadius = 8 },
-                    Padding = new Thickness(8, 4),
-                    Margin = new Thickness(0, 1),
-                    HeightRequest = 36,
-                    HorizontalOptions = LayoutOptions.Fill,
-                    Content = new Label
-                    {
-                        Text = choice.PickerLabel,
-                        FontSize = 15,
-                        FontAttributes = FontAttributes.Bold,
-                        TextColor = Colors.Black,
-                        VerticalTextAlignment = TextAlignment.Center,
-                        HorizontalTextAlignment = TextAlignment.Start,
-                        InputTransparent = true,
-                    },
-                };
-                SemanticProperties.SetDescription(row, $"Select written {choice.PickerLabel}");
-                int midi = choice.WrittenMidi;
-                string label = choice.PickerLabel;
-                var tap = new TapGestureRecognizer();
-                tap.Tapped += async (_, _) => await OnTunerNotePickedAsync(midi, label);
-                row.GestureRecognizers.Add(tap);
-                TunerNoteListStack.Children.Add(row);
-            }
-        }
+        // Note-list UI removed from the Tuner panel (kept as no-ops for any residual calls).
+        private void InvalidateTunerNoteListButtons() { }
+        private void RebuildTunerNoteListButtons() { }
+        private void HighlightSelectedTunerNoteButton() { }
+        private void SetTunerNoteListVisible(bool visible) { }
+        private void OnTunerNoteChooserTapped(object? sender, TappedEventArgs e) { }
+        private async Task ScrollSelectedTunerNoteIntoViewAsync() => await Task.CompletedTask;
 
         private int IndexOfReferenceMidi(int writtenMidi)
         {
@@ -4995,7 +4927,8 @@ namespace musicmate.Pages
                 {
                     _referenceToneGeneration++; // invalidate in-flight PlayReferenceToneAsync finally
                     _referenceToneCts?.Cancel();
-                    _player.CancelPlayback();
+                    try { _waitingCountInPlayer?.Stop(); } catch { }
+                    try { _player.CancelPlayback(); } catch { }
                 }
                 catch { /* best-effort */ }
                 _isReferenceTonePlaying = false;
@@ -5043,104 +4976,8 @@ namespace musicmate.Pages
 
         private void SyncReferenceNoteChrome()
         {
-            int idx = IndexOfReferenceMidi(_referenceWrittenMidi);
-
-            if (TunerLowerNoteButton != null)
-                // List is high→low, so lower pitch is toward the end.
-                TunerLowerNoteButton.IsEnabled = idx >= 0 && idx < _referenceNoteChoices.Count - 1;
-            if (TunerHigherNoteButton != null)
-                TunerHigherNoteButton.IsEnabled = idx > 0;
-
-            HighlightSelectedTunerNoteButton();
             RefreshTunerPickerDisplayLabel();
             UpdateTunerModeChrome();
-        }
-
-        private void HighlightSelectedTunerNoteButton()
-        {
-            if (TunerNoteListStack == null)
-                return;
-
-            string selectedId = _referenceWrittenMidi > 0
-                ? _referenceWrittenMidi.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                : string.Empty;
-
-            foreach (var child in TunerNoteListStack.Children)
-            {
-                if (child is not Border row)
-                    continue;
-                bool selected = !string.IsNullOrEmpty(selectedId)
-                    && string.Equals(row.StyleId, selectedId, StringComparison.Ordinal);
-                row.BackgroundColor = selected ? Color.FromArgb("#D4EDDA") : Color.FromArgb("#F7F7F7");
-                row.StrokeThickness = 0;
-            }
-        }
-
-        private void SetTunerNoteListVisible(bool visible)
-        {
-            if (TunerNoteListBorder != null)
-                TunerNoteListBorder.IsVisible = visible;
-            if (TunerNoteChooserChevron != null)
-                TunerNoteChooserChevron.Text = visible ? "▴" : "▾";
-            // Recompute panel/list height so the open picker can show more notes.
-            ApplyTunerHeight();
-        }
-
-        private void OnTunerNoteChooserTapped(object? sender, TappedEventArgs e)
-        {
-            if (_session.Tune != "Tuner")
-                return;
-
-            if (_referenceNoteChoices.Count == 0)
-                BuildReferenceNoteChoices();
-            if (_referenceNoteChoices.Count == 0)
-                return;
-
-            bool open = TunerNoteListBorder?.IsVisible != true;
-            if (open)
-            {
-                if (TunerNoteListStack?.Children.Count != _referenceNoteChoices.Count)
-                    RebuildTunerNoteListButtons();
-                HighlightSelectedTunerNoteButton();
-            }
-
-            SetTunerNoteListVisible(open);
-            if (!open)
-                return;
-
-            _ = ScrollTunerNoteListToSelectionAsync();
-        }
-
-        private async Task ScrollTunerNoteListToSelectionAsync()
-        {
-            if (TunerNoteListScroll == null || TunerNoteListStack == null || _referenceWrittenMidi <= 0)
-                return;
-
-            string selectedId = _referenceWrittenMidi.ToString(
-                System.Globalization.CultureInfo.InvariantCulture);
-            Border? target = null;
-            foreach (var child in TunerNoteListStack.Children)
-            {
-                if (child is Border row
-                    && string.Equals(row.StyleId, selectedId, StringComparison.Ordinal))
-                {
-                    target = row;
-                    break;
-                }
-            }
-
-            if (target == null)
-                return;
-
-            try
-            {
-                await Task.Delay(50);
-                await TunerNoteListScroll.ScrollToAsync(target, ScrollToPosition.Center, false);
-            }
-            catch
-            {
-                // best-effort
-            }
         }
 
         private async Task OnTunerNotePickedAsync(int writtenMidi, string labelText)
@@ -5150,7 +4987,6 @@ namespace musicmate.Pages
 
             DebugLog.WriteLine($"[ReferenceTone] Note row tapped midi={writtenMidi} text='{labelText}'");
 
-            SetTunerNoteListVisible(false);
             bool wasPlaying = _isReferenceTonePlaying;
             // Keep an active loop running; the next beat uses the newly selected note.
             SelectReferenceNote(writtenMidi, stopTone: false);
@@ -5169,47 +5005,24 @@ namespace musicmate.Pages
         }
 
         /// <summary>
-        /// Closed-picker text:
-        /// - Listening with a detection: heard note + cents (does not change selection)
-        /// - Playing or idle: selected reference note (<see cref="_referenceWrittenMidi"/>)
+        /// Updates the Tuner "Note Heard" label with the written note for the selected instrument.
         /// </summary>
         private void RefreshTunerPickerDisplayLabel()
         {
-            if (TunerReferenceNoteDisplayLabel == null || _session.Tune != "Tuner")
+            if (TunerNoteHeardValueLabel == null || _session.Tune != "Tuner")
                 return;
 
-            bool showHeard = !_isReferenceTonePlaying
-                && _isRunning
-                && !string.IsNullOrWhiteSpace(_session.TunerLastNoteName);
-
-            string text;
-            if (showHeard)
+            if (!string.IsNullOrWhiteSpace(_session.TunerLastNoteName))
             {
                 int heardMidi = NoteSessionService.NoteNameToMidi(_session.TunerLastNoteName!);
-                text = heardMidi > 0
+                TunerNoteHeardValueLabel.Text = heardMidi > 0
                     ? TunerReferenceNoteCatalog.FormatHeardDisplayLabel(
                         heardMidi, _session.TunerLastCents)
-                    : TunerReferenceNoteCatalog.FormatWrittenDisplayLabel(
-                        _referenceWrittenMidi, PreferFlatsForReferenceSpelling());
-            }
-            else if (_referenceWrittenMidi > 0)
-            {
-                text = TunerReferenceNoteCatalog.FormatWrittenDisplayLabel(
-                    _referenceWrittenMidi, PreferFlatsForReferenceSpelling());
+                    : _session.TunerLastNoteName!;
             }
             else
             {
-                text = "Written —";
-            }
-
-            TunerReferenceNoteDisplayLabel.Text = text;
-            TunerReferenceNoteDisplayLabel.FontSize = showHeard ? 12 : 14;
-
-            if (TunerNoteChooserHint != null)
-            {
-                TunerNoteChooserHint.Text = "Note to play – tap list or use ◀ ▶";
-                TunerNoteChooserHint.LineBreakMode = LineBreakMode.NoWrap;
-                TunerNoteChooserHint.MaxLines = 1;
+                TunerNoteHeardValueLabel.Text = "—";
             }
         }
 
@@ -5242,7 +5055,6 @@ namespace musicmate.Pages
             if (next == idx)
                 return;
 
-            SetTunerNoteListVisible(false);
             // Do not stop a running loop — the next repetition uses the new note.
             SelectReferenceNote(_referenceNoteChoices[next].WrittenMidi, stopTone: false);
         }
@@ -5270,19 +5082,16 @@ namespace musicmate.Pages
                 return;
             }
 
-            if (_referenceWrittenMidi <= 0 || _referenceNoteChoices.Count == 0)
-                return;
-
             await PlayReferenceToneAsync();
         }
 
         private async Task PlayReferenceToneAsync()
         {
-            // Only one loop at a time — ignore Start while already playing.
+            // Tuner metronome uses Waiting Count-In click sounds at the Tuner tempo.
             if (_isReferenceTonePlaying)
                 return;
 
-            if (_referenceWrittenMidi <= 0)
+            if (_waitingCountInPlayer == null)
                 return;
 
             int generation = ++_referenceToneGeneration;
@@ -5299,63 +5108,32 @@ namespace musicmate.Pages
 
             try
             {
-                try { _audio.StopCapture(); } catch { }
-                await Task.Delay(60, ct);
+                // Keep the mic open so Note Heard continues while the metronome clicks.
+                int beats = WaitingCountInLogic.GetBeatsPerMeasure(_session.GetDisplayTimeSignature());
+                int tempo = Math.Clamp(
+                    _tunerTempoBpm,
+                    NoteSessionService.MinTempo,
+                    NoteSessionService.MaxTempo);
 
-                // Schedule each beat from an absolute stopwatch origin so silence/note
-                // proportions stay accurate and tempo changes apply on the next beat.
-                var clock = Stopwatch.StartNew();
-                double nextBeatStartMs = 0;
+                DebugLog.WriteLine(
+                    $"[TunerMetronome] start tempo={tempo} beats/measure={beats} " +
+                    $"accentHz={WaitingCountInSettings.AccentedPitchHz:F0} " +
+                    $"vol={WaitingCountInSettings.AccentedVolume:F2}/{WaitingCountInSettings.UnaccentedVolume:F2} " +
+                    $"durPct={WaitingCountInSettings.BeatDurationPercent}");
 
-                while (!ct.IsCancellationRequested)
-                {
-                    int tempo = Math.Clamp(
+                await _waitingCountInPlayer.RunAsync(
+                    tempoBpm: tempo,
+                    beatsPerMeasure: beats,
+                    accentedVolume: WaitingCountInSettings.AccentedVolume,
+                    unaccentedVolume: WaitingCountInSettings.UnaccentedVolume,
+                    accentedPitchHz: WaitingCountInSettings.AccentedPitchHz,
+                    unaccentedPitchHz: WaitingCountInSettings.UnaccentedPitchHz,
+                    beatDurationPercent: WaitingCountInSettings.BeatDurationPercent,
+                    externalCt: ct,
+                    getTempoBpm: () => Math.Clamp(
                         _tunerTempoBpm,
                         NoteSessionService.MinTempo,
-                        NoteSessionService.MaxTempo);
-                    double beatMs = 60000.0 / tempo;
-                    double noteOnMs = beatMs * ReferenceToneNoteOnFraction;
-
-                    double waitMs = nextBeatStartMs - clock.Elapsed.TotalMilliseconds;
-                    if (waitMs > 1)
-                        await Task.Delay(TimeSpan.FromMilliseconds(waitMs), ct);
-
-                    // Pitch path (each beat): written MIDI → transpose → concert Hz → sine.
-                    int writtenMidi = _referenceWrittenMidi;
-                    if (writtenMidi <= 0)
-                        break;
-
-                    int transposeOffset = _session.InstrumentTransposeOffset;
-                    int concertMidi = TunerReferenceNoteCatalog.ToConcertMidi(
-                        writtenMidi, transposeOffset);
-                    double concertHz = NoteSessionService.MidiToFreqPublic(concertMidi);
-
-                    DebugLog.WriteLine(
-                        $"[ReferenceTone] beat tempo={tempo} noteOnMs={noteOnMs:F0} " +
-                        $"picker='{TunerReferenceNoteCatalog.FormatPickerLabel(writtenMidi)}' " +
-                        $"writtenMidi={writtenMidi} transpose={transposeOffset} " +
-                        $"concertMidi={concertMidi} hz={concertHz:F2}");
-
-                    try
-                    {
-                        await _player.PlayAsync(
-                            new[] { concertHz },
-                            noteOnMs / 1000.0,
-                            gapSeconds: 0,
-                            volume: 0.35f,
-                            ct);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-
-                    nextBeatStartMs += beatMs;
-                    // If we fell behind (device hitch), skip ahead so we don't stack overdue beats.
-                    double nowMs = clock.Elapsed.TotalMilliseconds;
-                    if (nowMs - nextBeatStartMs > beatMs)
-                        nextBeatStartMs = nowMs;
-                }
+                        NoteSessionService.MaxTempo));
             }
             catch (OperationCanceledException)
             {
@@ -5363,11 +5141,11 @@ namespace musicmate.Pages
             }
             catch (Exception ex)
             {
-                DebugLog.WriteLine($"[ReferenceTone] Play error: {ex}");
+                DebugLog.WriteLine($"[TunerMetronome] Play error: {ex}");
             }
             finally
             {
-                try { _player.CancelPlayback(); } catch { }
+                try { _waitingCountInPlayer?.Stop(); } catch { }
 
                 // A newer play/stop superseded this run — don't clobber its UI or mic state.
                 if (generation == _referenceToneGeneration)
@@ -5389,11 +5167,12 @@ namespace musicmate.Pages
             {
                 _referenceToneGeneration++; // invalidate in-flight PlayReferenceToneAsync finally
                 _referenceToneCts?.Cancel();
-                _player.CancelPlayback();
+                try { _waitingCountInPlayer?.Stop(); } catch { }
+                try { _player.CancelPlayback(); } catch { }
             }
             catch (Exception ex)
             {
-                DebugLog.WriteLine($"[ReferenceTone] Stop error: {ex}");
+                DebugLog.WriteLine($"[TunerMetronome] Stop error: {ex}");
             }
 
             bool wasPlaying = _isReferenceTonePlaying;
@@ -5457,7 +5236,18 @@ namespace musicmate.Pages
 
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                TunerPlayNoteButton.Text = _isReferenceTonePlaying ? "Stop" : "Start";
+                if (_isReferenceTonePlaying)
+                {
+                    TunerPlayNoteButton.Text = "Stop";
+                    TunerPlayNoteButton.TextColor = Colors.Yellow;
+                    TunerPlayNoteButton.BackgroundColor = Colors.Red;
+                }
+                else
+                {
+                    TunerPlayNoteButton.Text = "Start";
+                    TunerPlayNoteButton.TextColor = Colors.White;
+                    TunerPlayNoteButton.BackgroundColor = Color.FromArgb("#2E8B57");
+                }
             });
         }
 
@@ -5503,9 +5293,8 @@ namespace musicmate.Pages
             _staffDrawable.UpperNoteStates = new StaffNoteState[upper.Count];
             if (upper.Count > 0)
             {
-                _staffDrawable.UpperNoteStates[0] = _isReferenceTonePlaying
-                    ? StaffNoteState.Correct
-                    : StaffNoteState.Current;
+                // Always green on Tuner (Correct color); Music/Sight pages keep their own states.
+                _staffDrawable.UpperNoteStates[0] = StaffNoteState.Correct;
             }
             _staffDrawable.IsUpperActive = true;
             _staffDrawable.ActiveNoteIndex = upper.Count > 0 ? 0 : -1;
@@ -5613,7 +5402,6 @@ namespace musicmate.Pages
             }
             else
             {
-                SetTunerNoteListVisible(false);
                 _ = StopReferenceToneAsync(resumeListening: false);
                 if (TitlePageModeLabel != null)
                     TitlePageModeLabel.Text = "  Music ";
@@ -5947,6 +5735,7 @@ namespace musicmate.Pages
             if (practiceTune != null)
             {
                 _lastValidScaleTuneIndex = sourcePicker.SelectedIndex;
+                _session.IsRandomMode = false;
                 _session.SelectPracticeTune(practiceTune);
                 Preferences.Default.Set("SelectedTune", selected);
                 IsAutoRepeatVisible = true;

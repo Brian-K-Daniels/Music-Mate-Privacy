@@ -15,6 +15,7 @@ namespace musicmate
         public ICommand? GoPracticeCommand { get; }
         private bool _isNavigatingToMusic;
         private bool _flyoutPresentedHooked;
+        private bool _shellNavInProgress;
 
         public AppShell()
         {
@@ -59,8 +60,14 @@ namespace musicmate
             _flyoutPresentedHooked = true;
             PropertyChanged += (_, e) =>
             {
-                if (e.PropertyName == nameof(FlyoutIsPresented) && FlyoutIsPresented)
-                    EnsureFlyoutItemsVisible();
+                if (e.PropertyName != nameof(FlyoutIsPresented) || !FlyoutIsPresented)
+                    return;
+
+                // Opening the flyout must never be blocked by a stuck navigation overlay.
+                if (_shellNavInProgress || NavigationBusyService.Instance.IsBusy)
+                    CompleteShellNavigationBusy();
+
+                EnsureFlyoutItemsVisible();
             };
         }
 
@@ -70,7 +77,16 @@ namespace musicmate
         /// Re-assert visibility and titles so menu rows never disappear after use.
         /// </summary>
         private void OnShellNavigated(object? sender, ShellNavigatedEventArgs e)
-            => EnsureFlyoutItemsVisible();
+        {
+            try
+            {
+                CompleteShellNavigationBusy();
+            }
+            finally
+            {
+                EnsureFlyoutItemsVisible();
+            }
+        }
 
         /// <summary>Public entry for pages that need to re-assert flyout rows after appear.</summary>
         public void EnsureFlyoutItemsVisiblePublic()
@@ -214,9 +230,8 @@ namespace musicmate
             }
             finally
             {
-                // Clear after navigation finishes so hamburger → Tuner (and later Music
-                // picks) are not permanently blocked. Leaving this set stranded users on
-                // the blank TunerMenuPage when SelectTunerAndOpenMusicAsync early-returned.
+                // GoToAsync may no-op when already on Music (no Navigated) — always clear busy.
+                CompleteShellNavigationBusy();
                 _isNavigatingToMusic = false;
             }
         }
@@ -251,6 +266,8 @@ namespace musicmate
             }
             finally
             {
+                // Same-route Music navigation often skips Navigated — clear busy here.
+                CompleteShellNavigationBusy();
                 _isNavigatingToMusic = false;
             }
         }
@@ -258,31 +275,84 @@ namespace musicmate
         /// <summary>
         /// Hamburger → Tuner is a FlyoutItem for reliable taps, but must not stay on a blank
         /// gateway page. Cancel that navigation and open Music in Tuner mode instead.
+        /// Also starts the shared navigation busy overlay and blocks stacked flyout taps.
         /// </summary>
         private void OnShellNavigating(object? sender, ShellNavigatingEventArgs e)
         {
             var target = e.Target?.Location?.OriginalString ?? string.Empty;
-            if (target.IndexOf("TunerEntry", StringComparison.OrdinalIgnoreCase) < 0)
-                return;
 
-            // Always divert Tuner flyout taps. If a Music navigation is already in flight,
-            // still cancel the blank gateway route; the in-flight call (or fallback page)
-            // will finish opening Music.
-            if (e.CanCancel)
-                e.Cancel();
-
-            if (_isNavigatingToMusic)
+            if (target.IndexOf("TunerEntry", StringComparison.OrdinalIgnoreCase) >= 0)
             {
-                Utils.Log("[AppShell] Tuner flyout ignored — Music navigation already in progress");
+                // Always divert Tuner flyout taps. If a Music navigation is already in flight,
+                // still cancel the blank gateway route; the in-flight call (or fallback page)
+                // will finish opening Music.
+                if (e.CanCancel)
+                    e.Cancel();
+
+                if (_isNavigatingToMusic)
+                {
+                    Utils.Log("[AppShell] Tuner flyout ignored — Music navigation already in progress");
+                    return;
+                }
+
+                // If a prior busy state got stuck, clear it so Tuner divert can run.
+                if (_shellNavInProgress)
+                    CompleteShellNavigationBusy();
+
+                Utils.Log("[AppShell] Tuner flyout → SelectTunerAndOpenMusicAsync");
+
+                // Show busy immediately for the known redirect path (Music page can be slow).
+                BeginShellNavigationBusy(closeFlyout: true);
+
+                MainThread.BeginInvokeOnMainThread(async () =>
+                {
+                    await SelectTunerAndOpenMusicAsync();
+                });
                 return;
             }
 
-            Utils.Log("[AppShell] Tuner flyout → SelectTunerAndOpenMusicAsync");
-
-            MainThread.BeginInvokeOnMainThread(async () =>
+            // Ignore stacked flyout taps while a navigation is already running.
+            // Exception: Tuner divert starts busy early, then GoToAsync("//MusicPage") must proceed.
+            if (_shellNavInProgress)
             {
-                await SelectTunerAndOpenMusicAsync();
-            });
+                bool isMusicFollowThrough =
+                    _isNavigatingToMusic
+                    && target.IndexOf("MusicPage", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                if (isMusicFollowThrough)
+                    return;
+
+                if (e.CanCancel)
+                {
+                    e.Cancel();
+                    Utils.Log("[AppShell] Navigation ignored — already in progress");
+                }
+
+                return;
+            }
+
+            BeginShellNavigationBusy(closeFlyout: true);
+        }
+
+        private void BeginShellNavigationBusy(bool closeFlyout)
+        {
+            if (closeFlyout)
+                FlyoutIsPresented = false;
+
+            if (_shellNavInProgress)
+                return;
+
+            _shellNavInProgress = true;
+            NavigationBusyService.Instance.Begin();
+        }
+
+        /// <summary>
+        /// Clears navigation busy UI and re-entry guards. Safe to call more than once.
+        /// </summary>
+        private void CompleteShellNavigationBusy()
+        {
+            _shellNavInProgress = false;
+            NavigationBusyService.Instance.Reset();
         }
 
 #if DEBUG

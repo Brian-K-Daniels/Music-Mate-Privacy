@@ -1,7 +1,7 @@
 namespace musicmate.Services
 {
     /// <summary>
-    /// Persisted waiting-count-in preferences for the Music page.
+    /// Persisted waiting-count-in preferences for the Music page and Tuner metronome.
     /// </summary>
     public static class WaitingCountInSettings
     {
@@ -10,7 +10,9 @@ namespace musicmate.Services
         public const string UnaccentedVolumeKey = "musicmate.CountIn.UnaccentedVolume";
         public const string AccentedPitchHzKey = "musicmate.CountIn.AccentedPitchHz";
         public const string UnaccentedPitchHzKey = "musicmate.CountIn.UnaccentedPitchHz";
-        public const string BeatDurationMsKey = "musicmate.CountIn.BeatDurationMs";
+        public const string BeatDurationPercentKey = "musicmate.CountIn.BeatDurationPercent";
+        /// <summary>Legacy ms key — cleared on schema migrate; never read as duration.</summary>
+        public const string LegacyBeatDurationMsKey = "musicmate.CountIn.BeatDurationMs";
 
         public const bool DefaultEnabled = false;
 
@@ -24,9 +26,10 @@ namespace musicmate.Services
         public const double MinPitchHz = 440.0;
         public const double MaxPitchHz = 4000.0;
 
-        public const int DefaultBeatDurationMs = 55;
-        public const int MinBeatDurationMs = 30;
-        public const int MaxBeatDurationMs = 120;
+        /// <summary>Click length as a percent of one beat at the current tempo.</summary>
+        public const int DefaultBeatDurationPercent = 20;
+        public const int MinBeatDurationPercent = 5;
+        public const int MaxBeatDurationPercent = 50;
 
         public static bool Enabled
         {
@@ -58,10 +61,11 @@ namespace musicmate.Services
             set => SessionPreferences.Set(UnaccentedPitchHzKey, ClampPitchHz(value));
         }
 
-        public static int BeatDurationMs
+        public static int BeatDurationPercent
         {
-            get => ClampDurationMs(SessionPreferences.Get(BeatDurationMsKey, DefaultBeatDurationMs));
-            set => SessionPreferences.Set(BeatDurationMsKey, ClampDurationMs(value));
+            get => ClampDurationPercent(
+                SessionPreferences.Get(BeatDurationPercentKey, DefaultBeatDurationPercent));
+            set => SessionPreferences.Set(BeatDurationPercentKey, ClampDurationPercent(value));
         }
 
         public static float ClampVolume(float value)
@@ -70,8 +74,8 @@ namespace musicmate.Services
         public static double ClampPitchHz(double value)
             => Math.Clamp(value, MinPitchHz, MaxPitchHz);
 
-        public static int ClampDurationMs(int value)
-            => Math.Clamp(value, MinBeatDurationMs, MaxBeatDurationMs);
+        public static int ClampDurationPercent(int value)
+            => Math.Clamp(value, MinBeatDurationPercent, MaxBeatDurationPercent);
 
         public static void ResetToFactoryDefaults()
         {
@@ -80,7 +84,7 @@ namespace musicmate.Services
             UnaccentedVolume = DefaultUnaccentedVolume;
             AccentedPitchHz = DefaultAccentedPitchHz;
             UnaccentedPitchHz = DefaultUnaccentedPitchHz;
-            BeatDurationMs = DefaultBeatDurationMs;
+            BeatDurationPercent = DefaultBeatDurationPercent;
         }
     }
 }
