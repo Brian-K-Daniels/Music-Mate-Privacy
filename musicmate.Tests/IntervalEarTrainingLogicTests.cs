@@ -212,6 +212,66 @@ public class IntervalEarTrainingLogicTests : IDisposable
         => Assert.Equal(expected, IntervalEarTrainingLogic.ParseDirectionMode(value));
 
     [Fact]
+    public void TryBuildFromReference_KeepsStartFixed_AcrossIntervals()
+    {
+        const int reference = 60; // C4
+        int low = 48;
+        int high = 84;
+        for (int s = 0; s <= 12; s++)
+        {
+            Assert.True(IntervalEarTrainingLogic.TryBuildIntervalFromReference(
+                reference, low, high, s, ascending: true, out var pitches));
+            Assert.Equal(reference, pitches.StartWrittenMidi);
+            Assert.Equal(reference + s, pitches.EndWrittenMidi);
+            Assert.Equal(s, pitches.Semitones);
+            Assert.True(pitches.IsAscending);
+        }
+    }
+
+    [Fact]
+    public void TryBuildFromReference_Descending_KeepsStartFixed()
+    {
+        const int reference = 72; // C5
+        Assert.True(IntervalEarTrainingLogic.TryBuildIntervalFromReference(
+            reference, 48, 84, 7, ascending: false, out var pitches));
+        Assert.Equal(reference, pitches.StartWrittenMidi);
+        Assert.Equal(reference - 7, pitches.EndWrittenMidi);
+        Assert.False(pitches.IsAscending);
+    }
+
+    [Fact]
+    public void TryBuildFromReference_OutOfRange_FailsSafely()
+    {
+        // Ascending octave from near the top cannot fit.
+        Assert.False(IntervalEarTrainingLogic.TryBuildIntervalFromReference(
+            71, 60, 72, 12, ascending: true, out _));
+        // Descending octave from near the bottom cannot fit.
+        Assert.False(IntervalEarTrainingLogic.TryBuildIntervalFromReference(
+            61, 60, 72, 12, ascending: false, out _));
+    }
+
+    [Fact]
+    public void TryBuildFromReference_RandomDirection_FallsBackWhenNeeded()
+    {
+        // Reference near the top: ascending M2 fails, descending should succeed under Random.
+        var rng = new Random(0); // ResolveIsAscending(Random) may pick either first
+        bool any = false;
+        for (int i = 0; i < 20; i++)
+        {
+            if (IntervalEarTrainingLogic.TryBuildIntervalFromReference(
+                    72, 60, 72, 2, IntervalDirectionMode.Random, rng, out var pitches))
+            {
+                any = true;
+                Assert.Equal(72, pitches.StartWrittenMidi);
+                Assert.InRange(pitches.EndWrittenMidi, 60, 72);
+                Assert.Equal(2, pitches.Semitones);
+            }
+        }
+
+        Assert.True(any);
+    }
+
+    [Fact]
     public void PlayItAgain_PreservesSamePitchesAndDirection()
     {
         Assert.True(IntervalEarTrainingLogic.TryPickInterval(

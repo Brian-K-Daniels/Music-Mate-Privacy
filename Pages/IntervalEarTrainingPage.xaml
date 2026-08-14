@@ -11,16 +11,62 @@
     <Style x:Key="EarTrainButton" TargetType="Button">
       <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
       <Setter Property="TextColor" Value="{DynamicResource ThemeContrastingText}" />
-      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="CornerRadius" Value="6" />
       <Setter Property="BorderWidth" Value="0" />
       <Setter Property="FontAttributes" Value="Bold" />
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="MinimumHeightRequest" Value="44" />
-      <Setter Property="HeightRequest" Value="44" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="MinimumHeightRequest" Value="34" />
+      <Setter Property="HeightRequest" Value="34" />
+      <Setter Property="Padding" Value="3,1" />
+      <Setter Property="HorizontalOptions" Value="Fill" />
+      <Setter Property="VerticalOptions" Value="Fill" />
+      <Setter Property="LineBreakMode" Value="WordWrap" />
+    </Style>
+
+    <!-- Interval answers: family BackgroundColor is set in code; VisualStates must not replace it. -->
+    <Style x:Key="EarTrainIntervalButton" TargetType="Button">
+      <Setter Property="TextColor" Value="#1F2937" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="BorderWidth" Value="1" />
+      <Setter Property="BorderColor" Value="#00000028" />
+      <Setter Property="FontAttributes" Value="Bold" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="MinimumHeightRequest" Value="48" />
+      <Setter Property="HeightRequest" Value="48" />
       <Setter Property="Padding" Value="4,2" />
       <Setter Property="HorizontalOptions" Value="Fill" />
       <Setter Property="VerticalOptions" Value="Fill" />
       <Setter Property="LineBreakMode" Value="WordWrap" />
+      <Setter Property="VisualStateManager.VisualStateGroups">
+        <VisualStateGroupList>
+          <VisualStateGroup x:Name="CommonStates">
+            <VisualState x:Name="Normal">
+              <VisualState.Setters>
+                <Setter Property="Opacity" Value="1" />
+                <Setter Property="Scale" Value="1" />
+              </VisualState.Setters>
+            </VisualState>
+            <VisualState x:Name="Disabled">
+              <VisualState.Setters>
+                <Setter Property="Opacity" Value="0.55" />
+                <Setter Property="Scale" Value="1" />
+              </VisualState.Setters>
+            </VisualState>
+            <VisualState x:Name="Pressed">
+              <VisualState.Setters>
+                <Setter Property="Opacity" Value="0.88" />
+                <Setter Property="Scale" Value="0.98" />
+              </VisualState.Setters>
+            </VisualState>
+            <VisualState x:Name="PointerOver">
+              <VisualState.Setters>
+                <Setter Property="Opacity" Value="0.95" />
+                <Setter Property="Scale" Value="1" />
+              </VisualState.Setters>
+            </VisualState>
+          </VisualStateGroup>
+        </VisualStateGroupList>
+      </Setter>
     </Style>
   </ContentPage.Resources>
 
@@ -51,117 +97,143 @@
     </Grid>
   </Shell.TitleView>
 
-  <Grid>
+  <Grid RowDefinitions="Auto,*">
+    <!-- Pinned above the scroll area so landscape / interval scrolling cannot hide them. -->
+    <Grid x:Name="PlayControlsSection"
+          Grid.Row="0"
+          ColumnDefinitions="*,*"
+          ColumnSpacing="6"
+          Margin="8,4,12,4"
+          HorizontalOptions="Fill">
+      <Button x:Name="PlayRandomButton"
+              Grid.Column="0"
+              Style="{StaticResource EarTrainButton}"
+              Text="Play Random"
+              Clicked="OnPlayRandomClicked"
+              SemanticProperties.Description="Play a random interval and wait for your answer" />
+      <Button x:Name="PlayAgainButton"
+              Grid.Column="1"
+              Style="{StaticResource EarTrainButton}"
+              Text="Play Again"
+              IsEnabled="False"
+              Clicked="OnPlayAgainClicked"
+              SemanticProperties.Description="Replay the last interval with the same pitches" />
+    </Grid>
+
     <ScrollView x:Name="MainScroll"
-                Padding="12,8,20,16"
+                Grid.Row="1"
+                Padding="8,0,12,8"
                 VerticalOptions="Fill"
                 HorizontalOptions="Fill">
-      <VerticalStackLayout x:Name="MainContent" Spacing="10" HorizontalOptions="Fill">
+      <VerticalStackLayout x:Name="MainContent" Spacing="6" HorizontalOptions="Fill">
 
-        <!-- Play controls stay at the top so post-answer scroll can bring them into view. -->
-        <Grid x:Name="PlayControlsSection"
-              ColumnDefinitions="*,*"
-              ColumnSpacing="6"
+        <Label x:Name="StatusLabel"
+               Text="Tap an interval to hear it, or Play Random to quiz yourself."
+               FontSize="12"
+               LineBreakMode="WordWrap"
+               TextColor="{DynamicResource ThemeContrastingText}" />
+
+        <Grid ColumnDefinitions="Auto,*,*,*"
+              ColumnSpacing="4"
               HorizontalOptions="Fill">
-          <Button x:Name="PlayRandomButton"
-                  Grid.Column="0"
-                  Style="{StaticResource EarTrainButton}"
-                  Text="Play Random"
-                  Clicked="OnPlayRandomClicked"
-                  SemanticProperties.Description="Play a random interval and wait for your answer" />
-          <Button x:Name="PlayAgainButton"
+          <Label Grid.Column="0"
+                 Text="Direction"
+                 FontSize="12"
+                 FontAttributes="Bold"
+                 VerticalOptions="Center"
+                 TextColor="{DynamicResource ThemeContrastingText}" />
+          <Button x:Name="DirectionAscendingButton"
                   Grid.Column="1"
                   Style="{StaticResource EarTrainButton}"
-                  Text="Play Again"
-                  IsEnabled="False"
-                  Clicked="OnPlayAgainClicked"
-                  SemanticProperties.Description="Replay the last interval with the same pitches" />
+                  Text="Ascending"
+                  Clicked="OnDirectionAscendingClicked"
+                  SemanticProperties.Description="Play intervals going up" />
+          <Button x:Name="DirectionDescendingButton"
+                  Grid.Column="2"
+                  Style="{StaticResource EarTrainButton}"
+                  Text="Descending"
+                  Clicked="OnDirectionDescendingClicked"
+                  SemanticProperties.Description="Play intervals going down" />
+          <Button x:Name="DirectionRandomButton"
+                  Grid.Column="3"
+                  Style="{StaticResource EarTrainButton}"
+                  Text="Random"
+                  Clicked="OnDirectionRandomClicked"
+                  SemanticProperties.Description="Play intervals going up or down at random" />
         </Grid>
 
-        <VerticalStackLayout x:Name="TopControlsSection" Spacing="10" HorizontalOptions="Fill">
-          <Label x:Name="StatusLabel"
-                 Text="Tap an interval to hear it, or Play Random to quiz yourself."
-                 FontSize="14"
-                 LineBreakMode="WordWrap"
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" VerticalOptions="Center">
+          <VerticalStackLayout Grid.Column="0" Spacing="0">
+            <Label x:Name="DurationLabel"
+                   Text="Note duration: 500 ms"
+                   FontSize="12"
+                   TextColor="{DynamicResource ThemeContrastingText}" />
+            <Slider x:Name="DurationSlider"
+                    Minimum="0"
+                    Maximum="1000"
+                    Value="500"
+                    MinimumTrackColor="{DynamicResource ThemeSlider}"
+                    MaximumTrackColor="#CCCCCC"
+                    ThumbColor="{DynamicResource ThemeSlider}"
+                    ValueChanged="OnDurationChanged"
+                    SemanticProperties.Description="Duration of each played note in milliseconds" />
+          </VerticalStackLayout>
+          <Label Grid.Column="1"
+                 x:Name="DurationValueLabel"
+                 Text="500"
+                 FontSize="13"
+                 FontAttributes="Bold"
+                 WidthRequest="40"
+                 HorizontalTextAlignment="End"
+                 VerticalOptions="Center"
                  TextColor="{DynamicResource ThemeContrastingText}" />
+        </Grid>
 
-          <VerticalStackLayout Spacing="4">
-            <Label Text="Direction"
-                   FontSize="16"
+        <!-- Intervals left (flex), compact staff right — staff stays narrow so labels fit. -->
+        <Grid x:Name="IntervalsSection"
+              ColumnDefinitions="*,Auto"
+              ColumnSpacing="8"
+              HorizontalOptions="Fill">
+          <VerticalStackLayout Grid.Column="0" Spacing="3" HorizontalOptions="Fill">
+            <Label Text="Intervals"
+                   FontSize="13"
                    FontAttributes="Bold"
                    TextColor="{DynamicResource ThemeContrastingText}" />
-            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="6">
-              <Button x:Name="DirectionAscendingButton"
-                      Grid.Column="0"
-                      Style="{StaticResource EarTrainButton}"
-                      Text="Ascending"
-                      Clicked="OnDirectionAscendingClicked"
-                      SemanticProperties.Description="Play intervals going up" />
-              <Button x:Name="DirectionDescendingButton"
-                      Grid.Column="1"
-                      Style="{StaticResource EarTrainButton}"
-                      Text="Descending"
-                      Clicked="OnDirectionDescendingClicked"
-                      SemanticProperties.Description="Play intervals going down" />
-              <Button x:Name="DirectionRandomButton"
-                      Grid.Column="2"
-                      Style="{StaticResource EarTrainButton}"
-                      Text="Random"
-                      Clicked="OnDirectionRandomClicked"
-                      SemanticProperties.Description="Play intervals going up or down at random" />
-            </Grid>
+            <Grid x:Name="IntervalButtonsHost"
+                  ColumnDefinitions="*,*,*"
+                  ColumnSpacing="4"
+                  RowSpacing="4"
+                  HorizontalOptions="Fill" />
           </VerticalStackLayout>
 
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" VerticalOptions="Center">
-            <VerticalStackLayout Grid.Column="0" Spacing="2">
-              <Label x:Name="DurationLabel"
-                     Text="Note duration: 500 ms"
-                     FontSize="14"
-                     TextColor="{DynamicResource ThemeContrastingText}" />
-              <Slider x:Name="DurationSlider"
-                      Minimum="0"
-                      Maximum="1000"
-                      Value="500"
-                      MinimumTrackColor="{DynamicResource ThemeSlider}"
-                      MaximumTrackColor="#CCCCCC"
-                      ThumbColor="{DynamicResource ThemeSlider}"
-                      ValueChanged="OnDurationChanged"
-                      SemanticProperties.Description="Duration of each played note in milliseconds" />
-            </VerticalStackLayout>
-            <Label Grid.Column="1"
-                   x:Name="DurationValueLabel"
-                   Text="500"
-                   FontSize="16"
-                   FontAttributes="Bold"
-                   WidthRequest="48"
-                   HorizontalTextAlignment="End"
-                   VerticalOptions="Center"
-                   TextColor="{DynamicResource ThemeContrastingText}" />
-          </Grid>
-        </VerticalStackLayout>
-
-        <VerticalStackLayout x:Name="IntervalsSection" Spacing="6" HorizontalOptions="Fill">
-          <Label Text="Intervals"
-                 FontSize="16"
-                 FontAttributes="Bold"
-                 TextColor="{DynamicResource ThemeContrastingText}" />
-          <Grid x:Name="IntervalButtonsHost"
-                ColumnDefinitions="*,*,*"
-                ColumnSpacing="6"
-                RowSpacing="6" />
-        </VerticalStackLayout>
-
-        <!-- Extra space so the interval grid can scroll to the vertical center of the viewport. -->
-        <BoxView x:Name="ScrollBottomSpacer"
-                 Color="Transparent"
-                 HeightRequest="220"
-                 HorizontalOptions="Fill" />
+          <!-- Compact side panel; width capped in code so interval columns keep room. -->
+          <Border x:Name="StaffRevealBorder"
+                  Grid.Column="1"
+                  WidthRequest="120"
+                  MinimumWidthRequest="110"
+                  MaximumWidthRequest="132"
+                  Stroke="{DynamicResource ThemePickerBorder}"
+                  StrokeThickness="1"
+                  BackgroundColor="{DynamicResource ThemePanelBackground}"
+                  Padding="6"
+                  VerticalOptions="Fill"
+                  HorizontalOptions="End"
+                  SemanticProperties.Description="Staff showing the interval that was played">
+            <Border.StrokeShape>
+              <RoundRectangle CornerRadius="6" />
+            </Border.StrokeShape>
+            <GraphicsView x:Name="StaffGraphicsView"
+                          MinimumHeightRequest="96"
+                          VerticalOptions="Fill"
+                          HorizontalOptions="Fill" />
+          </Border>
+        </Grid>
 
       </VerticalStackLayout>
     </ScrollView>
 
-    <!-- Brief success / failure overlay (images optional via ear_train_success / ear_train_fail). -->
     <Grid x:Name="FeedbackOverlay"
+          Grid.RowSpan="2"
           IsVisible="False"
           BackgroundColor="#CC000000"
           InputTransparent="False"

@@ -16,6 +16,7 @@ namespace musicmate
         private bool _isNavigatingToMusic;
         private bool _flyoutPresentedHooked;
         private bool _shellNavInProgress;
+        private bool _ensuringFlyoutItems;
 
         public AppShell()
         {
@@ -68,6 +69,8 @@ namespace musicmate
                     CompleteShellNavigationBusy();
 
                 EnsureFlyoutItemsVisible();
+                // Second pass only checks membership — do not rewrite Titles (MAUI #15827).
+                Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(150), EnsureFlyoutItemsVisible);
             };
         }
 
@@ -85,6 +88,8 @@ namespace musicmate
             finally
             {
                 EnsureFlyoutItemsVisible();
+                // One delayed membership check after Shell remaps the native flyout.
+                Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(150), EnsureFlyoutItemsVisible);
             }
         }
 
@@ -94,82 +99,101 @@ namespace musicmate
 
         private void EnsureFlyoutItemsVisible()
         {
+            if (_ensuringFlyoutItems)
+                return;
+
+            _ensuringFlyoutItems = true;
             try
             {
                 if (FlyoutBehavior != FlyoutBehavior.Flyout)
                     FlyoutBehavior = FlyoutBehavior.Flyout;
 
+                // Only restore flags that are actually off — never rewrite Title (MAUI #15827
+                // blanks WinUI flyout rows when Title is assigned at runtime).
                 foreach (var item in Items)
                 {
-                    if (item is not FlyoutItem flyoutItem)
-                        continue;
-
-                    EnsureFlyoutItemListed(flyoutItem);
+                    if (item is FlyoutItem flyoutItem)
+                        EnsureFlyoutItemVisibleFlags(flyoutItem);
                 }
 
-                EnsureSightTrainingFlyoutPersistent();
+                EnsureSightTrainingStillInShellItems();
             }
             catch (Exception ex)
             {
                 Utils.Log($"[AppShell] EnsureFlyoutItemsVisible: {ex.Message}");
             }
+            finally
+            {
+                _ensuringFlyoutItems = false;
+            }
         }
 
         /// <summary>
-        /// Guarantees exactly one Interval Sight Training flyout row: restore title/visibility
-        /// if Shell cleared them, or re-insert the existing named instance if it was dropped
-        /// from <see cref="Shell.Items"/> (never allocate a second FlyoutItem).
+        /// Root cause of intermittent vanishing was our own repair path: repeatedly assigning
+        /// <see cref="BaseShellItem.Title"/> and pulsing <c>FlyoutItemIsVisible</c> after every
+        /// navigation. On WinUI that blanks/removes the row (MAUI #15827). Dynamic recreate
+        /// also fails when routes stay registered.
+        /// <para>
+        /// Fix: treat Sight Training like every other XAML FlyoutItem. Only re-insert the
+        /// original instance if Shell dropped it from <see cref="Shell.Items"/> — do not
+        /// mutate Title, do not pulse visibility, do not recreate ShellContent.
+        /// </para>
         /// </summary>
-        private void EnsureSightTrainingFlyoutPersistent()
+        private void EnsureSightTrainingStillInShellItems()
         {
-            var sight = ResolveSightTrainingFlyoutItem();
+            var sight = SightTrainingFlyoutItem;
             if (sight == null)
             {
-                Utils.Log("[AppShell] Sight Training FlyoutItem missing from shell graph");
+                Utils.Log("[AppShell] SightTrainingFlyoutItem field is null");
                 return;
             }
 
-            if (!Items.Contains(sight))
+            // Remove accidental duplicates (same route), keep the XAML-named instance.
+            for (int i = Items.Count - 1; i >= 0; i--)
             {
-                int insertAt = FindSightTrainingInsertIndex();
-                if (insertAt >= 0 && insertAt <= Items.Count)
-                    Items.Insert(insertAt, sight);
-                else
-                    Items.Add(sight);
-                Utils.Log("[AppShell] Re-inserted Interval Sight Training FlyoutItem (same instance)");
+                if (Items[i] is not FlyoutItem other || ReferenceEquals(other, sight))
+                    continue;
+                if (!IsSightTrainingFlyout(other))
+                    continue;
+                Items.RemoveAt(i);
+                Utils.Log("[AppShell] Removed duplicate Interval Sight Training FlyoutItem");
             }
 
-            sight.Title = SightTrainingFlyoutTitle;
-            if (sight.CurrentItem != null && string.IsNullOrWhiteSpace(sight.CurrentItem.Title))
-                sight.CurrentItem.Title = SightTrainingFlyoutTitle;
+            if (Items.Contains(sight))
+            {
+                EnsureFlyoutItemVisibleFlags(sight);
+                return;
+            }
 
-            EnsureFlyoutItemListed(sight);
+            int insertAt = FindSightTrainingInsertIndex();
+            if (insertAt < 0 || insertAt > Items.Count)
+                insertAt = Items.Count;
+
+            try
+            {
+                Items.Insert(insertAt, sight);
+                EnsureFlyoutItemVisibleFlags(sight);
+                Utils.Log("[AppShell] Re-inserted Interval Sight Training FlyoutItem (was dropped from Items)");
+            }
+            catch (Exception ex)
+            {
+                Utils.Log($"[AppShell] Sight Training re-insert failed: {ex.Message}");
+            }
         }
 
-        private FlyoutItem? ResolveSightTrainingFlyoutItem()
+        private static bool IsSightTrainingFlyout(FlyoutItem flyout)
         {
-            if (SightTrainingFlyoutItem != null)
-                return SightTrainingFlyoutItem;
+            if (string.Equals(flyout.Route, SightTrainingFlyoutRoute, StringComparison.OrdinalIgnoreCase))
+                return true;
 
-            foreach (var item in Items)
+            foreach (var content in flyout.Items)
             {
-                if (item is not FlyoutItem flyout)
-                    continue;
-                if (string.Equals(flyout.Route, SightTrainingFlyoutRoute, StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(flyout.Title, SightTrainingFlyoutTitle, StringComparison.OrdinalIgnoreCase))
-                {
-                    return flyout;
-                }
-
-                foreach (var content in flyout.Items)
-                {
-                    if (content?.Route != null
-                        && content.Route.IndexOf("IntervalSightTraining", StringComparison.OrdinalIgnoreCase) >= 0)
-                        return flyout;
-                }
+                if (content?.Route != null
+                    && content.Route.IndexOf("IntervalSightTraining", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
             }
 
-            return null;
+            return false;
         }
 
         private int FindSightTrainingInsertIndex()
@@ -183,19 +207,13 @@ namespace musicmate
                 }
             }
 
-            return Items.Count;
+            return Math.Min(Items.Count, 5);
         }
 
-        private static void EnsureFlyoutItemListed(FlyoutItem flyoutItem)
+        private static void EnsureFlyoutItemVisibleFlags(FlyoutItem flyoutItem)
         {
-            if (string.IsNullOrWhiteSpace(flyoutItem.Title)
-                && flyoutItem.CurrentItem?.Title is { Length: > 0 } contentTitle)
-            {
-                flyoutItem.Title = contentTitle;
-            }
-
-            // Only flip visibility when needed — WinUI can blank titles when IsVisible is
-            // toggled true→true via SetFlyoutItemIsVisible repeatedly.
+            if (!flyoutItem.FlyoutItemIsVisible)
+                flyoutItem.FlyoutItemIsVisible = true;
             if (!Shell.GetFlyoutItemIsVisible(flyoutItem))
                 Shell.SetFlyoutItemIsVisible(flyoutItem, true);
             if (!flyoutItem.IsVisible)

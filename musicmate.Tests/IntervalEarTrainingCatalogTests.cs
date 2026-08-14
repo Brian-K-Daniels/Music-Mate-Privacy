@@ -22,7 +22,15 @@ public class IntervalEarTrainingCatalogTests
 
     [Fact]
     public void FormatButtonLabel_IncludesSemitonesAndName()
-        => Assert.Equal("3 — Minor third", IntervalEarTrainingCatalog.FormatButtonLabel(3));
+        => Assert.Equal("3 — Minor\nthird", IntervalEarTrainingCatalog.FormatButtonLabel(3));
+
+    [Fact]
+    public void FormatButtonLabel_SingleWordName_StaysOneLine()
+        => Assert.Equal("6 — Tritone", IntervalEarTrainingCatalog.FormatButtonLabel(6));
+
+    [Fact]
+    public void FormatButtonLabel_PerfectOctave_WrapsLastWord()
+        => Assert.Equal("12 — Perfect\noctave", IntervalEarTrainingCatalog.FormatButtonLabel(12));
 
     [Theory]
     [InlineData(-1, false)]

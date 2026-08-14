@@ -123,6 +123,86 @@ namespace musicmate.Services
             return true;
         }
 
+        /// <summary>
+        /// Builds an interval from a fixed reference (first) pitch. Does not re-randomize the start.
+        /// When direction is <see cref="IntervalDirectionMode.Random"/> and the chosen direction
+        /// does not fit the range, the opposite direction is tried.
+        /// </summary>
+        public static bool TryBuildIntervalFromReference(
+            int referenceStartWrittenMidi,
+            int lowWrittenMidi,
+            int highWrittenMidi,
+            int semitones,
+            IntervalDirectionMode directionMode,
+            Random rng,
+            out IntervalPitches pitches)
+        {
+            pitches = default;
+            if (!IntervalEarTrainingCatalog.IsValidSemitoneCount(semitones))
+                return false;
+            if (highWrittenMidi < lowWrittenMidi)
+                return false;
+            if (referenceStartWrittenMidi < lowWrittenMidi
+                || referenceStartWrittenMidi > highWrittenMidi)
+                return false;
+
+            bool ascending = ResolveIsAscending(directionMode, semitones, rng);
+            if (TryBuildIntervalFromReference(
+                    referenceStartWrittenMidi, lowWrittenMidi, highWrittenMidi,
+                    semitones, ascending, out pitches))
+                return true;
+
+            // Random mode: if the coin-flip direction cannot fit, use the other when possible.
+            if (directionMode == IntervalDirectionMode.Random && semitones > 0)
+            {
+                return TryBuildIntervalFromReference(
+                    referenceStartWrittenMidi, lowWrittenMidi, highWrittenMidi,
+                    semitones, ascending: !ascending, out pitches);
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Builds an interval from a fixed reference pitch in a concrete direction.
+        /// </summary>
+        public static bool TryBuildIntervalFromReference(
+            int referenceStartWrittenMidi,
+            int lowWrittenMidi,
+            int highWrittenMidi,
+            int semitones,
+            bool ascending,
+            out IntervalPitches pitches)
+        {
+            pitches = default;
+            if (!IntervalEarTrainingCatalog.IsValidSemitoneCount(semitones))
+                return false;
+            if (highWrittenMidi < lowWrittenMidi)
+                return false;
+            if (referenceStartWrittenMidi < lowWrittenMidi
+                || referenceStartWrittenMidi > highWrittenMidi)
+                return false;
+
+            if (semitones == 0 || ascending)
+            {
+                int end = referenceStartWrittenMidi + semitones;
+                if (end > highWrittenMidi)
+                    return false;
+
+                pitches = new IntervalPitches(
+                    referenceStartWrittenMidi, end, semitones, IsAscending: true);
+                return true;
+            }
+
+            int endDown = referenceStartWrittenMidi - semitones;
+            if (endDown < lowWrittenMidi)
+                return false;
+
+            pitches = new IntervalPitches(
+                referenceStartWrittenMidi, endDown, semitones, IsAscending: false);
+            return true;
+        }
+
         /// <summary>Backward-compatible ascending helper.</summary>
         public static bool TryPickAscendingInterval(
             int lowWrittenMidi,
