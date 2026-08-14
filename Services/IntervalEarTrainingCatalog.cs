@@ -33,14 +33,7 @@ namespace musicmate.Services
         }
 
         public static string FormatButtonLabel(int semitones)
-        {
-            // Soft hyphenation for two-line buttons: keep "N — Family" on line 1 when possible.
-            string name = GetName(semitones);
-            int split = name.LastIndexOf(' ');
-            if (split > 0 && split < name.Length - 1)
-                return $"{semitones} — {name[..split]}\n{name[(split + 1)..]}";
-            return $"{semitones} — {name}";
-        }
+            => $"{semitones} — {GetName(semitones)}";
 
         public static bool IsValidSemitoneCount(int semitones)
             => semitones >= MinSemitones && semitones <= MaxSemitones;

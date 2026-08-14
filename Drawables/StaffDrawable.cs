@@ -2555,23 +2555,18 @@ namespace musicmate.Drawables
             //   viewRight     = dirtyRect.X + dirtyRect.Width
             //   safeRight     = viewRight - effectiveRightInset  (hard clip for staff + notes)
             //   layoutLimit   = safeRight - LayoutRightPad     (notes/bars stretch to here)
-            var insets = _safeArea?.GetSafeAreaInsets() ?? (0f, 0f, 0f, 0f);
-            float viewRight = dirtyRect.X + dirtyRect.Width;
-            float effectiveRightInset = Math.Max(0f, insets.Right - RelaxCutoutInsetRightDp);
-            // Sight Training pages already apply safe-area padding on the ScrollView; do not
-            // inset again or the clef sits far to the right of the title.
-            float safeLeft = ResolveDrawSafeLeft(dirtyRect.X, insets.Left);
-            float safeRight = viewRight - effectiveRightInset;
-            float layoutRightLimit = safeRight - LayoutRightPad;
+            ResolveDrawHorizontalBounds(dirtyRect, out float safeLeft, out float safeRight, out float layoutRightLimit);
             float safeWidth = layoutRightLimit - safeLeft;
 
+            var insets = _safeArea?.GetSafeAreaInsets() ?? (0f, 0f, 0f, 0f);
             var layoutCacheKey = BuildLayoutCacheKey(dirtyRect.Width, dirtyRect.Height, insets.Left, insets.Right);
             // Pair-pan depends on Current note states; skip cache for single-staff Sight Training.
             if (!SingleStaffLayout && TryDrawFromLayoutCache(canvas, dirtyRect, ink, layoutCacheKey))
                 return;
 
+            float viewRight = dirtyRect.X + dirtyRect.Width;
             StaffLog($"[Staff] Canvas={dirtyRect.Width:F0}x{dirtyRect.Height:F0}, " +
-                  $"Insets=L{insets.Left:F0},R{insets.Right:F0}, relaxR={RelaxCutoutInsetRightDp:F0}, " +
+                  $"Insets=L{insets.Left:F0},R{insets.Right:F0}, omitHeader={OmitStaffHeader}, " +
                   $"ViewRight={viewRight:F0}, SafeRight={safeRight:F0}, LayoutLimit={layoutRightLimit:F0}, " +
                   $"SafeWidth={safeWidth:F0}");
 
@@ -2901,9 +2896,37 @@ namespace musicmate.Drawables
 
         /// <summary>
         /// Sight Training already pads the page for cutouts; Music still uses the inset.
+        /// Ear Training's compact panel is a small GraphicsView — window cutout insets must
+        /// not be applied again (they belong to the full window, not this canvas).
         /// </summary>
         private float ResolveDrawSafeLeft(float dirtyX, float insetLeft)
-            => SingleStaffLayout ? dirtyX : dirtyX + insetLeft;
+            => (SingleStaffLayout || OmitStaffHeader) ? dirtyX : dirtyX + insetLeft;
+
+        /// <summary>
+        /// Horizontal draw bounds for the current canvas. Headerless Ear Training uses the
+        /// GraphicsView rectangle only so notes/staff lines fill the right-hand panel.
+        /// </summary>
+        private void ResolveDrawHorizontalBounds(
+            RectF dirtyRect,
+            out float safeLeft,
+            out float safeRight,
+            out float layoutRightLimit)
+        {
+            float viewRight = dirtyRect.X + dirtyRect.Width;
+            if (OmitStaffHeader)
+            {
+                safeLeft = dirtyRect.X;
+                safeRight = viewRight;
+                layoutRightLimit = Math.Max(safeLeft + 8f, viewRight - LayoutRightPad);
+                return;
+            }
+
+            var insets = _safeArea?.GetSafeAreaInsets() ?? (0f, 0f, 0f, 0f);
+            float effectiveRightInset = Math.Max(0f, insets.Right - RelaxCutoutInsetRightDp);
+            safeLeft = ResolveDrawSafeLeft(dirtyRect.X, insets.Left);
+            safeRight = viewRight - effectiveRightInset;
+            layoutRightLimit = safeRight - LayoutRightPad;
+        }
 
         /// <summary>
         /// Horizontally pans single-staff content so the yellow/red answer pair stays in view
@@ -4286,12 +4309,7 @@ namespace musicmate.Drawables
             if (dirtyRect.Width < 32f || dirtyRect.Height < 32f)
                 return;
 
-            var insets = _safeArea?.GetSafeAreaInsets() ?? (0f, 0f, 0f, 0f);
-            float safeLeft = ResolveDrawSafeLeft(dirtyRect.X, insets.Left);
-            float viewRight = dirtyRect.X + dirtyRect.Width;
-            float effectiveRightInset = Math.Max(0f, insets.Right - RelaxCutoutInsetRightDp);
-            float safeRight = viewRight - effectiveRightInset;
-            float layoutRightLimit = safeRight - LayoutRightPad;
+            ResolveDrawHorizontalBounds(dirtyRect, out float safeLeft, out float safeRight, out float layoutRightLimit);
 
             ComputeLayout(dirtyRect.Height);
             _headerMetrics = ComputeHeaderMetrics(safeLeft);

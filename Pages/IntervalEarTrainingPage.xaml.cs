@@ -46,14 +46,8 @@ namespace musicmate.Pages
             UpdatePlayAgainEnabled();
             HideStaffReveal();
             ApplySafeAreaPadding();
-            SizeChanged += (_, _) =>
-            {
-                ApplySafeAreaPadding();
-                SyncScrollContentWidth();
-                SyncStaffPanelToButtons();
-            };
-            MainScroll.SizeChanged += (_, _) => SyncScrollContentWidth();
-            IntervalButtonsHost.SizeChanged += (_, _) => SyncStaffPanelToButtons();
+            SizeChanged += (_, _) => ApplyLandscapeLayout();
+            IntervalsSection.SizeChanged += (_, _) => SyncStaffLayout();
             StaffGraphicsView.SizeChanged += (_, _) => SyncStaffLayout();
         }
 
@@ -74,9 +68,8 @@ namespace musicmate.Pages
             base.OnAppearing();
             _orientation?.ForceLandscape();
             LoadPreferences();
-            ApplySafeAreaPadding();
+            ApplyLandscapeLayout();
             EnsureEmptyStaffPanel();
-            SyncStaffPanelToButtons();
             if (Shell.Current is AppShell shell)
                 shell.EnsureFlyoutItemsVisiblePublic();
         }
@@ -96,23 +89,53 @@ namespace musicmate.Pages
             base.OnDisappearing();
         }
 
+        /// <summary>
+        /// Landscape: fill the page width (do not pad by the camera cutout — that left a blank
+        /// strip on the right). Staff keeps a real usable width; buttons take the rest.
+        /// </summary>
+        private void ApplyLandscapeLayout()
+        {
+            ApplySafeAreaPadding();
+
+            double pageW = Width;
+            if (pageW < 8)
+                return;
+
+            // Force the root to the page width. Shell/cutout layout otherwise sizes content
+            // to the safe region and leaves unused background on the camera side.
+            if (Math.Abs(PageRoot.WidthRequest - pageW) > 0.5)
+                PageRoot.WidthRequest = pageW;
+
+            double inner = Math.Max(200, pageW - PageRoot.Padding.Left - PageRoot.Padding.Right);
+            if (Math.Abs(IntervalsSection.WidthRequest - inner) > 0.5)
+                IntervalsSection.WidthRequest = inner;
+            if (Math.Abs(PlayControlsSection.WidthRequest - inner) > 0.5)
+                PlayControlsSection.WidthRequest = inner;
+            if (Math.Abs(OptionsSection.WidthRequest - inner) > 0.5)
+                OptionsSection.WidthRequest = inner;
+
+            // ~22% of the row, never below a readable staff, never so wide that labels wrap.
+            double staffW = Math.Clamp(inner * 0.22, 124, 156);
+            if (Math.Abs(StaffRevealBorder.WidthRequest - staffW) > 0.5)
+            {
+                StaffRevealBorder.WidthRequest = staffW;
+                StaffRevealBorder.MinimumWidthRequest = staffW;
+            }
+
+            StaffRevealBorder.IsVisible = true;
+            SyncStaffLayout();
+        }
+
         private void ApplySafeAreaPadding()
         {
             var insets = _safeArea?.GetSafeAreaInsets() ?? (0f, 0f, 0f, 0f);
-            const double basePad = 8;
-            const double rightExtra = 6;
-            // Play row sits outside the ScrollView — pad it for left/right cutouts.
-            PlayControlsSection.Margin = new Thickness(
-                basePad + insets.Left,
-                4,
-                basePad + insets.Right + rightExtra,
-                4);
-            // Shell already clears the nav bar; only use side/bottom insets on the scroller.
-            MainScroll.Padding = new Thickness(
-                basePad + insets.Left,
-                0,
-                basePad + insets.Right + rightExtra,
-                6 + insets.Bottom);
+            // Tiny edge pad only. Full cutout insets reserved the camera strip as empty space.
+            const double edge = 4;
+            PageRoot.Padding = new Thickness(
+                edge + Math.Min(insets.Left, 8),
+                2,
+                edge + Math.Min(insets.Right, 8),
+                edge);
         }
 
         private void BuildIntervalButtons()
@@ -124,17 +147,19 @@ namespace musicmate.Pages
             const int columns = 3;
             var intervals = IntervalEarTrainingCatalog.Intervals;
             int rows = (intervals.Count + columns - 1) / columns;
+            // Star rows share the remaining landscape height so all buttons stay on-screen.
             for (int r = 0; r < rows; r++)
-                IntervalButtonsHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                IntervalButtonsHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Star });
 
             var gridStyle = (Style)Resources["EarTrainIntervalButton"];
             for (int i = 0; i < intervals.Count; i++)
             {
                 int semitones = intervals[i].Semitones;
+                string label = IntervalEarTrainingCatalog.FormatButtonLabel(semitones);
                 var btn = CreateGridButton(
-                    IntervalEarTrainingCatalog.FormatButtonLabel(semitones),
+                    label,
                     gridStyle,
-                    $"Interval {IntervalEarTrainingCatalog.FormatButtonLabel(semitones)}");
+                    $"Interval {label}");
                 ApplyFamilyColor(btn, semitones);
                 int captured = semitones;
                 btn.Clicked += async (_, _) => await OnIntervalClickedAsync(captured);
@@ -192,33 +217,11 @@ namespace musicmate.Pages
             return btn;
         }
 
-        private async Task ScrollToIntervalsCenteredAsync()
-        {
-            try
-            {
-                await Task.Delay(50);
-                await MainScroll.ScrollToAsync(IntervalsSection, ScrollToPosition.Center, animated: true);
-            }
-            catch (Exception ex)
-            {
-                Utils.Log($"[EarTraining] Scroll to intervals: {ex}");
-            }
-        }
+        private Task ScrollToIntervalsCenteredAsync()
+            => Task.CompletedTask;
 
-        private async Task ScrollToPlayControlsAsync()
-        {
-            try
-            {
-                // Play buttons are pinned above the ScrollView; bring scroll content to top
-                // so status / direction stay reachable under them after feedback.
-                await Task.Delay(50);
-                await MainScroll.ScrollToAsync(0, 0, animated: true);
-            }
-            catch (Exception ex)
-            {
-                Utils.Log($"[EarTraining] Scroll to play controls: {ex}");
-            }
-        }
+        private Task ScrollToPlayControlsAsync()
+            => Task.CompletedTask;
 
         private void LoadPreferences()
         {
@@ -252,7 +255,7 @@ namespace musicmate.Pages
 
         private void UpdateDurationLabels()
         {
-            DurationLabel.Text = $"Note duration: {_noteDurationMs} ms";
+            DurationLabel.Text = "ms";
             DurationValueLabel.Text = _noteDurationMs.ToString(CultureInfo.InvariantCulture);
         }
 
@@ -624,7 +627,7 @@ namespace musicmate.Pages
             _staffDrawable.UpperHasEndBar = false;
             _staffDrawable.InvalidateLayoutCache();
             StaffRevealBorder.IsVisible = true;
-            SyncStaffPanelToButtons();
+            ApplyLandscapeLayout();
             StaffGraphicsView.Invalidate();
         }
 
@@ -658,54 +661,8 @@ namespace musicmate.Pages
             StaffGraphicsView.Drawable = _staffDrawable;
 
             StaffRevealBorder.IsVisible = true;
-            SyncStaffPanelToButtons();
-            SyncStaffLayout();
+            ApplyLandscapeLayout();
             StaffGraphicsView.Invalidate();
-        }
-
-        /// <summary>
-        /// ScrollView children often lay out to intrinsic width on Android; force the
-        /// content stack to the viewport width so intervals + staff use the full row.
-        /// </summary>
-        private void SyncScrollContentWidth()
-        {
-            double w = MainScroll.Width;
-            if (w < 8)
-                w = Width;
-            if (w < 8)
-                return;
-
-            double pad = MainScroll.Padding.Left + MainScroll.Padding.Right;
-            double contentW = Math.Max(8, w - pad);
-            if (Math.Abs(MainContent.WidthRequest - contentW) > 0.5)
-                MainContent.WidthRequest = contentW;
-        }
-
-        /// <summary>Match the compact staff panel height to the interval button grid.</summary>
-        private void SyncStaffPanelToButtons()
-        {
-            SyncScrollContentWidth();
-
-            double buttonH = IntervalButtonsHost.Height;
-            if (buttonH < 8)
-            {
-                // 5 rows × 48px + 4 gaps × 4px before first layout pass.
-                buttonH = 5 * 48 + 4 * 4;
-            }
-
-            double staffH = Math.Max(96, buttonH);
-            if (Math.Abs(StaffGraphicsView.HeightRequest - staffH) > 0.5)
-                StaffGraphicsView.HeightRequest = staffH;
-
-            // Keep the staff narrow so the three interval columns can show full labels.
-            // Cap by remaining page width so we never starve the button grid.
-            double pageW = MainContent.WidthRequest > 8 ? MainContent.WidthRequest : Width;
-            double maxStaffFromPage = pageW > 8 ? Math.Max(110, pageW * 0.28) : 128;
-            double staffW = Math.Clamp(Math.Min(128, maxStaffFromPage), 110, 132);
-            if (Math.Abs(StaffRevealBorder.WidthRequest - staffW) > 0.5)
-                StaffRevealBorder.WidthRequest = staffW;
-
-            SyncStaffLayout();
         }
 
         private void SyncStaffLayout()
@@ -713,9 +670,11 @@ namespace musicmate.Pages
             if (_staffDrawable == null)
                 return;
 
-            float h = (float)Math.Max(96, StaffGraphicsView.Height > 1
+            float h = (float)Math.Max(64, StaffGraphicsView.Height > 1
                 ? StaffGraphicsView.Height
-                : StaffGraphicsView.HeightRequest);
+                : StaffRevealBorder.Height > 1
+                    ? StaffRevealBorder.Height
+                    : 96);
             _staffDrawable.SingleStaffLayout = true;
             _staffDrawable.OmitStaffHeader = true;
             _staffDrawable.AvailableHeight = h;

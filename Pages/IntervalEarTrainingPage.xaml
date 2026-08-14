@@ -14,13 +14,13 @@
       <Setter Property="CornerRadius" Value="6" />
       <Setter Property="BorderWidth" Value="0" />
       <Setter Property="FontAttributes" Value="Bold" />
-      <Setter Property="FontSize" Value="11" />
-      <Setter Property="MinimumHeightRequest" Value="34" />
-      <Setter Property="HeightRequest" Value="34" />
-      <Setter Property="Padding" Value="3,1" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="MinimumHeightRequest" Value="32" />
+      <Setter Property="HeightRequest" Value="32" />
+      <Setter Property="Padding" Value="4,1" />
       <Setter Property="HorizontalOptions" Value="Fill" />
       <Setter Property="VerticalOptions" Value="Fill" />
-      <Setter Property="LineBreakMode" Value="WordWrap" />
+      <Setter Property="LineBreakMode" Value="NoWrap" />
     </Style>
 
     <!-- Interval answers: family BackgroundColor is set in code; VisualStates must not replace it. -->
@@ -30,13 +30,12 @@
       <Setter Property="BorderWidth" Value="1" />
       <Setter Property="BorderColor" Value="#00000028" />
       <Setter Property="FontAttributes" Value="Bold" />
-      <Setter Property="FontSize" Value="11" />
-      <Setter Property="MinimumHeightRequest" Value="48" />
-      <Setter Property="HeightRequest" Value="48" />
-      <Setter Property="Padding" Value="4,2" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="MinimumHeightRequest" Value="28" />
+      <Setter Property="Padding" Value="4,1" />
       <Setter Property="HorizontalOptions" Value="Fill" />
       <Setter Property="VerticalOptions" Value="Fill" />
-      <Setter Property="LineBreakMode" Value="WordWrap" />
+      <Setter Property="LineBreakMode" Value="NoWrap" />
       <Setter Property="VisualStateManager.VisualStateGroups">
         <VisualStateGroupList>
           <VisualStateGroup x:Name="CommonStates">
@@ -97,13 +96,22 @@
     </Grid>
   </Shell.TitleView>
 
-  <Grid RowDefinitions="Auto,*">
-    <!-- Pinned above the scroll area so landscape / interval scrolling cannot hide them. -->
+  <!--
+    Play + options stay Auto-height; remaining height is the interval grid + staff.
+    Buttons use the star column (most of the width); staff is a usable Auto column
+    (width set in code, never collapsed). No ScrollView — everything must fit on-screen.
+  -->
+  <Grid x:Name="PageRoot"
+        RowDefinitions="Auto,Auto,*"
+        RowSpacing="3"
+        Padding="4,2,4,4"
+        HorizontalOptions="Fill"
+        VerticalOptions="Fill">
+
     <Grid x:Name="PlayControlsSection"
           Grid.Row="0"
           ColumnDefinitions="*,*"
           ColumnSpacing="6"
-          Margin="8,4,12,4"
           HorizontalOptions="Fill">
       <Button x:Name="PlayRandomButton"
               Grid.Column="0"
@@ -120,120 +128,109 @@
               SemanticProperties.Description="Replay the last interval with the same pitches" />
     </Grid>
 
-    <ScrollView x:Name="MainScroll"
-                Grid.Row="1"
-                Padding="8,0,12,8"
-                VerticalOptions="Fill"
-                HorizontalOptions="Fill">
-      <VerticalStackLayout x:Name="MainContent" Spacing="6" HorizontalOptions="Fill">
+    <VerticalStackLayout x:Name="OptionsSection"
+                         Grid.Row="1"
+                         Spacing="4"
+                         HorizontalOptions="Fill">
+      <Label x:Name="StatusLabel"
+             Text="Tap an interval to hear it, or Play Random to quiz yourself."
+             FontSize="11"
+             LineBreakMode="TailTruncation"
+             MaxLines="1"
+             TextColor="{DynamicResource ThemeContrastingText}" />
 
-        <Label x:Name="StatusLabel"
-               Text="Tap an interval to hear it, or Play Random to quiz yourself."
-               FontSize="12"
-               LineBreakMode="WordWrap"
+      <Grid ColumnDefinitions="Auto,*,*,*,Auto,Auto"
+            ColumnSpacing="4"
+            HorizontalOptions="Fill">
+        <Label Grid.Column="0"
+               Text="Direction"
+               FontSize="11"
+               FontAttributes="Bold"
+               VerticalOptions="Center"
                TextColor="{DynamicResource ThemeContrastingText}" />
+        <Button x:Name="DirectionAscendingButton"
+                Grid.Column="1"
+                Style="{StaticResource EarTrainButton}"
+                Text="Ascending"
+                Clicked="OnDirectionAscendingClicked"
+                SemanticProperties.Description="Play intervals going up" />
+        <Button x:Name="DirectionDescendingButton"
+                Grid.Column="2"
+                Style="{StaticResource EarTrainButton}"
+                Text="Descending"
+                Clicked="OnDirectionDescendingClicked"
+                SemanticProperties.Description="Play intervals going down" />
+        <Button x:Name="DirectionRandomButton"
+                Grid.Column="3"
+                Style="{StaticResource EarTrainButton}"
+                Text="Random"
+                Clicked="OnDirectionRandomClicked"
+                SemanticProperties.Description="Play intervals going up or down at random" />
+        <Label Grid.Column="4"
+               x:Name="DurationLabel"
+               Text="ms"
+               FontSize="11"
+               VerticalOptions="Center"
+               TextColor="{DynamicResource ThemeContrastingText}" />
+        <Label Grid.Column="5"
+               x:Name="DurationValueLabel"
+               Text="500"
+               FontSize="12"
+               FontAttributes="Bold"
+               WidthRequest="36"
+               HorizontalTextAlignment="End"
+               VerticalOptions="Center"
+               TextColor="{DynamicResource ThemeContrastingText}" />
+      </Grid>
 
-        <Grid ColumnDefinitions="Auto,*,*,*"
-              ColumnSpacing="4"
-              HorizontalOptions="Fill">
-          <Label Grid.Column="0"
-                 Text="Direction"
-                 FontSize="12"
-                 FontAttributes="Bold"
-                 VerticalOptions="Center"
-                 TextColor="{DynamicResource ThemeContrastingText}" />
-          <Button x:Name="DirectionAscendingButton"
-                  Grid.Column="1"
-                  Style="{StaticResource EarTrainButton}"
-                  Text="Ascending"
-                  Clicked="OnDirectionAscendingClicked"
-                  SemanticProperties.Description="Play intervals going up" />
-          <Button x:Name="DirectionDescendingButton"
-                  Grid.Column="2"
-                  Style="{StaticResource EarTrainButton}"
-                  Text="Descending"
-                  Clicked="OnDirectionDescendingClicked"
-                  SemanticProperties.Description="Play intervals going down" />
-          <Button x:Name="DirectionRandomButton"
-                  Grid.Column="3"
-                  Style="{StaticResource EarTrainButton}"
-                  Text="Random"
-                  Clicked="OnDirectionRandomClicked"
-                  SemanticProperties.Description="Play intervals going up or down at random" />
-        </Grid>
+      <Slider x:Name="DurationSlider"
+              Minimum="0"
+              Maximum="1000"
+              Value="500"
+              MinimumTrackColor="{DynamicResource ThemeSlider}"
+              MaximumTrackColor="#CCCCCC"
+              ThumbColor="{DynamicResource ThemeSlider}"
+              ValueChanged="OnDurationChanged"
+              SemanticProperties.Description="Duration of each played note in milliseconds" />
+    </VerticalStackLayout>
 
-        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" VerticalOptions="Center">
-          <VerticalStackLayout Grid.Column="0" Spacing="0">
-            <Label x:Name="DurationLabel"
-                   Text="Note duration: 500 ms"
-                   FontSize="12"
-                   TextColor="{DynamicResource ThemeContrastingText}" />
-            <Slider x:Name="DurationSlider"
-                    Minimum="0"
-                    Maximum="1000"
-                    Value="500"
-                    MinimumTrackColor="{DynamicResource ThemeSlider}"
-                    MaximumTrackColor="#CCCCCC"
-                    ThumbColor="{DynamicResource ThemeSlider}"
-                    ValueChanged="OnDurationChanged"
-                    SemanticProperties.Description="Duration of each played note in milliseconds" />
-          </VerticalStackLayout>
-          <Label Grid.Column="1"
-                 x:Name="DurationValueLabel"
-                 Text="500"
-                 FontSize="13"
-                 FontAttributes="Bold"
-                 WidthRequest="40"
-                 HorizontalTextAlignment="End"
-                 VerticalOptions="Center"
-                 TextColor="{DynamicResource ThemeContrastingText}" />
-        </Grid>
+    <!-- Star column = interval buttons; Auto staff column keeps a real, usable width. -->
+    <Grid x:Name="IntervalsSection"
+          Grid.Row="2"
+          ColumnDefinitions="*,Auto"
+          ColumnSpacing="6"
+          HorizontalOptions="Fill"
+          VerticalOptions="Fill">
+      <Grid x:Name="IntervalButtonsHost"
+            Grid.Column="0"
+            ColumnDefinitions="*,*,*"
+            ColumnSpacing="4"
+            RowSpacing="3"
+            HorizontalOptions="Fill"
+            VerticalOptions="Fill" />
 
-        <!-- Intervals left (flex), compact staff right — staff stays narrow so labels fit. -->
-        <Grid x:Name="IntervalsSection"
-              ColumnDefinitions="*,Auto"
-              ColumnSpacing="8"
-              HorizontalOptions="Fill">
-          <VerticalStackLayout Grid.Column="0" Spacing="3" HorizontalOptions="Fill">
-            <Label Text="Intervals"
-                   FontSize="13"
-                   FontAttributes="Bold"
-                   TextColor="{DynamicResource ThemeContrastingText}" />
-            <Grid x:Name="IntervalButtonsHost"
-                  ColumnDefinitions="*,*,*"
-                  ColumnSpacing="4"
-                  RowSpacing="4"
-                  HorizontalOptions="Fill" />
-          </VerticalStackLayout>
-
-          <!-- Compact side panel; width capped in code so interval columns keep room. -->
-          <Border x:Name="StaffRevealBorder"
-                  Grid.Column="1"
-                  WidthRequest="120"
-                  MinimumWidthRequest="110"
-                  MaximumWidthRequest="132"
-                  Stroke="{DynamicResource ThemePickerBorder}"
-                  StrokeThickness="1"
-                  BackgroundColor="{DynamicResource ThemePanelBackground}"
-                  Padding="6"
-                  VerticalOptions="Fill"
-                  HorizontalOptions="End"
-                  SemanticProperties.Description="Staff showing the interval that was played">
-            <Border.StrokeShape>
-              <RoundRectangle CornerRadius="6" />
-            </Border.StrokeShape>
-            <GraphicsView x:Name="StaffGraphicsView"
-                          MinimumHeightRequest="96"
-                          VerticalOptions="Fill"
-                          HorizontalOptions="Fill" />
-          </Border>
-        </Grid>
-
-      </VerticalStackLayout>
-    </ScrollView>
+      <Border x:Name="StaffRevealBorder"
+              Grid.Column="1"
+              WidthRequest="140"
+              MinimumWidthRequest="124"
+              Stroke="{DynamicResource ThemePickerBorder}"
+              StrokeThickness="1"
+              BackgroundColor="{DynamicResource ThemePanelBackground}"
+              Padding="3"
+              HorizontalOptions="Fill"
+              VerticalOptions="Fill"
+              SemanticProperties.Description="Staff showing the interval that was played">
+        <Border.StrokeShape>
+          <RoundRectangle CornerRadius="6" />
+        </Border.StrokeShape>
+        <GraphicsView x:Name="StaffGraphicsView"
+                      VerticalOptions="Fill"
+                      HorizontalOptions="Fill" />
+      </Border>
+    </Grid>
 
     <Grid x:Name="FeedbackOverlay"
-          Grid.RowSpan="2"
+          Grid.RowSpan="3"
           IsVisible="False"
           BackgroundColor="#CC000000"
           InputTransparent="False"
