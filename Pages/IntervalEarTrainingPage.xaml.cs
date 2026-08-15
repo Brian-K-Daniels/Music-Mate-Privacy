@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Globalization;
 using musicmate.Drawables;
 using musicmate.Models;
@@ -22,7 +23,11 @@ namespace musicmate.Pages
         /// Set only by Play Random Interval; never re-randomized by an interval-button tap.
         /// </summary>
         private int? _referenceStartWrittenMidi;
-        private bool _awaitingAnswer;
+        /// <summary>
+        /// Unanswered quiz (notes hidden), revealed quiz (notes shown after a correct
+        /// answer), or manual interval playback (notes shown immediately).
+        /// </summary>
+        private IntervalEarTrainingInteraction _interaction = IntervalEarTrainingInteraction.ManualPlayback;
         private int _expectedSemitones;
         private bool _showingFeedback;
         private int _noteDurationMs = IntervalEarTrainingLogic.DefaultNoteDurationMs;
@@ -30,6 +35,11 @@ namespace musicmate.Pages
         private readonly Dictionary<int, Button> _intervalButtons = new();
         private int _playGeneration;
         private StaffDrawable? _staffDrawable;
+        private Button PlayRandomButton = null!;
+        private Button PlayAgainButton = null!;
+        /// <summary>Semitone of the interval button currently outlined for explore-mode demo, if any.</summary>
+        private int? _demoHighlightSemitones;
+        private int _instrumentPickerSyncSuppress;
 
         public IntervalEarTrainingPage()
         {
@@ -43,6 +53,7 @@ namespace musicmate.Pages
 
             BuildIntervalButtons();
             LoadPreferences();
+            InitInstrumentPicker();
             UpdatePlayAgainEnabled();
             HideStaffReveal();
             ApplySafeAreaPadding();
@@ -68,6 +79,10 @@ namespace musicmate.Pages
             base.OnAppearing();
             _orientation?.ForceLandscape();
             LoadPreferences();
+            _session.PropertyChanged -= OnSessionPropertyChanged;
+            _session.PropertyChanged += OnSessionPropertyChanged;
+            SyncInstrumentPickerFromSession();
+            ClearDemoIntervalHighlight();
             ApplyLandscapeLayout();
             EnsureEmptyStaffPanel();
             if (Shell.Current is AppShell shell)
@@ -78,6 +93,8 @@ namespace musicmate.Pages
         {
             CancelPlayback();
             _feedbackCts?.Cancel();
+            _session.PropertyChanged -= OnSessionPropertyChanged;
+            ClearDemoIntervalHighlight();
             if (_staffDrawable != null)
             {
                 _staffDrawable.NotationKeyOverride = null;
@@ -90,8 +107,9 @@ namespace musicmate.Pages
         }
 
         /// <summary>
-        /// Landscape: fill the page width (do not pad by the camera cutout — that left a blank
-        /// strip on the right). Staff keeps a real usable width; buttons take the rest.
+        /// Landscape: keep the staff a usable width; let the interval grid fill the rest.
+        /// Do not force PageRoot/IntervalsSection WidthRequest — that ignored Padding and
+        /// clipped the left column of buttons against the screen edge.
         /// </summary>
         private void ApplyLandscapeLayout()
         {
@@ -101,21 +119,16 @@ namespace musicmate.Pages
             if (pageW < 8)
                 return;
 
-            // Force the root to the page width. Shell/cutout layout otherwise sizes content
-            // to the safe region and leaves unused background on the camera side.
-            if (Math.Abs(PageRoot.WidthRequest - pageW) > 0.5)
-                PageRoot.WidthRequest = pageW;
+            // Clear any prior forced widths so Padding / Fill layout applies.
+            if (PageRoot.WidthRequest >= 0)
+                PageRoot.WidthRequest = -1;
+            if (IntervalsSection.WidthRequest >= 0)
+                IntervalsSection.WidthRequest = -1;
 
             double inner = Math.Max(200, pageW - PageRoot.Padding.Left - PageRoot.Padding.Right);
-            if (Math.Abs(IntervalsSection.WidthRequest - inner) > 0.5)
-                IntervalsSection.WidthRequest = inner;
-            if (Math.Abs(PlayControlsSection.WidthRequest - inner) > 0.5)
-                PlayControlsSection.WidthRequest = inner;
-            if (Math.Abs(OptionsSection.WidthRequest - inner) > 0.5)
-                OptionsSection.WidthRequest = inner;
 
-            // ~22% of the row, never below a readable staff, never so wide that labels wrap.
-            double staffW = Math.Clamp(inner * 0.22, 124, 156);
+            // Keep staff readable; leave interval columns wide enough for full one-line labels.
+            double staffW = Math.Clamp(inner * 0.16, 110, 128);
             if (Math.Abs(StaffRevealBorder.WidthRequest - staffW) > 0.5)
             {
                 StaffRevealBorder.WidthRequest = staffW;
@@ -133,53 +146,107 @@ namespace musicmate.Pages
             const double edge = 4;
             PageRoot.Padding = new Thickness(
                 edge + Math.Min(insets.Left, 8),
-                2,
+                1,
                 edge + Math.Min(insets.Right, 8),
-                edge);
+                Math.Max(2, Math.Min(insets.Bottom, 6)));
         }
 
         private void BuildIntervalButtons()
         {
+            ClearDemoIntervalHighlight();
             IntervalButtonsHost.Children.Clear();
             IntervalButtonsHost.RowDefinitions.Clear();
             _intervalButtons.Clear();
 
+            // 3 columns × 5 rows:
+            // [0,0] Play Random, [1,0] Play Again, [2,0] unison,
+            // then intervals 1–12 fill rows 1–4 in order.
             const int columns = 3;
-            var intervals = IntervalEarTrainingCatalog.Intervals;
-            int rows = (intervals.Count + columns - 1) / columns;
-            // Star rows share the remaining landscape height so all buttons stay on-screen.
+            const int rows = 5;
             for (int r = 0; r < rows; r++)
                 IntervalButtonsHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Star });
 
+            var playStyle = (Style)Resources["EarTrainButton"];
             var gridStyle = (Style)Resources["EarTrainIntervalButton"];
+
+            PlayRandomButton = CreateGridButton("Play Random", playStyle, "Play a random interval for quiz");
+            ApplyPlayButtonChrome(PlayRandomButton);
+            PlayRandomButton.Clicked += OnPlayRandomClicked;
+            Grid.SetColumn(PlayRandomButton, 0);
+            Grid.SetRow(PlayRandomButton, 0);
+            IntervalButtonsHost.Children.Add(PlayRandomButton);
+
+            PlayAgainButton = CreateGridButton("Play Again", playStyle, "Play the last interval again");
+            ApplyPlayButtonChrome(PlayAgainButton);
+            PlayAgainButton.IsEnabled = false;
+            PlayAgainButton.Clicked += OnPlayAgainClicked;
+            Grid.SetColumn(PlayAgainButton, 1);
+            Grid.SetRow(PlayAgainButton, 0);
+            IntervalButtonsHost.Children.Add(PlayAgainButton);
+
+            var intervals = IntervalEarTrainingCatalog.Intervals;
             for (int i = 0; i < intervals.Count; i++)
             {
                 int semitones = intervals[i].Semitones;
+                // Cells 0–1 are Play Random / Play Again; unison starts at cell 2 → [2,0].
+                int cell = semitones + 2;
+                int col = cell % columns;
+                int row = cell / columns;
+
                 string label = IntervalEarTrainingCatalog.FormatButtonLabel(semitones);
-                var btn = CreateGridButton(
-                    label,
-                    gridStyle,
-                    $"Interval {label}");
+                var btn = CreateGridButton(label, gridStyle, $"Interval {label}");
                 ApplyFamilyColor(btn, semitones);
                 int captured = semitones;
                 btn.Clicked += async (_, _) => await OnIntervalClickedAsync(captured);
 
-                Grid.SetColumn(btn, i % columns);
-                Grid.SetRow(btn, i / columns);
+                Grid.SetColumn(btn, col);
+                Grid.SetRow(btn, row);
                 IntervalButtonsHost.Children.Add(btn);
                 _intervalButtons[semitones] = btn;
             }
+        }
+
+        private static void ApplyPlayButtonChrome(Button button)
+        {
+            button.BorderWidth = 2;
+            button.BorderColor = IntervalEarTrainingButtonColors.PlayButtonBorder;
         }
 
         private static void ApplyFamilyColor(Button button, int semitones)
         {
             button.BackgroundColor = IntervalEarTrainingButtonColors.FamilyBackground(semitones);
             button.TextColor = IntervalEarTrainingButtonColors.LabelText;
-            button.BorderColor = IntervalEarTrainingButtonColors.Border;
+            button.BorderWidth = 0;
+        }
+
+        private void ClearDemoIntervalHighlight()
+        {
+            if (_demoHighlightSemitones is int s
+                && _intervalButtons.TryGetValue(s, out var btn))
+            {
+                btn.BorderWidth = 0;
+            }
+
+            _demoHighlightSemitones = null;
+        }
+
+        /// <summary>
+        /// Bold red outline on the interval being demonstrated; family fill stays unchanged.
+        /// </summary>
+        private void SetDemoIntervalHighlight(int semitones)
+        {
+            ClearDemoIntervalHighlight();
+            if (!_intervalButtons.TryGetValue(semitones, out var btn))
+                return;
+
+            btn.BorderColor = IntervalEarTrainingButtonColors.DemoHighlightBorder;
+            btn.BorderWidth = IntervalEarTrainingButtonColors.DemoHighlightBorderWidth;
+            _demoHighlightSemitones = semitones;
         }
 
         private void RestoreAllIntervalFamilyColors()
         {
+            ClearDemoIntervalHighlight();
             foreach (var (semitones, btn) in _intervalButtons)
                 ApplyFamilyColor(btn, semitones);
         }
@@ -239,8 +306,79 @@ namespace musicmate.Pages
             UpdateDirectionButtonVisuals();
         }
 
+        private void InitInstrumentPicker()
+        {
+            if (InstrumentPicker.ItemsSource != null)
+                return;
+
+            _instrumentPickerSyncSuppress++;
+            try
+            {
+                InstrumentPicker.ItemsSource = NoteSessionService.InstrumentOptions;
+            }
+            finally
+            {
+                EndInstrumentPickerSyncSuppress();
+            }
+
+            SyncInstrumentPickerFromSession();
+        }
+
+        private void SyncInstrumentPickerFromSession()
+        {
+            if (InstrumentPicker.ItemsSource == null)
+            {
+                InitInstrumentPicker();
+                return;
+            }
+
+            int idx = InstrumentCatalog.IndexOfOption(_session.Instrument);
+            if (idx < 0 || InstrumentPicker.SelectedIndex == idx)
+                return;
+
+            _instrumentPickerSyncSuppress++;
+            try
+            {
+                InstrumentPicker.SelectedIndex = idx;
+            }
+            finally
+            {
+                EndInstrumentPickerSyncSuppress();
+            }
+        }
+
+        private void EndInstrumentPickerSyncSuppress()
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                if (_instrumentPickerSyncSuppress > 0)
+                    _instrumentPickerSyncSuppress--;
+            });
+        }
+
+        private void OnInstrumentPickerChanged(object? sender, EventArgs e)
+        {
+            if (_instrumentPickerSyncSuppress > 0)
+                return;
+            if (InstrumentPicker.SelectedItem is not string selected)
+                return;
+
+            _session.Instrument = selected;
+        }
+
+        private void OnSessionPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(NoteSessionService.Instrument)
+                || e.PropertyName == nameof(NoteSessionService.InstrumentDisplayName)
+                || e.PropertyName == nameof(NoteSessionService.InstrumentKey))
+            {
+                SyncInstrumentPickerFromSession();
+            }
+        }
+
         private void OnDurationChanged(object? sender, ValueChangedEventArgs e)
         {
+            ClearDemoIntervalHighlight();
             int ms = IntervalEarTrainingLogic.ClampNoteDurationMs((int)Math.Round(e.NewValue));
             if (ms == _noteDurationMs)
             {
@@ -255,8 +393,16 @@ namespace musicmate.Pages
 
         private void UpdateDurationLabels()
         {
-            DurationLabel.Text = "ms";
-            DurationValueLabel.Text = _noteDurationMs.ToString(CultureInfo.InvariantCulture);
+            int ms = _noteDurationMs;
+            DurationMsLabel.Text = $"{ms.ToString(CultureInfo.InvariantCulture)} ms";
+
+            // BPM from quarter-note equivalence: 60000 / durationMs.
+            // Stored 0 ms still plays at MinAudibleNoteDurationMs — use that for BPM too.
+            int bpmMs = ms <= 0
+                ? IntervalEarTrainingLogic.MinAudibleNoteDurationMs
+                : ms;
+            int bpm = (int)Math.Round(60000.0 / bpmMs);
+            DurationBpmLabel.Text = $"{bpm.ToString(CultureInfo.InvariantCulture)} bpm";
         }
 
         private void OnDirectionAscendingClicked(object? sender, EventArgs e)
@@ -273,6 +419,7 @@ namespace musicmate.Pages
             if (_showingFeedback)
                 return;
 
+            ClearDemoIntervalHighlight();
             _directionMode = mode;
             SessionPreferences.Set(
                 IntervalEarTrainingLogic.DirectionPreferenceKey,
@@ -301,17 +448,25 @@ namespace musicmate.Pages
             => StatusLabel.Text = message;
 
         private async void OnPlayRandomClicked(object? sender, EventArgs e)
-            => await PlayRandomQuizAsync();
+        {
+            ClearDemoIntervalHighlight();
+            await PlayRandomQuizAsync();
+        }
 
         private async void OnPlayAgainClicked(object? sender, EventArgs e)
-            => await PlayAgainAsync();
+        {
+            ClearDemoIntervalHighlight();
+            await PlayAgainAsync();
+        }
 
         private async Task OnIntervalClickedAsync(int semitones)
         {
             if (_showingFeedback)
                 return;
 
-            if (_awaitingAnswer)
+            ClearDemoIntervalHighlight();
+
+            if (_interaction == IntervalEarTrainingInteraction.UnansweredQuiz)
             {
                 await SubmitAnswerAsync(semitones);
                 return;
@@ -348,14 +503,14 @@ namespace musicmate.Pages
             }
 
             _lastPitches = pitches;
-            _awaitingAnswer = false;
+            _interaction = IntervalEarTrainingInteraction.ManualPlayback;
             UpdatePlayAgainEnabled();
             UpdateStatus($"Playing {FormatPlayedLabel(pitches)}…");
             await PlayPitchesAsync(pitches);
-            // Instructional interval taps: user chose the interval — show the sounded pitches.
-            ShowStaffForPitches(pitches);
+            ApplyStaffForCurrentInteraction();
+            SetDemoIntervalHighlight(semitones);
             await ScrollToIntervalsCenteredAsync();
-            UpdateStatus("Tap an interval to hear it, or Play Random to quiz yourself.");
+            UpdateStatus("Play Random for quiz. Tap any interval to hear it.");
         }
 
         private async Task PlayRandomQuizAsync()
@@ -364,15 +519,21 @@ namespace musicmate.Pages
                 return;
 
             RestoreAllIntervalFamilyColors();
+            // Drop leftover noteheads before the new quiz interval is chosen.
+            HideStaffReveal();
 
             var range = await TryResolveWrittenRangeAsync();
             if (range is null)
+            {
+                _interaction = IntervalEarTrainingInteraction.ManualPlayback;
                 return;
+            }
             var (low, high) = range.Value;
 
             if (!IntervalEarTrainingLogic.TryPickRandomInterval(
                     low, high, _directionMode, Random.Shared, out var pitches))
             {
+                _interaction = IntervalEarTrainingInteraction.ManualPlayback;
                 await DisplayAlertAsync(
                     "Range too narrow",
                     "Your Settings note range cannot fit any interval. Check Lowest note and Highest note in Settings.",
@@ -380,19 +541,17 @@ namespace musicmate.Pages
                 return;
             }
 
-            // Hide previous notation so the quiz answer is not revealed visually.
-            HideStaffReveal();
-
             // New random starting note becomes the fixed reference for interval-button explores.
             _referenceStartWrittenMidi = pitches.StartWrittenMidi;
             _lastPitches = pitches;
             _expectedSemitones = pitches.Semitones;
-            _awaitingAnswer = true;
+            _interaction = IntervalEarTrainingInteraction.UnansweredQuiz;
+            ApplyStaffForCurrentInteraction();
             UpdatePlayAgainEnabled();
             UpdateStatus("Listen… then tap the interval you heard.");
             await PlayPitchesAsync(pitches);
             await ScrollToIntervalsCenteredAsync();
-            if (_awaitingAnswer)
+            if (_interaction == IntervalEarTrainingInteraction.UnansweredQuiz)
                 UpdateStatus("Which interval was that? Tap your answer (or Play Again).");
         }
 
@@ -407,30 +566,33 @@ namespace musicmate.Pages
                 return;
             }
 
-            // Replaying always restores quiz mode: the next interval tap is an answer, not direct play.
             _expectedSemitones = pitches.Semitones;
-            _awaitingAnswer = true;
+            ApplyStaffForCurrentInteraction();
             UpdatePlayAgainEnabled();
 
-            UpdateStatus("Playing again… then tap your answer.");
+            if (_interaction == IntervalEarTrainingInteraction.UnansweredQuiz)
+                UpdateStatus("Playing again… then tap your answer.");
+            else
+                UpdateStatus($"Playing {FormatPlayedLabel(pitches)}…");
             await PlayPitchesAsync(pitches);
             await ScrollToIntervalsCenteredAsync();
-            if (_awaitingAnswer)
+            if (_interaction == IntervalEarTrainingInteraction.UnansweredQuiz)
                 UpdateStatus("Which interval was that? Tap your answer (or Play Again).");
+            else
+                UpdateStatus("Play Random for quiz. Tap any interval to hear it.");
         }
 
         private async Task SubmitAnswerAsync(int answeredSemitones)
         {
-            if (!_awaitingAnswer || _showingFeedback)
+            if (_interaction != IntervalEarTrainingInteraction.UnansweredQuiz || _showingFeedback)
                 return;
 
             bool correct = IntervalEarTrainingLogic.IsAnswerCorrect(_expectedSemitones, answeredSemitones);
-            _awaitingAnswer = false;
+            _interaction = correct
+                ? IntervalEarTrainingInteraction.RevealedQuiz
+                : IntervalEarTrainingInteraction.UnansweredQuiz;
+            ApplyStaffForCurrentInteraction();
             UpdatePlayAgainEnabled();
-
-            // Reveal the exact pitches that were sounded (correct or incorrect answer).
-            if (_lastPitches is { } revealed)
-                ShowStaffForPitches(revealed);
 
             string expectedLabel = _lastPitches is { } last
                 ? FormatPlayedLabel(last)
@@ -438,7 +600,10 @@ namespace musicmate.Pages
             string answeredLabel = IntervalEarTrainingCatalog.FormatButtonLabel(answeredSemitones);
 
             await ShowFeedbackAsync(correct, expectedLabel, answeredLabel, answeredSemitones, _expectedSemitones);
-            UpdateStatus("Tap an interval to hear it, or Play Random to quiz yourself.");
+            if (_interaction == IntervalEarTrainingInteraction.UnansweredQuiz)
+                UpdateStatus("Which interval was that? Tap your answer (or Play Again).");
+            else
+                UpdateStatus("Play Random for quiz. Tap any interval to hear it.");
         }
 
         private static string FormatPlayedLabel(IntervalEarTrainingLogic.IntervalPitches pitches)
@@ -522,6 +687,7 @@ namespace musicmate.Pages
         private void SetControlsEnabled(bool enabled)
         {
             PlayRandomButton.IsEnabled = enabled;
+            InstrumentPicker.IsEnabled = enabled;
             DurationSlider.IsEnabled = enabled;
             DirectionAscendingButton.IsEnabled = enabled;
             DirectionDescendingButton.IsEnabled = enabled;
@@ -615,9 +781,22 @@ namespace musicmate.Pages
             EnsureEmptyStaffPanel();
         }
 
+        private void ApplyStaffForCurrentInteraction()
+        {
+            if (!IntervalEarTrainingLogic.ShouldShowIntervalNotes(_interaction)
+                || _lastPitches is not { } pitches)
+            {
+                HideStaffReveal();
+                return;
+            }
+
+            ShowStaffForPitches(pitches);
+        }
+
         private void EnsureEmptyStaffPanel()
         {
             EnsureStaffDrawable();
+            ApplyEarTrainingStaffKey();
             _staffDrawable!.UpperNotes = new List<GeneratedNote>();
             _staffDrawable.LowerNotes = new List<GeneratedNote>();
             _staffDrawable.UpperBarBeats = new List<double>();
@@ -633,18 +812,19 @@ namespace musicmate.Pages
 
         /// <summary>
         /// Engraves the exact stored pitches that were sounded. Does not re-pick intervals.
+        /// Always notates in C Major on this page (no inherited Music/Settings key signature).
         /// </summary>
         private void ShowStaffForPitches(IntervalEarTrainingLogic.IntervalPitches pitches)
         {
             EnsureStaffDrawable();
-            string key = string.IsNullOrWhiteSpace(_session.Key) ? "C" : _session.Key;
-            string scale = string.IsNullOrWhiteSpace(_session.SelectedScale) ? "Major" : _session.SelectedScale;
+            ApplyEarTrainingStaffKey();
 
-            var notes = IntervalEarTrainingNotation.BuildDisplayNotes(pitches, key, scale);
+            var notes = IntervalEarTrainingNotation.BuildDisplayNotes(
+                pitches,
+                IntervalEarTrainingNotation.StaffDisplayKey,
+                IntervalEarTrainingNotation.StaffDisplayScale);
             _staffDrawable!.SingleStaffLayout = true;
             _staffDrawable.OmitStaffHeader = true;
-            _staffDrawable.NotationKeyOverride = key;
-            _staffDrawable.NotationScaleOverride = scale;
             _staffDrawable.InvalidateLayoutCache();
             _staffDrawable.UpperNotes = notes;
             _staffDrawable.LowerNotes = new List<GeneratedNote>();
@@ -665,6 +845,15 @@ namespace musicmate.Pages
             StaffGraphicsView.Invalidate();
         }
 
+        /// <summary>Interval Ear Training staff is always C Major — never the session key.</summary>
+        private void ApplyEarTrainingStaffKey()
+        {
+            if (_staffDrawable == null)
+                return;
+            _staffDrawable.NotationKeyOverride = IntervalEarTrainingNotation.StaffDisplayKey;
+            _staffDrawable.NotationScaleOverride = IntervalEarTrainingNotation.StaffDisplayScale;
+        }
+
         private void SyncStaffLayout()
         {
             if (_staffDrawable == null)
@@ -677,6 +866,7 @@ namespace musicmate.Pages
                     : 96);
             _staffDrawable.SingleStaffLayout = true;
             _staffDrawable.OmitStaffHeader = true;
+            ApplyEarTrainingStaffKey();
             _staffDrawable.AvailableHeight = h;
             _staffDrawable.InvalidateLayoutCache();
             StaffGraphicsView.Invalidate();

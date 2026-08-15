@@ -32,8 +32,16 @@ namespace musicmate.Services
             return Intervals[semitones].Name;
         }
 
+        /// <summary>
+        /// Left-aligned grid label; single-digit semitones are padded so units digits line up.
+        /// </summary>
         public static string FormatButtonLabel(int semitones)
-            => $"{semitones} — {GetName(semitones)}";
+        {
+            string n = GetName(semitones);
+            return semitones < 10
+                ? $" {semitones} — {n}"
+                : $"{semitones} — {n}";
+        }
 
         public static bool IsValidSemitoneCount(int semitones)
             => semitones >= MinSemitones && semitones <= MaxSemitones;

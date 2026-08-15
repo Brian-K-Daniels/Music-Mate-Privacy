@@ -9,6 +9,14 @@ namespace musicmate.Services
     public static class IntervalEarTrainingNotation
     {
         /// <summary>
+        /// Staff key for Interval Ear Training only (never inherits Music/Settings key).
+        /// </summary>
+        public const string StaffDisplayKey = "C";
+
+        /// <summary>Staff scale for Interval Ear Training only — C Major, no key signature accidentals.</summary>
+        public const string StaffDisplayScale = "Major";
+
+        /// <summary>
         /// Two quarter notes in one measure, spelled for <paramref name="key"/>/<paramref name="scale"/>.
         /// </summary>
         public static List<GeneratedNote> BuildDisplayNotes(

@@ -289,4 +289,15 @@ public class IntervalEarTrainingLogicTests : IDisposable
     [InlineData(0, 0, true)]
     public void IsAnswerCorrect(int expected, int answered, bool correct)
         => Assert.Equal(correct, IntervalEarTrainingLogic.IsAnswerCorrect(expected, answered));
+
+    [Fact]
+    public void ShouldShowIntervalNotes_HiddenOnlyDuringUnansweredQuiz()
+    {
+        Assert.False(IntervalEarTrainingLogic.ShouldShowIntervalNotes(
+            IntervalEarTrainingInteraction.UnansweredQuiz));
+        Assert.True(IntervalEarTrainingLogic.ShouldShowIntervalNotes(
+            IntervalEarTrainingInteraction.RevealedQuiz));
+        Assert.True(IntervalEarTrainingLogic.ShouldShowIntervalNotes(
+            IntervalEarTrainingInteraction.ManualPlayback));
+    }
 }

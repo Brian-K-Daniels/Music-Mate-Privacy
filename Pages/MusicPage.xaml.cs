@@ -502,9 +502,13 @@ namespace musicmate.Pages
                         {
                             await MainThread.InvokeOnMainThreadAsync(() =>
                             {
-                                SessionResultLabel.Text = PracticeSessionLifecycle.FormatSessionResultBanner(
-                                    summary, newChildLevel);
-                                SessionResultBanner.IsVisible = true;
+                                if (SessionResultLabel != null)
+                                {
+                                    SessionResultLabel.Text = PracticeSessionLifecycle.FormatSessionResultBanner(
+                                        summary, newChildLevel);
+                                }
+                                if (SessionResultBanner != null)
+                                    SessionResultBanner.IsVisible = true;
                             });
                         }
 
@@ -668,6 +672,7 @@ namespace musicmate.Pages
                 KeyPicker.SelectedIndexChanged += OnKeyPickerChangedWithPrompt;
 
                 InitializePracticePickers(instrumentOptions);
+                UpdateInstrumentPickerSelection();
 
                 // Apply initial pickers-row visibility based on the loaded display mode
                 UpdatePickersContainerVisibility();
@@ -2852,6 +2857,8 @@ namespace musicmate.Pages
             }
 
             EnsurePracticePickersReady();
+            UpdateInstrumentPickerSelection();
+            UpdateKeyPickerSelection();
 
             // Hydrate level + range/batch BEFORE marking the page visible so a
             // SelectedScale PropertyChanged cannot regenerate with ChildLevel 0 / empty batch.
@@ -4563,7 +4570,7 @@ namespace musicmate.Pages
         private void UpdateInstrumentPickerSelection()
         {
             string display = _session.InstrumentDisplayName;
-            int idx = ResolveInstrumentOptionIndex(display);
+            int idx = InstrumentCatalog.IndexOfOption(_session.Instrument);
             if (idx < 0)
                 return;
 
@@ -4588,24 +4595,7 @@ namespace musicmate.Pages
         }
 
         private static int ResolveInstrumentOptionIndex(string displayName)
-        {
-            var options = NoteSessionService.InstrumentOptions;
-            int idx = Array.IndexOf(options, displayName);
-            if (idx >= 0)
-                return idx;
-
-            // Fallback: match by normalized id / profile.
-            for (int i = 0; i < options.Length; i++)
-            {
-                if (string.Equals(
-                        NoteSessionService.NormalizeInstrumentOption(options[i]),
-                        NoteSessionService.NormalizeInstrumentOption(displayName),
-                        StringComparison.OrdinalIgnoreCase))
-                    return i;
-            }
-
-            return -1;
-        }
+            => InstrumentCatalog.IndexOfOption(displayName);
         private void EnterPickerSyncSuppress() => _pickerSyncSuppressCount++;
         /// <summary>
         /// Clears picker-sync suppression on the next UI frame so any
@@ -4670,7 +4660,6 @@ namespace musicmate.Pages
             if (PracticeInstrumentPicker.ItemsSource == null)
             {
                 PracticeInstrumentPicker.ItemsSource = instrumentOptions;
-                PracticeInstrumentPicker.SelectedIndex = InstrumentPicker?.SelectedIndex ?? 0;
             }
 
             if (PracticeKeyPicker.ItemsSource == null && KeyPicker?.ItemsSource != null)
@@ -4716,6 +4705,8 @@ namespace musicmate.Pages
             else
                 UpdatePracticePlayItemLabel();
 
+            UpdateInstrumentPickerSelection();
+            UpdateKeyPickerSelection();
             UpdateKeyPickerVisibility();
             UpdateConcertKeyLabel();
         }

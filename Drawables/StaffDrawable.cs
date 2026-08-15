@@ -174,6 +174,8 @@ namespace musicmate.Drawables
 
         // Notehead ellipse is drawn with height = NoteHeadR * NoteHeadHeightFactor.
         private const float NoteHeadHeightFactor = 1.5f;
+        /// <summary>Stroke used for the five staff lines (and Ear Training notehead height).</summary>
+        private const float StaffLineStrokeSize = 1.5f;
         private const float BeginnerNoteHeadSpaceRatio = 0.9f; // target: 90% of staff-space height
         private const float CompactNoteHeadRRatio = 0.32f;
         /// <summary>Child levels 31+: modest notehead enlargement without beginner-scale collision risk.</summary>
@@ -183,6 +185,18 @@ namespace musicmate.Drawables
         private const float CompactStemLenRatio = 2.15f;
         private const float CompactAccidentalRefPx = 26f;
         private const float CompactRestScale = 0.72f;
+
+        // ── Interval Ear Training miniature staff (all sizes in staff-spaces) ──
+        private const float OmitHeaderNoteHeadHeightSpaces = 0.90f;
+        private const float OmitHeaderNoteHeadWidthSpaces = 1.30f;
+        private const float OmitHeaderStemLenSpaces = 3.25f;
+        private const float OmitHeaderStemThicknessSpaces = 0.12f;
+        /// <summary>SMuFL: one staff-space is 0.25 em, so fontSize = 4 × staff-space.</summary>
+        private const float OmitHeaderSmuFLEmPerStaffSpace = 4f;
+        private const float OmitHeaderAccidentalHeightSpaces = 2.70f;
+        private const float OmitHeaderAccidentalGapSpaces = 0.50f;
+        /// <summary>Reserved accidental column (wide enough for a flat).</summary>
+        private const float OmitHeaderAccidentalColumnSpaces = 1.05f;
 
         /// <summary>Child levels 1–30 use enlarged notation scaled from staff-space height.</summary>
         private bool UseBeginnerNotationScale =>
@@ -210,10 +224,21 @@ namespace musicmate.Drawables
         /// </summary>
         private const float BodyAccidentalScale = 0.65f;
 
+        private float OmitHeaderStaffSpace => _layout.Sls;
+        private float OmitHeaderNoteHeadHalfWidth => OmitHeaderStaffSpace * OmitHeaderNoteHeadWidthSpaces * 0.5f;
+        private float OmitHeaderNoteHeadHalfHeight => OmitHeaderStaffSpace * OmitHeaderNoteHeadHeightSpaces * 0.5f;
+        private float OmitHeaderStemStroke => Math.Max(1f, OmitHeaderStaffSpace * OmitHeaderStemThicknessSpaces);
+        private float OmitHeaderSmuFLFontSize => OmitHeaderStaffSpace * OmitHeaderSmuFLEmPerStaffSpace;
+        private float OmitHeaderAccidentalGap => OmitHeaderStaffSpace * OmitHeaderAccidentalGapSpaces;
+
         /// <summary>Draw/layout scale for accidentals attached to notes (after the key signature).</summary>
         private float BodyAccidentalGlyphScale()
         {
             float keyScale = KeySigAccidentalScale();
+            // Compact noteheads (adult levels, or the Ear Training side panel) use a matching
+            // compact body accidental so two reserved accidental slots fit the narrow panel.
+            if (OmitStaffHeader)
+                return 1f;
             if (_session.ChildLevel > 30)
                 return keyScale * BodyAccidentalScale;
             return keyScale;
@@ -247,14 +272,26 @@ namespace musicmate.Drawables
 
         /// <summary>Clear ink between body-accidental box and notehead left edge (px).</summary>
         private float BodyAccidentalRightGapPx =>
-            Math.Max(3.5f * BodyAccidentalGlyphScale(), AccidentalRightGap * _layout.Sls * 0.1f);
+            OmitStaffHeader
+                ? OmitHeaderAccidentalGap
+                : Math.Max(3.5f * BodyAccidentalGlyphScale(), AccidentalRightGap * _layout.Sls * 0.1f);
 
         private float KeySigSymbolWidth()
             => CompactAccidentalRefPx * (_layout.Sls / 12f) * KeySigAccidentalScale() * ArpeggioKeySigSizeBoost();
 
         private float BodyAccidentalSymbolWidth(bool isFlat = false)
-            => CompactAccidentalRefPx * (_layout.Sls / 12f) * BodyAccidentalGlyphScale()
+        {
+            if (OmitStaffHeader)
+            {
+                string smufl = isFlat ? "\uE260" : "\uE262";
+                if (SmuFLGlyphMetrics.TryMeasure(smufl, OmitHeaderSmuFLFontSize, out var m))
+                    return Math.Max(m.Width, OmitHeaderStaffSpace * (isFlat ? 0.90f : 0.75f));
+                return OmitHeaderStaffSpace * (isFlat ? OmitHeaderAccidentalColumnSpaces : 0.85f);
+            }
+
+            return CompactAccidentalRefPx * (_layout.Sls / 12f) * BodyAccidentalGlyphScale()
                 * (isFlat ? BodyFlatSizeBoost : 1f);
+        }
 
         private static bool IsFlatBodyAccidental(Accidental acc)
             => acc == Accidental.Flat || acc == Accidental.DoubleFlat;
@@ -272,9 +309,13 @@ namespace musicmate.Drawables
 
         /// <summary>Gap before notehead; naturals use a tighter gap than sharps/flats.</summary>
         private float BodyAccidentalRightGapPxFor(bool isNatural)
-            => isNatural
+        {
+            if (OmitStaffHeader)
+                return OmitHeaderAccidentalGap;
+            return isNatural
                 ? Math.Max(2f * BodyAccidentalGlyphScale(), AccidentalRightGap * _layout.Sls * 0.06f)
                 : BodyAccidentalRightGapPx;
+        }
 
         private float AccidentalBoxRight(float noteCenterX, bool isNatural = false)
             => NoteHeadLeft(noteCenterX) - BodyAccidentalRightGapPxFor(isNatural);
@@ -1293,9 +1334,7 @@ namespace musicmate.Drawables
             // Sight Training: allow substantially larger staff spacing for readability.
             // Ear Training headerless panel: slightly tighter so two notes fit beside buttons.
             float minSls = OmitStaffHeader ? 6.5f : SingleStaffMinStaffLineSpacing;
-            // Keep Ear Training glyphs modest — large beginner heads crush into each other
-            // in the narrow side panel once horizontal fit-scaling runs.
-            float maxSls = OmitStaffHeader ? 10f : SingleStaffMaxStaffLineSpacing;
+            float maxSls = OmitStaffHeader ? 10.5f : SingleStaffMaxStaffLineSpacing;
             sls = SingleStaffLayout
                 ? Math.Clamp(sls, minSls, maxSls)
                 : Math.Clamp(sls, MusicMinStaffLineSpacing, MusicMaxStaffLineSpacing);
@@ -1304,20 +1343,27 @@ namespace musicmate.Drawables
 
             float compactNoteHeadR = sls * CompactNoteHeadRRatio;
 
-            float noteHeadR = OmitStaffHeader
-                ? compactNoteHeadR
-                : SingleStaffLayout
+            float noteHeadR;
+            float glyphScale;
+            if (OmitStaffHeader)
+            {
+                glyphScale = Math.Max(1f, sls * OmitHeaderStemThicknessSpaces) * 0.5f;
+                noteHeadR = sls * OmitHeaderNoteHeadWidthSpaces * 0.5f;
+            }
+            else
+            {
+                noteHeadR = SingleStaffLayout
                     ? sls * BeginnerNoteHeadSpaceRatio / NoteHeadHeightFactor
                     : UseBeginnerNotationScale
                         ? sls * BeginnerNoteHeadSpaceRatio / NoteHeadHeightFactor
                         : _session.ChildLevel > 30
                             ? sls * MidLevelNoteHeadRRatio
                             : compactNoteHeadR;
-
-            float glyphScale = noteHeadR / Math.Max(0.01f, compactNoteHeadR);
+                glyphScale = noteHeadR / Math.Max(0.01f, compactNoteHeadR);
+            }
 
             float stemLen = OmitStaffHeader
-                ? 3.0f * sls
+                ? OmitHeaderStemLenSpaces * sls
                 : (UseBeginnerNotationScale || SingleStaffLayout)
                     ? 3.5f * sls
                     : sls * CompactStemLenRatio * glyphScale;
@@ -3444,9 +3490,10 @@ namespace musicmate.Drawables
         }
 
         /// <summary>
-        /// Ear Training compact reveal: pack notes with real accidental clearance, then center
-        /// inside the panel with a small margin. Never crush gaps below ink minimums (that was
-        /// overlapping sharps onto the previous notehead).
+        /// Ear Training compact reveal: two noteheads at fixed X positions that never depend
+        /// on whether either note has an accidental. Each slot always reserves a left
+        /// accidental zone wide enough for a flat; accidentals are then drawn to the left of
+        /// their own notehead. The pair is centered in the panel.
         /// </summary>
         private void CenterOmitHeaderIntervalReveal(
             List<GeneratedNote> notes,
@@ -3461,55 +3508,7 @@ namespace musicmate.Drawables
             if (!OmitStaffHeader || notes == null || noteLayouts == null || noteLayouts.Length == 0)
                 return;
 
-            const float margin = OmitHeaderPanelMargin;
-            float ledgerHalf = _layout.NoteHeadR * 2.2f;
             int count = Math.Min(notes.Count, noteLayouts.Length);
-
-            float MeasureCluster(out float minLeft, out float maxRight)
-            {
-                minLeft = float.PositiveInfinity;
-                maxRight = float.NegativeInfinity;
-                for (int i = 0; i < count; i++)
-                {
-                    if (notes[i].IsRest)
-                        continue;
-
-                    float left = noteLayouts[i].HasAccidental
-                        ? Math.Min(
-                            AccidentalBoxLeft(
-                                noteLayouts[i].X,
-                                noteLayouts[i].AccidentalIsFlat,
-                                noteLayouts[i].AccidentalIsNatural) - AccidentalLeadingInkPad,
-                            NoteHeadLeft(noteLayouts[i].X))
-                        : NoteHeadLeft(noteLayouts[i].X);
-                    left = Math.Min(left, noteLayouts[i].X - ledgerHalf);
-
-                    float right = NoteTrailingRight(
-                        noteLayouts[i].IsRest, noteLayouts[i].X, noteLayouts[i].Duration);
-                    right = Math.Max(right, noteLayouts[i].X + ledgerHalf);
-
-                    if (left < minLeft) minLeft = left;
-                    if (right > maxRight) maxRight = right;
-                }
-
-                return float.IsFinite(minLeft) && float.IsFinite(maxRight) && maxRight > minLeft
-                    ? maxRight - minLeft
-                    : 0f;
-            }
-
-            void ShiftX(float dx)
-            {
-                if (Math.Abs(dx) < 0.01f)
-                    return;
-                for (int i = 0; i < noteLayouts.Length; i++)
-                {
-                    noteLayouts[i].X += dx;
-                    if (noteLayouts[i].HasAccidental)
-                        SyncAccidentalX(noteLayouts, i);
-                    else
-                        noteLayouts[i].AccidentalX = noteLayouts[i].X;
-                }
-            }
 
             // Beat order (stable) — do not rely on whatever ExpandLayout did to X.
             var order = new List<int>(count);
@@ -3527,87 +3526,8 @@ namespace musicmate.Drawables
                 return cmp != 0 ? cmp : a.CompareTo(b);
             });
 
-            // Pack left-to-right at minimum ink gaps (accidental-aware).
-            float prevRight = float.NegativeInfinity;
-            for (int oi = 0; oi < order.Count; oi++)
-            {
-                int i = order[oi];
-                bool hasAcc = noteLayouts[i].HasAccidental;
-                bool isFlat = noteLayouts[i].AccidentalIsFlat;
-                bool isNatural = noteLayouts[i].AccidentalIsNatural;
-                float leftReach = Math.Max(
-                    NoteCenterLeftReach(
-                        noteLayouts[i].IsRest, hasAcc, isFlat, isNatural, noteLayouts[i].Duration),
-                    ledgerHalf);
-
-                float x;
-                if (!float.IsFinite(prevRight))
-                {
-                    x = leftReach;
-                }
-                else
-                {
-                    float gap = hasAcc
-                        ? Math.Max(AccidentalPairInkGap, MinInkGap)
-                        : MinInkGap;
-                    x = MinCenterAfterPrevRight(
-                        prevRight,
-                        noteLayouts[i].IsRest,
-                        hasAcc,
-                        isFlat,
-                        isNatural,
-                        gap,
-                        noteLayouts[i].Duration);
-                    // Keep ledger of this note clear of previous trailing ink.
-                    x = Math.Max(x, prevRight + MinInkGap + ledgerHalf);
-                }
-
-                noteLayouts[i].X = x;
-                if (hasAcc)
-                    SyncAccidentalX(noteLayouts, i);
-                else
-                    noteLayouts[i].AccidentalX = x;
-
-                float trail = NoteTrailingRight(
-                    noteLayouts[i].IsRest, noteLayouts[i].X, noteLayouts[i].Duration);
-                prevRight = Math.Max(trail, noteLayouts[i].X + ledgerHalf);
-            }
-
-            float availLeft = safeLeft + margin;
-            float availRight = layoutRightLimit - margin;
-            if (availRight <= availLeft + 8f)
-            {
-                availLeft = safeLeft + 4f;
-                availRight = layoutRightLimit - 4f;
-            }
-
-            float span = MeasureCluster(out float minLeft, out float maxRight);
-            if (span > 0f)
-            {
-                float availW = availRight - availLeft;
-                float clusterMid = (minLeft + maxRight) * 0.5f;
-                float targetMid = (availLeft + availRight) * 0.5f;
-                ShiftX(targetMid - clusterMid);
-
-                span = MeasureCluster(out minLeft, out maxRight);
-                if (span > 0f)
-                {
-                    // Already at minimum gaps — only translate to stay inside the padded box.
-                    if (span <= availW)
-                    {
-                        if (minLeft < availLeft)
-                            ShiftX(availLeft - minLeft);
-                        else if (maxRight > availRight)
-                            ShiftX(availRight - maxRight);
-                    }
-                    else
-                    {
-                        // Wider than panel even at min gaps: pin left so the first note and
-                        // accidental stay visible (panel width should usually prevent this).
-                        ShiftX(availLeft - minLeft);
-                    }
-                }
-            }
+            PlaceOmitHeaderFixedNoteheads(
+                noteLayouts, order, safeLeft, layoutRightLimit);
 
             // ── Vertical: fit heads, stems, and ledger lines inside top/bottom margins ──
             float staffTop = upperTop;
@@ -3616,8 +3536,10 @@ namespace musicmate.Drawables
 
             float minY = float.PositiveInfinity;
             float maxY = float.NegativeInfinity;
-            float headR = _layout.NoteHeadR;
             float stemLen = _layout.StemLen;
+            float headHalfH = OmitStaffHeader
+                ? OmitHeaderNoteHeadHalfHeight
+                : _layout.NoteHeadR * NoteHeadHeightFactor * 0.5f;
             for (int i = 0; i < count; i++)
             {
                 if (notes[i].IsRest)
@@ -3625,13 +3547,24 @@ namespace musicmate.Drawables
 
                 float ny = NoteY(notes[i], staffTop, staffMid);
                 bool stemUp = ny >= staffMid;
-                float top = stemUp ? ny - stemLen : ny - headR * NoteHeadHeightFactor * 0.5f;
-                float bot = stemUp ? ny + headR * NoteHeadHeightFactor * 0.5f : ny + stemLen;
+                float top = stemUp ? ny - stemLen : ny - headHalfH;
+                float bot = stemUp ? ny + headHalfH : ny + stemLen;
 
                 var (ledgerTop, ledgerBot) = EstimateLedgerVerticalExtent(
                     ny, staffTop, staffBot, _layout.Sls);
                 top = Math.Min(top, ledgerTop);
                 bot = Math.Max(bot, ledgerBot);
+
+                if (i < noteLayouts.Length && noteLayouts[i].HasAccidental)
+                {
+                    float accHalf = OmitStaffHeader
+                        ? OmitHeaderStaffSpace * OmitHeaderAccidentalHeightSpaces * 0.5f
+                        : (noteLayouts[i].AccidentalIsNatural
+                            ? BodyAccidentalFontSize(isFlat: false, isNatural: true)
+                            : BodyAccidentalFontSize(noteLayouts[i].AccidentalIsFlat)) * 0.62f;
+                    top = Math.Min(top, ny - accHalf);
+                    bot = Math.Max(bot, ny + accHalf);
+                }
 
                 if (top < minY) minY = top;
                 if (bot > maxY) maxY = bot;
@@ -3640,6 +3573,7 @@ namespace musicmate.Drawables
             if (!float.IsFinite(minY) || !float.IsFinite(maxY) || maxY <= minY)
                 return;
 
+            const float margin = OmitHeaderPanelMargin;
             float availTop = margin;
             float availBot = dirtyHeight - margin;
             if (availBot <= availTop + 8f)
@@ -3674,6 +3608,103 @@ namespace musicmate.Drawables
 
         /// <summary>Inset used for Ear Training headerless staff lines and note clearance.</summary>
         private const float OmitHeaderPanelMargin = 12f;
+
+        /// <summary>Hard minimum inset so accidentals cannot paint past the panel edge.</summary>
+        private const float OmitHeaderMinEdgePad = 4f;
+
+        /// <summary>
+        /// Left reach from notehead center that is always reserved in the Ear Training panel:
+        /// widest body accidental (flat) plus gap, independent of whether this note draws one.
+        /// </summary>
+        private float OmitHeaderReservedLeftReach()
+            => OmitHeaderNoteHeadHalfWidth
+               + OmitHeaderAccidentalGap
+               + BodyAccidentalDrawWidth(isFlat: true)
+               + OmitHeaderStaffSpace * 0.08f;
+
+        /// <summary>
+        /// Places Ear Training noteheads at fixed X slots. Slot geometry never uses the
+        /// measured width of a particular accidental — only a reserved left zone and a
+        /// trailing-ink allowance. Accidentals are synced to the left of their own head.
+        /// </summary>
+        private void PlaceOmitHeaderFixedNoteheads(
+            NoteLayout[] noteLayouts,
+            List<int> order,
+            float safeLeft,
+            float layoutRightLimit)
+        {
+            if (order.Count == 0)
+                return;
+
+            float leftReach = OmitHeaderReservedLeftReach();
+            float rightReach = Math.Max(
+                NoteCenterTrailingReach(false, NoteDuration.Quarter),
+                OmitHeaderNoteHeadHalfWidth + OmitHeaderStemStroke);
+
+            float minLeft = safeLeft + OmitHeaderMinEdgePad;
+            float maxRight = layoutRightLimit - OmitHeaderMinEdgePad;
+
+            float availLeft = safeLeft + OmitHeaderPanelMargin;
+            float availRight = layoutRightLimit - OmitHeaderPanelMargin;
+            int n = order.Count;
+            float minGap = n > 1 ? 3f : 0f;
+            float needed = n * (leftReach + rightReach) + minGap * Math.Max(0, n - 1);
+            if (availRight <= availLeft + 8f || needed > availRight - availLeft)
+            {
+                availLeft = minLeft;
+                availRight = maxRight;
+            }
+            float comfortableGap = Math.Max(MinInkGap, _layout.Sls * 0.75f);
+            float gap = n > 1 ? comfortableGap : 0f;
+
+            float PairSpan(float g)
+                => n * (leftReach + rightReach) + Math.Max(0, n - 1) * g;
+
+            float availW = availRight - availLeft;
+            if (n > 1 && PairSpan(gap) > availW)
+                gap = Math.Max(4f, (availW - n * (leftReach + rightReach)) / (n - 1));
+
+            float span = PairSpan(gap);
+            if (span > availW)
+            {
+                // Pull side padding in equally so both reserved slots stay on-canvas.
+                float mid = (availLeft + availRight) * 0.5f;
+                availLeft = mid - span * 0.5f;
+                availRight = mid + span * 0.5f;
+                if (availLeft < minLeft)
+                {
+                    float d = minLeft - availLeft;
+                    availLeft += d;
+                    availRight += d;
+                }
+
+                if (availRight > maxRight)
+                {
+                    float d = availRight - maxRight;
+                    availLeft -= d;
+                    availRight -= d;
+                }
+
+                availW = availRight - availLeft;
+                if (n > 1 && PairSpan(gap) > availW)
+                    gap = Math.Max(3f, (availW - n * (leftReach + rightReach)) / (n - 1));
+                span = PairSpan(gap);
+            }
+
+            float extra = Math.Max(0f, availW - span);
+            float x = availLeft + extra * 0.5f + leftReach;
+            for (int oi = 0; oi < n; oi++)
+            {
+                int i = order[oi];
+                noteLayouts[i].X = x;
+                if (noteLayouts[i].HasAccidental)
+                    SyncAccidentalX(noteLayouts, i);
+                else
+                    noteLayouts[i].AccidentalX = x;
+
+                x += rightReach + gap + leftReach;
+            }
+        }
 
         /// <summary>
         /// Fits notes and bars inside [header floor, layout right limit]. Uses uniform scale when the
@@ -4210,12 +4241,15 @@ namespace musicmate.Drawables
             return copy;
         }
 
-        private float StemStrokeHalfWidth => _layout.GlyphScale;
+        private float StemStrokeHalfWidth =>
+            OmitStaffHeader ? OmitHeaderStemStroke * 0.5f : _layout.GlyphScale;
 
-        private float NoteHeadOuterR => _layout.NoteHeadR + StemStrokeHalfWidth;
+        private float NoteHeadOuterR =>
+            OmitStaffHeader ? OmitHeaderNoteHeadHalfWidth : _layout.NoteHeadR + StemStrokeHalfWidth;
 
         /// <summary>Draw radius for noteheads; filled and half-note heads share the same outside dimensions.</summary>
-        private float NoteHeadDrawR(bool filled) => NoteHeadOuterR;
+        private float NoteHeadDrawR(bool filled)
+            => OmitStaffHeader ? OmitHeaderNoteHeadHalfWidth : NoteHeadOuterR;
 
         /// <summary>
         /// Stem attach at notehead center height: up-stems — outer (right) stroke edge tangent to outer right boundary;
@@ -4224,9 +4258,8 @@ namespace musicmate.Drawables
         private (float stemX, float stemY) GetStemAttachPoint(float noteX, float noteY, bool stemUp)
         {
             float halfStroke = StemStrokeHalfWidth;
-            float outerRight = noteX + NoteHeadOuterR;
-            float outerLeft = noteX - NoteHeadOuterR;
-            float stemX = stemUp ? outerRight - halfStroke : outerLeft + halfStroke;
+            float halfW = OmitStaffHeader ? OmitHeaderNoteHeadHalfWidth : NoteHeadOuterR;
+            float stemX = stemUp ? noteX + halfW - halfStroke : noteX - halfW + halfStroke;
             return (stemX, noteY);
         }
 
@@ -4339,7 +4372,7 @@ namespace musicmate.Drawables
             lineEnd = Math.Max(lineEnd, lineStart + 8f);
 
             canvas.StrokeColor = ink;
-            canvas.StrokeSize = 1.5f;
+            canvas.StrokeSize = StaffLineStrokeSize;
             for (int i = 0; i < 5; i++)
             {
                 float y = upperTop + i * _layout.Sls;
@@ -4403,7 +4436,7 @@ namespace musicmate.Drawables
             staffLineEndX = Math.Max(staffLineEndX, staffLineStartX + (OmitStaffHeader ? 8f : staffLeftMargin));
 
             canvas.StrokeColor = ink;
-            canvas.StrokeSize = 1.5f;
+            canvas.StrokeSize = StaffLineStrokeSize;
             for (int i = 0; i < 5; i++)
             {
                 float y = staffTop + i * _layout.Sls;
@@ -5371,9 +5404,14 @@ namespace musicmate.Drawables
             => _layout.Sls * 2.4f * KeySigAccidentalScale() * ArpeggioKeySigSizeBoost() * (isFlat ? KeySigFlatSizeBoost : 1f);
 
         private float BodyAccidentalFontSize(bool isFlat = false, bool isNatural = false)
-            => _layout.Sls * 2.4f * BodyAccidentalGlyphScale()
+        {
+            if (OmitStaffHeader)
+                return OmitHeaderSmuFLFontSize;
+
+            return _layout.Sls * 2.4f * BodyAccidentalGlyphScale()
                * (isFlat ? BodyFlatSizeBoost : 1f)
                * (isNatural ? BodyNaturalSizeBoost : 1f);
+        }
 
         /// <summary>
         /// Draws a Bravura SMuFL accidental with its musical staff-line anchor (the font
@@ -5549,31 +5587,48 @@ namespace musicmate.Drawables
             {
                 Color noteColor = ResolveDrawnNoteColor(state, ink, fadeAlpha);
 
-                float stroke = 2f * _layout.GlyphScale;
+                float stroke = OmitStaffHeader
+                    ? OmitHeaderStemStroke
+                    : 2f * _layout.GlyphScale;
                 canvas.StrokeColor = noteColor;
                 canvas.StrokeSize = stroke;
 
                 bool filled = duration != NoteDuration.Whole && duration != NoteDuration.Half;
-                float drawR = NoteHeadDrawR(filled);
-                float headTop = y - drawR * NoteHeadHeightFactor * 0.5f;
-                float headW = drawR * 2f;
-                float headH = drawR * NoteHeadHeightFactor;
+                float headW;
+                float headH;
+                float headLeft;
+                float headTop;
+                if (OmitStaffHeader)
+                {
+                    headW = OmitHeaderStaffSpace * OmitHeaderNoteHeadWidthSpaces;
+                    headH = OmitHeaderStaffSpace * OmitHeaderNoteHeadHeightSpaces;
+                    headLeft = x - headW * 0.5f;
+                    headTop = y - headH * 0.5f;
+                }
+                else
+                {
+                    float drawR = NoteHeadDrawR(filled);
+                    headW = drawR * 2f;
+                    headH = drawR * NoteHeadHeightFactor;
+                    headLeft = x - drawR;
+                    headTop = y - drawR * NoteHeadHeightFactor * 0.5f;
+                }
                 if (filled)
                 {
                     canvas.FillColor = noteColor;
-                    canvas.FillEllipse(x - drawR, headTop, headW, headH);
+                    canvas.FillEllipse(headLeft, headTop, headW, headH);
                 }
                 else
                 {
                     canvas.FillColor = noteColor;
-                    canvas.FillEllipse(x - drawR, headTop, headW, headH);
+                    canvas.FillEllipse(headLeft, headTop, headW, headH);
 
-                    float inset = Math.Min(stroke, drawR * 0.45f);
+                    float inset = Math.Min(stroke, Math.Min(headW, headH) * 0.22f);
                     if (headW > inset * 2f && headH > inset * 2f)
                     {
                         canvas.FillColor = _theme.PanelBackgroundColor;
                         canvas.FillEllipse(
-                            x - drawR + inset,
+                            headLeft + inset,
                             headTop + inset,
                             headW - inset * 2f,
                             headH - inset * 2f);
@@ -5647,10 +5702,14 @@ namespace musicmate.Drawables
             {
                 float staffMid = staffTop + _layout.Sls * 2f;
                 float ny = NoteY(note, staffTop, staffMid);
-                float ledgerHW = _layout.NoteHeadR * 2.2f;
+                float ledgerHW = OmitStaffHeader
+                    ? OmitHeaderNoteHeadHalfWidth * 1.35f
+                    : _layout.NoteHeadR * 2.2f;
 
                 canvas.StrokeColor = ApplyAlpha(ink, fadeAlpha);
-                canvas.StrokeSize = 1.5f * _layout.GlyphScale;
+                canvas.StrokeSize = OmitStaffHeader
+                    ? StaffLineStrokeSize
+                    : 1.5f * _layout.GlyphScale;
 
                 if (ny < staffTop - 2f)
                 {
@@ -5664,6 +5723,18 @@ namespace musicmate.Drawables
                 }
             }
             finally { canvas.RestoreState(); }
+        }
+
+        private void DrawUnicodeAccidentalFallback(
+            ICanvas canvas, string glyph, float boxLeft, float boxW, float staffY, bool isFlat)
+        {
+            float symH = OmitStaffHeader
+                ? OmitHeaderStaffSpace * OmitHeaderAccidentalHeightSpaces
+                : boxW * (isFlat ? 1.1f : 1.05f);
+            float yTop = staffY - symH * 0.5f;
+            canvas.FontSize = BodyAccidentalFontSize(isFlat);
+            canvas.DrawString(glyph, boxLeft, yTop, Math.Max(1f, boxW), symH,
+                HorizontalAlignment.Right, VerticalAlignment.Center);
         }
 
         private void DrawAccidental(ICanvas canvas, GeneratedNote note, NoteLayout layout, float y,
@@ -5707,31 +5778,19 @@ namespace musicmate.Drawables
 
                 canvas.FontColor = ApplyAlpha(ink, fadeAlpha);
 
-                float bodyFont = isNatural
-                    ? BodyAccidentalFontSize(isFlat: false, isNatural: true)
-                    : BodyAccidentalFontSize(isFlat);
-
                 if (isFlat)
                 {
                     string smufl = eff == Accidental.DoubleFlat ? "\uE264" : "\uE260";
                     if (!TryDrawBodySmuFLAccidental(canvas, smufl, boxRight, y, ApplyAlpha(ink, fadeAlpha), isFlat: true, isNatural: false))
                     {
-                        float symH = symW * 1.1f;
-                        float yTop = y - symH * 0.5f;
-                        canvas.FontSize = BodyAccidentalFontSize(isFlat: true);
-                        canvas.DrawString(glyph, boxLeft, yTop, boxW, symH,
-                            HorizontalAlignment.Right, VerticalAlignment.Center);
+                        DrawUnicodeAccidentalFallback(canvas, glyph, boxLeft, boxW, y, isFlat: true);
                     }
                 }
                 else if (isNatural)
                 {
                     if (!TryDrawBodySmuFLAccidental(canvas, "\uE261", boxRight, y, ApplyAlpha(ink, fadeAlpha), isFlat: false, isNatural: true))
                     {
-                        float symH = symW * 1.2f;
-                        float yTop = y - symH * 0.5f;
-                        canvas.FontSize = bodyFont;
-                        canvas.DrawString(glyph, boxLeft, yTop, boxW, symH,
-                            HorizontalAlignment.Right, VerticalAlignment.Center);
+                        DrawUnicodeAccidentalFallback(canvas, glyph, boxLeft, boxW, y, isFlat: false);
                     }
                 }
                 else
@@ -5741,11 +5800,7 @@ namespace musicmate.Drawables
                     string smufl = eff == Accidental.DoubleSharp ? "\uE263" : "\uE262";
                     if (!TryDrawBodySmuFLAccidental(canvas, smufl, boxRight, y, ApplyAlpha(ink, fadeAlpha), isFlat: false, isNatural: false))
                     {
-                        float symH = symW * 1.05f;
-                        float yTop = y - symH * 0.5f;
-                        canvas.FontSize = bodyFont;
-                        canvas.DrawString(glyph, boxLeft, yTop, boxW, symH,
-                            HorizontalAlignment.Right, VerticalAlignment.Center);
+                        DrawUnicodeAccidentalFallback(canvas, glyph, boxLeft, boxW, y, isFlat: false);
                     }
                 }
 

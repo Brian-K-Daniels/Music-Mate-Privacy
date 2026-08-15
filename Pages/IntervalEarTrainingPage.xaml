@@ -15,9 +15,8 @@
       <Setter Property="BorderWidth" Value="0" />
       <Setter Property="FontAttributes" Value="Bold" />
       <Setter Property="FontSize" Value="12" />
-      <Setter Property="MinimumHeightRequest" Value="32" />
-      <Setter Property="HeightRequest" Value="32" />
-      <Setter Property="Padding" Value="4,1" />
+      <Setter Property="MinimumHeightRequest" Value="28" />
+      <Setter Property="Padding" Value="3,1" />
       <Setter Property="HorizontalOptions" Value="Fill" />
       <Setter Property="VerticalOptions" Value="Fill" />
       <Setter Property="LineBreakMode" Value="NoWrap" />
@@ -27,12 +26,11 @@
     <Style x:Key="EarTrainIntervalButton" TargetType="Button">
       <Setter Property="TextColor" Value="#1F2937" />
       <Setter Property="CornerRadius" Value="6" />
-      <Setter Property="BorderWidth" Value="1" />
-      <Setter Property="BorderColor" Value="#00000028" />
+      <Setter Property="BorderWidth" Value="0" />
       <Setter Property="FontAttributes" Value="Bold" />
-      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontSize" Value="11" />
       <Setter Property="MinimumHeightRequest" Value="28" />
-      <Setter Property="Padding" Value="4,1" />
+      <Setter Property="Padding" Value="8,0,4,0" />
       <Setter Property="HorizontalOptions" Value="Fill" />
       <Setter Property="VerticalOptions" Value="Fill" />
       <Setter Property="LineBreakMode" Value="NoWrap" />
@@ -72,7 +70,7 @@
   <Shell.TitleView>
     <Grid ColumnDefinitions="Auto,*,Auto"
           ColumnSpacing="8"
-          HeightRequest="44"
+          HeightRequest="40"
           Padding="0,0,8,0"
           VerticalOptions="Center">
       <Button Grid.Column="0"
@@ -82,9 +80,10 @@
       <Label Grid.Column="1"
              Text="Interval Ear Training"
              FontAttributes="Bold"
-             FontSize="18"
+             FontSize="17"
              LineBreakMode="TailTruncation"
              MaxLines="1"
+             VerticalTextAlignment="Center"
              TextColor="{DynamicResource ThemeContrastingText}"
              VerticalOptions="Center" />
       <Border Grid.Column="2"
@@ -97,106 +96,143 @@
   </Shell.TitleView>
 
   <!--
-    Play + options stay Auto-height; remaining height is the interval grid + staff.
-    Buttons use the star column (most of the width); staff is a usable Auto column
-    (width set in code, never collapsed). No ScrollView — everything must fit on-screen.
+    No ScrollView. Status + Direction + Duration are Auto; remaining height is the
+    3×5 Play/interval grid plus staff. Play Random / Play Again live in the grid.
   -->
   <Grid x:Name="PageRoot"
-        RowDefinitions="Auto,Auto,*"
-        RowSpacing="3"
-        Padding="4,2,4,4"
+        RowDefinitions="Auto,Auto,Auto,*"
+        RowSpacing="1"
+        Padding="4,1,4,2"
         HorizontalOptions="Fill"
         VerticalOptions="Fill">
 
-    <Grid x:Name="PlayControlsSection"
+    <Grid x:Name="StatusSection"
           Grid.Row="0"
-          ColumnDefinitions="*,*"
-          ColumnSpacing="6"
+          ColumnDefinitions="*,Auto"
+          ColumnSpacing="8"
+          HeightRequest="28"
+          Margin="0,0,0,1"
           HorizontalOptions="Fill">
-      <Button x:Name="PlayRandomButton"
-              Grid.Column="0"
-              Style="{StaticResource EarTrainButton}"
-              Text="Play Random"
-              Clicked="OnPlayRandomClicked"
-              SemanticProperties.Description="Play a random interval and wait for your answer" />
-      <Button x:Name="PlayAgainButton"
-              Grid.Column="1"
-              Style="{StaticResource EarTrainButton}"
-              Text="Play Again"
-              IsEnabled="False"
-              Clicked="OnPlayAgainClicked"
-              SemanticProperties.Description="Replay the last interval with the same pitches" />
-    </Grid>
-
-    <VerticalStackLayout x:Name="OptionsSection"
-                         Grid.Row="1"
-                         Spacing="4"
-                         HorizontalOptions="Fill">
       <Label x:Name="StatusLabel"
-             Text="Tap an interval to hear it, or Play Random to quiz yourself."
-             FontSize="11"
+             Grid.Column="0"
+             Text="Play Random to quiz. Tap any interval to hear it."
+             FontSize="12"
              LineBreakMode="TailTruncation"
              MaxLines="1"
+             VerticalTextAlignment="Center"
+             VerticalOptions="Center"
+             HorizontalOptions="Fill"
              TextColor="{DynamicResource ThemeContrastingText}" />
+      <Border Grid.Column="1"
+              Stroke="{DynamicResource ThemePickerBorder}"
+              StrokeThickness="1"
+              BackgroundColor="{DynamicResource ThemeButtonBackground}"
+              Padding="6,0"
+              HeightRequest="28"
+              WidthRequest="200"
+              MinimumWidthRequest="168"
+              VerticalOptions="Center"
+              HorizontalOptions="End">
+        <Border.StrokeShape>
+          <RoundRectangle CornerRadius="6" />
+        </Border.StrokeShape>
+        <Picker x:Name="InstrumentPicker"
+                FontSize="11"
+                FontAttributes="Bold"
+                HeightRequest="26"
+                BackgroundColor="Transparent"
+                TextColor="{DynamicResource ThemeContrastingText}"
+                VerticalOptions="Center"
+                HorizontalOptions="Fill"
+                SelectedIndexChanged="OnInstrumentPickerChanged"
+                SemanticProperties.Description="Instrument used for playback transposition" />
+      </Border>
+    </Grid>
 
-      <Grid ColumnDefinitions="Auto,*,*,*,Auto,Auto"
-            ColumnSpacing="4"
-            HorizontalOptions="Fill">
-        <Label Grid.Column="0"
-               Text="Direction"
-               FontSize="11"
-               FontAttributes="Bold"
-               VerticalOptions="Center"
-               TextColor="{DynamicResource ThemeContrastingText}" />
-        <Button x:Name="DirectionAscendingButton"
-                Grid.Column="1"
-                Style="{StaticResource EarTrainButton}"
-                Text="Ascending"
-                Clicked="OnDirectionAscendingClicked"
-                SemanticProperties.Description="Play intervals going up" />
-        <Button x:Name="DirectionDescendingButton"
-                Grid.Column="2"
-                Style="{StaticResource EarTrainButton}"
-                Text="Descending"
-                Clicked="OnDirectionDescendingClicked"
-                SemanticProperties.Description="Play intervals going down" />
-        <Button x:Name="DirectionRandomButton"
-                Grid.Column="3"
-                Style="{StaticResource EarTrainButton}"
-                Text="Random"
-                Clicked="OnDirectionRandomClicked"
-                SemanticProperties.Description="Play intervals going up or down at random" />
-        <Label Grid.Column="4"
-               x:Name="DurationLabel"
-               Text="ms"
-               FontSize="11"
-               VerticalOptions="Center"
-               TextColor="{DynamicResource ThemeContrastingText}" />
-        <Label Grid.Column="5"
-               x:Name="DurationValueLabel"
-               Text="500"
-               FontSize="12"
-               FontAttributes="Bold"
-               WidthRequest="36"
-               HorizontalTextAlignment="End"
-               VerticalOptions="Center"
-               TextColor="{DynamicResource ThemeContrastingText}" />
-      </Grid>
+    <Grid x:Name="DirectionSection"
+          Grid.Row="1"
+          ColumnDefinitions="Auto,*,*,*"
+          ColumnSpacing="4"
+          HeightRequest="30"
+          HorizontalOptions="Fill">
+      <Label Grid.Column="0"
+             Text="Direction"
+             FontSize="12"
+             FontAttributes="Bold"
+             VerticalTextAlignment="Center"
+             VerticalOptions="Center"
+             TextColor="{DynamicResource ThemeContrastingText}" />
+      <Button x:Name="DirectionAscendingButton"
+              Grid.Column="1"
+              Style="{StaticResource EarTrainButton}"
+              Text="Ascending"
+              Clicked="OnDirectionAscendingClicked"
+              SemanticProperties.Description="Play intervals going up" />
+      <Button x:Name="DirectionDescendingButton"
+              Grid.Column="2"
+              Style="{StaticResource EarTrainButton}"
+              Text="Descending"
+              Clicked="OnDirectionDescendingClicked"
+              SemanticProperties.Description="Play intervals going down" />
+      <Button x:Name="DirectionRandomButton"
+              Grid.Column="3"
+              Style="{StaticResource EarTrainButton}"
+              Text="Random"
+              Clicked="OnDirectionRandomClicked"
+              SemanticProperties.Description="Play intervals going up or down at random" />
+    </Grid>
 
+    <!-- Duration  [slider]  [n] ms  [m] bpm -->
+    <Grid x:Name="DurationSection"
+          Grid.Row="2"
+          ColumnDefinitions="Auto,*,Auto,Auto"
+          ColumnSpacing="8"
+          HeightRequest="32"
+          VerticalOptions="Center"
+          HorizontalOptions="Fill">
+      <Label Grid.Column="0"
+             Text="Duration"
+             FontSize="12"
+             FontAttributes="Bold"
+             VerticalTextAlignment="Center"
+             VerticalOptions="Center"
+             TextColor="{DynamicResource ThemeContrastingText}" />
       <Slider x:Name="DurationSlider"
+              Grid.Column="1"
               Minimum="0"
               Maximum="1000"
               Value="500"
+              VerticalOptions="Center"
               MinimumTrackColor="{DynamicResource ThemeSlider}"
               MaximumTrackColor="#CCCCCC"
               ThumbColor="{DynamicResource ThemeSlider}"
               ValueChanged="OnDurationChanged"
               SemanticProperties.Description="Duration of each played note in milliseconds" />
-    </VerticalStackLayout>
+      <Label x:Name="DurationMsLabel"
+             Grid.Column="2"
+             Text="500 ms"
+             FontSize="12"
+             FontAttributes="Bold"
+             VerticalTextAlignment="Center"
+             VerticalOptions="Center"
+             HorizontalTextAlignment="End"
+             MinimumWidthRequest="72"
+             TextColor="{DynamicResource ThemeContrastingText}" />
+      <Label x:Name="DurationBpmLabel"
+             Grid.Column="3"
+             Text="120 bpm"
+             FontSize="12"
+             FontAttributes="Bold"
+             VerticalTextAlignment="Center"
+             VerticalOptions="Center"
+             HorizontalTextAlignment="End"
+             MinimumWidthRequest="72"
+             TextColor="{DynamicResource ThemeContrastingText}" />
+    </Grid>
 
-    <!-- Star column = interval buttons; Auto staff column keeps a real, usable width. -->
+    <!-- 3×5 grid (Play + intervals) | staff -->
     <Grid x:Name="IntervalsSection"
-          Grid.Row="2"
+          Grid.Row="3"
           ColumnDefinitions="*,Auto"
           ColumnSpacing="6"
           HorizontalOptions="Fill"
@@ -204,15 +240,15 @@
       <Grid x:Name="IntervalButtonsHost"
             Grid.Column="0"
             ColumnDefinitions="*,*,*"
-            ColumnSpacing="4"
+            ColumnSpacing="3"
             RowSpacing="3"
             HorizontalOptions="Fill"
             VerticalOptions="Fill" />
 
       <Border x:Name="StaffRevealBorder"
               Grid.Column="1"
-              WidthRequest="140"
-              MinimumWidthRequest="124"
+              WidthRequest="120"
+              MinimumWidthRequest="110"
               Stroke="{DynamicResource ThemePickerBorder}"
               StrokeThickness="1"
               BackgroundColor="{DynamicResource ThemePanelBackground}"
@@ -230,7 +266,7 @@
     </Grid>
 
     <Grid x:Name="FeedbackOverlay"
-          Grid.RowSpan="3"
+          Grid.RowSpan="4"
           IsVisible="False"
           BackgroundColor="#CC000000"
           InputTransparent="False"
@@ -239,11 +275,11 @@
               BackgroundColor="{DynamicResource ThemeButtonBackground}"
               StrokeThickness="0"
               StrokeShape="RoundRectangle 16"
-              Padding="24"
+              Padding="24,20"
               HorizontalOptions="Center"
               VerticalOptions="Center"
               MaximumWidthRequest="320">
-        <VerticalStackLayout Spacing="12" HorizontalOptions="Center">
+        <VerticalStackLayout Spacing="10" HorizontalOptions="Center">
           <Image x:Name="FeedbackImage"
                  WidthRequest="96"
                  HeightRequest="96"
@@ -252,16 +288,21 @@
                  HorizontalOptions="Center" />
           <Label x:Name="FeedbackEmojiLabel"
                  FontSize="56"
+                 LineBreakMode="NoWrap"
                  HorizontalTextAlignment="Center"
+                 VerticalTextAlignment="Center"
                  HorizontalOptions="Center" />
           <Label x:Name="FeedbackTitleLabel"
                  FontSize="22"
                  FontAttributes="Bold"
+                 LineBreakMode="NoWrap"
                  HorizontalTextAlignment="Center"
+                 VerticalTextAlignment="Center"
                  TextColor="{DynamicResource ThemeContrastingText}" />
           <Label x:Name="FeedbackDetailLabel"
                  FontSize="15"
                  HorizontalTextAlignment="Center"
+                 VerticalTextAlignment="Center"
                  LineBreakMode="WordWrap"
                  TextColor="{DynamicResource ThemeContrastingText}" />
           <ActivityIndicator x:Name="FeedbackWaitIndicator"

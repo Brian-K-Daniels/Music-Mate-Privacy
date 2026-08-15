@@ -12,6 +12,13 @@ namespace musicmate.Services
         /// <summary>Soft outline so pale fills remain distinct from the page background.</summary>
         public static readonly Color Border = Color.FromArgb("#00000028");
 
+        /// <summary>Gold outline for Play Random / Play Again only.</summary>
+        public static readonly Color PlayButtonBorder = Color.FromArgb("#D4AF37");
+
+        /// <summary>Temporary bold outline while an interval is being demonstrated (explore taps).</summary>
+        public static readonly Color DemoHighlightBorder = Color.FromArgb("#DC2626");
+        public const double DemoHighlightBorderWidth = 3;
+
         // Family fills (pale / unsaturated — not used for correct/wrong feedback).
         public static readonly Color Unison = Color.FromArgb("#E5E7EB");       // light gray
         public static readonly Color Minor = Color.FromArgb("#BFDBFE");        // light blue

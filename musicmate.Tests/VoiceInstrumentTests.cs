@@ -59,6 +59,20 @@ public class VoiceInstrumentTests : IDisposable
         }
     }
 
+    [Fact]
+    public void IndexOfOption_ResolvesIdDisplayNameAndInstrumentKey()
+    {
+        var names = InstrumentCatalog.DisplayNames;
+        int bbClarinet = Array.IndexOf(names, "Bb Clarinet");
+        Assert.True(bbClarinet >= 0);
+        Assert.Equal(bbClarinet, InstrumentCatalog.IndexOfOption("bb-clarinet"));
+        Assert.Equal(bbClarinet, InstrumentCatalog.IndexOfOption("Bb Clarinet"));
+
+        int aClarinet = Array.IndexOf(names, "A Clarinet");
+        Assert.Equal(aClarinet, InstrumentCatalog.IndexOfOption("A"));
+        Assert.Equal(aClarinet, InstrumentCatalog.IndexOfOption("a-clarinet"));
+    }
+
     [Theory]
     [MemberData(nameof(VoiceCategories))]
     public void SelectingVoice_SetsSessionRangeToConfiguredLimits(

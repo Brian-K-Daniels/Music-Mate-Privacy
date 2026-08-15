@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using musicmate.Services;
 using musicmate.Utilities;
 
@@ -46,11 +47,7 @@ namespace musicmate.Pages
                 _session = ServiceHelper.GetService<NoteSessionService>()!;
                 _orientation = ServiceHelper.GetService<IOrientationService>()!;
 
-                // Restore saved instrument selection
-                var savedInstrument = _session.InstrumentDisplayName;
-                var idx = Array.IndexOf(_instrumentOptions, savedInstrument);
-                if (idx >= 0)
-                    SetInstrumentSelection(idx);
+                RefreshInstrumentFromSession();
 
                 // Level: restore saved value
                 _selectedLevel = Math.Clamp(
@@ -67,6 +64,9 @@ namespace musicmate.Pages
         {
             base.OnAppearing();
             _orientation?.AllowAutorotate();
+            _session.PropertyChanged -= OnSessionPropertyChanged;
+            _session.PropertyChanged += OnSessionPropertyChanged;
+            RefreshInstrumentFromSession();
 
             // Refresh the level from preferences in case LevelUpService advanced it
             // while the user was on MusicPage.  The Preferences write happens in
@@ -78,6 +78,12 @@ namespace musicmate.Pages
                 UpdateLevelDisplay();
             }
             Utils.Log($"[HomePage] OnAppearing: savedLevel={savedLevel}, _selectedLevel={_selectedLevel}");
+        }
+
+        protected override void                 OnDisappearing()
+        {
+            _session.PropertyChanged -= OnSessionPropertyChanged;
+            base.OnDisappearing();
         }
 
         // Instrument selection via action sheet
@@ -172,12 +178,32 @@ namespace musicmate.Pages
         }
         private void                            SetInstrumentSelection(int idx)
         {
+            ApplyInstrumentDisplay(idx);
+            _session.Instrument = _instrumentOptions[idx];
+        }
+
+        private void                            RefreshInstrumentFromSession()
+        {
+            int idx = InstrumentCatalog.IndexOfOption(_session.Instrument);
+            if (idx >= 0)
+                ApplyInstrumentDisplay(idx);
+        }
+
+        private void                            ApplyInstrumentDisplay(int idx)
+        {
             _selectedInstrumentIndex = idx;
-            // Show the full label in the picker row
             InstrumentPickerLabel.Text = _instrumentOptions[idx];
             InstrumentPickerLabel.TextColor = Colors.Black;
-            // Store the full label so GetInstrumentTransposeOffset() can resolve it correctly
-            _session.Instrument = _instrumentOptions[idx];
+        }
+
+        private void                            OnSessionPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(NoteSessionService.Instrument)
+                || e.PropertyName == nameof(NoteSessionService.InstrumentDisplayName)
+                || e.PropertyName == nameof(NoteSessionService.InstrumentKey))
+            {
+                MainThread.BeginInvokeOnMainThread(RefreshInstrumentFromSession);
+            }
         }
         private void                            StartLevelRepeat(int delta)
         {

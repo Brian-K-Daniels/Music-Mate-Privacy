@@ -207,6 +207,16 @@ namespace musicmate.Services
 
         public static InstrumentProfile Default => All[0];
 
+        /// <summary>
+        /// Index in <see cref="DisplayNames"/> / <see cref="NoteSessionService.InstrumentOptions"/>
+        /// for a stored id, display name, alias, or instrument key.
+        /// </summary>
+        public static int IndexOfOption(string? value)
+        {
+            var display = Resolve(value).DisplayName;
+            return Array.IndexOf(DisplayNames, display);
+        }
+
         public static InstrumentProfile Resolve(string? value)
         {
             var raw = value?.Trim() ?? string.Empty;

@@ -22,12 +22,20 @@ public class IntervalEarTrainingCatalogTests
 
     [Fact]
     public void FormatButtonLabel_IncludesSemitonesAndName()
-        => Assert.Equal("3 — Minor third", IntervalEarTrainingCatalog.FormatButtonLabel(3));
+        => Assert.Equal(" 3 — Minor third", IntervalEarTrainingCatalog.FormatButtonLabel(3));
+
+    [Fact]
+    public void FormatButtonLabel_PadsSingleDigitSoUnitsLineUp()
+    {
+        Assert.Equal(" 0 — Perfect unison", IntervalEarTrainingCatalog.FormatButtonLabel(0));
+        Assert.Equal(" 9 — Major sixth", IntervalEarTrainingCatalog.FormatButtonLabel(9));
+        Assert.Equal("10 — Minor seventh", IntervalEarTrainingCatalog.FormatButtonLabel(10));
+    }
 
     [Fact]
     public void FormatButtonLabel_LongestNames_StaySingleLine()
     {
-        Assert.Equal("0 — Perfect unison", IntervalEarTrainingCatalog.FormatButtonLabel(0));
+        Assert.Equal(" 0 — Perfect unison", IntervalEarTrainingCatalog.FormatButtonLabel(0));
         Assert.Equal("10 — Minor seventh", IntervalEarTrainingCatalog.FormatButtonLabel(10));
         Assert.Equal("11 — Major seventh", IntervalEarTrainingCatalog.FormatButtonLabel(11));
         Assert.Equal("12 — Perfect octave", IntervalEarTrainingCatalog.FormatButtonLabel(12));

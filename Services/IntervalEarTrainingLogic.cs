@@ -1,5 +1,17 @@
 namespace musicmate.Services
 {
+    /// <summary>
+    /// How Interval Ear Training should treat the staff: hide notes during an
+    /// unanswered quiz, reveal them after a correct answer, or show them immediately
+    /// for manual (non-quiz) playback.
+    /// </summary>
+    public enum IntervalEarTrainingInteraction
+    {
+        UnansweredQuiz,
+        RevealedQuiz,
+        ManualPlayback,
+    }
+
     /// <summary>User-selected direction mode for Interval Ear Training.</summary>
     public enum IntervalDirectionMode
     {
@@ -257,5 +269,12 @@ namespace musicmate.Services
 
         public static bool IsAnswerCorrect(int expectedSemitones, int answeredSemitones)
             => expectedSemitones == answeredSemitones;
+
+        /// <summary>
+        /// Graphic noteheads (and accidentals) stay hidden until the quiz is answered
+        /// correctly, or when the user is exploring an interval they chose themselves.
+        /// </summary>
+        public static bool ShouldShowIntervalNotes(IntervalEarTrainingInteraction interaction)
+            => interaction != IntervalEarTrainingInteraction.UnansweredQuiz;
     }
 }

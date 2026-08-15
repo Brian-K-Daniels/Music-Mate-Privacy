@@ -6,6 +6,16 @@ namespace musicmate.Tests;
 public class IntervalEarTrainingNotationTests
 {
     [Fact]
+    public void StaffDisplayKey_IsAlwaysCMajor()
+    {
+        Assert.Equal("C", IntervalEarTrainingNotation.StaffDisplayKey);
+        Assert.Equal("Major", IntervalEarTrainingNotation.StaffDisplayScale);
+        Assert.Equal(0, KeySignatureRules.GetAccidentalCount(
+            IntervalEarTrainingNotation.StaffDisplayKey,
+            IntervalEarTrainingNotation.StaffDisplayScale));
+    }
+
+    [Fact]
     public void BuildDisplayNotes_UsesExactStoredMidiPitches()
     {
         var pitches = new IntervalEarTrainingLogic.IntervalPitches(
