@@ -68,8 +68,8 @@
   </ContentPage.Resources>
 
   <Shell.TitleView>
-    <Grid ColumnDefinitions="Auto,*,Auto"
-          ColumnSpacing="8"
+    <Grid ColumnDefinitions="Auto,*,Auto,Auto"
+          ColumnSpacing="6"
           HeightRequest="40"
           Padding="0,0,8,0"
           VerticalOptions="Center">
@@ -80,13 +80,53 @@
       <Label Grid.Column="1"
              Text="Interval Ear Training"
              FontAttributes="Bold"
-             FontSize="17"
+             FontSize="16"
              LineBreakMode="TailTruncation"
              MaxLines="1"
              VerticalTextAlignment="Center"
              TextColor="{DynamicResource ThemeContrastingText}"
-             VerticalOptions="Center" />
-      <Border Grid.Column="2"
+             VerticalOptions="Center"
+             HorizontalOptions="Fill" />
+      <Grid Grid.Column="2"
+            ColumnDefinitions="Auto,Auto"
+            ColumnSpacing="4"
+            VerticalOptions="Center"
+            HorizontalOptions="End">
+        <Label Text="First Note"
+               FontSize="11"
+               FontAttributes="Bold"
+               LineBreakMode="NoWrap"
+               MaxLines="1"
+               VerticalTextAlignment="Center"
+               VerticalOptions="Center"
+               TextColor="{DynamicResource ThemeContrastingText}"
+               SemanticProperties.Description="First note of the interval" />
+        <Border Grid.Column="1"
+                Stroke="{DynamicResource ThemePickerBorder}"
+                StrokeThickness="1"
+                BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                Padding="4,0"
+                HeightRequest="28"
+                WidthRequest="92"
+                MinimumWidthRequest="84"
+                VerticalOptions="Center"
+                HorizontalOptions="End">
+          <Border.StrokeShape>
+            <RoundRectangle CornerRadius="6" />
+          </Border.StrokeShape>
+          <Picker x:Name="StartNotePicker"
+                  FontSize="11"
+                  FontAttributes="Bold"
+                  HeightRequest="26"
+                  BackgroundColor="Transparent"
+                  TextColor="{DynamicResource ThemeContrastingText}"
+                  VerticalOptions="Center"
+                  HorizontalOptions="Fill"
+                  SelectedIndexChanged="OnStartNotePickerChanged"
+                  SemanticProperties.Description="First note for interval playback" />
+        </Border>
+      </Grid>
+      <Border Grid.Column="3"
               Style="{StaticResource TitleLogoBorder}"
               VerticalOptions="Center"
               HorizontalOptions="End">

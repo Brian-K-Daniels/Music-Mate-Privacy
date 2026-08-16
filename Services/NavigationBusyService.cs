@@ -13,6 +13,8 @@ namespace musicmate.Services
 
         /// <summary>Delay before showing; cancelled if navigation finishes sooner.</summary>
         private const int ShowDelayMs = 120;
+        /// <summary>Hard cap so a missed Navigated event cannot leave the overlay forever.</summary>
+        private const int MaxBusyMs = 20000;
 
         private readonly object _gate = new();
         private int _depth;
@@ -52,38 +54,47 @@ namespace musicmate.Services
                 gen = ++_generation;
             }
 
-            MainThread.BeginInvokeOnMainThread(async () =>
+            try
             {
-                try
+                MainThread.BeginInvokeOnMainThread(async () =>
                 {
-                    await Task.Delay(ShowDelayMs, token).ConfigureAwait(true);
-                }
-                catch (OperationCanceledException)
-                {
-                    return;
-                }
+                    try
+                    {
+                        await Task.Delay(ShowDelayMs, token).ConfigureAwait(true);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
 
-                // Attach only if this Begin is still the active navigation.
-                // Re-check after attach so a concurrent End/Reset cannot leave a stuck overlay.
-                if (!IsCurrent(gen))
-                    return;
+                    // Attach only if this Begin is still the active navigation.
+                    // Re-check after attach so a concurrent End/Reset cannot leave a stuck overlay.
+                    if (!IsCurrent(gen))
+                        return;
 
-                try
-                {
-                    AttachAndShow();
-                }
-                catch (Exception ex)
-                {
-                    Utils.Log($"[NavigationBusy] Show ERROR: {ex.Message}");
-                    return;
-                }
+                    try
+                    {
+                        AttachAndShow();
+                    }
+                    catch (Exception ex)
+                    {
+                        Utils.Log($"[NavigationBusy] Show ERROR: {ex.Message}");
+                        return;
+                    }
 
-                if (!IsCurrent(gen))
-                {
-                    try { DetachAndHide(); }
-                    catch { /* ignore */ }
-                }
-            });
+                    if (!IsCurrent(gen))
+                    {
+                        try { DetachAndHide(); }
+                        catch { /* ignore */ }
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Utils.Log($"[NavigationBusy] Show dispatch ERROR: {ex.Message}");
+            }
+
+            ArmMaxBusyWatchdog(gen);
         }
 
         /// <summary>Call when Shell navigation completes or fails.</summary>
@@ -115,6 +126,34 @@ namespace musicmate.Services
             HideOnMainThread();
         }
 
+        private void ArmMaxBusyWatchdog(int gen)
+        {
+            try
+            {
+                MainThread.BeginInvokeOnMainThread(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(MaxBusyMs).ConfigureAwait(true);
+                    }
+                    catch
+                    {
+                        return;
+                    }
+
+                    if (!IsCurrent(gen))
+                        return;
+
+                    Utils.Log("[NavigationBusy] Max-busy watchdog — forcing Reset");
+                    Reset();
+                });
+            }
+            catch (Exception ex)
+            {
+                Utils.Log($"[NavigationBusy] Watchdog dispatch ERROR: {ex.Message}");
+            }
+        }
+
         private void InvalidatePendingShow_NoLock()
         {
             _generation++;
@@ -131,13 +170,21 @@ namespace musicmate.Services
 
         private void HideOnMainThread()
         {
-            if (MainThread.IsMainThread)
+            try
             {
-                SafeDetach();
-                return;
-            }
+                if (MainThread.IsMainThread)
+                {
+                    SafeDetach();
+                    return;
+                }
 
-            MainThread.BeginInvokeOnMainThread(SafeDetach);
+                MainThread.BeginInvokeOnMainThread(SafeDetach);
+            }
+            catch (Exception ex)
+            {
+                Utils.Log($"[NavigationBusy] Hide dispatch ERROR: {ex.Message}");
+                SafeDetach();
+            }
         }
 
         private void SafeDetach()

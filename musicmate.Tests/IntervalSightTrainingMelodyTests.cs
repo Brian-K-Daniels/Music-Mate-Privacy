@@ -189,7 +189,8 @@ public class IntervalSightTrainingMelodyTests
 
         int maxAbs = IntervalSightTrainingMelody.MaxSightIntervalForLevel(20);
         var exercise = IntervalSightTrainingSequenceBuilder.Generate(
-            session, measureCount: null, randomSeed: 123, excludeFirstMagnitude: null);
+            session, measureCount: null, randomSeed: 123, excludeFirstMagnitude: null,
+            childLevelOverride: 20);
 
         Assert.NotEmpty(exercise.Notes);
         Assert.DoesNotContain(exercise.Notes, n => n.IsRest);
@@ -201,12 +202,15 @@ public class IntervalSightTrainingMelodyTests
             exercise.Notes, maxAbs, excludeFirstMagnitude: null, out var mags));
         Assert.Equal(maxAbs + 1, mags.Count);
         Assert.All(mags, m => Assert.InRange(m, 0, maxAbs));
+
+        int lo = NoteSessionService.NoteNameToMidi(session.LowestNote);
+        int hi = NoteSessionService.NoteNameToMidi(session.HighestNote);
+        Assert.All(exercise.Notes.Where(n => !n.IsRest), n => Assert.InRange(n.MidiNumber, lo, hi));
     }
 
     [Fact]
-    public void Generate_UsesChildLevelRange_NotMusicPagePrefs()
+    public void Generate_UsesSettingsNoteRange_EvenAtHighSightLevel()
     {
-        // Narrow Music prefs must not shrink Sight Training range.
         var session = new NoteSessionService
         {
             ChildLevel = 100,
@@ -218,13 +222,21 @@ public class IntervalSightTrainingMelodyTests
         };
 
         var exercise = IntervalSightTrainingSequenceBuilder.Generate(
-            session, measureCount: null, randomSeed: 404, excludeFirstMagnitude: null);
+            session,
+            measureCount: null,
+            randomSeed: 404,
+            excludeFirstMagnitude: null,
+            childLevelOverride: 100);
 
-        int low = exercise.Notes.Min(n => n.MidiNumber);
-        int high = exercise.Notes.Max(n => n.MidiNumber);
-        // Level 100 Child range is E2–C8; a C4–C5-only tune cannot span much — expect wider use.
-        Assert.True(high - low >= 12,
-            $"Expected wider-than-octave span from Child Level range, got {low}-{high}");
+        Assert.Equal("C4", session.LowestNote);
+        Assert.Equal("C5", session.HighestNote);
+
+        int lo = NoteSessionService.NoteNameToMidi("C4");
+        int hi = NoteSessionService.NoteNameToMidi("C5");
+        Assert.All(exercise.Notes.Where(n => !n.IsRest), n =>
+        {
+            Assert.InRange(n.MidiNumber, lo, hi);
+        });
         Assert.Equal(12, exercise.MaxAbsoluteSemitones);
     }
 
@@ -243,7 +255,8 @@ public class IntervalSightTrainingMelodyTests
         for (int i = 0; i < 40; i++)
         {
             var exercise = IntervalSightTrainingSequenceBuilder.Generate(
-                session, measureCount: null, randomSeed: 1000 + i, excludeFirstMagnitude: null);
+                session, measureCount: null, randomSeed: 1000 + i, excludeFirstMagnitude: null,
+                childLevelOverride: 100);
             foreach (int m in IntervalSightTrainingMelody.CollectMagnitudes(exercise.Notes))
                 seen.Add(m);
         }
@@ -268,7 +281,8 @@ public class IntervalSightTrainingMelodyTests
 
         int maxAbs = IntervalSightTrainingMelody.MaxSightIntervalForLevel(35);
         var exercise = IntervalSightTrainingSequenceBuilder.Generate(
-            session, measureCount: null, randomSeed: 55, excludeFirstMagnitude: 3);
+            session, measureCount: null, randomSeed: 55, excludeFirstMagnitude: 3,
+            childLevelOverride: 35);
 
         Assert.True(IntervalSightTrainingMelody.TryValidateCompleteCycle(
             exercise.Notes, maxAbs, excludeFirstMagnitude: 3, out var mags));
@@ -289,13 +303,15 @@ public class IntervalSightTrainingMelodyTests
 
         int maxAbs = IntervalSightTrainingMelody.MaxSightIntervalForLevel(40);
         var first = IntervalSightTrainingSequenceBuilder.Generate(
-            session, measureCount: null, randomSeed: 202, excludeFirstMagnitude: null);
+            session, measureCount: null, randomSeed: 202, excludeFirstMagnitude: null,
+            childLevelOverride: 40);
         Assert.True(IntervalSightTrainingMelody.TryValidateCompleteCycle(
             first.Notes, maxAbs, null, out var cycle1));
 
         var second = IntervalSightTrainingSequenceBuilder.Generate(
             session, measureCount: null, randomSeed: 303,
-            excludeFirstMagnitude: first.FinalIntervalMagnitude);
+            excludeFirstMagnitude: first.FinalIntervalMagnitude,
+            childLevelOverride: 40);
         Assert.True(IntervalSightTrainingMelody.TryValidateCompleteCycle(
             second.Notes, maxAbs, first.FinalIntervalMagnitude, out var cycle2));
 
@@ -323,6 +339,8 @@ public class IntervalSightTrainingMelodyTests
         var session = new NoteSessionService
         {
             ChildLevel = 1,
+            LowestNote = "C3",
+            HighestNote = "C6",
             AccidentalPercent = 0,
             Key = "C",
             SelectedScale = "Major",

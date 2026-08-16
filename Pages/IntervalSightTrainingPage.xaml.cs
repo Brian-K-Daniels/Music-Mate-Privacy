@@ -20,8 +20,9 @@ namespace musicmate.Pages
         private readonly Dictionary<int, Button> _buttons = new();
         private Button? _newTuneButton;
         private int? _excludeFirstMagnitude;
-        /// <summary>Page-local practice level (1–100); does not mutate Music ChildLevel.</summary>
-        private int _sightLevel = 1;
+        /// <summary>Sight Training level only; never Music <see cref="NoteSessionService.ChildLevel"/>.</summary>
+        private int _sightLevel = IntervalSightTrainingLogic.DefaultLevel;
+        private int _levelSliderSyncSuppress;
 
         public IntervalSightTrainingPage()
         {
@@ -58,7 +59,7 @@ namespace musicmate.Pages
             ApplySafeAreaPadding();
             EnsureStaffDrawable();
             SyncStaffAvailableHeight();
-            InitSightLevelFromSession();
+            InitSightLevelFromPreferences();
             _excludeFirstMagnitude = null;
             try
             {
@@ -91,18 +92,34 @@ namespace musicmate.Pages
                 shell.EnsureFlyoutItemsVisiblePublic();
         }
 
-        private void InitSightLevelFromSession()
+        private void InitSightLevelFromPreferences()
         {
-            int fromSession = _session.ChildLevel > 0 ? _session.ChildLevel : 1;
-            _sightLevel = Math.Clamp(fromSession, 1, 100);
-            LevelSlider.Value = _sightLevel;
-            LevelValueLabel.Text = _sightLevel.ToString();
+            _sightLevel = IntervalSightTrainingLogic.LoadPersistedLevel();
+            _levelSliderSyncSuppress++;
+            try
+            {
+                LevelSlider.Value = _sightLevel;
+                LevelValueLabel.Text = _sightLevel.ToString();
+            }
+            finally
+            {
+                if (_levelSliderSyncSuppress > 0)
+                    _levelSliderSyncSuppress--;
+            }
         }
 
         private void OnLevelSliderValueChanged(object? sender, ValueChangedEventArgs e)
         {
-            _sightLevel = Math.Clamp((int)Math.Round(e.NewValue), 1, 100);
+            if (_levelSliderSyncSuppress > 0)
+                return;
+
+            int next = IntervalSightTrainingLogic.ClampLevel((int)Math.Round(e.NewValue));
+            if (next == _sightLevel)
+                return;
+
+            _sightLevel = next;
             LevelValueLabel.Text = _sightLevel.ToString();
+            IntervalSightTrainingLogic.PersistLevel(_sightLevel);
         }
 
         private async void OnNewTuneClicked(object? sender, EventArgs e)
@@ -182,7 +199,7 @@ namespace musicmate.Pages
         }
 
         /// <summary>
-        /// Staff height leaves the interval buttons and Level row on-screen without scrolling.
+        /// Staff height leaves the Level row and interval buttons on-screen without scrolling.
         /// </summary>
         private float ResolveStaffHeightPx()
         {
@@ -247,13 +264,14 @@ namespace musicmate.Pages
             for (int r = 0; r < rows; r++)
                 IntervalButtonsHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            var style = (Style)Resources["SightTrainButton"];
+            var playStyle = (Style)Resources["SightTrainButton"];
+            var intervalStyle = (Style)Resources["SightTrainIntervalButton"];
 
             // [0,0] = New
             _newTuneButton = new Button
             {
                 Text = "New",
-                Style = style,
+                Style = playStyle,
             };
             SemanticProperties.SetDescription(_newTuneButton, "Generate a new random Sight Training tune");
             _newTuneButton.Clicked += OnNewTuneClicked;
@@ -286,8 +304,9 @@ namespace musicmate.Pages
                 var btn = new Button
                 {
                     Text = label,
-                    Style = style,
+                    Style = intervalStyle,
                 };
+                ApplyFamilyColor(btn, semitones);
                 SemanticProperties.SetDescription(btn, label);
                 int captured = semitones;
                 btn.Clicked += async (_, _) => await OnIntervalClickedAsync(captured);
@@ -296,6 +315,12 @@ namespace musicmate.Pages
                 IntervalButtonsHost.Children.Add(btn);
                 _buttons[semitones] = btn;
             }
+        }
+
+        private static void ApplyFamilyColor(Button button, int semitones)
+        {
+            button.BackgroundColor = IntervalEarTrainingButtonColors.FamilyBackground(semitones);
+            button.TextColor = IntervalEarTrainingButtonColors.LabelText;
         }
 
         private static void SetStatus(string message)

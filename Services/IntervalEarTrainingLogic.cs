@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace musicmate.Services
 {
     /// <summary>
@@ -33,6 +35,8 @@ namespace musicmate.Services
         public const int MaxNoteDurationMs = 1000;
         public const string NoteDurationPreferenceKey = "musicmate.EarTrainingNoteDurationMs";
         public const string DirectionPreferenceKey = "musicmate.EarTrainingDirection";
+        public const string StartNotePreferenceKey = "musicmate.EarTrainingLowerNote";
+        public const string RandomStartNoteToken = "Random";
         public const IntervalDirectionMode DefaultDirectionMode = IntervalDirectionMode.Ascending;
 
         public readonly record struct IntervalPitches(
@@ -266,6 +270,126 @@ namespace musicmate.Services
             out IntervalPitches pitches)
             => TryPickRandomInterval(
                 lowWrittenMidi, highWrittenMidi, IntervalDirectionMode.Ascending, rng, out pitches);
+
+        /// <summary>
+        /// Chromatic written MIDIs in [low, high] that also belong to the instrument set
+        /// (when provided). Highest pitch first (picker top), lowest last.
+        /// </summary>
+        public static IReadOnlyList<int> BuildStartNoteMidis(
+            int lowWrittenMidi,
+            int highWrittenMidi,
+            IReadOnlyList<int>? instrumentMidis)
+        {
+            if (highWrittenMidi < lowWrittenMidi)
+                return Array.Empty<int>();
+
+            HashSet<int>? allowed = instrumentMidis is { Count: > 0 }
+                ? new HashSet<int>(instrumentMidis)
+                : null;
+
+            var list = new List<int>(highWrittenMidi - lowWrittenMidi + 1);
+            for (int midi = highWrittenMidi; midi >= lowWrittenMidi; midi--)
+            {
+                if (allowed == null || allowed.Contains(midi))
+                    list.Add(midi);
+            }
+
+            return list;
+        }
+
+        /// <summary>null = Random; otherwise a written MIDI in 1–127.</summary>
+        public static int? ParsePersistedStartNote(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)
+                || string.Equals(value.Trim(), RandomStartNoteToken, StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            if (int.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int midi)
+                && midi > 0 && midi < 128)
+                return midi;
+
+            int fromName = NoteSessionService.NoteNameToMidi(value.Trim());
+            return fromName > 0 ? fromName : null;
+        }
+
+        public static string PersistStartNote(int? writtenMidi)
+            => writtenMidi is int midi && midi > 0 && midi < 128
+                ? midi.ToString(CultureInfo.InvariantCulture)
+                : RandomStartNoteToken;
+
+        /// <summary>
+        /// Whether <paramref name="semitones"/> can be formed from a fixed start note
+        /// without leaving [low, high]. Random direction is feasible if either way fits.
+        /// </summary>
+        public static bool CanFormIntervalFromStart(
+            int startWrittenMidi,
+            int lowWrittenMidi,
+            int highWrittenMidi,
+            int semitones,
+            IntervalDirectionMode directionMode)
+        {
+            if (directionMode == IntervalDirectionMode.Descending)
+            {
+                return TryBuildIntervalFromReference(
+                    startWrittenMidi, lowWrittenMidi, highWrittenMidi,
+                    semitones, ascending: false, out _);
+            }
+
+            if (directionMode == IntervalDirectionMode.Ascending)
+            {
+                return TryBuildIntervalFromReference(
+                    startWrittenMidi, lowWrittenMidi, highWrittenMidi,
+                    semitones, ascending: true, out _);
+            }
+
+            return TryBuildIntervalFromReference(
+                    startWrittenMidi, lowWrittenMidi, highWrittenMidi,
+                    semitones, ascending: true, out _)
+                || TryBuildIntervalFromReference(
+                    startWrittenMidi, lowWrittenMidi, highWrittenMidi,
+                    semitones, ascending: false, out _);
+        }
+
+        /// <summary>
+        /// Picks a random feasible interval that starts on <paramref name="startWrittenMidi"/>.
+        /// Never retries unboundedly: scans 0–12 once.
+        /// </summary>
+        public static bool TryPickRandomIntervalFromStart(
+            int startWrittenMidi,
+            int lowWrittenMidi,
+            int highWrittenMidi,
+            IntervalDirectionMode directionMode,
+            Random rng,
+            out IntervalPitches pitches)
+        {
+            pitches = default;
+            var candidates = new List<int>(IntervalEarTrainingCatalog.MaxSemitones + 1);
+            for (int s = IntervalEarTrainingCatalog.MinSemitones; s <= IntervalEarTrainingCatalog.MaxSemitones; s++)
+            {
+                if (CanFormIntervalFromStart(
+                        startWrittenMidi, lowWrittenMidi, highWrittenMidi, s, directionMode))
+                    candidates.Add(s);
+            }
+
+            if (candidates.Count == 0)
+                return false;
+
+            for (int i = candidates.Count - 1; i > 0; i--)
+            {
+                int j = rng.Next(i + 1);
+                (candidates[i], candidates[j]) = (candidates[j], candidates[i]);
+            }
+
+            foreach (int chosen in candidates)
+            {
+                if (TryBuildIntervalFromReference(
+                        startWrittenMidi, lowWrittenMidi, highWrittenMidi,
+                        chosen, directionMode, rng, out pitches))
+                    return true;
+            }
+
+            return false;
+        }
 
         public static bool IsAnswerCorrect(int expectedSemitones, int answeredSemitones)
             => expectedSemitones == answeredSemitones;

@@ -70,6 +70,9 @@ public class TunerReferenceNoteCatalogTests
     {
         int cSharp = NoteSessionService.NoteNameToMidi("C#4");
         Assert.Equal("C♯4 / D♭4", TunerReferenceNoteCatalog.FormatPickerLabel(cSharp));
+        Assert.Equal("C♯4", TunerReferenceNoteCatalog.FormatCompactWrittenLabel(cSharp));
+        Assert.Equal("G♯4", TunerReferenceNoteCatalog.FormatCompactWrittenLabel(
+            NoteSessionService.NoteNameToMidi("G#4")));
         Assert.Equal("D4", TunerReferenceNoteCatalog.FormatPickerLabel(NoteSessionService.NoteNameToMidi("D4")));
         Assert.Equal("Written D♭4 / C♯4 + 9¢",
             TunerReferenceNoteCatalog.FormatHeardDisplayLabel(cSharp, 9));

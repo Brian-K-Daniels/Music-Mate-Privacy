@@ -122,6 +122,8 @@ namespace musicmate.Services
             // Level first so factory note-range resolution uses ChildLevel 1.
             Preferences.Default.Set("ChildPractice.Level", 1);
             _session.ChildLevel = 1;
+            SessionPreferences.Set(IntervalSightTrainingLogic.LevelPreferenceKey,
+                IntervalSightTrainingLogic.DefaultLevel);
             _session.ClearChildPracticeSettingsCustomization();
             _session.ClearTemporaryNoteEmphasis("factory-reset");
 

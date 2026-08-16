@@ -13,6 +13,11 @@ namespace musicmate.Services
     {
         public const int MinAbsoluteSemitones = 0;
         public const int MaxAbsoluteSemitones = 12;
+        public const int MinLevel = 1;
+        public const int MaxLevel = 100;
+        public const int DefaultLevel = 1;
+        /// <summary>Independent of Music/Home <c>ChildPractice.Level</c>.</summary>
+        public const string LevelPreferenceKey = "musicmate.SightTrainingLevel";
 
         /// <summary>Legacy aliases kept for melody/pool helpers.</summary>
         public const int MinSignedSemitones = -MaxAbsoluteSemitones;
@@ -159,6 +164,19 @@ namespace musicmate.Services
             midi = NoteSessionService.NoteNameToMidi($"{L}{octave}");
             return midi > 0;
         }
+
+        public static int ClampLevel(int level)
+            => Math.Clamp(level, MinLevel, MaxLevel);
+
+        /// <summary>
+        /// Persisted Sight Training level. Missing key → <see cref="DefaultLevel"/> (1),
+        /// never Music <c>ChildPractice.Level</c>.
+        /// </summary>
+        public static int LoadPersistedLevel()
+            => ClampLevel(SessionPreferences.Get(LevelPreferenceKey, DefaultLevel));
+
+        public static void PersistLevel(int level)
+            => SessionPreferences.Set(LevelPreferenceKey, ClampLevel(level));
 
         public static bool IsTestableAbsoluteInterval(int absoluteSemitones)
             => absoluteSemitones >= MinAbsoluteSemitones

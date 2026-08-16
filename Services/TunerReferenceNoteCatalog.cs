@@ -69,6 +69,10 @@ namespace musicmate.Services
             };
         }
 
+        /// <summary>Compact written name for a closed picker, e.g. C♯4.</summary>
+        public static string FormatCompactWrittenLabel(int writtenMidi)
+            => ToUnicodeAccidentals(NoteSessionService.MidiToNoteName(writtenMidi, flats: false));
+
         /// <summary>Closed-picker display for the selected reference note, e.g. "Written C5".</summary>
         public static string FormatWrittenDisplayLabel(int writtenMidi, bool preferFlats)
         {
@@ -134,6 +138,10 @@ namespace musicmate.Services
         /// </summary>
         public static int ToConcertMidi(int writtenMidi, int transposeOffset)
             => writtenMidi + transposeOffset;
+
+        /// <summary>Written MIDI that produces <paramref name="concertMidi"/> on this instrument.</summary>
+        public static int FromConcertMidi(int concertMidi, int transposeOffset)
+            => concertMidi - transposeOffset;
 
         /// <summary>
         /// Concert frequency for a written MIDI using <see cref="InstrumentProfile.TransposeOffset"/>.

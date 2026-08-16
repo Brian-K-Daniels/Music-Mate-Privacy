@@ -17,6 +17,8 @@ namespace musicmate
         private bool _flyoutPresentedHooked;
         private bool _shellNavInProgress;
         private bool _ensuringFlyoutItems;
+        private int _busyGeneration;
+        private const int BusyWatchdogSeconds = 20;
 
         public AppShell()
         {
@@ -298,6 +300,7 @@ namespace musicmate
         private void OnShellNavigating(object? sender, ShellNavigatingEventArgs e)
         {
             var target = e.Target?.Location?.OriginalString ?? string.Empty;
+            var current = CurrentState?.Location?.OriginalString ?? string.Empty;
 
             if (target.IndexOf("TunerEntry", StringComparison.OrdinalIgnoreCase) >= 0)
             {
@@ -307,15 +310,11 @@ namespace musicmate
                 if (e.CanCancel)
                     e.Cancel();
 
-                if (_isNavigatingToMusic)
+                if (_isNavigatingToMusic || _shellNavInProgress)
                 {
-                    Utils.Log("[AppShell] Tuner flyout ignored — Music navigation already in progress");
+                    Utils.Log("[AppShell] Tuner flyout ignored — navigation already in progress");
                     return;
                 }
-
-                // If a prior busy state got stuck, clear it so Tuner divert can run.
-                if (_shellNavInProgress)
-                    CompleteShellNavigationBusy();
 
                 Utils.Log("[AppShell] Tuner flyout → SelectTunerAndOpenMusicAsync");
 
@@ -324,8 +323,29 @@ namespace musicmate
 
                 MainThread.BeginInvokeOnMainThread(async () =>
                 {
-                    await SelectTunerAndOpenMusicAsync();
+                    try
+                    {
+                        await SelectTunerAndOpenMusicAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        Utils.Log($"[AppShell] Tuner divert ERROR: {ex}");
+                        CompleteShellNavigationBusy();
+                    }
                 });
+                return;
+            }
+
+            // Same flyout destination as the page already showing: close the menu and
+            // do not start a navigation. Shell often skips Navigated for this case, which
+            // used to leave the spinner on forever (Music → hamburger → Music).
+            if (!_isNavigatingToMusic && ShellNavigationTarget.IsSameDestination(current, target))
+            {
+                if (e.CanCancel)
+                    e.Cancel();
+                FlyoutIsPresented = false;
+                if (_shellNavInProgress || NavigationBusyService.Instance.IsBusy)
+                    CompleteShellNavigationBusy();
                 return;
             }
 
@@ -361,15 +381,26 @@ namespace musicmate
                 return;
 
             _shellNavInProgress = true;
+            int gen = ++_busyGeneration;
             NavigationBusyService.Instance.Begin();
+            Dispatcher.DispatchDelayed(TimeSpan.FromSeconds(BusyWatchdogSeconds), () =>
+            {
+                if (gen != _busyGeneration || !_shellNavInProgress)
+                    return;
+                Utils.Log("[AppShell] Navigation busy watchdog — clearing stuck spinner");
+                CompleteShellNavigationBusy(releaseMusicGuard: true);
+            });
         }
 
         /// <summary>
         /// Clears navigation busy UI and re-entry guards. Safe to call more than once.
         /// </summary>
-        private void CompleteShellNavigationBusy()
+        private void CompleteShellNavigationBusy(bool releaseMusicGuard = false)
         {
+            _busyGeneration++;
             _shellNavInProgress = false;
+            if (releaseMusicGuard)
+                _isNavigatingToMusic = false;
             NavigationBusyService.Instance.Reset();
         }
 

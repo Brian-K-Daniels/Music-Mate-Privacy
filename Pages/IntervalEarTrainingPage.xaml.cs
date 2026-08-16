@@ -39,6 +39,14 @@ namespace musicmate.Pages
         private Button PlayAgainButton = null!;
         /// <summary>Semitone of the interval button currently outlined for explore-mode demo, if any.</summary>
         private int? _demoHighlightSemitones;
+        /// <summary>
+        /// Explicit start note for interval playback. null means Random
+        /// (existing Play Random / explore-reference behavior).
+        /// </summary>
+        private int? _selectedStartWrittenMidi;
+        private int _transposeOffsetForStartNote;
+        private int _StartNotePickerSyncSuppress;
+        private readonly List<int> _StartNoteMidis = new();
         private int _instrumentPickerSyncSuppress;
 
         public IntervalEarTrainingPage()
@@ -54,6 +62,8 @@ namespace musicmate.Pages
             BuildIntervalButtons();
             LoadPreferences();
             InitInstrumentPicker();
+            _transposeOffsetForStartNote = _session.InstrumentTransposeOffset;
+            InitStartNotePicker();
             UpdatePlayAgainEnabled();
             HideStaffReveal();
             ApplySafeAreaPadding();
@@ -82,6 +92,7 @@ namespace musicmate.Pages
             _session.PropertyChanged -= OnSessionPropertyChanged;
             _session.PropertyChanged += OnSessionPropertyChanged;
             SyncInstrumentPickerFromSession();
+            RefreshStartNotePicker(preserveConcertPitch: false);
             ClearDemoIntervalHighlight();
             ApplyLandscapeLayout();
             EnsureEmptyStaffPanel();
@@ -170,7 +181,7 @@ namespace musicmate.Pages
             var gridStyle = (Style)Resources["EarTrainIntervalButton"];
 
             PlayRandomButton = CreateGridButton("Play Random", playStyle, "Play a random interval for quiz");
-            ApplyPlayButtonChrome(PlayRandomButton);
+            ApplyPlayRandomChrome(PlayRandomButton);
             PlayRandomButton.Clicked += OnPlayRandomClicked;
             Grid.SetColumn(PlayRandomButton, 0);
             Grid.SetRow(PlayRandomButton, 0);
@@ -208,8 +219,14 @@ namespace musicmate.Pages
 
         private static void ApplyPlayButtonChrome(Button button)
         {
-            button.BorderWidth = 2;
+            button.BorderWidth = IntervalEarTrainingButtonColors.PlayButtonBorderWidth;
             button.BorderColor = IntervalEarTrainingButtonColors.PlayButtonBorder;
+        }
+
+        private static void ApplyPlayRandomChrome(Button button)
+        {
+            button.BorderWidth = IntervalEarTrainingButtonColors.PlayButtonBorderWidth;
+            button.BorderColor = IntervalEarTrainingButtonColors.PlayRandomBorder;
         }
 
         private static void ApplyFamilyColor(Button button, int semitones)
@@ -370,10 +387,139 @@ namespace musicmate.Pages
         {
             if (e.PropertyName == nameof(NoteSessionService.Instrument)
                 || e.PropertyName == nameof(NoteSessionService.InstrumentDisplayName)
-                || e.PropertyName == nameof(NoteSessionService.InstrumentKey))
+                || e.PropertyName == nameof(NoteSessionService.InstrumentKey)
+                || e.PropertyName == nameof(NoteSessionService.InstrumentTransposeOffset))
             {
                 SyncInstrumentPickerFromSession();
+                RefreshStartNotePicker(preserveConcertPitch: true);
             }
+            else if (e.PropertyName == nameof(NoteSessionService.LowestNote)
+                || e.PropertyName == nameof(NoteSessionService.HighestNote)
+                || e.PropertyName == nameof(NoteSessionService.ChildLevel))
+            {
+                RefreshStartNotePicker(preserveConcertPitch: false);
+            }
+        }
+
+        private void InitStartNotePicker()
+        {
+            _selectedStartWrittenMidi = IntervalEarTrainingLogic.ParsePersistedStartNote(
+                SessionPreferences.Get(
+                    IntervalEarTrainingLogic.StartNotePreferenceKey,
+                    IntervalEarTrainingLogic.RandomStartNoteToken));
+            RefreshStartNotePicker(preserveConcertPitch: false);
+        }
+
+        /// <summary>
+        /// Rebuilds picker items from the current written range and instrument.
+        /// When <paramref name="preserveConcertPitch"/> is true, remaps the selected
+        /// written MIDI through concert pitch for the new transposition.
+        /// </summary>
+        private void RefreshStartNotePicker(bool preserveConcertPitch)
+        {
+            int newOffset = _session.InstrumentTransposeOffset;
+            if (preserveConcertPitch && _selectedStartWrittenMidi is int written)
+            {
+                int concert = TunerReferenceNoteCatalog.ToConcertMidi(
+                    written, _transposeOffsetForStartNote);
+                _selectedStartWrittenMidi = TunerReferenceNoteCatalog.FromConcertMidi(
+                    concert, newOffset);
+            }
+
+            _transposeOffsetForStartNote = newOffset;
+
+            var range = TryResolveWrittenRange();
+            _StartNoteMidis.Clear();
+            if (range is { } bounds)
+            {
+                _StartNoteMidis.AddRange(IntervalEarTrainingLogic.BuildStartNoteMidis(
+                    bounds.Low, bounds.High, _session.AvailableInstrumentMidis));
+            }
+
+            if (_selectedStartWrittenMidi is int midi && !_StartNoteMidis.Contains(midi))
+                _selectedStartWrittenMidi = null;
+
+            PersistStartNoteSelection();
+            ApplyStartNotePickerItems();
+            SyncExploreReferenceFromStartNotePicker();
+        }
+
+        private void PersistStartNoteSelection()
+        {
+            SessionPreferences.Set(
+                IntervalEarTrainingLogic.StartNotePreferenceKey,
+                IntervalEarTrainingLogic.PersistStartNote(_selectedStartWrittenMidi));
+        }
+
+        private void ApplyStartNotePickerItems()
+        {
+            if (StartNotePicker == null)
+                return;
+
+            var items = new List<string>(_StartNoteMidis.Count + 1)
+            {
+                IntervalEarTrainingLogic.RandomStartNoteToken,
+            };
+            foreach (int midi in _StartNoteMidis)
+                items.Add(TunerReferenceNoteCatalog.FormatCompactWrittenLabel(midi));
+
+            int targetIndex = 0;
+            if (_selectedStartWrittenMidi is int selected)
+            {
+                int midiIdx = _StartNoteMidis.IndexOf(selected);
+                if (midiIdx >= 0)
+                    targetIndex = midiIdx + 1;
+            }
+
+            _StartNotePickerSyncSuppress++;
+            try
+            {
+                StartNotePicker.ItemsSource = items;
+                StartNotePicker.SelectedIndex = targetIndex;
+            }
+            finally
+            {
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    if (_StartNotePickerSyncSuppress > 0)
+                        _StartNotePickerSyncSuppress--;
+                });
+            }
+        }
+
+        private void SyncExploreReferenceFromStartNotePicker()
+        {
+            if (_selectedStartWrittenMidi is int midi)
+                _referenceStartWrittenMidi = midi;
+        }
+
+        private void OnStartNotePickerChanged(object? sender, EventArgs e)
+        {
+            if (_StartNotePickerSyncSuppress > 0)
+                return;
+
+            int idx = StartNotePicker.SelectedIndex;
+            if (idx <= 0)
+                _selectedStartWrittenMidi = null;
+            else if (idx - 1 < _StartNoteMidis.Count)
+                _selectedStartWrittenMidi = _StartNoteMidis[idx - 1];
+            else
+                _selectedStartWrittenMidi = null;
+
+            PersistStartNoteSelection();
+            SyncExploreReferenceFromStartNotePicker();
+            // Do not touch the staff — a hidden quiz answer must stay hidden.
+        }
+
+        private (int Low, int High)? TryResolveWrittenRange()
+        {
+            int lowMidi = NoteSessionService.NoteNameToMidi(_session.LowestNote);
+            int highMidi = NoteSessionService.NoteNameToMidi(_session.HighestNote);
+            if (lowMidi <= 0 || highMidi <= 0)
+                return null;
+            if (highMidi < lowMidi)
+                (lowMidi, highMidi) = (highMidi, lowMidi);
+            return (lowMidi, highMidi);
         }
 
         private void OnDurationChanged(object? sender, ValueChangedEventArgs e)
@@ -483,11 +629,12 @@ namespace musicmate.Pages
             var (low, high) = range.Value;
 
             IntervalEarTrainingLogic.IntervalPitches pitches;
-            if (_referenceStartWrittenMidi is not int reference)
+            int? start = _selectedStartWrittenMidi ?? _referenceStartWrittenMidi;
+            if (start is not int reference)
             {
                 await DisplayAlertAsync(
                     "Choose a starting note",
-                    "Tap Play Random Interval first. That picks a starting note; then each interval button uses the same starting note until you tap Play Random Interval again.",
+                    "Pick a Start note in the header, or tap Play Random first. That picks a starting note; then each interval button uses the same starting note until you tap Play Random again.",
                     "OK");
                 return;
             }
@@ -495,9 +642,15 @@ namespace musicmate.Pages
             if (!IntervalEarTrainingLogic.TryBuildIntervalFromReference(
                     reference, low, high, semitones, _directionMode, Random.Shared, out pitches))
             {
+                string startLabel = TunerReferenceNoteCatalog.FormatCompactWrittenLabel(reference);
+                string direction = _directionMode == IntervalDirectionMode.Descending
+                    ? "descending"
+                    : _directionMode == IntervalDirectionMode.Random
+                        ? "in this direction"
+                        : "ascending";
                 await DisplayAlertAsync(
-                    "Range too narrow",
-                    $"The current starting note cannot form a {IntervalEarTrainingCatalog.GetName(semitones)} ({semitones} semitones) within your Settings note range. Tap Play Random Interval for a new starting note, or widen Lowest note / Highest note in Settings.",
+                    "Interval unavailable",
+                    $"{startLabel} cannot form a {IntervalEarTrainingCatalog.GetName(semitones)} ({semitones} semitones) {direction} within your Settings note range.",
                     "OK");
                 return;
             }
@@ -530,8 +683,23 @@ namespace musicmate.Pages
             }
             var (low, high) = range.Value;
 
-            if (!IntervalEarTrainingLogic.TryPickRandomInterval(
-                    low, high, _directionMode, Random.Shared, out var pitches))
+            IntervalEarTrainingLogic.IntervalPitches pitches;
+            if (_selectedStartWrittenMidi is int startMidi)
+            {
+                if (!IntervalEarTrainingLogic.TryPickRandomIntervalFromStart(
+                        startMidi, low, high, _directionMode, Random.Shared, out pitches))
+                {
+                    _interaction = IntervalEarTrainingInteraction.ManualPlayback;
+                    string startLabel = TunerReferenceNoteCatalog.FormatCompactWrittenLabel(startMidi);
+                    await DisplayAlertAsync(
+                        "Interval unavailable",
+                        $"No interval from {startLabel} fits within your Settings note range in this direction.",
+                        "OK");
+                    return;
+                }
+            }
+            else if (!IntervalEarTrainingLogic.TryPickRandomInterval(
+                    low, high, _directionMode, Random.Shared, out pitches))
             {
                 _interaction = IntervalEarTrainingInteraction.ManualPlayback;
                 await DisplayAlertAsync(
@@ -541,7 +709,8 @@ namespace musicmate.Pages
                 return;
             }
 
-            // New random starting note becomes the fixed reference for interval-button explores.
+            // Explore-mode interval buttons keep this start until Play Random (Random Start note)
+            // or until the header Start-note picker changes.
             _referenceStartWrittenMidi = pitches.StartWrittenMidi;
             _lastPitches = pitches;
             _expectedSemitones = pitches.Semitones;
@@ -688,6 +857,8 @@ namespace musicmate.Pages
         {
             PlayRandomButton.IsEnabled = enabled;
             InstrumentPicker.IsEnabled = enabled;
+            if (StartNotePicker != null)
+                StartNotePicker.IsEnabled = enabled;
             DurationSlider.IsEnabled = enabled;
             DirectionAscendingButton.IsEnabled = enabled;
             DirectionDescendingButton.IsEnabled = enabled;
@@ -698,17 +869,14 @@ namespace musicmate.Pages
 
         private async Task<(int Low, int High)?> TryResolveWrittenRangeAsync()
         {
-            int lowMidi = NoteSessionService.NoteNameToMidi(_session.LowestNote);
-            int highMidi = NoteSessionService.NoteNameToMidi(_session.HighestNote);
-            if (lowMidi <= 0 || highMidi <= 0)
+            var range = TryResolveWrittenRange();
+            if (range is null)
             {
                 await DisplayAlertAsync("Note range", "Could not read Lowest/Highest notes from Settings.", "OK");
                 return null;
             }
 
-            if (highMidi < lowMidi)
-                (lowMidi, highMidi) = (highMidi, lowMidi);
-            return (lowMidi, highMidi);
+            return range;
         }
 
         private async Task PlayPitchesAsync(IntervalEarTrainingLogic.IntervalPitches pitches)

@@ -226,6 +226,11 @@ public class VoiceInstrumentTests : IDisposable
             boundHigh);
         Assert.Contains(boundHigh, pickerMidis);
         Assert.Contains(boundLow, pickerMidis);
+        Assert.True(
+            picker.Length >= 2
+            && NoteSessionService.NoteNameToMidi(picker[0])
+                > NoteSessionService.NoteNameToMidi(picker[^1]),
+            "Note pickers must list higher pitches first.");
     }
 
     [Fact]

@@ -145,6 +145,36 @@ public class IntervalEarTrainingStaffLayoutTests
         Assert.InRange(drawnHeight / sls, 0.85f, 0.95f);
     }
 
+    [Fact]
+    public void StaffLines_StayAtTheSameHeight_ForDifferentIntervals()
+    {
+        var mid = ReadStaffYs(BuildNotes(60, 67));   // C4–G4
+        var low = ReadStaffYs(BuildNotes(48, 48));   // C3 unison (ledgers below)
+        var high = ReadStaffYs(BuildNotes(84, 72));  // C6–C5 descending (ledgers above)
+        var empty = ReadStaffYs(new List<GeneratedNote>());
+
+        AssertEqualY(mid.Top, low.Top, "C4 vs C3 top");
+        AssertEqualY(mid.Bot, low.Bot, "C4 vs C3 bottom");
+        AssertEqualY(mid.Top, high.Top, "C4 vs C6 top");
+        AssertEqualY(mid.Bot, high.Bot, "C4 vs C6 bottom");
+        AssertEqualY(mid.Top, empty.Top, "C4 vs empty top");
+        AssertEqualY(mid.Sls, low.Sls, "C4 vs C3 spacing");
+        AssertEqualY(mid.Sls, high.Sls, "C4 vs C6 spacing");
+    }
+
+    private static (float Top, float Bot, float Sls) ReadStaffYs(List<GeneratedNote> notes)
+    {
+        var (drawable, _) = Prepare(notes, childLevel: 20);
+        var vert = typeof(StaffDrawable)
+            .GetField("_layout", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(drawable)!;
+        var t = vert.GetType();
+        return (
+            (float)t.GetField("UpperTop")!.GetValue(vert)!,
+            (float)t.GetField("UpperBot")!.GetValue(vert)!,
+            (float)t.GetField("Sls")!.GetValue(vert)!);
+    }
+
     private static void AssertReadableAccidentalSlots(LayoutSnap snap)
     {
         Assert.Equal(2, snap.Xs.Length);
@@ -155,6 +185,9 @@ public class IntervalEarTrainingStaffLayoutTests
             Assert.True(slot >= 12f, $"accidental slot {i} is {slot:F1}px");
         }
     }
+
+    private static void AssertEqualY(float a, float b, string label)
+        => Assert.True(Math.Abs(a - b) < 0.05f, $"{label}: {a:F2} vs {b:F2}");
 
     private static void AssertEqualX(float a, float b, string label)
         => Assert.True(Math.Abs(a - b) < 0.05f, $"{label}: {a:F2} vs {b:F2}");

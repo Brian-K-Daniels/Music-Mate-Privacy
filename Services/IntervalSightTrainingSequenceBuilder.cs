@@ -43,7 +43,7 @@ namespace musicmate.Services
                 maxMelodicIntervalSemitones);
             int childLevel = childLevelOverride is int ov && ov > 0
                 ? Math.Clamp(ov, 1, 100)
-                : Math.Max(1, session.ChildLevel);
+                : IntervalSightTrainingLogic.LoadPersistedLevel();
 
             return new MusicSequenceGenerator
             {
@@ -103,15 +103,17 @@ namespace musicmate.Services
 
             int level = childLevelOverride is int ov && ov > 0
                 ? Math.Clamp(ov, 1, 100)
-                : (session.ChildLevel > 0 ? session.ChildLevel : 1);
+                : IntervalSightTrainingLogic.LoadPersistedLevel();
             var levelSettings = DifficultyLevelMapper.ResolveSessionSettings(level, rng);
 
             string key = levelSettings.ForceKey;
             string scale = levelSettings.SuggestedScale;
 
-            // Always use Child Level note range (ignore Music-page Lowest/Highest prefs).
-            string low = levelSettings.LowestNote;
-            string high = levelSettings.HighestNote;
+            // Written range from Settings (session Lowest/Highest). Sight Level
+            // still controls interval sizes and key; it must not pick pitches
+            // outside the user's configured range.
+            var (low, high) = ResolveSettingsNoteRange(
+                session, levelSettings.LowestNote, levelSettings.HighestNote);
 
             // Preserve the user's current Accidental % setting.
             int accidentalPercent = session.AccidentalPercent;
@@ -149,6 +151,8 @@ namespace musicmate.Services
                     continue;
                 }
 
+                ClampNotesToSettingsRange(flat, low, high, key, scale);
+
                 return new SightExercise
                 {
                     Notes = flat,
@@ -174,6 +178,7 @@ namespace musicmate.Services
                 seed ^ 0xBEEF, excludeFirstMagnitude);
 
             var fallbackMags = IntervalSightTrainingMelody.CollectMagnitudes(fallbackFlat);
+            ClampNotesToSettingsRange(fallbackFlat, low, high, key, scale);
             return new SightExercise
             {
                 Notes = fallbackFlat,
@@ -187,7 +192,7 @@ namespace musicmate.Services
 
         /// <summary>
         /// Replaces pitched MIDI with a Sight training chain: unique magnitudes, random
-        /// direction, Child Level range, key spelling, and %-accidental eligibility.
+        /// direction, Settings note range, key spelling, and %-accidental eligibility.
         /// </summary>
         public static void ApplyTrainingIntervals(
             List<GeneratedNote> notes,
@@ -240,12 +245,16 @@ namespace musicmate.Services
             }
 
             int prevMidi = -1;
-            for (int p = 0; p < pitchedIdx.Count && p < midis.Count; p++)
+            for (int p = 0; p < pitchedIdx.Count; p++)
             {
                 int noteIndex = pitchedIdx[p];
+                int midi = p < midis.Count
+                    ? midis[p]
+                    : Math.Clamp(notes[noteIndex].MidiNumber, lowMidi, highMidi);
+                midi = Math.Clamp(midi, lowMidi, highMidi);
                 var old = notes[noteIndex];
-                notes[noteIndex] = RespellPitchedNote(old, midis[p], key, scale, prevMidi);
-                prevMidi = midis[p];
+                notes[noteIndex] = RespellPitchedNote(old, midi, key, scale, prevMidi);
+                prevMidi = midi;
             }
         }
 
@@ -434,6 +443,55 @@ namespace musicmate.Services
             catch (ArgumentOutOfRangeException)
             {
                 return false;
+            }
+        }
+
+        private static (string Low, string High) ResolveSettingsNoteRange(
+            NoteSessionService session,
+            string fallbackLow,
+            string fallbackHigh)
+        {
+            string low = session.LowestNote;
+            string high = session.HighestNote;
+            int lo = NoteSessionService.NoteNameToMidi(low);
+            int hi = NoteSessionService.NoteNameToMidi(high);
+            if (lo <= 0 || hi <= 0)
+                return (fallbackLow, fallbackHigh);
+            if (hi < lo)
+                return (high, low);
+            return (low, high);
+        }
+
+        /// <summary>
+        /// Final guard: every pitched MIDI must sit in the Settings written range.
+        /// </summary>
+        private static void ClampNotesToSettingsRange(
+            List<GeneratedNote> notes,
+            string lowestNote,
+            string highestNote,
+            string key,
+            string scale)
+        {
+            int lo = NoteSessionService.NoteNameToMidi(lowestNote);
+            int hi = NoteSessionService.NoteNameToMidi(highestNote);
+            if (lo <= 0 || hi <= 0 || hi < lo)
+                return;
+
+            int prevMidi = -1;
+            for (int i = 0; i < notes.Count; i++)
+            {
+                var n = notes[i];
+                if (n.IsRest)
+                    continue;
+                int midi = Math.Clamp(n.MidiNumber, lo, hi);
+                if (midi == n.MidiNumber)
+                {
+                    prevMidi = midi;
+                    continue;
+                }
+
+                notes[i] = RespellPitchedNote(n, midi, key, scale, prevMidi);
+                prevMidi = midi;
             }
         }
 

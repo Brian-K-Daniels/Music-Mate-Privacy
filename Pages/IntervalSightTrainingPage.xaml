@@ -23,6 +23,53 @@
       <Setter Property="VerticalTextAlignment" Value="Center" />
       <Setter Property="LineBreakMode" Value="TailTruncation" />
     </Style>
+
+    <!-- Interval answers: family BackgroundColor is set in code; VisualStates must not replace it. -->
+    <Style x:Key="SightTrainIntervalButton" TargetType="Button">
+      <Setter Property="TextColor" Value="#1F2937" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="BorderWidth" Value="0" />
+      <Setter Property="FontAttributes" Value="Bold" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="MinimumHeightRequest" Value="36" />
+      <Setter Property="HeightRequest" Value="36" />
+      <Setter Property="Padding" Value="2,1" />
+      <Setter Property="HorizontalOptions" Value="Fill" />
+      <Setter Property="VerticalOptions" Value="Fill" />
+      <Setter Property="HorizontalTextAlignment" Value="Center" />
+      <Setter Property="VerticalTextAlignment" Value="Center" />
+      <Setter Property="LineBreakMode" Value="TailTruncation" />
+      <Setter Property="VisualStateManager.VisualStateGroups">
+        <VisualStateGroupList>
+          <VisualStateGroup x:Name="CommonStates">
+            <VisualState x:Name="Normal">
+              <VisualState.Setters>
+                <Setter Property="Opacity" Value="1" />
+                <Setter Property="Scale" Value="1" />
+              </VisualState.Setters>
+            </VisualState>
+            <VisualState x:Name="Disabled">
+              <VisualState.Setters>
+                <Setter Property="Opacity" Value="0.55" />
+                <Setter Property="Scale" Value="1" />
+              </VisualState.Setters>
+            </VisualState>
+            <VisualState x:Name="Pressed">
+              <VisualState.Setters>
+                <Setter Property="Opacity" Value="0.88" />
+                <Setter Property="Scale" Value="0.98" />
+              </VisualState.Setters>
+            </VisualState>
+            <VisualState x:Name="PointerOver">
+              <VisualState.Setters>
+                <Setter Property="Opacity" Value="0.95" />
+                <Setter Property="Scale" Value="1" />
+              </VisualState.Setters>
+            </VisualState>
+          </VisualStateGroup>
+        </VisualStateGroupList>
+      </Setter>
+    </Style>
   </ContentPage.Resources>
 
   <Shell.TitleView>
@@ -62,20 +109,6 @@
                            HorizontalOptions="Fill"
                            Padding="4,8,4,12">
 
-        <!-- Explicit height set in code; kept short enough that buttons stay on-screen. -->
-        <GraphicsView x:Name="StaffGraphicsView"
-                      Margin="0,2,0,0"
-                      VerticalOptions="Start"
-                      HorizontalOptions="Fill"
-                      MinimumHeightRequest="96" />
-
-        <Grid x:Name="IntervalButtonsHost"
-              ColumnDefinitions="*,*,*,*,*"
-              ColumnSpacing="2"
-              RowSpacing="2"
-              HorizontalOptions="Fill" />
-
-        <!-- Level below the answer buttons -->
         <Grid x:Name="ToolbarRow"
               ColumnDefinitions="Auto,*,Auto"
               ColumnSpacing="6"
@@ -109,6 +142,19 @@
                  TextColor="{DynamicResource ThemeContrastingText}"
                  VerticalOptions="Center" />
         </Grid>
+
+        <!-- Explicit height set in code; kept short enough that buttons stay on-screen. -->
+        <GraphicsView x:Name="StaffGraphicsView"
+                      Margin="0,2,0,0"
+                      VerticalOptions="Start"
+                      HorizontalOptions="Fill"
+                      MinimumHeightRequest="96" />
+
+        <Grid x:Name="IntervalButtonsHost"
+              ColumnDefinitions="*,*,*,*,*"
+              ColumnSpacing="2"
+              RowSpacing="2"
+              HorizontalOptions="Fill" />
       </VerticalStackLayout>
     </ScrollView>
 

@@ -300,4 +300,96 @@ public class IntervalEarTrainingLogicTests : IDisposable
         Assert.True(IntervalEarTrainingLogic.ShouldShowIntervalNotes(
             IntervalEarTrainingInteraction.ManualPlayback));
     }
+
+    [Fact]
+    public void BuildStartNoteMidis_IntersectsRangeWithInstrument()
+    {
+        var midis = IntervalEarTrainingLogic.BuildStartNoteMidis(
+            60, 64, instrumentMidis: new[] { 58, 60, 62, 70 });
+        Assert.Equal(new[] { 62, 60 }, midis);
+    }
+
+    [Fact]
+    public void ParseAndPersistStartNote_RoundTripsRandomAndMidi()
+    {
+        Assert.Null(IntervalEarTrainingLogic.ParsePersistedStartNote(null));
+        Assert.Null(IntervalEarTrainingLogic.ParsePersistedStartNote("Random"));
+        Assert.Equal(
+            IntervalEarTrainingLogic.RandomStartNoteToken,
+            IntervalEarTrainingLogic.PersistStartNote(null));
+
+        Assert.Equal(68, IntervalEarTrainingLogic.ParsePersistedStartNote("68"));
+        Assert.Equal("68", IntervalEarTrainingLogic.PersistStartNote(68));
+        Assert.Equal(68, IntervalEarTrainingLogic.ParsePersistedStartNote("G#4"));
+    }
+
+    [Fact]
+    public void TryPickRandomIntervalFromStart_AlwaysUsesSelectedStart_Ascending()
+    {
+        const int start = 68; // G#4
+        for (int i = 0; i < 40; i++)
+        {
+            Assert.True(IntervalEarTrainingLogic.TryPickRandomIntervalFromStart(
+                start, 48, 84, IntervalDirectionMode.Ascending, _rng, out var pitches));
+            Assert.Equal(start, pitches.StartWrittenMidi);
+            Assert.Equal(start + pitches.Semitones, pitches.EndWrittenMidi);
+            Assert.True(pitches.IsAscending);
+            Assert.InRange(pitches.EndWrittenMidi, 48, 84);
+        }
+    }
+
+    [Fact]
+    public void TryPickRandomIntervalFromStart_AlwaysUsesSelectedStart_Descending()
+    {
+        const int start = 68;
+        for (int i = 0; i < 40; i++)
+        {
+            Assert.True(IntervalEarTrainingLogic.TryPickRandomIntervalFromStart(
+                start, 48, 84, IntervalDirectionMode.Descending, _rng, out var pitches));
+            Assert.Equal(start, pitches.StartWrittenMidi);
+            Assert.Equal(start - pitches.Semitones, pitches.EndWrittenMidi);
+            if (pitches.Semitones > 0)
+                Assert.False(pitches.IsAscending);
+            Assert.InRange(pitches.EndWrittenMidi, 48, 84);
+        }
+    }
+
+    [Fact]
+    public void TryPickRandomIntervalFromStart_NearTopOfRange_NeverExceedsHigh()
+    {
+        const int start = 71; // B4, range C4–C5
+        for (int i = 0; i < 30; i++)
+        {
+            Assert.True(IntervalEarTrainingLogic.TryPickRandomIntervalFromStart(
+                start, 60, 72, IntervalDirectionMode.Ascending, _rng, out var pitches));
+            Assert.Equal(start, pitches.StartWrittenMidi);
+            Assert.True(pitches.EndWrittenMidi <= 72);
+            Assert.True(pitches.Semitones <= 1);
+        }
+
+        Assert.False(IntervalEarTrainingLogic.CanFormIntervalFromStart(
+            start, 60, 72, 12, IntervalDirectionMode.Ascending));
+        Assert.False(IntervalEarTrainingLogic.TryBuildIntervalFromReference(
+            start, 60, 72, 7, ascending: true, out _));
+    }
+
+    [Fact]
+    public void TryPickRandomIntervalFromStart_ImpossibleStart_ReturnsFalse()
+    {
+        Assert.False(IntervalEarTrainingLogic.TryPickRandomIntervalFromStart(
+            40, 60, 72, IntervalDirectionMode.Ascending, _rng, out _));
+    }
+
+    [Fact]
+    public void ConcertWrittenRoundTrip_PreservesPitchAcrossTranspose()
+    {
+        int written = 68;
+        int bbOffset = -2;
+        int concert = TunerReferenceNoteCatalog.ToConcertMidi(written, bbOffset);
+        int fluteWritten = TunerReferenceNoteCatalog.FromConcertMidi(concert, transposeOffset: 0);
+        Assert.Equal(66, fluteWritten);
+        Assert.Equal(
+            concert,
+            TunerReferenceNoteCatalog.ToConcertMidi(fluteWritten, 0));
+    }
 }

@@ -1320,6 +1320,17 @@ namespace musicmate.Drawables
             int eA2 = Math.Max(0, -4 - minS2) + breathing;
             int eB2 = Math.Max(0, maxS2 - 4) + breathing;
 
+            // Ear Training side staff: keep the five lines at a fixed Y. Ledger
+            // room still exists in the centered slack; it must not resize/shift
+            // the staff when the interval range changes.
+            if (OmitStaffHeader)
+            {
+                eA1 = breathing;
+                eB1 = breathing;
+                eA2 = 0;
+                eB2 = 0;
+            }
+
             // Reserve room for the BPM marking above the upper staff (Music only).
             if (_session.Tune != "Tuner" && !SingleStaffLayout)
                 eA1 = Math.Max(eA1, 9);
