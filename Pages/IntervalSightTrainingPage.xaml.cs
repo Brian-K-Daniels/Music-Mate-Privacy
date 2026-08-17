@@ -43,7 +43,7 @@ namespace musicmate.Pages
         {
             try
             {
-                await Shell.Current.GoToAsync("//MusicPage");
+                await NavigationBusyService.GoToAsync("//MusicPage");
             }
             catch (Exception ex)
             {
@@ -63,7 +63,10 @@ namespace musicmate.Pages
             _excludeFirstMagnitude = null;
             try
             {
-                await StartNewSessionAsync();
+                // StaffDrawable / sequence builder read session.Tune. Tuner mode must
+                // not leak in from What to Play Other. Do this before generating notes.
+                PlayModePickerOptions.EnsureAssortmentByLevelForSightTraining(_session);
+                await NavigationBusyService.Instance.RunAsync(StartNewSessionAsync);
             }
             catch (Exception ex)
             {
@@ -133,7 +136,7 @@ namespace musicmate.Pages
                 _feedbackCts?.Cancel();
                 FeedbackOverlay.IsVisible = false;
                 _excludeFirstMagnitude = null;
-                await StartNewSessionAsync();
+                await NavigationBusyService.Instance.RunAsync(StartNewSessionAsync);
             }
             catch (Exception ex)
             {

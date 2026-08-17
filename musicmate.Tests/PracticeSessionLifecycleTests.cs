@@ -88,6 +88,46 @@ public class PracticeSessionLifecycleTests
     }
 
     [Theory]
+    [InlineData(true, false, 4, true)]
+    [InlineData(true, false, 0, false)]
+    [InlineData(true, true, 4, false)]
+    [InlineData(false, false, 4, false)]
+    public void ShouldReuseDisplayedExercise_OnlyForPlayOfExistingNotes(
+        bool playBack,
+        bool forceNewNotes,
+        int noteCount,
+        bool expected)
+        => Assert.Equal(
+            expected,
+            PracticeSessionLifecycle.ShouldReuseDisplayedExercise(playBack, forceNewNotes, noteCount));
+
+    [Fact]
+    public void ShouldAbortPlaybackBecauseEmpty_WhenPlayAndNoNotes()
+    {
+        Assert.True(PracticeSessionLifecycle.ShouldAbortPlaybackBecauseEmpty(true, 0));
+        Assert.False(PracticeSessionLifecycle.ShouldAbortPlaybackBecauseEmpty(true, 3));
+        Assert.False(PracticeSessionLifecycle.ShouldAbortPlaybackBecauseEmpty(false, 0));
+    }
+
+    [Fact]
+    public void DisplayedExerciseFingerprint_UnchangedWhenNoteListUnchanged()
+    {
+        var notes = new List<NoteInfo>
+        {
+            new() { Name = "C4", Midi = 60, TargetFreq = 261.63, DurationBeats = 1 },
+            new() { Name = "E4", Midi = 64, TargetFreq = 329.63, DurationBeats = 1 },
+        };
+        string before = PracticeSessionLifecycle.DisplayedExerciseFingerprint(notes);
+
+        // Simulate Play: same instances, no regenerate.
+        string after = PracticeSessionLifecycle.DisplayedExerciseFingerprint(notes);
+        Assert.Equal(before, after);
+
+        notes[0].Midi = 62;
+        Assert.NotEqual(before, PracticeSessionLifecycle.DisplayedExerciseFingerprint(notes));
+    }
+
+    [Theory]
     [InlineData(true, "Major", true)]
     [InlineData(true, "Tuner", false)]
     [InlineData(false, "Major", false)]

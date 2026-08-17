@@ -455,6 +455,42 @@ namespace musicmate.Services
         }
 
         /// <summary>
+        /// Sight Training shares <see cref="NoteSessionService.Tune"/> with Music / StaffDrawable.
+        /// Tuner (and Other Random) skip or distort staff generation. Switch Other to
+        /// Assortment by Level before Sight initializes material.
+        /// Does not change Music or Sight Training levels, Repeat Same, or note emphasis.
+        /// </summary>
+        /// <returns>True when session/persisted Other mode was changed.</returns>
+        public static bool EnsureAssortmentByLevelForSightTraining(
+            NoteSessionService session,
+            Action<string>? persistSelectedTune = null,
+            Func<string?>? getSelectedTune = null)
+        {
+            ArgumentNullException.ThrowIfNull(session);
+            persistSelectedTune ??= value => Preferences.Default.Set("SelectedTune", value);
+            getSelectedTune ??= () => Preferences.Default.Get<string?>("SelectedTune", null);
+
+            var (category, selection) = ResolveDisplayedPicker(
+                session, layoutTestTuneEnabled: false, selectedTunePreference: getSelectedTune());
+            bool alreadyAssortment =
+                category == PlayModePickerCategory.Other
+                && selection == NoteSessionService.ScaleSelectionByLevel
+                && session.Tune != Tuner
+                && !session.IsRandomMode;
+
+            if (alreadyAssortment)
+                return false;
+
+            session.IsRandomMode = false;
+            if (session.Tune == Tuner)
+                session.Tune = "Selected Scale";
+
+            session.TryApplyScalePickerSelection(NoteSessionService.ScaleSelectionByLevel, out _);
+            persistSelectedTune(NoteSessionService.ScaleSelectionByLevel);
+            return true;
+        }
+
+        /// <summary>
         /// Applies an Other-picker choice to session state (same behavior as legacy Random/Tuner + Assortment by Level).
         /// </summary>
         public static void ApplyOtherSelection(

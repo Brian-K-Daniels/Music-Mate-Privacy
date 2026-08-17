@@ -39,6 +39,29 @@ namespace musicmate.Services
             return new ExerciseStartPlan(PracticeExerciseStartAction.RestoreRepeatSame, logOnly);
         }
 
+        /// <summary>
+        /// Play must use the notes already on the staff. Do not generate or select a new tune.
+        /// </summary>
+        public static bool ShouldReuseDisplayedExercise(
+            bool playBack,
+            bool forceNewNotes,
+            int displayedNoteCount)
+            => playBack && !forceNewNotes && displayedNoteCount > 0;
+
+        /// <summary>Play with an empty staff must abort rather than generate music.</summary>
+        public static bool ShouldAbortPlaybackBecauseEmpty(bool playBack, int displayedNoteCount)
+            => playBack && displayedNoteCount <= 0;
+
+        /// <summary>Stable identity of displayed pitched content for Play-must-not-change tests.</summary>
+        public static string DisplayedExerciseFingerprint(IEnumerable<NoteInfo> notes)
+        {
+            if (notes == null)
+                return string.Empty;
+
+            return string.Join(";", notes.Select(n =>
+                $"{n.Name}|{n.Midi}|{n.IsRest}|{n.Duration}|{n.DurationBeats:0.###}|{n.TargetFreq:0.##}"));
+        }
+
         public static PracticeSessionSnapshot? CaptureSnapshot(
             NoteSessionService session,
             IReadOnlyList<NoteInfo> notes,

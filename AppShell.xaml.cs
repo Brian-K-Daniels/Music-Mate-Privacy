@@ -85,7 +85,8 @@ namespace musicmate
         {
             try
             {
-                CompleteShellNavigationBusy();
+                // End (not Reset) so nested page OnAppearing busy scopes can keep the overlay.
+                FinishShellNavigationBusy();
             }
             finally
             {
@@ -247,11 +248,14 @@ namespace musicmate
             catch (Exception ex)
             {
                 Utils.Log($"[AppShell] OpenMusicPageAsync ERROR: {ex}");
+                CompleteShellNavigationBusy();
             }
             finally
             {
-                // GoToAsync may no-op when already on Music (no Navigated) — always clear busy.
-                CompleteShellNavigationBusy();
+                // Same-route Music navigation can skip Navigated — clear only if still in-flight.
+                // Do not Reset after a successful Navigated: Music OnAppearing may still be busy.
+                if (_shellNavInProgress)
+                    CompleteShellNavigationBusy();
                 _isNavigatingToMusic = false;
             }
         }
@@ -283,11 +287,12 @@ namespace musicmate
             catch (Exception ex)
             {
                 Utils.Log($"[AppShell] SelectTunerAndOpenMusicAsync ERROR: {ex}");
+                CompleteShellNavigationBusy();
             }
             finally
             {
-                // Same-route Music navigation often skips Navigated — clear busy here.
-                CompleteShellNavigationBusy();
+                if (_shellNavInProgress)
+                    CompleteShellNavigationBusy();
                 _isNavigatingToMusic = false;
             }
         }
@@ -393,7 +398,17 @@ namespace musicmate
         }
 
         /// <summary>
-        /// Clears navigation busy UI and re-entry guards. Safe to call more than once.
+        /// Matching End for a completed Shell navigation. Nested page busy scopes stay active.
+        /// </summary>
+        private void FinishShellNavigationBusy()
+        {
+            _busyGeneration++;
+            _shellNavInProgress = false;
+            NavigationBusyService.Instance.End();
+        }
+
+        /// <summary>
+        /// Force-clear if navigation is abandoned, cancelled, or stuck. Safe to call more than once.
         /// </summary>
         private void CompleteShellNavigationBusy(bool releaseMusicGuard = false)
         {

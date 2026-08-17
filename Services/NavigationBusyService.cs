@@ -5,20 +5,18 @@ namespace musicmate.Services
     /// <summary>
     /// Single app-wide navigation busy overlay. AppShell begins/ends around Shell
     /// Navigating/Navigated so pages do not each own spinner logic.
-    /// Show is deferred briefly so instantaneous transitions never flash a spinner.
+    /// Show is deferred so operations that finish in under about 1 second never flash.
     /// </summary>
     public sealed class NavigationBusyService
     {
         public static NavigationBusyService Instance { get; } = new();
 
-        /// <summary>Delay before showing; cancelled if navigation finishes sooner.</summary>
-        private const int ShowDelayMs = 120;
+        /// <summary>Delay before showing; cancelled if the operation finishes sooner.</summary>
+        public const int ShowDelayMs = DelayedBusySession.DefaultShowDelayMs;
         /// <summary>Hard cap so a missed Navigated event cannot leave the overlay forever.</summary>
         private const int MaxBusyMs = 20000;
 
-        private readonly object _gate = new();
-        private int _depth;
-        private int _generation;
+        private readonly DelayedBusySession _session = new();
         private CancellationTokenSource? _showCts;
 
         private Grid? _overlay;
@@ -30,29 +28,38 @@ namespace musicmate.Services
         private NavigationBusyService() { }
 
         /// <summary>True while a Begin has not yet been fully ended/reset.</summary>
-        public bool IsBusy
+        public bool IsBusy => _session.IsBusy;
+
+        /// <summary>
+        /// Runs <paramref name="operation"/> under the shared delayed spinner.
+        /// Nested with Shell navigation: the overlay stays until the outermost End.
+        /// Always Ends, including when <paramref name="operation"/> throws.
+        /// </summary>
+        public async Task RunAsync(Func<Task> operation)
         {
-            get { lock (_gate) return _depth > 0; }
+            ArgumentNullException.ThrowIfNull(operation);
+            Begin();
+            try
+            {
+                await operation().ConfigureAwait(true);
+            }
+            finally
+            {
+                End();
+            }
         }
 
-        /// <summary>Call when a Shell navigation starts (once per in-flight navigation).</summary>
+        /// <summary>Call when a Shell navigation or other long UI update starts.</summary>
         public void Begin()
         {
-            CancellationToken token;
-            int gen;
+            int gen = _session.Begin(out bool ownsShowTimer);
+            if (!ownsShowTimer)
+                return;
 
-            lock (_gate)
-            {
-                _depth++;
-                if (_depth > 1)
-                    return;
-
-                _showCts?.Cancel();
-                _showCts?.Dispose();
-                _showCts = new CancellationTokenSource();
-                token = _showCts.Token;
-                gen = ++_generation;
-            }
+            CancelPendingShow();
+            var cts = new CancellationTokenSource();
+            _showCts = cts;
+            var token = cts.Token;
 
             try
             {
@@ -67,9 +74,7 @@ namespace musicmate.Services
                         return;
                     }
 
-                    // Attach only if this Begin is still the active navigation.
-                    // Re-check after attach so a concurrent End/Reset cannot leave a stuck overlay.
-                    if (!IsCurrent(gen))
+                    if (!_session.IsCurrent(gen))
                         return;
 
                     try
@@ -82,7 +87,7 @@ namespace musicmate.Services
                         return;
                     }
 
-                    if (!IsCurrent(gen))
+                    if (!_session.IsCurrent(gen))
                     {
                         try { DetachAndHide(); }
                         catch { /* ignore */ }
@@ -97,33 +102,41 @@ namespace musicmate.Services
             ArmMaxBusyWatchdog(gen);
         }
 
-        /// <summary>Call when Shell navigation completes or fails.</summary>
+        /// <summary>Call when Shell navigation or a wrapped operation completes or fails.</summary>
         public void End()
         {
-            lock (_gate)
-            {
-                if (_depth > 0)
-                    _depth--;
+            if (!_session.End(out _))
+                return;
 
-                if (_depth > 0)
-                    return;
-
-                InvalidatePendingShow_NoLock();
-            }
-
+            CancelPendingShow();
             HideOnMainThread();
         }
 
         /// <summary>Force-clear if navigation is abandoned without a matching End.</summary>
         public void Reset()
         {
-            lock (_gate)
-            {
-                _depth = 0;
-                InvalidatePendingShow_NoLock();
-            }
-
+            _session.Reset();
+            CancelPendingShow();
             HideOnMainThread();
+        }
+
+        /// <summary>
+        /// Programmatic Shell navigation that always clears the overlay if GoToAsync throws
+        /// (Shell may not raise Navigated on failure).
+        /// </summary>
+        public static async Task GoToAsync(string route)
+        {
+            try
+            {
+                if (Shell.Current == null)
+                    return;
+                await Shell.Current.GoToAsync(route);
+            }
+            catch
+            {
+                Instance.Reset();
+                throw;
+            }
         }
 
         private void ArmMaxBusyWatchdog(int gen)
@@ -141,7 +154,7 @@ namespace musicmate.Services
                         return;
                     }
 
-                    if (!IsCurrent(gen))
+                    if (!_session.IsCurrent(gen))
                         return;
 
                     Utils.Log("[NavigationBusy] Max-busy watchdog — forcing Reset");
@@ -154,18 +167,11 @@ namespace musicmate.Services
             }
         }
 
-        private void InvalidatePendingShow_NoLock()
+        private void CancelPendingShow()
         {
-            _generation++;
             _showCts?.Cancel();
             _showCts?.Dispose();
             _showCts = null;
-        }
-
-        private bool IsCurrent(int gen)
-        {
-            lock (_gate)
-                return gen == _generation && _depth > 0;
         }
 
         private void HideOnMainThread()

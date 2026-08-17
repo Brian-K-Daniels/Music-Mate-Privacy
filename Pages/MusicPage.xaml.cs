@@ -2877,16 +2877,19 @@ namespace musicmate.Pages
             {
                 try
                 {
-                    var sw = System.Diagnostics.Stopwatch.StartNew();
-                    while (StaffGraphicsView != null && StaffGraphicsView.Width <= 0 && sw.ElapsedMilliseconds < 1500)
-                        await Task.Delay(40);
-                    if (_session.RepeatSameTune && _repeatSameSnapshot?.Notes.Count > 0)
-                        await RestoreRepeatSameSnapshotAsync(_repeatSameSnapshot.Notes);
-                    else
+                    await NavigationBusyService.Instance.RunAsync(async () =>
                     {
-                        PrepareFreshScaleAndKeyIfNeeded(forceNewNotes: false, scaleKeyTrigger: "OnAppearing");
-                        await RegenerateNotesAsync();
-                    }
+                        var sw = System.Diagnostics.Stopwatch.StartNew();
+                        while (StaffGraphicsView != null && StaffGraphicsView.Width <= 0 && sw.ElapsedMilliseconds < 1500)
+                            await Task.Delay(40);
+                        if (_session.RepeatSameTune && _repeatSameSnapshot?.Notes.Count > 0)
+                            await RestoreRepeatSameSnapshotAsync(_repeatSameSnapshot.Notes);
+                        else
+                        {
+                            PrepareFreshScaleAndKeyIfNeeded(forceNewNotes: false, scaleKeyTrigger: "OnAppearing");
+                            await RegenerateNotesAsync();
+                        }
+                    });
                 }
                 catch (Exception ex)
                 {
@@ -3343,7 +3346,7 @@ namespace musicmate.Pages
         }
         private async void OnNavigateWhatToPlayClicked(object? sender, EventArgs e)
         {
-            await Shell.Current.GoToAsync("//WhatToPlayPage");
+            await NavigationBusyService.GoToAsync("//WhatToPlayPage");
         }
         private async void OnPlayEvaluateClicked(object? sender, EventArgs e)
         {
@@ -3361,31 +3364,67 @@ namespace musicmate.Pages
             if (_isRunning)
                 await StopListeningForPlaybackAsync();
 
-            // Save user's instrument selection to restore after playback
-            _savedInstrumentForPlayback = _session.Instrument;
-            _savedInstrumentIndexForPlayback = InstrumentPicker?.SelectedIndex ?? -1;
-
+            _suppressSessionRegenerate = true;
             try
             {
-                var instrumentOptions = NoteSessionService.InstrumentOptions.Cast<string>().ToArray();
-                var instIdx = Array.FindIndex(instrumentOptions, s => s == "Concert Pitch");
-                if (instIdx >= 0)
+                // Save user's instrument selection to restore after playback
+                _savedInstrumentForPlayback = _session.Instrument;
+                _savedInstrumentIndexForPlayback = InstrumentPicker?.SelectedIndex ?? -1;
+
+                try
                 {
-                    InstrumentPicker?.SelectedIndex = instIdx;
-                    _session.Instrument = instrumentOptions[instIdx];
-                    SelectedInstrumentShort = _session.InstrumentDisplayName;
-                    UpdateInstrumentPickerVisibility();
+                    var instrumentOptions = NoteSessionService.InstrumentOptions.Cast<string>().ToArray();
+                    var instIdx = Array.FindIndex(instrumentOptions, s => s == "Concert Pitch");
+                    if (instIdx >= 0)
+                    {
+                        InstrumentPicker?.SelectedIndex = instIdx;
+                        _session.Instrument = instrumentOptions[instIdx];
+                        SelectedInstrumentShort = _session.InstrumentDisplayName;
+                        UpdateInstrumentPickerVisibility();
+                    }
                 }
+                catch
+                {
+                    // best-effort; ignore failures
+                }
+
+                _isPlaying = true;
+                SetPlayButtonPlaying(true);
+                UpdatePlayButtonVisibility();
+                await StartListeningAndEvaluatingAsync(playBack: true);
             }
             catch
             {
-                // best-effort; ignore failures
+                FinishPlaybackInstrumentRestore();
+                _isPlaying = false;
+                SetPlayButtonPlaying(false);
+                SetButtonStates(false);
+                throw;
             }
+        }
 
-            _isPlaying = true;
-            SetPlayButtonPlaying(true);
-            UpdatePlayButtonVisibility();
-            await StartListeningAndEvaluatingAsync(playBack: true);
+        /// <summary>
+        /// Restores the pre-Play instrument without regenerating the displayed exercise.
+        /// </summary>
+        private void FinishPlaybackInstrumentRestore()
+        {
+            try
+            {
+                if (_savedInstrumentIndexForPlayback >= 0 && InstrumentPicker != null)
+                    InstrumentPicker.SelectedIndex = _savedInstrumentIndexForPlayback;
+                if (!string.IsNullOrEmpty(_savedInstrumentForPlayback))
+                    _session.Instrument = _savedInstrumentForPlayback;
+            }
+            catch
+            {
+                // best-effort
+            }
+            finally
+            {
+                _savedInstrumentForPlayback = null;
+                _savedInstrumentIndexForPlayback = -1;
+                _suppressSessionRegenerate = false;
+            }
         }
         private void ResetPitchCapture()
         {
@@ -3950,62 +3989,80 @@ namespace musicmate.Pages
             int epoch = Interlocked.Increment(ref _startListeningEpoch);
             _sessionStartCts = PracticeSessionLifecycle.ReplaceSessionStartCancellation(_sessionStartCts);
             var ct = _sessionStartCts.Token;
+            bool launchedPlayback = false;
 
             try
             {
-                // Any new session clears the post-autoplay results freeze.
-                _freezeStaff = false;
-                ClearSessionEndMarquee();
-
-                // Assign a fresh session ID so all NoteAttempts from this run are grouped together.
-                _currentSessionId = PracticeSessionLifecycle.NewSessionId();
-
-                DebugLog.WriteLine($"[Start] Starting listening, playBack={playBack}, forceNewNotes={forceNewNotes}");
-                SetButtonStates(true, keepPlayEnabled: playBack);
-
-                using (PracticeSessionStartProfiler.Scope("SessionReset"))
+                int displayedCount = _session.NotesToDraw?.Count ?? 0;
+                if (PracticeSessionLifecycle.ShouldAbortPlaybackBecauseEmpty(playBack, displayedCount))
                 {
-                    // Stop the old capture before Reset so OnAudioBlock cannot race
-                    // against an empty/rebuilding NotesToDraw (missed first-note greens).
-                    try { _audio.StopCapture(); } catch { }
-                    StopWaitingCountIn();
-
-                    _lastProcess = DateTime.MinValue;
-                    _dismissedResultBannerForFirstSound = false;
-                    ResetPitchCapture();
-                    _session.Reset();
-                }
-
-                ct.ThrowIfCancellationRequested();
-
-                // Tuner uses the same mic/pitch pipeline as scales, but must not run
-                // exercise preparation (RegenerateNotesAsync / Assortment by Level / composition).
-                if (PlayModePickerOptions.IsTunerMode(_session) && !playBack)
-                {
-                    await StartTunerMicrophoneCaptureAsync(ct);
+                    DebugLog.WriteLine("[Start] Play aborted: no displayed notes (will not generate)");
+                    _isPlaying = false;
+                    SetPlayButtonPlaying(false);
+                    SetButtonStates(false);
+                    StatusService.Instance.StatusMessage = "No notes to play — try again.";
+                    FinishPlaybackInstrumentRestore();
                     return;
                 }
 
-                if (!_session.RepeatSameTune)
-                    _repeatSameSnapshot = null;
+                bool reuseDisplayed = PracticeSessionLifecycle.ShouldReuseDisplayedExercise(
+                    playBack, forceNewNotes, displayedCount);
 
-                PickChildSessionSettingsIfNeeded(preserveRepeatSameTune: !forceNewNotes);
+                DebugLog.WriteLine($"[Start] Starting listening, playBack={playBack}, forceNewNotes={forceNewNotes}, reuseDisplayed={reuseDisplayed}");
+                SetButtonStates(true, keepPlayEnabled: playBack);
 
-                if (_session.RepeatSameTune && _repeatSameSnapshot == null
-                    && _session.NotesToDraw?.Count > 0)
+                if (!reuseDisplayed)
                 {
-                    CaptureRepeatSameSnapshot();
-                }
+                    // Any new session clears the post-autoplay results freeze.
+                    _freezeStaff = false;
+                    ClearSessionEndMarquee();
 
-                var startPlan = PracticeSessionLifecycle.PlanExerciseStart(
-                    _session.RepeatSameTune, _repeatSameSnapshot, forceNewNotes, scaleKeyTrigger);
+                    // Assign a fresh session ID so all NoteAttempts from this run are grouped together.
+                    _currentSessionId = PracticeSessionLifecycle.NewSessionId();
 
-                using (PracticeSessionStartProfiler.Scope("ExercisePrepare"))
-                {
-                    switch (startPlan.Action)
+                    using (PracticeSessionStartProfiler.Scope("SessionReset"))
                     {
-                        case PracticeExerciseStartAction.RestoreRepeatSame:
+                        // Stop the old capture before Reset so OnAudioBlock cannot race
+                        // against an empty/rebuilding NotesToDraw (missed first-note greens).
+                        try { _audio.StopCapture(); } catch { }
+                        StopWaitingCountIn();
+
+                        _lastProcess = DateTime.MinValue;
+                        _dismissedResultBannerForFirstSound = false;
+                        ResetPitchCapture();
+                        _session.Reset();
+                    }
+
+                    ct.ThrowIfCancellationRequested();
+
+                    // Tuner uses the same mic/pitch pipeline as scales, but must not run
+                    // exercise preparation (RegenerateNotesAsync / Assortment by Level / composition).
+                    if (PlayModePickerOptions.IsTunerMode(_session) && !playBack)
+                    {
+                        await StartTunerMicrophoneCaptureAsync(ct);
+                        return;
+                    }
+
+                    if (!_session.RepeatSameTune)
+                        _repeatSameSnapshot = null;
+
+                    PickChildSessionSettingsIfNeeded(preserveRepeatSameTune: !forceNewNotes);
+
+                    if (_session.RepeatSameTune && _repeatSameSnapshot == null
+                        && _session.NotesToDraw?.Count > 0)
+                    {
+                        CaptureRepeatSameSnapshot();
+                    }
+
+                    var startPlan = PracticeSessionLifecycle.PlanExerciseStart(
+                        _session.RepeatSameTune, _repeatSameSnapshot, forceNewNotes, scaleKeyTrigger);
+
+                    using (PracticeSessionStartProfiler.Scope("ExercisePrepare"))
+                    {
+                        switch (startPlan.Action)
                         {
+                            case PracticeExerciseStartAction.RestoreRepeatSame:
+                            {
                             if (startPlan.LogScaleKeyWithoutChanging)
                             {
                                 _session.PrepareFreshScaleAndKeyForGeneration(
@@ -4051,6 +4108,18 @@ namespace musicmate.Pages
                             }
                             break;
                     }
+                }
+                }
+                else
+                {
+                    // Play the staff as-is. Do not Reset, regenerate, or re-roll What to Play.
+                    _freezeStaff = false;
+                    try { _audio.StopCapture(); } catch { }
+                    StopWaitingCountIn();
+                    DebugLog.WriteLine(
+                        "[Start] Play reusing displayed exercise "
+                        + PracticeSessionLifecycle.DisplayedExerciseFingerprint(
+                            _session.NotesToDraw ?? Enumerable.Empty<NoteInfo>()));
                 }
 
                 SyncPlayItemStatusMessage();
@@ -4143,17 +4212,21 @@ namespace musicmate.Pages
                         StatusService.Instance.StatusMessage =
                             "No notes to play — try again.";
                         DebugLog.WriteLine("[Start] Play aborted: NotesToDraw is empty after regenerate");
+                        FinishPlaybackInstrumentRestore();
                         return;
                     }
 
                     _playCts?.Cancel();
                     _playCts = new CancellationTokenSource();
                     _ = PlayDisplayedAsync(_playCts.Token);
+                    launchedPlayback = true;
                 }
             }
             catch (OperationCanceledException)
             {
                 DebugLog.WriteLine("[Start] Cancelled");
+                if (playBack && !launchedPlayback)
+                    FinishPlaybackInstrumentRestore();
             }
             catch (Exception ex)
             {
@@ -4161,6 +4234,8 @@ namespace musicmate.Pages
                 _isPlaying = false;
                 SetPlayButtonPlaying(false);
                 SetButtonStates(false);
+                if (playBack && !launchedPlayback)
+                    FinishPlaybackInstrumentRestore();
                 StatusService.Instance.StatusMessage = "Could not start microphone.";
                 await MainThread.InvokeOnMainThreadAsync(async () =>
                 {
@@ -4410,14 +4485,9 @@ namespace musicmate.Pages
                             $"Playback {tempo:F0} BPM. Tap GO to listen or Play to hear again.";
                     }
 
-                    // Restore instrument after freeze — its PropertyChanged will
-                    // trigger RegenerateNotesAsync which is now suppressed.
-                    if (_savedInstrumentIndexForPlayback >= 0)
-                    {
-                        InstrumentPicker.SelectedIndex = _savedInstrumentIndexForPlayback;
-                    }
-                    _savedInstrumentForPlayback = null;
-                    _savedInstrumentIndexForPlayback = -1;
+                    // Restore instrument after freeze — suppress regenerate so Play
+                    // cannot replace the displayed exercise.
+                    FinishPlaybackInstrumentRestore();
 
                     SetButtonStates(false);
                     UpdatePlayButtonVisibility();

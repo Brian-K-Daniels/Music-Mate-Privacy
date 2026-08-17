@@ -76,7 +76,7 @@ namespace musicmate.Pages
         {
             try
             {
-                await Shell.Current.GoToAsync("//MusicPage");
+                await NavigationBusyService.GoToAsync("//MusicPage");
             }
             catch (Exception ex)
             {

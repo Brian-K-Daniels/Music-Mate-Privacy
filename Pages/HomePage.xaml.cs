@@ -139,7 +139,7 @@ namespace musicmate.Pages
                 //   MusicPage after a session completes successfully, then navigate
                 //   back here with a celebratory overlay.
 
-                await Shell.Current.GoToAsync("//MusicPage");
+                await NavigationBusyService.GoToAsync("//MusicPage");
             }
             catch (Exception ex)
             {

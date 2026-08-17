@@ -82,10 +82,13 @@ namespace musicmate.Pages
             //var mainLayout = this.FindByName<VerticalStackLayout>("StatisticsMainLayout");
             //if (mainLayout != null)
             //    musicmate.Utilities.MarginUtils.SetLeftMarginMM(mainLayout, 9, 0, 0, 0);  //  2026.04.02 1726  block out
-            await _noteDatabase.InitializeAsync();
-            await _sessionDatabase.InitializeAsync();
-            await _sessionResultDatabase.InitializeAsync();
-            await _viewModel.LoadAsync();
+            await NavigationBusyService.Instance.RunAsync(async () =>
+            {
+                await _noteDatabase.InitializeAsync();
+                await _sessionDatabase.InitializeAsync();
+                await _sessionResultDatabase.InitializeAsync();
+                await _viewModel.LoadAsync();
+            });
         }
 
         private async void OnDeleteDataInSelectedDatabase(object sender, EventArgs e)
@@ -224,7 +227,7 @@ namespace musicmate.Pages
 
         private async void OnNavigatePracticeClicked(object sender, EventArgs e)
         {
-            await Shell.Current.GoToAsync("//MusicPage");
+            await NavigationBusyService.GoToAsync("//MusicPage");
         }
 
         private void OnMasteryNotesChanged(object? sender, EventArgs e)

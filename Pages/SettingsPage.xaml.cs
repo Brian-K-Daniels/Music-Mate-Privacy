@@ -70,11 +70,11 @@ namespace musicmate.Pages
             _premiumDialogOpen = false;
         }
 
-        protected override void                 OnAppearing()
+        protected override async void           OnAppearing()
         {
             _orientation?.ForceLandscape();
             base.OnAppearing();
-            _ = CheckPremiumStatusAsync();
+            await NavigationBusyService.Instance.RunAsync(CheckPremiumStatusAsync);
         }
 
         private async void                      OnHighestNotePickerChangedWithPrompt(object? sender, EventArgs e)
@@ -144,7 +144,7 @@ namespace musicmate.Pages
 
         private async void                      OnNavigatePracticeClicked(object sender, EventArgs e)
         {
-            await Shell.Current.GoToAsync("//MusicPage");
+            await NavigationBusyService.GoToAsync("//MusicPage");
         }
 
         public SettingsPage()

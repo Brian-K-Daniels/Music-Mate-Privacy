@@ -77,6 +77,84 @@ public class PlayModePickerOptionsTests
     }
 
     [Fact]
+    public void EnsureAssortmentByLevelForSightTraining_FromTuner_PersistsAssortmentWithoutChangingLevels()
+    {
+        var session = new NoteSessionService
+        {
+            Tune = PlayModePickerOptions.Tuner,
+            ChildLevel = 17,
+            RepeatSameTune = false,
+            IsRandomMode = false,
+        };
+
+        string persisted = PlayModePickerOptions.Tuner;
+        bool changed = PlayModePickerOptions.EnsureAssortmentByLevelForSightTraining(
+            session,
+            value => persisted = value,
+            () => persisted);
+
+        Assert.True(changed);
+        Assert.Equal(NoteSessionService.ScaleSelectionByLevel, persisted);
+        Assert.NotEqual(PlayModePickerOptions.Tuner, session.Tune);
+        Assert.Equal(ScaleSelectionMode.ByLevel, session.ScaleSelectionMode);
+        Assert.False(session.IsRandomMode);
+        Assert.Equal(17, session.ChildLevel);
+
+        var (category, selection) = PlayModePickerOptions.ResolveDisplayedPicker(
+            session, layoutTestTuneEnabled: false, selectedTunePreference: persisted);
+        Assert.Equal(PlayModePickerCategory.Other, category);
+        Assert.Equal(NoteSessionService.ScaleSelectionByLevel, selection);
+    }
+
+    [Fact]
+    public void EnsureAssortmentByLevelForSightTraining_FromRandomOther_SwitchesToAssortment()
+    {
+        var session = new NoteSessionService
+        {
+            Tune = "Selected Scale",
+            IsRandomMode = true,
+            ChildLevel = 8,
+        };
+        string persisted = PlayModePickerOptions.RandomMelodic;
+        bool changed = PlayModePickerOptions.EnsureAssortmentByLevelForSightTraining(
+            session,
+            value => persisted = value,
+            () => persisted);
+
+        Assert.True(changed);
+        Assert.False(session.IsRandomMode);
+        Assert.Equal(NoteSessionService.ScaleSelectionByLevel, persisted);
+        Assert.Equal(8, session.ChildLevel);
+        Assert.Equal(ScaleSelectionMode.ByLevel, session.ScaleSelectionMode);
+    }
+
+    [Fact]
+    public void EnsureAssortmentByLevelForSightTraining_WhenAlreadyAssortment_IsNoOp()
+    {
+        var session = new NoteSessionService
+        {
+            Tune = "Selected Scale",
+            IsRandomMode = false,
+            RepeatSameTune = true,
+            ChildLevel = 12,
+        };
+        Assert.True(session.TryApplyScalePickerSelection(
+            NoteSessionService.ScaleSelectionByLevel, out _));
+
+        string persisted = NoteSessionService.ScaleSelectionByLevel;
+        bool changed = PlayModePickerOptions.EnsureAssortmentByLevelForSightTraining(
+            session,
+            value => persisted = value,
+            () => persisted);
+
+        Assert.False(changed);
+        Assert.Equal(NoteSessionService.ScaleSelectionByLevel, persisted);
+        Assert.True(session.RepeatSameTune);
+        Assert.Equal(12, session.ChildLevel);
+        Assert.Equal(ScaleSelectionMode.ByLevel, session.ScaleSelectionMode);
+    }
+
+    [Fact]
     public void TunePickerOptions_ContainsRhythmNotesFirstThenLibraryTunes()
     {
         var options = PlayModePickerOptions.BuildTunePickerOptions();
