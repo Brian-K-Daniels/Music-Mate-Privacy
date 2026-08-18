@@ -14,7 +14,7 @@
       <Setter Property="BorderWidth" Value="0" />
       <Setter Property="FontAttributes" Value="Bold" />
       <Setter Property="FontSize" Value="12" />
-      <Setter Property="MinimumHeightRequest" Value="28" />
+      <Setter Property="MinimumHeightRequest" Value="24" />
       <Setter Property="Padding" Value="3,1" />
       <Setter Property="HorizontalOptions" Value="Fill" />
       <Setter Property="VerticalOptions" Value="Fill" />
@@ -27,8 +27,8 @@
       <Setter Property="BorderWidth" Value="0" />
       <Setter Property="FontAttributes" Value="Bold" />
       <Setter Property="FontSize" Value="11" />
-      <Setter Property="MinimumHeightRequest" Value="28" />
-      <Setter Property="Padding" Value="8,0,4,0" />
+      <Setter Property="MinimumHeightRequest" Value="0" />
+      <Setter Property="Padding" Value="6,0,3,0" />
       <Setter Property="HorizontalOptions" Value="Fill" />
       <Setter Property="VerticalOptions" Value="Fill" />
       <Setter Property="LineBreakMode" Value="NoWrap" />
@@ -132,8 +132,12 @@
     </Grid>
   </Shell.TitleView>
 
+  <!--
+    No ScrollView. Mode + Direction/Level + status/actions are Auto;
+    remaining height is the interval grid plus staff.
+  -->
   <Grid x:Name="PageRoot"
-        RowDefinitions="Auto,Auto,Auto,Auto,Auto,*"
+        RowDefinitions="Auto,Auto,Auto,*"
         RowSpacing="1"
         Padding="4,1,4,2"
         HorizontalOptions="Fill"
@@ -143,7 +147,7 @@
           Grid.Row="0"
           ColumnDefinitions="Auto,*,Auto"
           ColumnSpacing="8"
-          HeightRequest="28"
+          HeightRequest="26"
           HorizontalOptions="Fill">
       <Label Text="Mode"
              FontSize="12"
@@ -156,7 +160,7 @@
               StrokeThickness="1"
               BackgroundColor="{DynamicResource ThemeButtonBackground}"
               Padding="6,0"
-              HeightRequest="28"
+              HeightRequest="26"
               VerticalOptions="Center"
               HorizontalOptions="Fill">
         <Border.StrokeShape>
@@ -176,9 +180,9 @@
               StrokeThickness="1"
               BackgroundColor="{DynamicResource ThemeButtonBackground}"
               Padding="6,0"
-              HeightRequest="28"
-              WidthRequest="180"
-              MinimumWidthRequest="140"
+              HeightRequest="26"
+              WidthRequest="156"
+              MinimumWidthRequest="128"
               VerticalOptions="Center"
               HorizontalOptions="End">
         <Border.StrokeShape>
@@ -195,48 +199,14 @@
       </Border>
     </Grid>
 
-    <Grid x:Name="LevelSection"
-          Grid.Row="1"
-          ColumnDefinitions="Auto,*,Auto"
-          ColumnSpacing="6"
-          HeightRequest="30"
-          HorizontalOptions="Fill">
-      <Label Text="Level"
-             FontSize="12"
-             FontAttributes="Bold"
-             VerticalTextAlignment="Center"
-             VerticalOptions="Center"
-             TextColor="{DynamicResource ThemeContrastingText}" />
-      <Slider x:Name="LevelSlider"
-              Grid.Column="1"
-              Minimum="1"
-              Maximum="100"
-              Value="1"
-              VerticalOptions="Center"
-              MinimumTrackColor="{DynamicResource ThemeSlider}"
-              MaximumTrackColor="#CCCCCC"
-              ThumbColor="{DynamicResource ThemeSlider}"
-              ValueChanged="OnLevelSliderValueChanged"
-              SemanticProperties.Description="Singing Training Level, 1 to 100" />
-      <Label x:Name="LevelValueLabel"
-             Grid.Column="2"
-             Text="1"
-             FontSize="12"
-             FontAttributes="Bold"
-             MinimumWidthRequest="28"
-             HorizontalTextAlignment="End"
-             VerticalTextAlignment="Center"
-             VerticalOptions="Center"
-             TextColor="{DynamicResource ThemeContrastingText}" />
-    </Grid>
-
     <Grid x:Name="DirectionSection"
-          Grid.Row="2"
-          ColumnDefinitions="Auto,*,*,*"
+          Grid.Row="1"
+          ColumnDefinitions="Auto,*,*,*,Auto,*,Auto"
           ColumnSpacing="4"
-          HeightRequest="30"
+          HeightRequest="28"
           HorizontalOptions="Fill">
-      <Label Text="Direction"
+      <Label x:Name="DirectionLabel"
+             Text="Direction"
              FontSize="12"
              FontAttributes="Bold"
              VerticalTextAlignment="Center"
@@ -260,18 +230,47 @@
               Text="Both"
               Clicked="OnDirectionBothClicked"
               SemanticProperties.Description="Sing intervals up or down at random" />
+      <Label x:Name="LevelTitleLabel"
+             Grid.Column="4"
+             Text="Level"
+             FontSize="12"
+             FontAttributes="Bold"
+             VerticalTextAlignment="Center"
+             VerticalOptions="Center"
+             TextColor="{DynamicResource ThemeContrastingText}" />
+      <Slider x:Name="LevelSlider"
+              Grid.Column="5"
+              Minimum="1"
+              Maximum="100"
+              Value="1"
+              VerticalOptions="Center"
+              MinimumTrackColor="{DynamicResource ThemeSlider}"
+              MaximumTrackColor="#CCCCCC"
+              ThumbColor="{DynamicResource ThemeSlider}"
+              ValueChanged="OnLevelSliderValueChanged"
+              SemanticProperties.Description="Singing Training Level, 1 to 100" />
+      <Label x:Name="LevelValueLabel"
+             Grid.Column="6"
+             Text="1"
+             FontSize="12"
+             FontAttributes="Bold"
+             MinimumWidthRequest="24"
+             HorizontalTextAlignment="End"
+             VerticalTextAlignment="Center"
+             VerticalOptions="Center"
+             TextColor="{DynamicResource ThemeContrastingText}" />
     </Grid>
 
-    <Grid x:Name="InstructionSection"
-          Grid.Row="3"
-          ColumnDefinitions="*,Auto,Auto,Auto"
+            <Grid x:Name="InstructionSection"
+          Grid.Row="2"
+          ColumnDefinitions="*,Auto"
           ColumnSpacing="4"
-          HeightRequest="32"
+          HeightRequest="26"
           HorizontalOptions="Fill">
-      <Label x:Name="InstructionLabel"
+      <Label x:Name="StatusLabel"
              Grid.Column="0"
-             Text="Tap New Exercise to begin."
-             FontSize="13"
+             Text="Tap New to begin new exercise."
+             FontSize="12"
              FontAttributes="Bold"
              LineBreakMode="TailTruncation"
              MaxLines="1"
@@ -279,43 +278,35 @@
              VerticalOptions="Center"
              HorizontalOptions="Fill"
              TextColor="{DynamicResource ThemeContrastingText}" />
-      <Button x:Name="NewExerciseButton"
-              Grid.Column="1"
-              Style="{StaticResource SingTrainButton}"
-              Text="New Exercise"
-              WidthRequest="108"
-              Clicked="OnNewExerciseClicked"
-              SemanticProperties.Description="Start a new singing exercise" />
-      <Button x:Name="HearAgainButton"
-              Grid.Column="2"
-              Style="{StaticResource SingTrainButton}"
-              Text="Hear Again"
-              WidthRequest="96"
-              IsEnabled="False"
-              Clicked="OnHearAgainClicked"
-              SemanticProperties.Description="Replay the prompt notes" />
-      <Button x:Name="RevealButton"
-              Grid.Column="3"
-              Style="{StaticResource SingTrainButton}"
-              Text="Reveal"
-              WidthRequest="72"
-              IsEnabled="False"
-              Clicked="OnRevealClicked"
-              SemanticProperties.Description="Reveal the target notes" />
+      <HorizontalStackLayout x:Name="ActionButtonsHost"
+                             Grid.Column="1"
+                             Spacing="4"
+                             VerticalOptions="Center">
+        <Button x:Name="NewExerciseButton"
+                Style="{StaticResource SingTrainButton}"
+                Text="New"
+                WidthRequest="64"
+                Clicked="OnNewExerciseClicked"
+                SemanticProperties.Description="Start a new singing exercise" />
+        <Button x:Name="HearAgainButton"
+                Style="{StaticResource SingTrainButton}"
+                Text="Hear Again"
+                WidthRequest="88"
+                IsEnabled="False"
+                Clicked="OnHearAgainClicked"
+                SemanticProperties.Description="Replay the prompt notes" />
+        <Button x:Name="RevealButton"
+                Style="{StaticResource SingTrainButton}"
+                Text="Reveal"
+                WidthRequest="68"
+                IsEnabled="False"
+                Clicked="OnRevealClicked"
+                SemanticProperties.Description="Reveal the target notes" />
+      </HorizontalStackLayout>
     </Grid>
 
-    <Label x:Name="StatusLabel"
-           Grid.Row="4"
-           Text=""
-           FontSize="13"
-           LineBreakMode="TailTruncation"
-           MaxLines="1"
-           HeightRequest="24"
-           VerticalTextAlignment="Center"
-           TextColor="{DynamicResource ThemeContrastingText}" />
-
     <Grid x:Name="IntervalsSection"
-          Grid.Row="5"
+          Grid.Row="3"
           ColumnDefinitions="*,Auto"
           ColumnSpacing="6"
           HorizontalOptions="Fill"
@@ -323,8 +314,8 @@
       <Grid x:Name="IntervalButtonsHost"
             Grid.Column="0"
             ColumnDefinitions="*,*,*"
-            ColumnSpacing="3"
-            RowSpacing="3"
+            ColumnSpacing="2"
+            RowSpacing="2"
             HorizontalOptions="Fill"
             VerticalOptions="Fill" />
 

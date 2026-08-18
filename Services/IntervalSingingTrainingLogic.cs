@@ -369,6 +369,46 @@ namespace musicmate.Services
         public static bool CountsAsIndependentCorrect(bool revealed, bool succeeded)
             => succeeded && !revealed;
 
+        [Flags]
+        public enum VisibleButtons
+        {
+            None = 0,
+            NewExercise = 1,
+            HearAgain = 2,
+            Reveal = 4,
+            Direction = 8,
+            IntervalChoices = 16,
+        }
+
+        /// <summary>
+        /// Buttons that have a real handler in this mode on
+        /// <c>IntervalSingingTrainingPage</c>. Audited per mode from those handlers,
+        /// not assumed to be identical.
+        /// </summary>
+        public static VisibleButtons GetVisibleButtons(IntervalSingingTrainingMode mode)
+        {
+            // Sing / Imitate are answered by singing, not by tapping interval names.
+            // New, Hear Again, Reveal, and Direction are the controls those modes use.
+            const VisibleButtons singing =
+                VisibleButtons.NewExercise
+                | VisibleButtons.HearAgain
+                | VisibleButtons.Reveal
+                | VisibleButtons.Direction;
+
+            return mode switch
+            {
+                IntervalSingingTrainingMode.SingInterval => singing,
+                IntervalSingingTrainingMode.ImitateInterval => singing,
+                // Hear & Identify: the 0–12 pad submits the quiz answer.
+                IntervalSingingTrainingMode.HearAndIdentify =>
+                    singing | VisibleButtons.IntervalChoices,
+                _ => singing,
+            };
+        }
+
+        public static bool Shows(VisibleButtons set, VisibleButtons flag)
+            => (set & flag) != 0;
+
         public static string FormatDirectionWord(bool isAscending)
             => isAscending ? "Up" : "Down";
 

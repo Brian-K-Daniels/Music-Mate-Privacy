@@ -59,6 +59,7 @@ namespace musicmate.Pages
             InitInstrumentPicker();
             _transposeOffsetForStartNote = _session.InstrumentTransposeOffset;
             InitStartNotePicker();
+            ApplyModeButtonVisibility();
             UpdateActionButtons();
             HideStaffReveal();
             ApplySafeAreaPadding();
@@ -90,6 +91,7 @@ namespace musicmate.Pages
             SyncInstrumentPickerFromSession();
             RefreshStartNotePicker(preserveConcertPitch: false);
             ApplyLandscapeLayout();
+            ApplyModeButtonVisibility();
             ApplyStaffForState();
             if (Shell.Current is AppShell shell)
                 shell.EnsureFlyoutItemsVisiblePublic();
@@ -216,6 +218,7 @@ namespace musicmate.Pages
             LevelSlider.Value = _level;
             LevelValueLabel.Text = _level.ToString();
             UpdateDirectionButtonVisuals();
+            ApplyModeButtonVisibility();
         }
 
         private void InitModePicker()
@@ -265,19 +268,21 @@ namespace musicmate.Pages
                 return;
 
             var next = IntervalSingingTrainingLogic.ModeFromPickerIndex(ModePicker.SelectedIndex);
-            if (next == _mode)
-                return;
+            if (next != _mode)
+            {
+                StopListening();
+                CancelPlayback();
+                _mode = next;
+                _gate.Mode = _mode;
+                IntervalSingingTrainingLogic.PersistMode(_mode);
+                ResetExercise(keepPitches: false);
+                StatusLabel.Text = _mode == IntervalSingingTrainingMode.HearAndIdentify
+                    ? IntervalSingingTrainingLogic.FormatIdentifyInstruction()
+                    : "Tap New Exercise to begin.";
+            }
 
-            StopListening();
-            CancelPlayback();
-            _mode = next;
-            _gate.Mode = _mode;
-            IntervalSingingTrainingLogic.PersistMode(_mode);
-            ResetExercise(keepPitches: false);
-            StatusLabel.Text = string.Empty;
-            InstructionLabel.Text = _mode == IntervalSingingTrainingMode.HearAndIdentify
-                ? IntervalSingingTrainingLogic.FormatIdentifyInstruction()
-                : "Tap New Exercise to begin.";
+            ApplyModeButtonVisibility();
+            UpdateActionButtons();
         }
 
         private void OnLevelSliderValueChanged(object? sender, ValueChangedEventArgs e)
@@ -510,6 +515,88 @@ namespace musicmate.Pages
             ApplyDirectionButtonState(DirectionBothButton, _directionMode == IntervalDirectionMode.Random);
         }
 
+        private void ApplyModeButtonVisibility()
+        {
+            var visible = IntervalSingingTrainingLogic.GetVisibleButtons(_mode);
+            bool showNew = IntervalSingingTrainingLogic.Shows(visible, IntervalSingingTrainingLogic.VisibleButtons.NewExercise);
+            bool showHear = IntervalSingingTrainingLogic.Shows(visible, IntervalSingingTrainingLogic.VisibleButtons.HearAgain);
+            bool showReveal = IntervalSingingTrainingLogic.Shows(visible, IntervalSingingTrainingLogic.VisibleButtons.Reveal);
+            bool showDirection = IntervalSingingTrainingLogic.Shows(visible, IntervalSingingTrainingLogic.VisibleButtons.Direction);
+            bool showIntervals = IntervalSingingTrainingLogic.Shows(visible, IntervalSingingTrainingLogic.VisibleButtons.IntervalChoices);
+
+            NewExerciseButton.IsVisible = showNew;
+            HearAgainButton.IsVisible = showHear;
+            RevealButton.IsVisible = showReveal;
+
+            DirectionLabel.IsVisible = showDirection;
+            DirectionUpButton.IsVisible = showDirection;
+            DirectionDownButton.IsVisible = showDirection;
+            DirectionBothButton.IsVisible = showDirection;
+            ApplyDirectionRowLayout(showDirection);
+
+            IntervalButtonsHost.IsVisible = showIntervals;
+            foreach (var btn in _intervalButtons.Values)
+                btn.IsVisible = showIntervals;
+            ApplyIntervalSectionLayout(showIntervals);
+            if (Width > 8)
+                ApplyLandscapeLayout();
+        }
+
+        private void ApplyDirectionRowLayout(bool showDirection)
+        {
+            if (showDirection)
+            {
+                DirectionSection.ColumnDefinitions = new ColumnDefinitionCollection
+                {
+                    new(GridLength.Auto),
+                    new(GridLength.Star),
+                    new(GridLength.Star),
+                    new(GridLength.Star),
+                    new(GridLength.Auto),
+                    new(GridLength.Star),
+                    new(GridLength.Auto),
+                };
+                Grid.SetColumn(DirectionUpButton, 1);
+                Grid.SetColumn(DirectionDownButton, 2);
+                Grid.SetColumn(DirectionBothButton, 3);
+                Grid.SetColumn(LevelTitleLabel, 4);
+                Grid.SetColumn(LevelSlider, 5);
+                Grid.SetColumn(LevelValueLabel, 6);
+                return;
+            }
+
+            DirectionSection.ColumnDefinitions = new ColumnDefinitionCollection
+            {
+                new(GridLength.Auto),
+                new(GridLength.Star),
+                new(GridLength.Auto),
+            };
+            Grid.SetColumn(LevelTitleLabel, 0);
+            Grid.SetColumn(LevelSlider, 1);
+            Grid.SetColumn(LevelValueLabel, 2);
+        }
+
+        private void ApplyIntervalSectionLayout(bool showIntervals)
+        {
+            if (showIntervals)
+            {
+                IntervalsSection.ColumnDefinitions = new ColumnDefinitionCollection
+                {
+                    new(GridLength.Star),
+                    new(GridLength.Auto),
+                };
+                Grid.SetColumn(IntervalButtonsHost, 0);
+                Grid.SetColumn(StaffRevealBorder, 1);
+                return;
+            }
+
+            IntervalsSection.ColumnDefinitions = new ColumnDefinitionCollection
+            {
+                new(GridLength.Star),
+            };
+            Grid.SetColumn(StaffRevealBorder, 0);
+        }
+
         private static void ApplyDirectionButtonState(Button button, bool selected)
         {
             button.Opacity = selected ? 1.0 : 0.55;
@@ -645,8 +732,7 @@ namespace musicmate.Pages
 
             if (_mode == IntervalSingingTrainingMode.HearAndIdentify)
             {
-                InstructionLabel.Text = IntervalSingingTrainingLogic.FormatIdentifyInstruction();
-                StatusLabel.Text = "Listen…";
+                StatusLabel.Text = IntervalSingingTrainingLogic.FormatIdentifyInstruction();
                 if (!replay)
                     SetState(IntervalSingingExerciseState.WaitingForSinger);
                 ApplyStaffForState();
@@ -665,10 +751,9 @@ namespace musicmate.Pages
             }
 
             bool startOnly = _mode == IntervalSingingTrainingMode.SingInterval;
-            InstructionLabel.Text = _mode == IntervalSingingTrainingMode.ImitateInterval
+            StatusLabel.Text = _mode == IntervalSingingTrainingMode.ImitateInterval
                 ? IntervalSingingTrainingLogic.FormatImitateInstruction(pitches)
                 : IntervalSingingTrainingLogic.FormatSingInstruction(pitches);
-            StatusLabel.Text = startOnly ? "Listen to the starting note…" : "Listen to the interval…";
             ApplyStaffForState();
             await PlayPitchesAsync(pitches, startOnly);
             _gate.PlaybackActive = false;
@@ -741,7 +826,6 @@ namespace musicmate.Pages
             }
 
             SetState(IntervalSingingExerciseState.WaitingForSinger);
-            StatusLabel.Text = "Listening…";
             UpdateActionButtons();
 
             try

@@ -228,4 +228,46 @@ public class IntervalSingingTrainingLogicTests : IDisposable
         Assert.Equal(6, pitches.Semitones);
         Assert.DoesNotContain(6, IntervalSingingTrainingLogic.GetAllowedSingingIntervals(1));
     }
+
+    [Theory]
+    [InlineData(IntervalSingingTrainingMode.SingInterval)]
+    [InlineData(IntervalSingingTrainingMode.ImitateInterval)]
+    [InlineData(IntervalSingingTrainingMode.HearAndIdentify)]
+    public void VisibleButtons_AlwaysShowsSingingChrome(IntervalSingingTrainingMode mode)
+    {
+        var visible = IntervalSingingTrainingLogic.GetVisibleButtons(mode);
+        Assert.True(IntervalSingingTrainingLogic.Shows(visible, IntervalSingingTrainingLogic.VisibleButtons.NewExercise));
+        Assert.True(IntervalSingingTrainingLogic.Shows(visible, IntervalSingingTrainingLogic.VisibleButtons.HearAgain));
+        Assert.True(IntervalSingingTrainingLogic.Shows(visible, IntervalSingingTrainingLogic.VisibleButtons.Reveal));
+        Assert.True(IntervalSingingTrainingLogic.Shows(visible, IntervalSingingTrainingLogic.VisibleButtons.Direction));
+    }
+
+    [Fact]
+    public void VisibleButtons_SingAndImitate_DoNotUseIntervalAnswerPad()
+    {
+        var sing = IntervalSingingTrainingLogic.GetVisibleButtons(IntervalSingingTrainingMode.SingInterval);
+        var imitate = IntervalSingingTrainingLogic.GetVisibleButtons(IntervalSingingTrainingMode.ImitateInterval);
+        var identify = IntervalSingingTrainingLogic.GetVisibleButtons(IntervalSingingTrainingMode.HearAndIdentify);
+
+        Assert.False(IntervalSingingTrainingLogic.Shows(sing, IntervalSingingTrainingLogic.VisibleButtons.IntervalChoices));
+        Assert.False(IntervalSingingTrainingLogic.Shows(imitate, IntervalSingingTrainingLogic.VisibleButtons.IntervalChoices));
+        Assert.True(IntervalSingingTrainingLogic.Shows(identify, IntervalSingingTrainingLogic.VisibleButtons.IntervalChoices));
+    }
+
+    [Fact]
+    public void VisibleButtons_SwitchingModes_HidesAndRestoresIntervalPad()
+    {
+        var sing = IntervalSingingTrainingLogic.GetVisibleButtons(IntervalSingingTrainingMode.SingInterval);
+        var identify = IntervalSingingTrainingLogic.GetVisibleButtons(IntervalSingingTrainingMode.HearAndIdentify);
+        var imitate = IntervalSingingTrainingLogic.GetVisibleButtons(IntervalSingingTrainingMode.ImitateInterval);
+        var singAgain = IntervalSingingTrainingLogic.GetVisibleButtons(IntervalSingingTrainingMode.SingInterval);
+        var identifyAgain = IntervalSingingTrainingLogic.GetVisibleButtons(IntervalSingingTrainingMode.HearAndIdentify);
+
+        Assert.Equal(sing, imitate);
+        Assert.Equal(sing, singAgain);
+        Assert.Equal(identify, identifyAgain);
+        Assert.NotEqual(sing, identify);
+        Assert.True(IntervalSingingTrainingLogic.Shows(identifyAgain, IntervalSingingTrainingLogic.VisibleButtons.IntervalChoices));
+        Assert.False(IntervalSingingTrainingLogic.Shows(singAgain, IntervalSingingTrainingLogic.VisibleButtons.IntervalChoices));
+    }
 }
