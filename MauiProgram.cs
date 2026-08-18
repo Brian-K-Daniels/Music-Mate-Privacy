@@ -31,6 +31,7 @@ namespace musicmate
             SQLitePCL.Batteries.Init();
 
             builder.Services.AddSingleton<NoteSessionService>();
+            builder.Services.AddSingleton<DisplayedTuneHistory>();
             builder.Services.AddSingleton<PitchDetectionService>();
 #if ANDROID || WINDOWS
             builder.Services.AddSingleton<IAudioCaptureService, AudioCaptureService>();

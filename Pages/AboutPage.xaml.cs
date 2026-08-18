@@ -25,6 +25,9 @@ namespace musicmate.Pages
         private int _aboutMatchCount = 0;
         private int _aboutCurrentIndex = -1;
         private string _aboutSearchQuery = string.Empty;
+        private string _aboutHtmlSource = string.Empty;
+        private int _aboutTotalLogicalLines;
+        private int[] _aboutMatchLogicalLines = Array.Empty<int>();
         private bool _aboutHtmlReady;
 
         // Track whether we've asked the app to pause listening while searching
@@ -57,6 +60,8 @@ namespace musicmate.Pages
                 AboutTitleFindBackButton.IsEnabled = false;
             if (AboutTitleClearSearchButton != null)
                 AboutTitleClearSearchButton.IsEnabled = false;
+            if (AboutTitleLineNumberLabel != null)
+                AboutTitleLineNumberLabel.Text = string.Empty;
             var posLbl = this.FindByName<Label>("AboutFindPositionLabel");
             if (posLbl != null)
                 posLbl.Text = string.Empty;
@@ -367,6 +372,10 @@ namespace musicmate.Pages
                 // Clean up Word-specific conditional comments and XML blobs that non-IE browsers
                 // (including Android WebView) cannot parse.
                 html = CleanWordHtml(html);
+
+                _aboutHtmlSource = html;
+                _aboutTotalLogicalLines = AboutLogicalLineMap.CountLinesFromWelcome(html);
+                _aboutMatchLogicalLines = Array.Empty<int>();
 
                 var vm = BindingContext as AboutPageViewModel;
                 var bg = _themeService?.PanelBackgroundColor ?? Colors.White;
@@ -907,6 +916,7 @@ namespace musicmate.Pages
             cancellationToken.ThrowIfCancellationRequested();
 
             _aboutSearchQuery = query;
+            RefreshAboutMatchLineNumbers(query);
 
             if (TryParseJavaScriptInteger(result, out var count))
             {
@@ -1133,6 +1143,19 @@ namespace musicmate.Pages
                         ? $"{_aboutCurrentIndex + 1}/{_aboutMatchCount}"
                         : string.Empty;
             }
+
+            if (AboutTitleLineNumberLabel != null)
+            {
+                AboutTitleLineNumberLabel.Text = AboutLogicalLineMap.FormatIndicator(
+                    hasMatches, _aboutCurrentIndex, _aboutMatchLogicalLines, _aboutTotalLogicalLines);
+            }
+        }
+
+        private void RefreshAboutMatchLineNumbers(string query)
+        {
+            var analyzed = AboutLogicalLineMap.Analyze(_aboutHtmlSource, query);
+            _aboutTotalLogicalLines = analyzed.TotalLines;
+            _aboutMatchLogicalLines = analyzed.MatchLines;
         }
         private static bool TryParseJavaScriptInteger( string? result, out int value)
         {

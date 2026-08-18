@@ -10,6 +10,7 @@ public class ShellNavigationTargetTests
     [InlineData("//Music", "//Music/MusicPage")]
     [InlineData("//EarTraining/IntervalEarTrainingPage", "//EarTraining")]
     [InlineData("//IntervalSightTraining/IntervalSightTrainingPage", "//IntervalSightTraining")]
+    [InlineData("//SingingTraining/IntervalSingingTrainingPage", "//SingingTraining")]
     [InlineData("//Home/HomePage", "//Home")]
     [InlineData("//About/AboutPage", "//About")]
     [InlineData("//WhatToPlay/WhatToPlayPage", "//WhatToPlay")]
@@ -26,6 +27,8 @@ public class ShellNavigationTargetTests
     [InlineData("//Settings/SettingsPage", "//SettingsAdvanced/AdvancedPage")]
     [InlineData("//Home/HomePage", "//Music/MusicPage")]
     [InlineData("//IntervalSightTraining/IntervalSightTrainingPage", "//EarTraining")]
+    [InlineData("//SingingTraining/IntervalSingingTrainingPage", "//EarTraining")]
+    [InlineData("//SingingTraining/IntervalSingingTrainingPage", "//IntervalSightTraining")]
     public void IsSameDestination_False_ForDifferentPages(string current, string target)
         => Assert.False(ShellNavigationTarget.IsSameDestination(current, target));
 

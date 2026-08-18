@@ -87,6 +87,14 @@
         ContentTemplate="{DataTemplate local:IntervalSightTrainingPage}" />
   </FlyoutItem>
 
+  <FlyoutItem Title="Interval Singing Training"
+              Route="SingingTraining">
+    <ShellContent
+        Title="Interval Singing Training"
+        Route="IntervalSingingTrainingPage"
+        ContentTemplate="{DataTemplate local:IntervalSingingTrainingPage}" />
+  </FlyoutItem>
+
   <FlyoutItem Title="My Progress" Route="Statistics">
     <ShellContent
         Route="StatisticsPages"

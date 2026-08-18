@@ -22,6 +22,24 @@ public class MelodicVarietyRulesTests
     }
 
     [Fact]
+    public void DistinctSoundedPitches_IgnoresRests_AndRequiresTwoPitches()
+    {
+        var a4 = new GeneratedNote { MidiNumber = 69, SpelledName = "A4" };
+        var a4Again = new GeneratedNote { MidiNumber = 69, SpelledName = "A4" };
+        var c5 = new GeneratedNote { MidiNumber = 72, SpelledName = "C5" };
+        var rest = new GeneratedNote { IsRest = true, MidiNumber = 0 };
+
+        Assert.Equal(1, MelodicVarietyRules.CountDistinctSoundedPitches(
+            new[] { a4, rest, a4Again }));
+        Assert.False(MelodicVarietyRules.HasAtLeastTwoDistinctSoundedPitches(
+            new[] { a4, rest, a4Again }, null));
+        Assert.True(MelodicVarietyRules.HasAtLeastTwoDistinctSoundedPitches(
+            new[] { a4, rest }, new[] { c5 }));
+        Assert.False(MelodicVarietyRules.HasAtLeastTwoDistinctSoundedPitches(
+            new[] { rest }, new[] { rest }));
+    }
+
+    [Fact]
     public void PickClosestMastered_PrefersNearestToUnmastered()
     {
         int c4 = NoteSessionService.NoteNameToMidi("C4");

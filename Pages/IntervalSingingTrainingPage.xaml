@@ -1,0 +1,351 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="musicmate.Pages.IntervalSingingTrainingPage"
+             Title="Interval Singing Training"
+             Shell.NavBarIsVisible="True"
+             BackgroundColor="{DynamicResource ThemePanelBackground}">
+
+  <ContentPage.Resources>
+    <Style x:Key="SingTrainButton" TargetType="Button">
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeContrastingText}" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="BorderWidth" Value="0" />
+      <Setter Property="FontAttributes" Value="Bold" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="MinimumHeightRequest" Value="28" />
+      <Setter Property="Padding" Value="3,1" />
+      <Setter Property="HorizontalOptions" Value="Fill" />
+      <Setter Property="VerticalOptions" Value="Fill" />
+      <Setter Property="LineBreakMode" Value="NoWrap" />
+    </Style>
+
+    <Style x:Key="SingTrainIntervalButton" TargetType="Button">
+      <Setter Property="TextColor" Value="#1F2937" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="BorderWidth" Value="0" />
+      <Setter Property="FontAttributes" Value="Bold" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="MinimumHeightRequest" Value="28" />
+      <Setter Property="Padding" Value="8,0,4,0" />
+      <Setter Property="HorizontalOptions" Value="Fill" />
+      <Setter Property="VerticalOptions" Value="Fill" />
+      <Setter Property="LineBreakMode" Value="NoWrap" />
+      <Setter Property="VisualStateManager.VisualStateGroups">
+        <VisualStateGroupList>
+          <VisualStateGroup x:Name="CommonStates">
+            <VisualState x:Name="Normal">
+              <VisualState.Setters>
+                <Setter Property="Opacity" Value="1" />
+                <Setter Property="Scale" Value="1" />
+              </VisualState.Setters>
+            </VisualState>
+            <VisualState x:Name="Disabled">
+              <VisualState.Setters>
+                <Setter Property="Opacity" Value="0.55" />
+                <Setter Property="Scale" Value="1" />
+              </VisualState.Setters>
+            </VisualState>
+            <VisualState x:Name="Pressed">
+              <VisualState.Setters>
+                <Setter Property="Opacity" Value="0.88" />
+                <Setter Property="Scale" Value="0.98" />
+              </VisualState.Setters>
+            </VisualState>
+            <VisualState x:Name="PointerOver">
+              <VisualState.Setters>
+                <Setter Property="Opacity" Value="0.95" />
+                <Setter Property="Scale" Value="1" />
+              </VisualState.Setters>
+            </VisualState>
+          </VisualStateGroup>
+        </VisualStateGroupList>
+      </Setter>
+    </Style>
+  </ContentPage.Resources>
+
+  <Shell.TitleView>
+    <Grid ColumnDefinitions="Auto,*,Auto,Auto"
+          ColumnSpacing="6"
+          HeightRequest="40"
+          Padding="0,0,8,0"
+          VerticalOptions="Center">
+      <Button Grid.Column="0"
+              Style="{StaticResource MusicNavBackButton}"
+              Clicked="OnNavigateMusicClicked"
+              SemanticProperties.Description="Go to Music page" />
+      <Label Grid.Column="1"
+             Text="Interval Singing Training"
+             FontAttributes="Bold"
+             FontSize="15"
+             LineBreakMode="TailTruncation"
+             MaxLines="1"
+             VerticalTextAlignment="Center"
+             VerticalOptions="Center"
+             HorizontalOptions="Fill"
+             TextColor="{DynamicResource ThemeContrastingText}" />
+      <Grid Grid.Column="2"
+            ColumnDefinitions="Auto,Auto"
+            ColumnSpacing="4"
+            VerticalOptions="Center"
+            HorizontalOptions="End">
+        <Label Text="Start note"
+               FontSize="11"
+               FontAttributes="Bold"
+               LineBreakMode="NoWrap"
+               MaxLines="1"
+               VerticalTextAlignment="Center"
+               VerticalOptions="Center"
+               TextColor="{DynamicResource ThemeContrastingText}" />
+        <Border Grid.Column="1"
+                Stroke="{DynamicResource ThemePickerBorder}"
+                StrokeThickness="1"
+                BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                Padding="4,0"
+                HeightRequest="28"
+                WidthRequest="92"
+                MinimumWidthRequest="84"
+                VerticalOptions="Center"
+                HorizontalOptions="End">
+          <Border.StrokeShape>
+            <RoundRectangle CornerRadius="6" />
+          </Border.StrokeShape>
+          <Picker x:Name="StartNotePicker"
+                  FontSize="11"
+                  FontAttributes="Bold"
+                  HeightRequest="26"
+                  BackgroundColor="Transparent"
+                  TextColor="{DynamicResource ThemeContrastingText}"
+                  VerticalOptions="Center"
+                  HorizontalOptions="Fill"
+                  SelectedIndexChanged="OnStartNotePickerChanged"
+                  SemanticProperties.Description="Starting note for singing exercises" />
+        </Border>
+      </Grid>
+      <Border Grid.Column="3"
+              Style="{StaticResource TitleLogoBorder}"
+              VerticalOptions="Center"
+              HorizontalOptions="End">
+        <Image Source="logo.png" Aspect="AspectFill" />
+      </Border>
+    </Grid>
+  </Shell.TitleView>
+
+  <Grid x:Name="PageRoot"
+        RowDefinitions="Auto,Auto,Auto,Auto,Auto,*"
+        RowSpacing="1"
+        Padding="4,1,4,2"
+        HorizontalOptions="Fill"
+        VerticalOptions="Fill">
+
+    <Grid x:Name="ModeSection"
+          Grid.Row="0"
+          ColumnDefinitions="Auto,*,Auto"
+          ColumnSpacing="8"
+          HeightRequest="28"
+          HorizontalOptions="Fill">
+      <Label Text="Mode"
+             FontSize="12"
+             FontAttributes="Bold"
+             VerticalTextAlignment="Center"
+             VerticalOptions="Center"
+             TextColor="{DynamicResource ThemeContrastingText}" />
+      <Border Grid.Column="1"
+              Stroke="{DynamicResource ThemePickerBorder}"
+              StrokeThickness="1"
+              BackgroundColor="{DynamicResource ThemeButtonBackground}"
+              Padding="6,0"
+              HeightRequest="28"
+              VerticalOptions="Center"
+              HorizontalOptions="Fill">
+        <Border.StrokeShape>
+          <RoundRectangle CornerRadius="6" />
+        </Border.StrokeShape>
+        <Picker x:Name="ModePicker"
+                FontSize="11"
+                FontAttributes="Bold"
+                HeightRequest="26"
+                BackgroundColor="Transparent"
+                TextColor="{DynamicResource ThemeContrastingText}"
+                SelectedIndexChanged="OnModePickerChanged"
+                SemanticProperties.Description="Singing training mode" />
+      </Border>
+      <Border Grid.Column="2"
+              Stroke="{DynamicResource ThemePickerBorder}"
+              StrokeThickness="1"
+              BackgroundColor="{DynamicResource ThemeButtonBackground}"
+              Padding="6,0"
+              HeightRequest="28"
+              WidthRequest="180"
+              MinimumWidthRequest="140"
+              VerticalOptions="Center"
+              HorizontalOptions="End">
+        <Border.StrokeShape>
+          <RoundRectangle CornerRadius="6" />
+        </Border.StrokeShape>
+        <Picker x:Name="InstrumentPicker"
+                FontSize="11"
+                FontAttributes="Bold"
+                HeightRequest="26"
+                BackgroundColor="Transparent"
+                TextColor="{DynamicResource ThemeContrastingText}"
+                SelectedIndexChanged="OnInstrumentPickerChanged"
+                SemanticProperties.Description="Instrument used for written notation" />
+      </Border>
+    </Grid>
+
+    <Grid x:Name="LevelSection"
+          Grid.Row="1"
+          ColumnDefinitions="Auto,*,Auto"
+          ColumnSpacing="6"
+          HeightRequest="30"
+          HorizontalOptions="Fill">
+      <Label Text="Level"
+             FontSize="12"
+             FontAttributes="Bold"
+             VerticalTextAlignment="Center"
+             VerticalOptions="Center"
+             TextColor="{DynamicResource ThemeContrastingText}" />
+      <Slider x:Name="LevelSlider"
+              Grid.Column="1"
+              Minimum="1"
+              Maximum="100"
+              Value="1"
+              VerticalOptions="Center"
+              MinimumTrackColor="{DynamicResource ThemeSlider}"
+              MaximumTrackColor="#CCCCCC"
+              ThumbColor="{DynamicResource ThemeSlider}"
+              ValueChanged="OnLevelSliderValueChanged"
+              SemanticProperties.Description="Singing Training Level, 1 to 100" />
+      <Label x:Name="LevelValueLabel"
+             Grid.Column="2"
+             Text="1"
+             FontSize="12"
+             FontAttributes="Bold"
+             MinimumWidthRequest="28"
+             HorizontalTextAlignment="End"
+             VerticalTextAlignment="Center"
+             VerticalOptions="Center"
+             TextColor="{DynamicResource ThemeContrastingText}" />
+    </Grid>
+
+    <Grid x:Name="DirectionSection"
+          Grid.Row="2"
+          ColumnDefinitions="Auto,*,*,*"
+          ColumnSpacing="4"
+          HeightRequest="30"
+          HorizontalOptions="Fill">
+      <Label Text="Direction"
+             FontSize="12"
+             FontAttributes="Bold"
+             VerticalTextAlignment="Center"
+             VerticalOptions="Center"
+             TextColor="{DynamicResource ThemeContrastingText}" />
+      <Button x:Name="DirectionUpButton"
+              Grid.Column="1"
+              Style="{StaticResource SingTrainButton}"
+              Text="Up"
+              Clicked="OnDirectionUpClicked"
+              SemanticProperties.Description="Sing intervals upward" />
+      <Button x:Name="DirectionDownButton"
+              Grid.Column="2"
+              Style="{StaticResource SingTrainButton}"
+              Text="Down"
+              Clicked="OnDirectionDownClicked"
+              SemanticProperties.Description="Sing intervals downward" />
+      <Button x:Name="DirectionBothButton"
+              Grid.Column="3"
+              Style="{StaticResource SingTrainButton}"
+              Text="Both"
+              Clicked="OnDirectionBothClicked"
+              SemanticProperties.Description="Sing intervals up or down at random" />
+    </Grid>
+
+    <Grid x:Name="InstructionSection"
+          Grid.Row="3"
+          ColumnDefinitions="*,Auto,Auto,Auto"
+          ColumnSpacing="4"
+          HeightRequest="32"
+          HorizontalOptions="Fill">
+      <Label x:Name="InstructionLabel"
+             Grid.Column="0"
+             Text="Tap New Exercise to begin."
+             FontSize="13"
+             FontAttributes="Bold"
+             LineBreakMode="TailTruncation"
+             MaxLines="1"
+             VerticalTextAlignment="Center"
+             VerticalOptions="Center"
+             HorizontalOptions="Fill"
+             TextColor="{DynamicResource ThemeContrastingText}" />
+      <Button x:Name="NewExerciseButton"
+              Grid.Column="1"
+              Style="{StaticResource SingTrainButton}"
+              Text="New Exercise"
+              WidthRequest="108"
+              Clicked="OnNewExerciseClicked"
+              SemanticProperties.Description="Start a new singing exercise" />
+      <Button x:Name="HearAgainButton"
+              Grid.Column="2"
+              Style="{StaticResource SingTrainButton}"
+              Text="Hear Again"
+              WidthRequest="96"
+              IsEnabled="False"
+              Clicked="OnHearAgainClicked"
+              SemanticProperties.Description="Replay the prompt notes" />
+      <Button x:Name="RevealButton"
+              Grid.Column="3"
+              Style="{StaticResource SingTrainButton}"
+              Text="Reveal"
+              WidthRequest="72"
+              IsEnabled="False"
+              Clicked="OnRevealClicked"
+              SemanticProperties.Description="Reveal the target notes" />
+    </Grid>
+
+    <Label x:Name="StatusLabel"
+           Grid.Row="4"
+           Text=""
+           FontSize="13"
+           LineBreakMode="TailTruncation"
+           MaxLines="1"
+           HeightRequest="24"
+           VerticalTextAlignment="Center"
+           TextColor="{DynamicResource ThemeContrastingText}" />
+
+    <Grid x:Name="IntervalsSection"
+          Grid.Row="5"
+          ColumnDefinitions="*,Auto"
+          ColumnSpacing="6"
+          HorizontalOptions="Fill"
+          VerticalOptions="Fill">
+      <Grid x:Name="IntervalButtonsHost"
+            Grid.Column="0"
+            ColumnDefinitions="*,*,*"
+            ColumnSpacing="3"
+            RowSpacing="3"
+            HorizontalOptions="Fill"
+            VerticalOptions="Fill" />
+
+      <Border x:Name="StaffRevealBorder"
+              Grid.Column="1"
+              WidthRequest="120"
+              MinimumWidthRequest="110"
+              Stroke="{DynamicResource ThemePickerBorder}"
+              StrokeThickness="1"
+              BackgroundColor="{DynamicResource ThemePanelBackground}"
+              Padding="3"
+              HorizontalOptions="Fill"
+              VerticalOptions="Fill"
+              SemanticProperties.Description="Staff showing the interval">
+        <Border.StrokeShape>
+          <RoundRectangle CornerRadius="6" />
+        </Border.StrokeShape>
+        <GraphicsView x:Name="StaffGraphicsView"
+                      VerticalOptions="Fill"
+                      HorizontalOptions="Fill" />
+      </Border>
+    </Grid>
+  </Grid>
+</ContentPage>

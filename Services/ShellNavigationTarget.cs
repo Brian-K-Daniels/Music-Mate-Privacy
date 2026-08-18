@@ -27,6 +27,8 @@ namespace musicmate.Services
             // More specific needles first.
             if (Contains(s, "TunerEntry"))
                 return "Tuner";
+            if (Contains(s, "IntervalSingingTraining") || Contains(s, "SingingTraining"))
+                return "SingingTraining";
             if (Contains(s, "IntervalEarTraining") || Contains(s, "EarTraining"))
                 return "EarTraining";
             if (Contains(s, "IntervalSightTraining"))

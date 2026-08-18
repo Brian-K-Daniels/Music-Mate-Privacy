@@ -1,3 +1,5 @@
+using musicmate.Models;
+
 namespace musicmate.Services;
 
 /// <summary>
@@ -25,6 +27,49 @@ public static class MelodicVarietyRules
 
     public static int CountDistinctPitches(IEnumerable<int> pitchedMidis)
         => pitchedMidis.Distinct().Count();
+
+    /// <summary>
+    /// Distinct sounded MIDI numbers, ignoring rests. Used to reject auto-generated
+    /// candidates that contain fewer than two pitches before they are displayed.
+    /// </summary>
+    public static int CountDistinctSoundedPitches(IEnumerable<GeneratedNote>? notes)
+    {
+        if (notes == null)
+            return 0;
+
+        var seen = new HashSet<int>();
+        foreach (var note in notes)
+        {
+            if (note.IsRest)
+                continue;
+            seen.Add(note.MidiNumber);
+        }
+
+        return seen.Count;
+    }
+
+    public static bool HasAtLeastTwoDistinctSoundedPitches(
+        IEnumerable<GeneratedNote>? upper,
+        IEnumerable<GeneratedNote>? lower)
+    {
+        var seen = new HashSet<int>();
+        AddSoundedPitches(seen, upper);
+        AddSoundedPitches(seen, lower);
+        return seen.Count >= 2;
+    }
+
+    private static void AddSoundedPitches(HashSet<int> seen, IEnumerable<GeneratedNote>? notes)
+    {
+        if (notes == null)
+            return;
+
+        foreach (var note in notes)
+        {
+            if (note.IsRest)
+                continue;
+            seen.Add(note.MidiNumber);
+        }
+    }
 
     /// <summary>
     /// True when more than <see cref="MaxConsecutiveIdenticalPitches"/> identical

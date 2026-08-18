@@ -62,13 +62,13 @@
   </ContentPage.Resources>
 
   <!--
-        Shell provides the hamburger. TitleView: ← Music | About | Next | Back | Clear.
+        Shell provides the hamburger. TitleView: ← Music | About | m/n | Next | Back | Clear.
         Search Entry stays in page content so large fonts are never clipped by the nav chrome.
     -->
   <Shell.TitleView>
 
     <Grid
-            ColumnDefinitions="Auto,*,Auto,Auto,Auto"
+                ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto"
             ColumnSpacing="6"
             HeightRequest="44"
             Padding="0,0,8,0"
@@ -91,9 +91,26 @@
                 LineBreakMode="TailTruncation"
                 MaxLines="1" />
 
+      <Label
+                x:Name="AboutTitleLineNumberLabel"
+                Grid.Column="2"
+                Text=""
+                FontAutoScalingEnabled="False"
+                FontSize="13"
+                FontAttributes="Bold"
+                TextColor="{DynamicResource ThemeContrastingText}"
+                VerticalOptions="Center"
+                VerticalTextAlignment="Center"
+                HorizontalOptions="End"
+                HorizontalTextAlignment="End"
+                LineBreakMode="NoWrap"
+                MaxLines="1"
+                MinimumWidthRequest="56"
+                SemanticProperties.Description="Source line of the highlighted About search match" />
+
       <Button
                 x:Name="AboutTitleFindNextButton"
-                Grid.Column="2"
+                Grid.Column="3"
                 Text="Next"
                 IsEnabled="False"
                 Clicked="OnAboutFindNextClicked"
@@ -109,7 +126,7 @@
 
       <Button
                 x:Name="AboutTitleFindBackButton"
-                Grid.Column="3"
+                Grid.Column="4"
                 Text="Back"
                 IsEnabled="False"
                 Clicked="OnAboutFindBackClicked"
@@ -125,7 +142,7 @@
 
       <Button
                 x:Name="AboutTitleClearSearchButton"
-                Grid.Column="4"
+                Grid.Column="5"
                 Text="Clear"
                 IsEnabled="False"
                 Clicked="OnAboutClearSearchClicked"

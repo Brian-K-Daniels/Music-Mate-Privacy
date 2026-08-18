@@ -17,6 +17,7 @@ namespace musicmate.Pages
     public partial class MusicPage : ContentPage
     {
         private readonly NoteSessionService _session = null!;
+        private readonly DisplayedTuneHistory _displayedTunes = null!;
         private readonly IAudioCaptureService _audio = null!;
         private readonly IAudioPlaybackService _player = null!;
         
@@ -332,6 +333,8 @@ namespace musicmate.Pages
                 BackgroundColor = Colors.White;
                 _orientation = ServiceHelper.GetService<IOrientationService>()!;
                 _session = ServiceHelper.GetService<NoteSessionService>()!;
+                _displayedTunes = ServiceHelper.GetService<DisplayedTuneHistory>()
+                    ?? new DisplayedTuneHistory();
                 PlayModePickerOptions.ApplyPersistedSelection(_session);
                 _sessionDb = ServiceHelper.GetService<SessionDatabase>()!;
                 _sessionResultDb = ServiceHelper.GetService<SessionResultDatabase>()!;
@@ -787,21 +790,71 @@ namespace musicmate.Pages
                 if (_freezeStaff)
                     return;
 
-                _generationSeed = unchecked(_generationSeed + 1);
+                bool generatedTuneChecks = GeneratedTuneAcceptance.ChecksRequired(
+                    _session, LayoutTestTune.IsEnabled);
+                int generationAttempts = generatedTuneChecks
+                    ? GeneratedTuneAcceptance.MaxGenerationAttempts
+                    : 1;
 
-                UpdateTunerVisibility();
-
-                StaffBorder.IsVisible = true;
-
-                using (PracticeSessionStartProfiler.Scope("RegenerateNotes.ViewWidthWait"))
+                for (int attempt = 0; attempt < generationAttempts; attempt++)
                 {
-                    var sw2 = System.Diagnostics.Stopwatch.StartNew();
-                    while (StaffGraphicsView?.Width <= 0 && sw2.ElapsedMilliseconds < 500)
-                        await Task.Delay(20);
-                }
+                    if (attempt > 0)
+                    {
+                        if (_session.IsRandomMode)
+                            _session.EnsureRandomModeGenerationSettings();
+                        else if (_session.ChildLevel > 0)
+                            DifficultyLevelMapper.ApplyLevelDerivedSettings(_session.ChildLevel, _session);
 
-                using (PracticeSessionStartProfiler.Scope("RegenerateNotes.StaffDisplay"))
-                    await UpdateStaffDisplayAsync();
+                        if (!LayoutTestTune.IsEnabled)
+                            PracticeCompositionSelector.ApplyNextExerciseIfNeeded(_session, _generationSeed);
+
+                        _session.PrepareEffectiveScaleForGeneration(_generationSeed);
+                        UpdateEffectiveScaleLabel();
+                        UpdateNoteEmphasisBanner();
+                    }
+
+                    _generationSeed = unchecked(_generationSeed + 1);
+
+                    UpdateTunerVisibility();
+                    StaffBorder.IsVisible = true;
+
+                    using (PracticeSessionStartProfiler.Scope("RegenerateNotes.ViewWidthWait"))
+                    {
+                        var sw2 = System.Diagnostics.Stopwatch.StartNew();
+                        while (StaffGraphicsView?.Width <= 0 && sw2.ElapsedMilliseconds < 500)
+                            await Task.Delay(20);
+                    }
+
+                    using (PracticeSessionStartProfiler.Scope("RegenerateNotes.StaffDisplay"))
+                        await UpdateStaffDisplayAsync();
+
+                    generatedTuneChecks = GeneratedTuneAcceptance.ChecksRequired(
+                        _session, LayoutTestTune.IsEnabled);
+                    bool enoughPitches = GeneratedTuneAcceptance.HasEnoughDistinctSoundedPitches(
+                        _staffDrawable?.UpperNotes,
+                        _staffDrawable?.LowerNotes);
+                    bool uniquenessAccepted = false;
+                    if (generatedTuneChecks && enoughPitches)
+                    {
+                        string signature = GeneratedTuneSignature.FromStaffNotes(
+                            _staffDrawable?.UpperNotes,
+                            _staffDrawable?.LowerNotes);
+                        uniquenessAccepted = _displayedTunes.TryAccept(signature);
+                    }
+                    else if (generatedTuneChecks && !enoughPitches)
+                    {
+                        DebugLog.WriteLine(
+                            "[GeneratedTune] Rejected candidate with fewer than 2 distinct sounded pitches");
+                    }
+
+                    if (!GeneratedTuneAcceptance.ShouldRetry(
+                            generatedTuneChecks,
+                            enoughPitches,
+                            uniquenessAccepted,
+                            attempt,
+                            generationAttempts))
+                        break;
+                }
 
 
                 _session.IsDirty = false;  //  2026.07.09 1131  

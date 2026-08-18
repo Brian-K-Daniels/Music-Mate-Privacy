@@ -124,6 +124,14 @@ namespace musicmate.Services
             _session.ChildLevel = 1;
             SessionPreferences.Set(IntervalSightTrainingLogic.LevelPreferenceKey,
                 IntervalSightTrainingLogic.DefaultLevel);
+            SessionPreferences.Set(IntervalSingingTrainingLogic.LevelPreferenceKey,
+                IntervalSingingTrainingLogic.DefaultLevel);
+            SessionPreferences.Set(IntervalSingingTrainingLogic.ModePreferenceKey,
+                IntervalSingingTrainingLogic.DefaultMode.ToString());
+            SessionPreferences.Set(IntervalSingingTrainingLogic.DirectionPreferenceKey,
+                IntervalSingingTrainingLogic.DefaultDirectionMode.ToString());
+            SessionPreferences.Set(IntervalSingingTrainingLogic.StartNotePreferenceKey,
+                IntervalEarTrainingLogic.RandomStartNoteToken);
             _session.ClearChildPracticeSettingsCustomization();
             _session.ClearTemporaryNoteEmphasis("factory-reset");
 
@@ -280,6 +288,18 @@ namespace musicmate.Services
             SessionPreferences.Set(
                 IntervalEarTrainingLogic.DirectionPreferenceKey,
                 IntervalEarTrainingLogic.DefaultDirectionMode.ToString());
+            SessionPreferences.Set(
+                IntervalSingingTrainingLogic.LevelPreferenceKey,
+                IntervalSingingTrainingLogic.DefaultLevel);
+            SessionPreferences.Set(
+                IntervalSingingTrainingLogic.ModePreferenceKey,
+                IntervalSingingTrainingLogic.DefaultMode.ToString());
+            SessionPreferences.Set(
+                IntervalSingingTrainingLogic.DirectionPreferenceKey,
+                IntervalSingingTrainingLogic.DefaultDirectionMode.ToString());
+            SessionPreferences.Set(
+                IntervalSingingTrainingLogic.StartNotePreferenceKey,
+                IntervalEarTrainingLogic.RandomStartNoteToken);
             WaitingCountInSettings.ResetToFactoryDefaults();
 
             _session.SelectedScale = SettingsPageViewModel.DefaultTune;
