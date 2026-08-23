@@ -1,25 +1,31 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net10.0-android</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('windows'))">net10.0-windows10.0.19041.0;net10.0-android</TargetFrameworks>
+    <TargetFrameworks Condition="!$([MSBuild]::IsOSPlatform('windows'))">net10.0-android</TargetFrameworks>
     <OutputType>Exe</OutputType>
     <RootNamespace>musicmate</RootNamespace>
     <UseMaui>true</UseMaui>
     <SingleProject>true</SingleProject>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Compile bindings that set Source (x:Reference / x:Static) for better runtime perf. -->
+    <MauiEnableXamlCBindingWithSourceCompilation>true</MauiEnableXamlCBindingWithSourceCompilation>
+    <!-- SDK only excludes the project-root obj/bin; ignore nested leftovers (e.g. Views/obj). -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);**\bin\**;**\obj\**</DefaultItemExcludes>
 
     <!-- Display name -->
     <ApplicationTitle>Music Mate</ApplicationTitle>
-
     <!-- App Identifier -->
     <ApplicationId>com.bkdaniels.musicmate</ApplicationId>
 
     <!-- Versions -->
-    <ApplicationDisplayVersion>2.0</ApplicationDisplayVersion>
-    <ApplicationVersion>2</ApplicationVersion>
+    <ApplicationDisplayVersion>1.24</ApplicationDisplayVersion>
+    <ApplicationVersion>24</ApplicationVersion>
+    <PackageVersion>1.24</PackageVersion>
 
     <WindowsPackageType>None</WindowsPackageType>
+    <AllowUnsafeBlocks Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">true</AllowUnsafeBlocks>
 
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">21.0</SupportedOSPlatformVersion>
   </PropertyGroup>
@@ -32,37 +38,74 @@
     <AndroidSigningKeyStore>musicmate.keystore</AndroidSigningKeyStore>
     <AndroidSigningKeyAlias>musicmatekey</AndroidSigningKeyAlias>
     <AndroidPackageFormat>aab</AndroidPackageFormat>
+    <!-- Required for Archive / Play Store: disable Fast Deployment & shared runtime. -->
+    <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
+    <AndroidUseSharedRuntime>false</AndroidUseSharedRuntime>
+    <AndroidLinkMode>SdkOnly</AndroidLinkMode>
+    <DebugSymbols>false</DebugSymbols>
+    <AndroidIncludeDebugSymbols>false</AndroidIncludeDebugSymbols>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-android'">
     <AndroidEnable16kBpages>true</AndroidEnable16kBpages>
   </PropertyGroup>
 
+  <!-- Debug: distinct app id/title so DEV can install beside Release; keep symbols. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <ApplicationTitle>Music Mate DEV</ApplicationTitle>
+    <ApplicationId>com.bkdaniels.musicmate.dev</ApplicationId>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>portable</DebugType>
+    <Optimize>false</Optimize>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug' and '$(TargetFramework)' == 'net10.0-android'">
+    <AndroidIncludeDebugSymbols>true</AndroidIncludeDebugSymbols>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <AndroidLinkMode>SdkOnly</AndroidLinkMode>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'
+                          And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+    <AndroidLinkTool>r8</AndroidLinkTool>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-android'">
+    <LinkDescription Include="Platforms\Android\Linker.xml" />
+  </ItemGroup>
+
   <ItemGroup>
     <MauiIcon Include="Resources\AppIcon\appicon.png" />
+    <MauiSplashScreen Include="Resources\Splash\splash.png" Color="#8CFA64" BaseSize="128,128" />
     <MauiFont Include="Resources\Fonts\*" />
     <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Resources\Fonts\Bravura.otf" LogicalName="musicmate.Bravura.otf" />
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="MainPage-safety.xaml.cs" />
+    <MauiAsset Remove="Resources\Raw\about001.html" />
   </ItemGroup>
 
-
-  <!--<ItemGroup>
-    <None Remove="Design.docx" />
-    <None Remove="Resources\Images\logo.png" />
-  </ItemGroup>-->
+  <ItemGroup>
+    <None Remove="Resources\Raw\about001.html" />
+  </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Anjoxam.BillingClient.Droid" Version="7.1.1" />
+    <PackageReference Include="Xamarin.Android.Google.BillingClient"
+                  Version="8.0.0"
+                  Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'" />
+    <PackageReference Include="CommunityToolkit.Maui" Version="14.1.0" />
+    <PackageReference Include="CommunityToolkit.Maui.Core" Version="14.1.0" />
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.51" />
     <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.5" />
     <PackageReference Include="Microsoft.Maui.Essentials" Version="10.0.51" />
+    <PackageReference Include="Microsoft.Maui.Graphics.Skia" Version="10.0.51" />
     <PackageReference Include="Microsoft.Maui.Resizetizer" Version="10.0.51" />
     <PackageReference Include="NAudio" Version="2.3.0" />
     <PackageReference Include="nor0x.Maui.ColorPicker" Version="2.0.4" />
@@ -70,13 +113,28 @@
     <PackageReference Include="SkiaSharp" Version="3.119.2" />
     <PackageReference Include="SkiaSharp.Views" Version="3.119.2" />
     <PackageReference Include="SkiaSharp.Views.Maui.Controls" Version="3.119.2" />
-    <PackageReference Include="sqlite-net-pcl" Version="1.9.172" />
-    <PackageReference Include="SQLitePCLRaw.bundle_green" Version="2.1.11" />
+    <PackageReference Include="sqlite-net-base" Version="1.10.196-beta" />
+    <PackageReference Include="SQLitePCLRaw.config.e_sqlite3" Version="3.0.3" />
+    <PackageReference Include="SourceGear.sqlite3" Version="3.50.4.5" />
   </ItemGroup>
 
   <ItemGroup>
     <Folder Include="Data\" />
     <Folder Include="Resources\raw\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="musicmate.Tests\**" />
+    <Content Remove="musicmate.Tests\**" />
+    <EmbeddedResource Remove="musicmate.Tests\**" />
+    <MauiXaml Remove="musicmate.Tests\**" />
+    <None Remove="musicmate.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(Configuration)' != 'Debug'">
+    <Compile Remove="Pages\DebugItemsPage.xaml.cs" />
+    <Compile Remove="ViewModels\DebugItemsPageViewModel.cs" />
+    <MauiXaml Remove="Pages\DebugItemsPage.xaml" />
   </ItemGroup>
 
   <ItemGroup>
@@ -91,13 +149,16 @@
     <MauiXaml Update="Pages\AboutPage.xaml">
       <Generator>MSBuild:Compile</Generator>
     </MauiXaml>
-    <MauiXaml Update="Pages\MainPage.xaml">
+    <MauiXaml Update="Pages\HomePage.xaml">
       <Generator>MSBuild:Compile</Generator>
     </MauiXaml>
-    <MauiXaml Update="Pages\StatisticsPagess.xaml">
+    <MauiXaml Update="Pages\MusicPage.xaml">
       <Generator>MSBuild:Compile</Generator>
     </MauiXaml>
     <MauiXaml Update="Pages\SettingsPage.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </MauiXaml>
+    <MauiXaml Update="Pages\WhatToPlayPage.xaml">
       <Generator>MSBuild:Compile</Generator>
     </MauiXaml>
   </ItemGroup>

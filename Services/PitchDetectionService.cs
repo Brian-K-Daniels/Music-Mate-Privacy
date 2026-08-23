@@ -121,6 +121,80 @@ namespace musicmate.Services
                     else return 0;
                 }
 
+                // Low-end overtone guard: for instruments such as piano, the 2nd harmonic
+                // can dominate the NSDF and be selected by the first-peak scan instead of
+                // the fundamental (e.g. piano D3 detected as D4 because the D4-period peak
+                // appears at a shorter lag and scores above threshold first).
+                //
+                // If the first-peak lag is less than half the global-max lag AND the global-max
+                // is at least 90% as strong as the first-peak, the global-max is almost
+                // certainly the true fundamental at a longer (lower) lag.  We switch to it.
+                //
+                // Guard: only apply when the candidate frequency is above 250 Hz (below that
+                // the global-max heuristic is unreliable and risks false octave drops for
+                // already-correct bass detections).
+                if (globalMaxIdx > minLag
+                    && bestLag < globalMaxIdx / 2
+                    && nsdf[globalMaxIdx] >= 0.90 * nsdf[bestLag]
+                    && (double)sampleRate / bestLag > 250.0)
+                {
+                    bestLag = globalMaxIdx;
+                }
+
+                // Sub-harmonic correction: if the chosen lag is actually a harmonic
+                // (i.e. a lag at 2× or 3× also has a strong NSDF peak), prefer the
+                // longer lag (lower frequency = true fundamental).  This prevents the
+                // detector from locking onto a piano overtone — e.g. detecting the 3rd
+                // partial of F5 at ~2094 Hz (lag ≈ 21) instead of F5 at ~698 Hz (lag ≈ 63).
+                //
+                // Guard: only apply when bestLag implies a frequency > 1600 Hz.
+                //
+                // Why 1600 Hz?
+                //   • Piano/clarinet notes up to G6 (1568 Hz) are protected — no correction fires
+                //     for any note at or below G6, so the detectable ceiling extends from E6 to ~G6.
+                //   • The original F5 overtone problem (MPM locked onto F5's 3rd partial at
+                //     ~2094 Hz instead of the fundamental at 698 Hz) is still corrected because
+                //     2094 Hz > 1600 Hz.
+                //   • Guard of 1200 Hz (previous value) was firing for F6 (1378 Hz), causing
+                //     piano F6 to be detected as F5 due to strong octave sympathetic resonance.
+                //
+                // Using the ORIGINAL bestLag for every factor prevents cascading: without
+                // this, factor=2 updating bestLag causes factor=3 to jump 6× instead of 3×,
+                // producing absurd results such as B4 → E2.
+                if ((double)sampleRate / bestLag > 1600.0)
+                {
+                    int originalBestLag = bestLag;
+                    for (int factor = 2; factor <= 3; factor++)
+                    {
+                        int subLag = originalBestLag * factor;  // always relative to original
+                        if (subLag >= maxLag) break;
+                        // Search for a local peak near subLag (±2 samples)
+                        int searchStart = Math.Max(minLag + 1, subLag - 2);
+                        int searchEnd = Math.Min(nsdfLen - 2, subLag + 2);
+                        int peakAt = -1;
+                        double peakVal = double.MinValue;
+                        for (int t = searchStart; t <= searchEnd; t++)
+                        {
+                            if (nsdf[t] > peakVal)
+                            {
+                                peakVal = nsdf[t];
+                                peakAt = t;
+                            }
+                        }
+                        // Accept the sub-harmonic lag as the true fundamental if its NSDF
+                        // peak is at least 85% as strong as the current best peak AND it is
+                        // itself a local maximum (not just a shoulder or noise bump).
+                        if (peakAt > minLag
+                            && peakVal >= 0.85 * nsdf[originalBestLag]
+                            && nsdf[peakAt] > nsdf[peakAt - 1]
+                            && nsdf[peakAt] >= nsdf[peakAt + 1])
+                        {
+                            bestLag = peakAt;
+                            break;  // found the fundamental — stop checking higher factors
+                        }
+                    }
+                }
+
                 // Parabolic interpolation around bestLag for sub-sample accuracy
                 double refinedLag = bestLag;
                 if (bestLag > 0 && bestLag < nsdfLen - 1)

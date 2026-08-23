@@ -1,4 +1,7 @@
 using Application = Microsoft.Maui.Controls.Application;
+using Microsoft.Maui.ApplicationModel;
+using Microsoft.Maui.Storage;
+using musicmate.Services;
 #if WINDOWS
 using Microsoft.Maui.Platform;
 using Microsoft.UI.Windowing;
@@ -16,74 +19,101 @@ namespace musicmate
         {
             InitializeComponent();
 
+            Services.PrefSchemaMigration.ApplyIfNeeded();
+
             // Initialize premium status at app startup
             InitializePremiumStatus();
-        // Deploy saved panel background color early so pages bind to ThemeService with the right color
-        DeploySavedPanelBackground();
+            LoadSavedThemeColors();
         }
 
-    private void DeploySavedPanelBackground()
-    {
-        try
+        private void LoadSavedThemeColors()
         {
-            var theme = Services.ServiceHelper.GetService<Services.ThemeService>();
-            if (theme == null)
-                return;
-
-            var savedColorHex = Microsoft.Maui.Storage.Preferences.Default.Get<string?>("StaffPanelColor", null);
-            if (!string.IsNullOrEmpty(savedColorHex))
-            {
-                var savedColor = Microsoft.Maui.Graphics.Color.FromArgb(savedColorHex);
-                theme.PanelBackgroundColor = savedColor;
-                return;
-            }
-
-            // No saved color: instantiate a ColorPickerDialog to get its defaults (non-visual use)
             try
             {
-                var dialog = new musicmate.Controls.ColorPickerDialog();
-                dialog.ResetToDefaults();
-                var preview = dialog.PreviewColor;
-                theme.PanelBackgroundColor = preview;
-                Microsoft.Maui.Storage.Preferences.Default.Set("StaffPanelColor", preview.ToHex());
+                var theme = Services.ServiceHelper.GetService<Services.ThemeService>();
+                theme?.LoadFromPreferences();
+                theme?.PushToApplicationResources();
             }
-            catch
-            {
-                // Fallback to white if any error occurs
-                theme.PanelBackgroundColor = Microsoft.Maui.Graphics.Colors.White;
-            }
+            catch { }
         }
-        catch { }
-    }
 
         private async void InitializePremiumStatus()
         {
+#if !DEBUG
+            // Release: clear backup-/DEBUG-restored local flags, then start non-premium.
+            // A successful Play purchase query may then grant or keep false; a failed
+            // query must not be treated as proof of non-ownership (leave false + retry later).
+            ClearLocalPremiumCache();
+            ForceNonPremium();
+#endif
+
             var storeService = Services.ServiceHelper.GetService<Services.IStoreService>();
             if (storeService != null)
             {
                 try
                 {
                     await storeService.InitializeAsync();
-                    var purchased = await storeService.IsPurchasedAsync("premium");
-                    Services.StatusService.Instance.IsPremiumUser = purchased;
+                    var purchased = await storeService.IsPurchasedAsync(PremiumProduct.Id);
+#if !DEBUG
+                    // null = billing query failed/disconnected — do not change entitlement.
+                    if (purchased is true)
+                        Services.StatusService.Instance.IsPremiumUser = true;
+                    else if (purchased is false)
+                        ForceNonPremium();
+#else
+                    if (purchased is bool known)
+                        Services.StatusService.Instance.IsPremiumUser = known;
+#endif
                 }
                 catch
                 {
-                    // fallback to preferences if store fails
-                    var val = Microsoft.Maui.Storage.Preferences.Get("IsPremium", false);
+#if DEBUG
+                    // Debug: restore persisted state so testers don't lose premium on restart.
+                    var val = Preferences.Get(PremiumProduct.PreferenceKey, false);
                     Services.StatusService.Instance.IsPremiumUser = val;
+#else
+                    // Exception during billing setup — leave the cleared non-premium state;
+                    // page OnAppearing CheckPremiumStatusAsync will retry.
+#endif
                 }
             }
             else
             {
-                var val = Microsoft.Maui.Storage.Preferences.Get("IsPremium", false);
+#if DEBUG
+                var val = Preferences.Get(PremiumProduct.PreferenceKey, false);
                 Services.StatusService.Instance.IsPremiumUser = val;
+#else
+                ForceNonPremium();
+#endif
             }
         }
 
+#if !DEBUG
+        private static void ForceNonPremium()
+        {
+            ClearLocalPremiumCache();
+            // Setter no-ops when already false — clear the field directly too.
+            if (StatusService.Instance.IsPremiumUser)
+                StatusService.Instance.IsPremiumUser = false;
+        }
+#endif
+
+#if !DEBUG
+        private static void ClearLocalPremiumCache()
+        {
+            try { Preferences.Remove(PremiumProduct.PreferenceKey); } catch { }
+            try { SessionPreferences.Remove(PremiumProduct.PreferenceKey); } catch { }
+        }
+#endif
+
         protected override Window CreateWindow(IActivationState? activationState)
         {
-            return new Window(new AppShell());
+            var window = new Window(new AppShell());
+            Microsoft.Maui.ApplicationModel.MainThread.BeginInvokeOnMainThread(() =>
+            {
+                Services.ServiceHelper.GetService<Services.ThemeService>()?.ApplyToShellIfAvailable();
+            });
+            return window;
         }
     }
 }

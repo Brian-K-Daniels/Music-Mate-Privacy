@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+
+  <Style x:Key="ThemedPageLabel" TargetType="Label">
+    <Setter Property="TextColor" Value="{DynamicResource ThemeContrastingText}" />
+  </Style>
+
+  <Style x:Key="ThemedHeadingLabel" TargetType="Label">
+    <Setter Property="FontAttributes" Value="Bold" />
+    <Setter Property="TextColor" Value="{DynamicResource ThemeHeadingText}" />
+  </Style>
+
+  <Style x:Key="ThemedButton" TargetType="Button">
+    <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
+    <Setter Property="TextColor" Value="{DynamicResource ThemeButtonText}" />
+  </Style>
+
+  <Style x:Key="ThemedPicker" TargetType="Picker">
+    <Setter Property="BackgroundColor" Value="{DynamicResource ThemePickerBackground}" />
+    <Setter Property="TextColor" Value="{DynamicResource ThemePickerText}" />
+  </Style>
+
+  <Style x:Key="ThemedEntry" TargetType="Entry">
+    <Setter Property="BackgroundColor" Value="{DynamicResource ThemeEntryBackground}" />
+    <Setter Property="TextColor" Value="{DynamicResource ThemeEntryText}" />
+  </Style>
+
+  <Style x:Key="ThemedSlider" TargetType="Slider">
+    <Setter Property="ThumbColor" Value="{DynamicResource ThemeSlider}" />
+    <Setter Property="MinimumTrackColor" Value="{DynamicResource ThemeSlider}" />
+    <Setter Property="MaximumTrackColor" Value="#CCCCCC" />
+  </Style>
+
+  <Style x:Key="ThemedPanelBorder" TargetType="Border">
+    <Setter Property="Stroke" Value="{DynamicResource ThemePickerBorder}" />
+    <Setter Property="BackgroundColor" Value="{DynamicResource ThemeSecondPanelBackground}" />
+  </Style>
+
+  <Style x:Key="ThemedSwitch" TargetType="Switch">
+    <Setter Property="OnColor" Value="{DynamicResource ThemeSlider}" />
+  </Style>
+
+</ResourceDictionary>

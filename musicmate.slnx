@@ -2,4 +2,5 @@
   <Project Path="musicmate.csproj">
     <Deploy Solution="Debug|*" />
   </Project>
+  <Project Path="musicmate.Tests/musicmate.Tests.csproj" Id="musicmate-tests" />
 </Solution>

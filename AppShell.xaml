@@ -4,46 +4,129 @@
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:local="clr-namespace:musicmate.Pages"
+    xmlns:pages="clr-namespace:musicmate.Pages"
     x:Name="AppShellInstance"
     Title="MusicMate"
     FlyoutBehavior="Flyout"
-    FlyoutWidth="240"
-    Shell.BackgroundColor="Transparent"
-    Shell.FlyoutBackgroundColor="#000000"
-    Shell.TitleColor="White"
-    Shell.ForegroundColor="White"
-    Shell.UnselectedColor="#DDDDDD"
-    Shell.DisabledColor="#888888"
+    FlyoutWidth="300"
+    Shell.BackgroundColor="{DynamicResource ThemePanelBackground}"
+    Shell.FlyoutBackgroundColor="{DynamicResource ThemeSecondPanelBackground}"
+    Shell.TitleColor="{DynamicResource ThemeContrastingText}"
+    Shell.ForegroundColor="{DynamicResource ThemeContrastingText}"
+    Shell.UnselectedColor="{DynamicResource ThemeContrastingText}"
+    Shell.DisabledColor="{DynamicResource ThemeContrastingText}"
     Shell.NavBarIsVisible="False">
 
-  <FlyoutItem Title="Home">
+  <Shell.Resources>
+    <Style TargetType="Label" Class="FlyoutItemLabelStyle">
+      <Setter Property="TextColor" Value="{DynamicResource ThemeContrastingText}" />
+    </Style>
+    <Style TargetType="Grid" Class="FlyoutItemLayoutStyle" ApplyToDerivedTypes="True">
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemeSecondPanelBackground}" />
+    </Style>
+  </Shell.Resources>
+
+  <Shell.ItemTemplate>
+    <DataTemplate x:DataType="BaseShellItem">
+      <!-- Title-only row: no FlyoutIcon is set on any item; a null Image Source has
+           caused WinUI flyout rows to drop out of the list after navigation. -->
+      <Grid
+                HeightRequest="48"
+                Padding="20,0,12,0">
+        <Label
+                    Text="{Binding Title}"
+                    FontSize="16"
+                    TextColor="{DynamicResource ThemeContrastingText}"
+                    VerticalTextAlignment="Center" />
+      </Grid>
+    </DataTemplate>
+  </Shell.ItemTemplate>
+
+  <!-- Home is first so the app starts here without any navigation flash. -->
+  <FlyoutItem Title="Home" Route="Home">
     <ShellContent
-        Route="MainPage"
-        ContentTemplate="{DataTemplate local:MainPage}" />
+        Title="Home"
+        Route="HomePage"
+        ContentTemplate="{DataTemplate local:HomePage}" />
   </FlyoutItem>
-  
-  <FlyoutItem Title="Settings" >
+
+  <FlyoutItem Title="About" Route="About">
     <ShellContent
-        Route="SettingsPage"
-        ContentTemplate="{DataTemplate local:SettingsPage}" />
+       Route="AboutPage"
+       ContentTemplate="{DataTemplate local:AboutPage}" />
   </FlyoutItem>
-  
-  <FlyoutItem Title="Statistics" >
+
+  <FlyoutItem Title="What to Play" Route="WhatToPlay">
+    <ShellContent
+        Route="WhatToPlayPage"
+        ContentTemplate="{DataTemplate local:WhatToPlayPage}" />
+  </FlyoutItem>
+
+  <FlyoutItem Title="Music" Route="Music">
+    <ShellContent
+        Route="MusicPage"
+        ContentTemplate="{DataTemplate local:MusicPage}" />
+  </FlyoutItem>
+
+  <FlyoutItem Title="Interval Ear Training"
+              Route="EarTraining">
+    <ShellContent
+        Title="Interval Ear Training"
+        Route="IntervalEarTrainingPage"
+        ContentTemplate="{DataTemplate local:IntervalEarTrainingPage}" />
+  </FlyoutItem>
+
+  <!-- Same shape as Interval Ear Training — do not mutate Title/visibility at runtime
+       (WinUI blanks FlyoutItems when Title is rewritten; see MAUI #15827). -->
+  <FlyoutItem x:Name="SightTrainingFlyoutItem"
+              Title="Interval Sight Training"
+              Route="IntervalSightTraining">
+    <ShellContent
+        Title="Interval Sight Training"
+        Route="IntervalSightTrainingPage"
+        ContentTemplate="{DataTemplate local:IntervalSightTrainingPage}" />
+  </FlyoutItem>
+
+  <FlyoutItem Title="Interval Singing Training"
+              Route="SingingTraining">
+    <ShellContent
+        Title="Interval Singing Training"
+        Route="IntervalSingingTrainingPage"
+        ContentTemplate="{DataTemplate local:IntervalSingingTrainingPage}" />
+  </FlyoutItem>
+
+  <FlyoutItem Title="My Progress" Route="Statistics">
     <ShellContent
         Route="StatisticsPages"
         ContentTemplate="{DataTemplate local:StatisticsPages}" />
   </FlyoutItem>
+
   
-  <FlyoutItem Title="Advanced">
+  <FlyoutItem Title="Settings" Route="Settings">
     <ShellContent
-        Route="AdvancedPage"
-        ContentTemplate="{DataTemplate local:AdvancedPage}" />
-  </FlyoutItem>
-  <FlyoutItem Title="About" >
-    <ShellContent
-        Route="AboutPage"
-        ContentTemplate="{DataTemplate local:AboutPage}" />
+        Route="SettingsPage"
+        ContentTemplate="{DataTemplate local:SettingsPage}" />
   </FlyoutItem>
 
+  <FlyoutItem Title="Settings Advanced" Route="SettingsAdvanced">
+    <ShellContent
+      Route="AdvancedPage"
+      ContentTemplate="{DataTemplate local:AdvancedPage}" />
+  </FlyoutItem>
+
+
+  <FlyoutItem Title="Reset and Options" Route="SettingsReset">
+    <ShellContent
+      Route="ResetOptionsPage"
+      ContentTemplate="{DataTemplate local:ResetOptionsPage}" />
+  </FlyoutItem>
+
+  <!-- Same FlyoutItem pattern as other menu rows; page redirects into Music Tuner. -->
+  <FlyoutItem Title="Tuner" Route="TunerEntry">
+    <ShellContent
+        Title="Tuner"
+        Route="TunerEntryPage"
+        ContentTemplate="{DataTemplate local:TunerMenuPage}" />
+  </FlyoutItem>
 
 </Shell>

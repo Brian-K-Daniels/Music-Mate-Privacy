@@ -1,0 +1,114 @@
+using SQLite;
+
+namespace musicmate.Models
+{
+    /// <summary>
+    /// One row per completed child-Practice practice session.
+    /// Stored in a separate SQLite table so it does not affect the existing
+    /// SessionStat / NoteDatabase tables used by the advanced practice pages.
+    ///
+    /// FUTURE (level-up criteria): query this table for the last N sessions at
+    /// the current level and decide whether to advance.  Example:
+    ///   var recent = await db.GetByLevelAsync(level, last: 5);
+    ///   bool ready = recent.Count == 5 &amp;&amp; this was a double &amp;&amp; recent.All(r => r.OverallAccuracyPercent >= 80);
+    /// </summary>
+    public class SessionResult
+    {
+        [PrimaryKey, AutoIncrement]
+        public int Id { get; set; }
+
+        /// <summary>UTC timestamp when the session ended.</summary>
+        public DateTime DateTime { get; set; }
+
+        /// <summary>Short instrument key, e.g. "C", "Bb" — matches NoteSessionService.Instrument.</summary>
+        public string Instrument { get; set; } = "";
+
+        /// <summary>Child difficulty level (1–100) chosen on HomePage.</summary>
+        public int Level { get; set; }
+
+        /// <summary>Total note slots in the session (correct + wrong attempts combined, deduplicated to unique notes).</summary>
+        public int TotalNotes { get; set; }
+
+        /// <summary>Number of notes the player sang/played correctly (first or after retries).</summary>
+        public int CorrectPitchCount { get; set; }
+
+        /// <summary>
+        /// Number of incorrect pitch attempts across all notes.
+        /// A note with 0 wrong attempts is a "first-time correct".
+        /// </summary>
+        public int WrongPitchCount { get; set; }
+
+        /// <summary>
+        /// Pitch accuracy: CorrectPitchCount / TotalNotes * 100.
+        /// A note that required retries still counts as 1 correct out of TotalNotes.
+        /// </summary>
+        public double PitchAccuracyPercent { get; set; }
+
+        /// <summary>
+        /// Mean absolute pitch deviation in cents across all correctly identified notes.
+        /// Sourced from NoteSessionService.NoteFeedbacks[i].Cents for correct indices.
+        /// 0 if no correct notes.
+        /// </summary>
+        public double AveragePitchErrorCents { get; set; }
+
+        /// <summary>
+        /// Timing accuracy percentage (0–100) computed via least-squares onset fitting.
+        /// Measures how closely the player follows the written rhythm, allowing for
+        /// tempo variations. Null when fewer than 3 notes were played.
+        /// </summary>
+        public double? TimingAccuracyPercent { get; set; }
+
+        /// <summary>
+        /// Detected tempo in beats per minute from inter-onset intervals (IQR outlier trimmed).
+        /// Null when fewer than 2 onsets or no valid intervals remain.
+        /// </summary>
+        [Column("AverageTempoBpm")]
+        public int? DetectedBpm { get; set; }
+
+        // ── Deprecated timing fields (kept for database compatibility) ────────
+
+        /// <summary>
+        /// [DEPRECATED] Mean inter-note interval in milliseconds.
+        /// Use TimingAccuracyPercent instead.
+        /// </summary>
+        [System.Obsolete("Use TimingAccuracyPercent for least-squares onset timing")]
+        public double AverageTimingMs { get; set; }
+
+        /// <summary>
+        /// [DEPRECATED] Timing standard deviation in milliseconds.
+        /// Use TimingAccuracyPercent instead.
+        /// </summary>
+        [System.Obsolete("Use TimingAccuracyPercent for least-squares onset timing")]
+        public double TimingStdDevMs { get; set; }
+
+        // ── Overall ────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Composite score: blend of pitch and timing when timing data exists.
+        /// </summary>
+        public double OverallAccuracyPercent { get; set; }
+
+        [Column("PchRt")]
+        public int PitchRightCount { get; set; }
+        [Column("PchWr")]
+        public int PitchWrongCount { get; set; }
+        [Column("TmgRt")]
+        public int TimingRightCount { get; set; }
+        [Column("TmgWr")]
+        public int TimingWrongCount { get; set; }
+        [Column("OvrRt")]
+        public int OverallRightCount { get; set; }
+        [Column("OvrWr")]
+        public int OverallWrongCount { get; set; }
+        [Column("RstRt")]
+        public int RestRightCount { get; set; }
+        [Column("RstWr")]
+        public int RestWrongCount { get; set; }
+
+        // ── Computed helpers (not stored) ──────────────────────────────────────
+
+        [Ignore]
+        public string Summary =>
+            $"Level {Level} | {Instrument} | {OverallAccuracyPercent:F0}% | {DateTime:g}";
+    }
+}

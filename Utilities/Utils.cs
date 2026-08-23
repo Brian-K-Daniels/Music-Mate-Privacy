@@ -2,6 +2,9 @@ using System.Diagnostics;
 using System;
 using System.Linq;
 using System.Reflection;
+#if DEBUG
+using musicmate.Diagnostics;
+#endif
 
 namespace musicmate.Utilities
 {
@@ -11,14 +14,18 @@ namespace musicmate.Utilities
         public static void Log(object ob)
         {
             string message = "void";
-            if(ob is string)
+            if (ob is string)
             {
                 message = (string)ob;
             }
-            else if ( ob is List<double> dblList )
+            else if (ob is List<double> dblList)
             {
                 message = string.Join(", ", dblList);
             }
+#if DEBUG
+            if (!DebugLogSettings.IsEnabled(DebugLogSettings.ResolveFromMessage(message)))
+                return;
+#endif
             Debug.WriteLine($"[MusicMate] {message}");
         }
 
@@ -77,11 +84,8 @@ namespace musicmate.Utilities
         //    layout.Padding = new Thickness(dips, top, right, bottom);
         //}  //  2026.04.02 1719  block out
 
-        //public static double MmToDips(double mm)
-        //{
-        //    // Convert millimetres to device-independent pixels (DIPs)
-        //    return mm * (160.0 / 25.4);
-        //} //  2026.04.02 1719  block out
+        public static double MmToDips(double mm)
+            => mm * (160.0 / 25.4);
     }
 }
 

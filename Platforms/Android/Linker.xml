@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Preserve types and members that the SdkOnly linker would otherwise strip in Release builds.
+  Add any class whose properties/methods disappear in Release but work in Debug here.
+-->
+<linker>
+
+  <!-- Preserve all NoteSessionService members (streak, mastery, BPM stats, etc.) -->
+  <assembly fullname="musicmate">
+    <type fullname="musicmate.Services.NoteSessionService" preserve="all" />
+    <type fullname="musicmate.Services.StatusService" preserve="all" />
+    <type fullname="musicmate.Services.ThemeService" preserve="all" />
+    <type fullname="musicmate.ViewModels.SettingsPageViewModel" preserve="all" />
+    <type fullname="musicmate.ViewModels.AdvancedPageViewModel" preserve="all" />
+    <type fullname="musicmate.ViewModels.AboutPageViewModel" preserve="all" />
+    <type fullname="musicmate.Platforms.Android.GooglePlayStoreService" preserve="all" />
+    <type fullname="musicmate.Services.LocalStoreService" preserve="all" />
+  </assembly>
+
+  <!-- Preserve Google Play Billing types used via reflection/JNI -->
+  <assembly fullname="Xamarin.Android.Google.BillingClient">
+    <type fullname="*" preserve="all" />
+  </assembly>
+
+</linker>

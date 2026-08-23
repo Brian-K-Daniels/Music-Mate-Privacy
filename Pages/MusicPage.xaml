@@ -1,0 +1,797 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:services="clr-namespace:musicmate.Services"
+             xmlns:controls="clr-namespace:musicmate.Controls"
+             xmlns:pages="clr-namespace:musicmate.Pages"
+             x:Class="musicmate.Pages.MusicPage"
+             x:DataType="services:NoteSessionService"
+             x:Name="musicPage"
+             Shell.NavBarIsVisible="True"
+             Padding="0"
+             BackgroundColor="#F7F7F7">
+
+  <Shell.TitleView>
+    <Grid x:Name="TitleMarqueeGrid"
+          ColumnDefinitions="Auto,Auto,Auto,*,Auto" HeightRequest="52" VerticalOptions="Fill"
+          BackgroundColor="Transparent">
+      <Button Grid.Column="0"
+              Text="←"
+              Clicked="OnNavigateWhatToPlayClicked"
+              BackgroundColor="{DynamicResource ThemeButtonBackground}"
+              TextColor="{DynamicResource ThemeContrastingText}"
+              FontSize="18"
+              Padding="12,0"
+              WidthRequest="56"
+              HeightRequest="40"
+              MinimumHeightRequest="40"
+              MinimumWidthRequest="56"
+              CornerRadius="8"
+              BorderWidth="0"
+              BorderColor="Transparent"
+              VerticalOptions="Center"
+              Margin="0,0,10,0" />
+      <Grid Grid.Column="1"
+            x:Name="TitleStartStopSlot"
+            WidthRequest="64"
+            HeightRequest="52"
+            VerticalOptions="Center">
+        <Grid.GestureRecognizers>
+          <TapGestureRecognizer Tapped="OnStartStopToggleClicked" />
+        </Grid.GestureRecognizers>
+        <Border x:Name="TitleStartStopButton"
+                StrokeThickness="0"
+                BackgroundColor="#008000"
+                HorizontalOptions="Center"
+                VerticalOptions="Center">
+          <Border.StrokeShape>
+            <RoundRectangle CornerRadius="16" />
+          </Border.StrokeShape>
+        </Border>
+      </Grid>
+      <Label x:Name="TitlePageModeLabel"
+             Text="  Music "
+             TextColor="{DynamicResource ThemeContrastingText}"
+             FontAttributes="Bold"
+             FontSize="18"
+             VerticalOptions="Center"
+             HorizontalOptions="Start"
+             Grid.Column="2" />
+      <Label x:Name="StatusLabelShell"
+             Text="{Binding Source={x:Static services:StatusService.Instance}, Path=StatusMessage, x:DataType=services:StatusService}"
+             TextColor="Black"
+             FontAttributes="Bold"
+             FontSize="10"
+             VerticalOptions="Center"
+             HorizontalOptions="Start"
+             Grid.Column="3"/>
+      <Border Style="{StaticResource TitleLogoBorder}"
+              VerticalOptions="Center"
+              HorizontalOptions="End"
+              Grid.Column="4">
+        <Image Source="logo.png" Aspect="AspectFill" />
+      </Border>
+    </Grid>
+  </Shell.TitleView>
+
+  <ContentPage.Resources>
+    <Style x:Key="CompactBrownBox" TargetType="Border">
+      <Setter Property="Background" Value="#8B4513" />
+      <Setter Property="Stroke" Value="Black" />
+      <Setter Property="StrokeThickness" Value="2" />
+      <Setter Property="StrokeShape">
+        <Setter.Value>
+          <RoundRectangle CornerRadius="8" />
+        </Setter.Value>
+      </Setter>
+      <Setter Property="Padding" Value="6,2" />
+      <Setter Property="HeightRequest" Value="28" />
+      <Setter Property="VerticalOptions" Value="Center" />
+      <Setter Property="HorizontalOptions" Value="Center" />
+    </Style>
+    <Style x:Key="CompactBrownBoxFill" TargetType="Border" BasedOn="{StaticResource CompactBrownBox}">
+      <Setter Property="HorizontalOptions" Value="Fill" />
+      <Setter Property="Padding" Value="4,2" />
+    </Style>
+    <Style x:Key="PracticeBottomPicker" TargetType="Picker">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="TextColor" Value="#000000" />
+      <Setter Property="BackgroundColor" Value="Transparent" />
+      <Setter Property="VerticalOptions" Value="Fill" />
+      <Setter Property="HorizontalOptions" Value="Fill" />
+      <Setter Property="HeightRequest" Value="28" />
+    </Style>
+    <Style x:Key="CompactBrownButton" TargetType="Button">
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeContrastingText}" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontAttributes" Value="Bold" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="HeightRequest" Value="40" />
+      <Setter Property="MinimumHeightRequest" Value="40" />
+      <Setter Property="Padding" Value="8,4" />
+      <Setter Property="BorderWidth" Value="0" />
+      <Setter Property="VerticalOptions" Value="Center" />
+      <Setter Property="HorizontalOptions" Value="Fill" />
+    </Style>
+    <!-- Tuner chrome: shared radius/height/padding; no borders. Fonts set per control. -->
+    <x:Double x:Key="TunerControlHeight">44</x:Double>
+    <x:Double x:Key="TunerActionRowHeight">44</x:Double>
+    <x:Double x:Key="TunerControlCornerRadius">8</x:Double>
+    <x:Double x:Key="TunerControlSpacing">4</x:Double>
+    <x:Double x:Key="TunerVerticalSpacing">0</x:Double>
+    <Style x:Key="TunerControlButton" TargetType="Button">
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeContrastingText}" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="BorderWidth" Value="0" />
+      <Setter Property="BorderColor" Value="Transparent" />
+      <Setter Property="HeightRequest" Value="44" />
+      <Setter Property="MinimumHeightRequest" Value="44" />
+      <Setter Property="MinimumWidthRequest" Value="44" />
+      <Setter Property="Padding" Value="8,0" />
+      <Setter Property="VerticalOptions" Value="Center" />
+      <Setter Property="HorizontalOptions" Value="Fill" />
+    </Style>
+    <Style x:Key="TunerPickerChrome" TargetType="Border">
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
+      <Setter Property="Stroke" Value="Transparent" />
+      <Setter Property="StrokeThickness" Value="0" />
+      <Setter Property="StrokeShape">
+        <Setter.Value>
+          <RoundRectangle CornerRadius="8" />
+        </Setter.Value>
+      </Setter>
+      <Setter Property="HeightRequest" Value="44" />
+      <Setter Property="MinimumHeightRequest" Value="44" />
+      <Setter Property="Padding" Value="8,0" />
+      <Setter Property="VerticalOptions" Value="Center" />
+      <Setter Property="HorizontalOptions" Value="Fill" />
+      <Setter Property="IsClippedToBounds" Value="False" />
+    </Style>
+  </ContentPage.Resources>
+
+  <Grid x:Name="MainPageRootGrid">
+    <ScrollView x:Name="MainScrollView" HorizontalScrollBarVisibility="Never"
+                Padding="0,0,0,0" Margin="0" HorizontalOptions="Fill">
+      <VerticalStackLayout x:Name="MainPageMainLayout" Spacing="16" Padding="0,0,0,0" Margin="0,0,0,0" HorizontalOptions="Fill">
+
+        <!-- Pickers row: Instrument | Key | (Concert E) | Scale+Tune picker -->
+        <VerticalStackLayout x:Name="PickersContainer" Padding="0">
+          <VerticalStackLayout.Margin>
+            <OnPlatform x:TypeArguments="Thickness">
+              <On Platform="WinUI"   Value="0,20,0,0" />
+              <On Platform="Android" Value="0,0,0,0" />
+            </OnPlatform>
+          </VerticalStackLayout.Margin>
+          <Grid ColumnDefinitions="Auto,190,Auto,40,Auto,*"
+                ColumnSpacing="6"
+                VerticalOptions="Center"
+                Margin="0,4,0,4"
+                HorizontalOptions="Fill">
+
+            <!-- Instrument -->
+            <Label Grid.Column="0"
+                   Text="Instrument"
+                   FontSize="11"
+                   TextColor="#333333"
+                   Margin="8,0,0,0"
+                   VerticalOptions="Center" />
+            <Border Grid.Column="1" Style="{StaticResource CompactBrownBox}">
+              <Grid WidthRequest="160">
+                <Picker x:Name="InstrumentPicker"
+                        SelectedIndexChanged="InstrumentPicker_SelectedIndexChanged"
+                        Unfocused="InstrumentPicker_Unfocused"
+                        HeightRequest="28"
+                        FontSize="11"
+                        TextColor="White"
+                        BackgroundColor="#2C2C2C"
+                        VerticalOptions="Fill"
+                        HorizontalOptions="Fill"
+                        IsEnabled="True"
+                        InputTransparent="False"
+                        IsVisible="{Binding Source={x:Reference musicPage}, Path=IsInstrumentPickerVisible, x:DataType=pages:MusicPage}" />
+                <Border BackgroundColor="White" Stroke="#8B4513" StrokeThickness="2"
+                        StrokeShape="RoundRectangle 8"
+                        Padding="8,2" HeightRequest="28"
+                        VerticalOptions="Center" HorizontalOptions="Fill"
+                        IsVisible="{Binding Source={x:Reference musicPage}, Path=IsInstrumentLabelVisible, x:DataType=pages:MusicPage}">
+                  <Label x:Name="InstrumentPickerOverlay"
+                         Text="{Binding SelectedInstrumentShort, Source={x:Reference musicPage}, x:DataType=pages:MusicPage}"
+                         VerticalOptions="Center"
+                         HorizontalOptions="Fill"
+                         Padding="10,0"
+                         FontSize="11"
+                         TextColor="Black">
+                    <Label.GestureRecognizers>
+                      <TapGestureRecognizer Tapped="OnInstrumentLabelTapped" />
+                    </Label.GestureRecognizers>
+                  </Label>
+                </Border>
+              </Grid>
+            </Border>
+
+            <!-- Key (hidden in Tuner mode) -->
+            <Label x:Name="KeyLabel"
+                   Grid.Column="2"
+                   Text="Key"
+                   FontSize="11"
+                   TextColor="#333333"
+                   VerticalOptions="Center" />
+            <Border x:Name="KeyBorder" Grid.Column="3" Style="{StaticResource CompactBrownBox}">
+              <Picker x:Name="KeyPicker"
+                      HeightRequest="28"
+                      FontSize="11"
+                      TextColor="#000000"
+                      BackgroundColor="White"
+                      VerticalOptions="Fill"
+                      HorizontalOptions="Fill" />
+            </Border>
+
+            <!-- Concert key e.g. "(Concert E)" (hidden in Tuner mode) -->
+            <Label x:Name="ConcertKeyLabel"
+                   Grid.Column="4"
+                   FontSize="11"
+                   TextColor="#333333"
+                   VerticalOptions="Center" />
+
+            <!-- Combined Scale / Tune picker -->
+            <Border Grid.Column="5"
+                    Style="{StaticResource CompactBrownBox}"
+                    HorizontalOptions="Fill"
+                    Margin="0,0,8,0">
+              <Picker x:Name="ScaleTunePicker"
+                      HeightRequest="28"
+                      FontSize="11"
+                      TextColor="#000000"
+                      BackgroundColor="White"
+                      VerticalOptions="Fill"
+                      HorizontalOptions="Fill" />
+            </Border>
+
+          </Grid>
+
+          <Label x:Name="EffectiveScaleLabel"
+                 Text="{Binding Source={x:Reference musicPage}, Path=EffectiveScaleLabelText, x:DataType=pages:MusicPage}"
+                 IsVisible="{Binding Source={x:Reference musicPage}, Path=IsEffectiveScaleLabelVisible, x:DataType=pages:MusicPage}"
+                 FontSize="13"
+                 FontAttributes="Bold"
+                 TextColor="#8B4513"
+                 Margin="8,2,8,0"
+                 HorizontalOptions="Start" />
+
+          <Grid x:Name="NoteEmphasisBanner"
+                IsVisible="False"
+                ColumnDefinitions="*,Auto"
+                Margin="8,2,8,0"
+                ColumnSpacing="8">
+            <Label Grid.Column="0"
+                   x:Name="NoteEmphasisLabel"
+                   FontSize="13"
+                   FontAttributes="Bold"
+                   TextColor="{DynamicResource ThemeHeadingText}"
+                   VerticalOptions="Center"
+                   LineBreakMode="WordWrap" />
+            <Button Grid.Column="1"
+                    Text="Clear emphasis"
+                    Clicked="OnClearNoteEmphasisClicked"
+                    FontSize="11"
+                    Padding="10,4"
+                    VerticalOptions="Center" />
+          </Grid>
+
+          </VerticalStackLayout>
+
+          <!-- Session result banner: shown after a session completes, hidden while playing -->
+          <Border x:Name="SessionResultBanner"
+                  IsVisible="False"
+                  BackgroundColor="#1A5C1A"
+                  Stroke="#2E8B2E"
+                  StrokeShape="RoundRectangle 8"
+                  StrokeThickness="1"
+                  Padding="10,6"
+                  Margin="8,0,8,4">
+            <Label x:Name="SessionResultLabel"
+                   Text=""
+                   FontSize="15"
+                   FontAttributes="Bold"
+                   TextColor="White"
+                   HorizontalOptions="Center"
+                   HorizontalTextAlignment="Center" />
+          </Border>
+
+          <!-- Staff area: practice staff or Tuner panels -->
+        <VerticalStackLayout x:Name="StaffAreaStack" Spacing="0" HorizontalOptions="Fill" VerticalOptions="Fill">
+          <Grid HorizontalOptions="Fill"
+                VerticalOptions="Fill">
+              <Border x:Name="StaffBorder"
+                      Stroke="MediumPurple"
+                      StrokeThickness="2"
+                      StrokeShape="RoundRectangle 8"
+                      BackgroundColor="{Binding PanelBackgroundColor}"
+                      Padding="0"
+                      IsVisible="True"
+                      HorizontalOptions="Fill"
+                      VerticalOptions="Start">
+                <GraphicsView x:Name="StaffGraphicsView"
+                              HeightRequest="240"
+                              BackgroundColor="{Binding PanelBackgroundColor}"
+                              HorizontalOptions="Fill"
+                              Margin="0" />
+              </Border>
+
+              <!-- Tuner mode: narrower staff | wider Metronome controls -->
+              <Grid x:Name="TunerGrid"
+                    ColumnDefinitions="2*,3*"
+                    ColumnSpacing="6"
+                    IsVisible="False"
+                    Margin="0"
+                    Padding="0"
+                    VerticalOptions="Start"
+                    HorizontalOptions="Fill">
+                <Border x:Name="TunerBorder"
+                        Grid.Column="0"
+                        Stroke="Green"
+                        StrokeThickness="2"
+                        StrokeShape="RoundRectangle 8"
+                        BackgroundColor="{Binding PanelBackgroundColor}"
+                        Padding="2"
+                        HorizontalOptions="Fill"
+                        VerticalOptions="Fill">
+                  <Border.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnTunerStaffTapped" />
+                  </Border.GestureRecognizers>
+                  <GraphicsView x:Name="TunerGraphicsView"
+                                HorizontalOptions="Fill"
+                                VerticalOptions="Fill"
+                                InputTransparent="True"
+                                SemanticProperties.Description="Selected reference note staff. Tap to play the tone." />
+                </Border>
+                <Border x:Name="TunerInfoBorder"
+                        Grid.Column="1"
+                        Stroke="Green"
+                        StrokeThickness="2"
+                        StrokeShape="RoundRectangle 8"
+                        Padding="4,1"
+                        HorizontalOptions="Fill"
+                        VerticalOptions="Fill">
+                  <Grid x:Name="TunerReferenceControls"
+                        RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
+                        RowSpacing="1"
+                        HorizontalOptions="Fill"
+                        VerticalOptions="Start"
+                        Padding="2,0,2,2">
+                    <!-- Note Heard [written note for selected instrument] -->
+                    <Grid Grid.Row="0"
+                          ColumnDefinitions="Auto,*"
+                          ColumnSpacing="{StaticResource TunerControlSpacing}"
+                          HorizontalOptions="Fill">
+                      <Label Grid.Column="0"
+                             Text="Note Heard"
+                             FontSize="12"
+                             FontAttributes="Bold"
+                             VerticalOptions="Center"
+                             TextColor="#000000" />
+                      <Label x:Name="TunerNoteHeardValueLabel"
+                             Grid.Column="1"
+                             Text="—"
+                             FontSize="14"
+                             FontAttributes="Bold"
+                             VerticalOptions="Center"
+                             HorizontalTextAlignment="Start"
+                             LineBreakMode="TailTruncation"
+                             MaxLines="1"
+                             TextColor="#000000" />
+                    </Grid>
+
+                    <!-- Heard / Nearest frequencies (small font) -->
+                    <Grid Grid.Row="1"
+                          ColumnDefinitions="*,*"
+                          ColumnSpacing="{StaticResource TunerControlSpacing}"
+                          HorizontalOptions="Fill"
+                          Margin="0">
+                      <Label Grid.Column="0"
+                             Text="{Binding TunerLastDetectedFreq, StringFormat='Heard: {0:F1} Hz'}"
+                             FontSize="10"
+                             HorizontalOptions="Start"
+                             HorizontalTextAlignment="Start"
+                             LineBreakMode="TailTruncation"
+                             MaxLines="1"
+                             TextColor="#000000" />
+                      <Label Grid.Column="1"
+                             Text="{Binding TunerLastNearestFreq, StringFormat='Nearest: {0:F1} Hz'}"
+                             FontSize="10"
+                             HorizontalOptions="End"
+                             HorizontalTextAlignment="End"
+                             LineBreakMode="TailTruncation"
+                             MaxLines="1"
+                             TextColor="#000000" />
+                    </Grid>
+
+                    <!-- Inst. + Note pickers on one row; chrome sized to the selected text -->
+                    <Grid Grid.Row="2"
+                          ColumnDefinitions="Auto,Auto,Auto,Auto"
+                          ColumnSpacing="{StaticResource TunerControlSpacing}"
+                          HeightRequest="{StaticResource TunerActionRowHeight}"
+                          MinimumHeightRequest="{StaticResource TunerActionRowHeight}"
+                          HorizontalOptions="Fill"
+                          Margin="0">
+                      <Label Grid.Column="0"
+                             Text="Inst."
+                             FontSize="12"
+                             FontAttributes="Bold"
+                             VerticalOptions="Center"
+                             LineBreakMode="NoWrap"
+                             MaxLines="1"
+                             TextColor="#000000" />
+                      <Border Grid.Column="1"
+                              x:Name="TunerInstrumentPickerChrome"
+                              Style="{StaticResource TunerPickerChrome}"
+                              HeightRequest="{StaticResource TunerActionRowHeight}"
+                              MinimumHeightRequest="{StaticResource TunerActionRowHeight}"
+                              WidthRequest="132"
+                              Padding="8,0"
+                              HorizontalOptions="Start">
+                        <Picker x:Name="TunerInstrumentPicker"
+                                Title="Inst."
+                                FontSize="11"
+                                FontAttributes="Bold"
+                                HorizontalTextAlignment="Start"
+                                VerticalOptions="Fill"
+                                HorizontalOptions="Fill"
+                                VerticalTextAlignment="Center"
+                                BackgroundColor="Transparent"
+                                TextColor="{DynamicResource ThemeContrastingText}"
+                                SelectedIndexChanged="TunerInstrumentPicker_SelectedIndexChanged" />
+                      </Border>
+                      <Label Grid.Column="2"
+                             Text="Note"
+                             FontSize="12"
+                             FontAttributes="Bold"
+                             VerticalOptions="Center"
+                             Margin="6,0,0,0"
+                             LineBreakMode="NoWrap"
+                             MaxLines="1"
+                             TextColor="#000000" />
+                      <Border Grid.Column="3"
+                              x:Name="TunerNotePickerChrome"
+                              Style="{StaticResource TunerPickerChrome}"
+                              HeightRequest="{StaticResource TunerActionRowHeight}"
+                              MinimumHeightRequest="{StaticResource TunerActionRowHeight}"
+                              WidthRequest="72"
+                              Padding="8,0"
+                              HorizontalOptions="Start">
+                        <Picker x:Name="TunerNotePicker"
+                                Title="Note"
+                                FontSize="11"
+                                FontAttributes="Bold"
+                                HorizontalTextAlignment="Start"
+                                VerticalOptions="Fill"
+                                HorizontalOptions="Fill"
+                                VerticalTextAlignment="Center"
+                                BackgroundColor="Transparent"
+                                TextColor="{DynamicResource ThemeContrastingText}"
+                                SelectedIndexChanged="OnTunerNotePickerChanged"
+                                SemanticProperties.Description="Written note to show and play for the selected instrument" />
+                      </Border>
+                    </Grid>
+
+                    <Label x:Name="TunerModeStatusLabel"
+                           Grid.Row="3"
+                           Text="Metronome"
+                           FontSize="14"
+                           FontAttributes="Bold"
+                           HorizontalOptions="Center"
+                           VerticalOptions="Center"
+                           Margin="0,2,0,0"
+                           TextColor="#000000"
+                           IsVisible="True" />
+
+                    <Label Grid.Row="4"
+                           Text="(Setup in Settings / Waiting Count-In)"
+                           FontSize="10"
+                           HorizontalOptions="Center"
+                           HorizontalTextAlignment="Center"
+                           LineBreakMode="WordWrap"
+                           TextColor="#444444"
+                           Margin="0" />
+
+                    <!-- Tempo | picker | bpm | Start -->
+                    <Grid Grid.Row="5"
+                          ColumnDefinitions="Auto,Auto,Auto,*"
+                          ColumnSpacing="{StaticResource TunerControlSpacing}"
+                          HeightRequest="{StaticResource TunerActionRowHeight}"
+                          MinimumHeightRequest="{StaticResource TunerActionRowHeight}"
+                          HorizontalOptions="Fill">
+                      <Label Grid.Column="0"
+                             Text="Tempo"
+                             FontSize="12"
+                             FontAttributes="Bold"
+                             VerticalOptions="Center"
+                             VerticalTextAlignment="Center"
+                             LineBreakMode="NoWrap"
+                             MaxLines="1"
+                             TextColor="#000000" />
+                      <Border Grid.Column="1"
+                              Style="{StaticResource TunerPickerChrome}"
+                              HeightRequest="{StaticResource TunerActionRowHeight}"
+                              MinimumHeightRequest="{StaticResource TunerActionRowHeight}"
+                              WidthRequest="72"
+                              Padding="6,0"
+                              HorizontalOptions="Start">
+                        <Picker x:Name="TunerTempoPicker"
+                                Title="BPM"
+                                FontSize="12"
+                                FontAttributes="Bold"
+                                VerticalOptions="Fill"
+                                HorizontalOptions="Fill"
+                                VerticalTextAlignment="Center"
+                                BackgroundColor="Transparent"
+                                TextColor="{DynamicResource ThemeContrastingText}"
+                                SelectedIndexChanged="OnTunerTempoPickerChanged"
+                                SemanticProperties.Description="Tempo for Tuner metronome" />
+                      </Border>
+                      <Label Grid.Column="2"
+                             Text="bpm"
+                             FontSize="12"
+                             FontAttributes="Bold"
+                             VerticalOptions="Center"
+                             VerticalTextAlignment="Center"
+                             LineBreakMode="NoWrap"
+                             MaxLines="1"
+                             TextColor="#000000" />
+                      <Button x:Name="TunerPlayNoteButton"
+                              Grid.Column="3"
+                              Style="{StaticResource TunerControlButton}"
+                              HeightRequest="{StaticResource TunerActionRowHeight}"
+                              MinimumHeightRequest="{StaticResource TunerActionRowHeight}"
+                              Text="Start"
+                              FontSize="12"
+                              FontAttributes="Bold"
+                              TextColor="White"
+                              BackgroundColor="#2E8B57"
+                              WidthRequest="72"
+                              MinimumWidthRequest="64"
+                              Padding="4,0"
+                              HorizontalOptions="End"
+                              Clicked="OnTunerPlayNoteClicked"
+                              SemanticProperties.Description="Start or stop Tuner metronome" />
+                    </Grid>
+                  </Grid>
+                </Border>
+              </Grid>
+          </Grid>
+        </VerticalStackLayout>
+
+          <!-- Child level step buttons (below staff, above bottom pickers/buttons) -->
+          <Border x:Name="ChildLevelSliderRow"
+                  Margin="12,4,12,0"
+                  Padding="8,6"
+                  BackgroundColor="#EDE8E0"
+                  Stroke="#8B4513"
+                  StrokeThickness="1"
+                  StrokeShape="RoundRectangle 8"
+                  HorizontalOptions="Fill"
+                  IsVisible="{Binding Source={x:Reference musicPage}, Path=IsChildLevelSliderVisible, x:DataType=pages:MusicPage}">
+            <Grid ColumnDefinitions="*,*,*,Auto,*,*,*"
+                  ColumnSpacing="4"
+                  HeightRequest="40"
+                  VerticalOptions="Center"
+                  HorizontalOptions="Fill">
+              <Button Grid.Column="0"
+                      Text="−10"
+                      FontSize="12"
+                      FontAttributes="Bold"
+                      TextColor="{DynamicResource ThemeContrastingText}"
+                      BackgroundColor="{DynamicResource ThemeButtonBackground}"                      
+                      CornerRadius="12"
+                      Padding="0"
+                      HeightRequest="36"
+                      VerticalOptions="Center"
+                      HorizontalOptions="Fill"
+                      CommandParameter="-10"
+                      Clicked="OnChildLevelDeltaClicked" />
+              <!--BackgroundColor="#8B4513"-->
+              <Button Grid.Column="1"
+                      Text="−5"
+                      FontSize="12"
+                      FontAttributes="Bold"
+                      TextColor="{DynamicResource ThemeContrastingText}"
+                      BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                      CornerRadius="12"
+                      Padding="0"
+                      HeightRequest="36"
+                      VerticalOptions="Center"
+                      HorizontalOptions="Fill"
+                      CommandParameter="-5"
+                      Clicked="OnChildLevelDeltaClicked" />
+              <Button Grid.Column="2"
+                      Text="−1"
+                      FontSize="12"
+                      FontAttributes="Bold"
+                      TextColor="{DynamicResource ThemeContrastingText}"
+                      BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                      CornerRadius="12"
+                      Padding="0"
+                      HeightRequest="36"
+                      VerticalOptions="Center"
+                      HorizontalOptions="Fill"
+                      CommandParameter="-1"
+                      Clicked="OnChildLevelDeltaClicked" />
+              <HorizontalStackLayout Grid.Column="3"
+                                     Spacing="4"
+                                     Margin="6,0"
+                                     VerticalOptions="Center"
+                                     HorizontalOptions="Center">
+                <Label Text="Level"
+                       FontSize="13"
+                       FontAttributes="Bold"
+                       TextColor="#1A1A1A"
+                       VerticalOptions="Center" />
+                <Label x:Name="ChildLevelSliderValueLabel"
+                       Text="1"
+                       FontSize="13"
+                       FontAttributes="Bold"                       
+                       BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                       TextColor="#1A1A1A"
+                       VerticalOptions="Center"
+                       MinimumWidthRequest="24"
+                       HorizontalTextAlignment="Center" />
+              </HorizontalStackLayout>
+              <Button Grid.Column="4"
+                      Text="+1"
+                      FontSize="12"
+                      FontAttributes="Bold"
+                      TextColor="{DynamicResource ThemeContrastingText}"                       
+                       BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                      CornerRadius="12"
+                      Padding="0"
+                      HeightRequest="36"
+                      VerticalOptions="Center"
+                      HorizontalOptions="Fill"
+                      CommandParameter="1"
+                      Clicked="OnChildLevelDeltaClicked" />
+              <Button Grid.Column="5"
+                      Text="+5"
+                      FontSize="12"
+                      FontAttributes="Bold"                       
+                      BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                      TextColor="{DynamicResource ThemeContrastingText}"
+                      CornerRadius="12"
+                      Padding="0"
+                      HeightRequest="36"
+                      VerticalOptions="Center"
+                      HorizontalOptions="Fill"
+                      CommandParameter="5"
+                      Clicked="OnChildLevelDeltaClicked" />
+              <Button Grid.Column="6"
+                      Text="+10"
+                      FontSize="12"
+                      FontAttributes="Bold"
+                      TextColor="{DynamicResource ThemeContrastingText}"
+                      BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                      CornerRadius="12"
+                      Padding="0"
+                      HeightRequest="36"
+                      VerticalOptions="Center"
+                      HorizontalOptions="Fill"
+                      CommandParameter="10"
+                      Clicked="OnChildLevelDeltaClicked" />
+            </Grid>
+          </Border>
+
+          <!-- Save / delete user practice tunes (scrolls with staff) -->
+          <Grid x:Name="SavedTuneButtonRow"
+                Margin="8,4,8,0"
+                ColumnDefinitions="*,*"
+                ColumnSpacing="8"
+                HorizontalOptions="Fill"
+                IsVisible="{Binding Source={x:Reference musicPage}, Path=IsBottomButtonRowVisible, x:DataType=pages:MusicPage}">
+            <Button Grid.Column="0"
+                    Text="Save Tune As"
+                    Style="{StaticResource CompactBrownButton}"
+                    HorizontalOptions="Fill"
+                    Clicked="OnSaveTuneAsClicked" />
+            <Button Grid.Column="1"
+                    Text="Delete Saved Tune"
+                    Style="{StaticResource CompactBrownButton}"
+                    HorizontalOptions="Fill"
+                    Clicked="OnDeleteSavedTuneClicked" />
+          </Grid>
+
+          <!-- Bottom row: practice pickers -->
+          <Grid x:Name="BottomButtonRow"
+                Margin="8,8,8,8"
+                ColumnSpacing="0"
+                HorizontalOptions="Fill"
+                IsVisible="{Binding Source={x:Reference musicPage}, Path=IsBottomButtonRowVisible, x:DataType=pages:MusicPage}">
+
+            <Grid x:Name="BottomPickersLayout"
+                  ColumnDefinitions="Auto,180,Auto,55,Auto,*"
+                  ColumnSpacing="4"
+                  VerticalOptions="Center"
+                  HorizontalOptions="Fill"
+                  IsVisible="{Binding Source={x:Reference musicPage}, Path=IsBottomPickersVisible, x:DataType=pages:MusicPage}">
+              <Label Grid.Column="0"
+                     Text="Inst."
+                     FontSize="10"
+                     TextColor="#333333"
+                     VerticalOptions="Center"
+                     Margin="0,0,2,0"
+                     LineBreakMode="TailTruncation"
+                     MaxLines="1" />
+              <Border Grid.Column="1" Style="{StaticResource CompactBrownBoxFill}">
+                <Grid BackgroundColor="White">
+                  <Picker x:Name="PracticeInstrumentPicker"
+                          Style="{StaticResource PracticeBottomPicker}" />
+                </Grid>
+              </Border>
+              <Label x:Name="PracticeKeyLabel"
+                     Grid.Column="2"
+                     Text="Key"
+                     FontSize="10"
+                     TextColor="#333333"
+                     VerticalOptions="Center"
+                     Margin="2,0,2,0" />
+              <Border x:Name="PracticeKeyBorder" Grid.Column="3" Style="{StaticResource CompactBrownBoxFill}">
+                <Grid BackgroundColor="White">
+                  <Picker x:Name="PracticeKeyPicker"
+                          Style="{StaticResource PracticeBottomPicker}" />
+                </Grid>
+              </Border>
+              <Label x:Name="PracticeConcertKeyLabel"
+                     Grid.Column="4"
+                     FontSize="9"
+                     TextColor="#333333"
+                     VerticalOptions="Center"
+                     Margin="2,0,4,0"
+                     LineBreakMode="TailTruncation"
+                     MaxLines="1"
+                     MaximumWidthRequest="88" />
+              <Border Grid.Column="5"
+                      Style="{StaticResource CompactBrownBoxFill}"
+                      HorizontalOptions="Fill">
+                <Grid BackgroundColor="White">
+                  <Label FontSize="10"
+                         TextColor="#000000"
+                         BackgroundColor="Transparent"
+                         VerticalOptions="Center"
+                         HorizontalOptions="Fill"
+                         VerticalTextAlignment="Center"
+                         LineBreakMode="TailTruncation"
+                         MaxLines="1"
+                         Padding="6,0"
+                         Text="{Binding Source={x:Reference musicPage}, Path=PracticePlayItemLabelText, x:DataType=pages:MusicPage}" />
+                </Grid>
+              </Border>
+            </Grid>
+
+          </Grid>
+
+      </VerticalStackLayout>
+    </ScrollView>
+
+    <!-- Play overlay under marquee start/stop; label content sized in code -->
+    <Border x:Name="TitlePlayButton"
+            BackgroundColor="#2E8B57"
+            Stroke="#1F5C3A"
+            StrokeThickness="1"
+            Padding="0"
+            InputTransparent="False"
+            HorizontalOptions="Start"
+            VerticalOptions="Start"
+            ZIndex="10"
+            IsVisible="{Binding Source={x:Reference musicPage}, Path=IsTitlePlayButtonVisible, x:DataType=pages:MusicPage}">
+      <Border.StrokeShape>
+        <RoundRectangle CornerRadius="2" />
+      </Border.StrokeShape>
+      <Border.GestureRecognizers>
+        <TapGestureRecognizer Tapped="OnPlayEvaluateClicked" />
+      </Border.GestureRecognizers>
+    </Border>
+
+    <!-- Color picker dialog overlay (full-page, above everything) -->
+    <controls:ColorPickerDialog x:Name="ColorPickerDialog"
+                                IsVisible="False" />
+  </Grid>
+</ContentPage>

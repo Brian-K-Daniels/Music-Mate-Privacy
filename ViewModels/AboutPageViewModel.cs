@@ -10,20 +10,17 @@ namespace musicmate.ViewModels
 {
     public class AboutPageViewModel : INotifyPropertyChanged
     {
-        private const string PremiumKey = "IsPremium";
         private Color _backgroundColor = Colors.White;
         private double _selectedFontSize;
         ThemeService? _themeService;
-        private const string AboutFontSizeKey = "About_FontSize";
         private readonly IStoreService? _storeService;
 
         public AboutPageViewModel(ThemeService theme)
         {
-            FontSizeOptions = new ObservableCollection<double> { 6, 8, 10, 12, 14 };
+            FontSizeOptions = AboutFontSizes.CreateCollection();
             // Default selection from preferences or fallback to 12
-            var defaultSize = FontSizeOptions[3];
-            var saved = Preferences.Get(AboutFontSizeKey, defaultSize);
-            SelectedFontSize = FontSizeOptions.Contains(saved) ? saved : defaultSize;
+            var saved = Preferences.Get(AboutFontSizes.PreferenceKey, AboutFontSizes.Default);
+            SelectedFontSize = AboutFontSizes.ClampOrDefault(saved);
 
             _themeService = theme;
             _backgroundColor = _themeService.PanelBackgroundColor;
@@ -76,14 +73,8 @@ namespace musicmate.ViewModels
             }
         }
 
-        public Color ContrastingTextColor
-        {
-            get
-            {
-                double luminance = 0.299 * PanelBackgroundColor.Red + 0.587 * PanelBackgroundColor.Green + 0.114 * PanelBackgroundColor.Blue;
-                return luminance > 0.5 ? Colors.Black : Colors.White;
-            }
-        }
+        public Color ContrastingTextColor => _themeService?.ContrastingTextColor
+            ?? ThemeColorContrast.GetContrastingTextColor(PanelBackgroundColor);
 
         public ObservableCollection<double> FontSizeOptions { get; }
 
@@ -95,10 +86,26 @@ namespace musicmate.ViewModels
                 if (_selectedFontSize != value)
                 {
                     _selectedFontSize = value;
-                    Preferences.Set(AboutFontSizeKey, value);
+                    Preferences.Set(AboutFontSizes.PreferenceKey, value);
                     OnPropertyChanged(nameof(SelectedFontSize));
                 }
             }
+        }
+
+        /// <summary>
+        /// Preference key shared with Settings → Display ("Font used in About page").
+        /// </summary>
+        public const string FontSizePreferenceKey = AboutFontSizes.PreferenceKey;
+
+        /// <summary>Re-reads the About font size after it may have been changed in Settings.</summary>
+        public void ReloadFontSizeFromPreferences()
+        {
+            var saved = Preferences.Get(AboutFontSizes.PreferenceKey, AboutFontSizes.Default);
+            var next = AboutFontSizes.ClampOrDefault(saved);
+            if (_selectedFontSize == next)
+                return;
+            _selectedFontSize = next;
+            OnPropertyChanged(nameof(SelectedFontSize));
         }
 
         private bool _isPremium;
@@ -110,12 +117,27 @@ namespace musicmate.ViewModels
                 if (_isPremium != value)
                 {
                     _isPremium = value;
-                    Preferences.Set(PremiumKey, value);
-                    StatusService.Instance.IsPremiumUser = value;
+                    StatusService.Instance.IsPremiumUser = value;  // persists via StatusService
                     OnPropertyChanged(nameof(IsPremium));
+                    OnPropertyChanged(nameof(NotIsPremium));
+                    OnPropertyChanged(nameof(IsDebugRestoreVisible));
                 }
             }
         }
+
+        /// <summary>Inverse of IsPremium — used to show/hide the "Get Premium" button.</summary>
+        public bool NotIsPremium => !_isPremium;
+
+        /// <summary>
+        /// True only in DEBUG builds when the user currently has premium — shows the
+        /// "Remove Premium (debug)" reset button. Always false in Release.
+        /// </summary>
+        public bool IsDebugRestoreVisible =>
+#if DEBUG
+            _isPremium;
+#else
+            false;
+#endif
 
         public ICommand BuyPremiumCommand { get; }
         public ICommand RestorePurchasesCommand { get; }
@@ -125,7 +147,15 @@ namespace musicmate.ViewModels
             System.Diagnostics.Debug.WriteLine($"BuyPremiumAsync called. StoreService={_storeService?.GetType().Name}");
             if (_storeService != null)
             {
-                var ok = await _storeService.PurchaseAsync("premium");
+                // Restore first — USB Release builds often already own Premium in Play.
+                var alreadyOwned = await _storeService.CheckPremiumStatusAsync();
+                if (alreadyOwned)
+                {
+                    MainThread.BeginInvokeOnMainThread(() => IsPremium = true);
+                    return;
+                }
+
+                var ok = await _storeService.PurchaseAsync(PremiumProduct.Id);
                 System.Diagnostics.Debug.WriteLine($"PurchaseAsync returned: {ok}");
                 if (ok)
                 {
@@ -134,24 +164,33 @@ namespace musicmate.ViewModels
             }
             else
             {
+#if DEBUG
+                // Debug-only stub when no store is registered.
                 MainThread.BeginInvokeOnMainThread(() => IsPremium = true);
+#else
+                // Release: never grant premium without a store confirmation.
+                System.Diagnostics.Debug.WriteLine("BuyPremiumAsync: no store service — leaving non-premium.");
+#endif
             }
         }
 
         private async Task RestorePurchasesAsync()
         {
             System.Diagnostics.Debug.WriteLine($"RestorePurchasesAsync called. StoreService={_storeService?.GetType().Name}");
+#if DEBUG
+            // In Debug: this button is a reset tool — unconditionally remove premium.
+            if (_storeService != null)
+                await _storeService.RestorePurchasesAsync();   // resets the local stub flag
+            MainThread.BeginInvokeOnMainThread(() => IsPremium = false);
+#else
+            // In Release: genuine restore from the store (should never be reached — button is hidden).
             if (_storeService != null)
             {
                 var ok = await _storeService.RestorePurchasesAsync();
                 System.Diagnostics.Debug.WriteLine($"RestorePurchasesAsync returned: {ok}");
                 MainThread.BeginInvokeOnMainThread(() => IsPremium = ok);
             }
-            else
-            {
-                // No store service available — nothing to restore
-                MainThread.BeginInvokeOnMainThread(() => IsPremium = false);
-            }
+#endif
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;

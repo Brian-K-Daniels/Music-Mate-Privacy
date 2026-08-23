@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="musicmate.Pages.IntervalSightTrainingPage"
+             Title="Interval (in semitones) Sight Training"
+             Shell.NavBarIsVisible="True"
+             BackgroundColor="{DynamicResource ThemePanelBackground}">
+
+  <ContentPage.Resources>
+    <Style x:Key="SightTrainButton" TargetType="Button">
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeContrastingText}" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="BorderWidth" Value="0" />
+      <Setter Property="FontAttributes" Value="Bold" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="MinimumHeightRequest" Value="36" />
+      <Setter Property="HeightRequest" Value="36" />
+      <Setter Property="Padding" Value="2,1" />
+      <Setter Property="HorizontalOptions" Value="Fill" />
+      <Setter Property="VerticalOptions" Value="Fill" />
+      <Setter Property="LineBreakMode" Value="TailTruncation" />
+    </Style>
+
+    <!-- Interval answers: family BackgroundColor is set in code; VisualStates must not replace it. -->
+    <Style x:Key="SightTrainIntervalButton" TargetType="Button">
+      <Setter Property="TextColor" Value="#1F2937" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="BorderWidth" Value="0" />
+      <Setter Property="FontAttributes" Value="Bold" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="MinimumHeightRequest" Value="36" />
+      <Setter Property="HeightRequest" Value="36" />
+      <Setter Property="Padding" Value="2,1" />
+      <Setter Property="HorizontalOptions" Value="Fill" />
+      <Setter Property="VerticalOptions" Value="Fill" />
+      <Setter Property="LineBreakMode" Value="TailTruncation" />
+      <Setter Property="VisualStateManager.VisualStateGroups">
+        <VisualStateGroupList>
+          <VisualStateGroup x:Name="CommonStates">
+            <VisualState x:Name="Normal">
+              <VisualState.Setters>
+                <Setter Property="Opacity" Value="1" />
+                <Setter Property="Scale" Value="1" />
+              </VisualState.Setters>
+            </VisualState>
+            <VisualState x:Name="Disabled">
+              <VisualState.Setters>
+                <Setter Property="Opacity" Value="0.55" />
+                <Setter Property="Scale" Value="1" />
+              </VisualState.Setters>
+            </VisualState>
+            <VisualState x:Name="Pressed">
+              <VisualState.Setters>
+                <Setter Property="Opacity" Value="0.88" />
+                <Setter Property="Scale" Value="0.98" />
+              </VisualState.Setters>
+            </VisualState>
+            <VisualState x:Name="PointerOver">
+              <VisualState.Setters>
+                <Setter Property="Opacity" Value="0.95" />
+                <Setter Property="Scale" Value="1" />
+              </VisualState.Setters>
+            </VisualState>
+          </VisualStateGroup>
+        </VisualStateGroupList>
+      </Setter>
+    </Style>
+  </ContentPage.Resources>
+
+  <Shell.TitleView>
+    <Grid ColumnDefinitions="Auto,*,Auto"
+          ColumnSpacing="8"
+          HeightRequest="44"
+          Padding="0,0,8,0"
+          VerticalOptions="Center">
+      <Button Grid.Column="0"
+              Style="{StaticResource MusicNavBackButton}"
+              Clicked="OnNavigateMusicClicked"
+              SemanticProperties.Description="Go to Music page" />
+      <Label Grid.Column="1"
+             Text="Interval (in semitones) Sight Training"
+             FontAttributes="Bold"
+             FontSize="16"
+             LineBreakMode="TailTruncation"
+             MaxLines="1"
+             TextColor="{DynamicResource ThemeContrastingText}"
+             VerticalOptions="Center" />
+      <Border Grid.Column="2"
+              Style="{StaticResource TitleLogoBorder}"
+              VerticalOptions="Center"
+              HorizontalOptions="End">
+        <Image Source="logo.png" Aspect="AspectFill" />
+      </Border>
+    </Grid>
+  </Shell.TitleView>
+
+  <Grid x:Name="RootLayout">
+    <ScrollView x:Name="MainScroll"
+                VerticalOptions="Fill"
+                HorizontalOptions="Fill"
+                VerticalScrollBarVisibility="Default">
+      <VerticalStackLayout x:Name="MainLayout"
+                           Spacing="8"
+                           HorizontalOptions="Fill"
+                           Padding="4,8,4,12">
+
+        <Grid x:Name="ToolbarRow"
+              ColumnDefinitions="Auto,*,Auto"
+              ColumnSpacing="6"
+              HeightRequest="32"
+              HorizontalOptions="Fill"
+              VerticalOptions="Center">
+          <Label Grid.Column="0"
+                 Text="Level"
+                 FontSize="12"
+                 FontAttributes="Bold"
+                 TextColor="{DynamicResource ThemeContrastingText}"
+                 VerticalOptions="Center" />
+          <Slider x:Name="LevelSlider"
+                  Grid.Column="1"
+                  Minimum="1"
+                  Maximum="100"
+                  Value="1"
+                  MinimumTrackColor="{DynamicResource ThemeSlider}"
+                  ThumbColor="{DynamicResource ThemeSlider}"
+                  VerticalOptions="Center"
+                  HorizontalOptions="Fill"
+                  ValueChanged="OnLevelSliderValueChanged"
+                  SemanticProperties.Description="Child Level for Sight Training, 1 to 100" />
+          <Label x:Name="LevelValueLabel"
+                 Grid.Column="2"
+                 Text="1"
+                 FontSize="13"
+                 FontAttributes="Bold"
+                 MinimumWidthRequest="28"
+                 HorizontalTextAlignment="End"
+                 TextColor="{DynamicResource ThemeContrastingText}"
+                 VerticalOptions="Center" />
+        </Grid>
+
+        <!-- Explicit height set in code; kept short enough that buttons stay on-screen. -->
+        <GraphicsView x:Name="StaffGraphicsView"
+                      Margin="0,2,0,0"
+                      VerticalOptions="Start"
+                      HorizontalOptions="Fill"
+                      MinimumHeightRequest="96" />
+
+        <Grid x:Name="IntervalButtonsHost"
+              ColumnDefinitions="*,*,*,*,*"
+              ColumnSpacing="2"
+              RowSpacing="2"
+              HorizontalOptions="Fill" />
+      </VerticalStackLayout>
+    </ScrollView>
+
+    <Grid x:Name="FeedbackOverlay"
+          IsVisible="False"
+          BackgroundColor="#88000000"
+          InputTransparent="False">
+      <Border BackgroundColor="{DynamicResource ThemeButtonBackground}"
+              StrokeThickness="0"
+              StrokeShape="RoundRectangle 16"
+              Padding="28,20"
+              HorizontalOptions="Center"
+              VerticalOptions="Center">
+        <Label x:Name="FeedbackTitleLabel"
+               Text="Correct!"
+               FontSize="28"
+               FontAttributes="Bold"
+               HorizontalTextAlignment="Center"
+               TextColor="{DynamicResource ThemeContrastingText}" />
+      </Border>
+    </Grid>
+  </Grid>
+</ContentPage>

@@ -14,6 +14,7 @@ namespace musicmate.Services
 
         public int SampleRate { get; } = 44100;
         public int BufferSize { get; } = 1024;
+        public bool IsCapturing => _waveIn != null;
 
         public Task EnsurePermissionAsync()
         {
@@ -23,18 +24,35 @@ namespace musicmate.Services
 
         public void StartCapture(Action<short[]> onBlock)
         {
-            _callback = onBlock;
-            StopCapture();
-            _blockCount = 0;
+            if (!TryStartCapture(onBlock, out var error))
+                throw new InvalidOperationException(error ?? "WaveIn failed to start.");
+        }
 
-            _waveIn = new WaveInEvent
+        public bool TryStartCapture(Action<short[]> onBlock, out string? error)
+        {
+            error = null;
+            try
             {
-                DeviceNumber = 0,
-                WaveFormat = new WaveFormat(SampleRate, 16, 1),
-                BufferMilliseconds = (int)(1000.0 * BufferSize / (double)SampleRate)
-            };
-            _waveIn.DataAvailable += OnDataAvailable;
-            _waveIn.StartRecording();
+                _callback = onBlock;
+                StopCapture();
+                _blockCount = 0;
+
+                _waveIn = new WaveInEvent
+                {
+                    DeviceNumber = 0,
+                    WaveFormat = new WaveFormat(SampleRate, 16, 1),
+                    BufferMilliseconds = (int)(1000.0 * BufferSize / (double)SampleRate)
+                };
+                _waveIn.DataAvailable += OnDataAvailable;
+                _waveIn.StartRecording();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                Debug.WriteLine($"StartCapture error: {ex}");
+                return false;
+            }
         }
 
         private void OnDataAvailable(object? sender, WaveInEventArgs e)

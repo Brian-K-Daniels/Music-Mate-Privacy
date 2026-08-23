@@ -1,170 +1,350 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:controls="clr-namespace:musicmate.Controls"
+             xmlns:vm="clr-namespace:musicmate.ViewModels"
              x:Class="musicmate.Pages.SettingsPage"
-             x:Name="SettingsPageRoot"
-             Title="Settings"
+             x:DataType="vm:SettingsPageViewModel"
              Shell.NavBarIsVisible="True"
-             BackgroundColor="{Binding PanelBackgroundColor}">
+             BackgroundColor="{DynamicResource ThemePanelBackground}">
 
   <ContentPage.Resources>
     <Style TargetType="Label">
-      <Setter Property="TextColor" Value="{Binding ContrastingTextColor}" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeContrastingText}" />
       <Setter Property="FontSize" Value="13" />
+      <Setter Property="VerticalOptions" Value="Center" />
     </Style>
-    <Style x:Key="BrownSlider" TargetType="Slider">
-      <Setter Property="ThumbColor" Value="#8B4513" />
-      <Setter Property="MinimumTrackColor" Value="#8B4513" />
+    <Style x:Key="SliderStyle" TargetType="Slider">
+      <Setter Property="ThumbColor" Value="{DynamicResource ThemeButtonBackground}" />
+      <Setter Property="MinimumTrackColor" Value="{DynamicResource ThemeSlider}" />
       <Setter Property="MaximumTrackColor" Value="#CCCCCC" />
+      <Setter Property="HorizontalOptions" Value="Fill" />
     </Style>
     <Style TargetType="Button">
-      <Setter Property="TextColor" Value="{Binding ContrastingTextColor}" />
-      <Setter Property="BackgroundColor" Value="#8B4513" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeButtonText}" />
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
       <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="FontAttributes" Value="Bold" />
       <Setter Property="Padding" Value="12,4" />
-      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Margin" Value="4,2" />
+      <Setter Property="FontSize" Value="12" />
     </Style>
-    <Style TargetType="Border">
-      <Setter Property="Stroke" Value="#8B4513" />
+    <Style x:Key="SettingsPanelBorder" TargetType="Border">
+      <Setter Property="Stroke" Value="{DynamicResource ThemePickerBorder}" />
+      <Setter Property="Padding" Value="12" />
+      <Setter Property="Margin" Value="0,0,0,8" />
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemeSecondPanelBackground}" />
     </Style>
-    <Style TargetType="Picker">
-      <Setter Property="TextColor" Value="Black" />
-      <Setter Property="BackgroundColor" Value="White" />
-      <Setter Property="FontSize" Value="13" />
-    </Style>
-    <Style x:Key="PremiumButtonStyle" TargetType="Button">
-      <Setter Property="BackgroundColor" Value="#8B4513" />
-      <Setter Property="TextColor" Value="White" />
-      <Setter Property="CornerRadius" Value="8" />
+    <Style x:Key="SettingsPanelTitle" TargetType="Label">
       <Setter Property="FontAttributes" Value="Bold" />
-      <Setter Property="Padding" Value="12,4" />
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeHeadingText}" />
+      <Setter Property="Margin" Value="0,0,0,6" />
+    </Style>
+    <Style x:Key="SettingsPickerStyle" TargetType="Picker">
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemePickerBackground}" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemePickerText}" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style x:Key="SettingsEntryStyle" TargetType="Entry">
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemeEntryBackground}" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeEntryText}" />
+      <Setter Property="FontSize" Value="12" />
     </Style>
   </ContentPage.Resources>
-  
+
   <Shell.TitleView>
-    <Grid ColumnDefinitions="*,Auto" HeightRequest="30" VerticalOptions="Center">
+    <Grid ColumnDefinitions="*,Auto" HeightRequest="44" VerticalOptions="Center" BackgroundColor="Transparent">
       <HorizontalStackLayout Spacing="10" VerticalOptions="Center" Grid.Column="0">
         <Button Text="←"
-                Clicked="OnNavigateHomeClicked"
-                BackgroundColor="Transparent"
-                TextColor="White"
+                Clicked="OnNavigatePracticeClicked"
+                BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                TextColor="{DynamicResource ThemeContrastingText}"
                 FontSize="18"
-                Padding="0"
-                WidthRequest="32" />
+                Padding="12,0"
+                WidthRequest="56" />
         <Label Text="Settings"
+               TextColor="{DynamicResource ThemeContrastingText}"
                FontAttributes="Bold"
-               FontSize="18"               
-               TextColor="White"
+               FontSize="18"
                VerticalOptions="Center" />
       </HorizontalStackLayout>
-      <Image Source="logo.png"
-             HeightRequest="32"
-             WidthRequest="32"
-             VerticalOptions="Center"
-             HorizontalOptions="End"
-             Grid.Column="1" />
+      <Border Style="{StaticResource TitleLogoBorder}"
+              VerticalOptions="Center"
+              HorizontalOptions="End"
+              Grid.Column="1">
+        <Image Source="logo.png" Aspect="AspectFill" />
+      </Border>
     </Grid>
   </Shell.TitleView>
 
-  <ScrollView>
-    <VerticalStackLayout x:Name="SettingsMainLayout" Spacing="16">
+  <Grid>
+    <ScrollView>
+      <VerticalStackLayout Padding="8,6" Spacing="4">
 
-      <!-- Scale/Range -->
-      <ScrollView Orientation="Horizontal">
-        <HorizontalStackLayout Spacing="2" VerticalOptions="Center">
-          <Label Text="Scale" FontSize="13" VerticalOptions="Center" />
-          <Border Stroke="#8B4513" StrokeThickness="2" BackgroundColor="Transparent">
-                    <Picker x:Name="ScalePicker"
-                    ItemsSource="{Binding AvailableScalesForBinding}"
-                    SelectedItem="{Binding SelectedScale, Mode=TwoWay}"
-                    WidthRequest="240"
-                    TextColor="Black"
-                    BackgroundColor="Transparent"
-                    FontSize="12" />
-          </Border>
-          <Label Text="Lowest" FontSize="13" VerticalOptions="Center" />
-          <Border StrokeThickness="2" Stroke="#8B4513" BackgroundColor="Transparent">
-            <Picker x:Name="LowestNotePicker"
-                    ItemsSource="{Binding WhiteKeyNoteNames}"
-                    SelectedItem="{Binding LowestNote, Mode=TwoWay}"
-                    WidthRequest="50"
-                    TextColor="Black"
-                    BackgroundColor="Transparent"
-                    FontSize="12" />
-          </Border>
-          <Label Text="Highest" FontSize="13" VerticalOptions="Center" />
-          <Border StrokeThickness="2" StrokeShape="RoundRectangle 4" Padding="0" BackgroundColor="Transparent">
-            <Picker x:Name="HighestNotePicker"
-                    ItemsSource="{Binding WhiteKeyNoteNames}"
-                    SelectedItem="{Binding HighestNote, Mode=TwoWay}"
-                    WidthRequest="50"
-                    TextColor="Black"
-                    BackgroundColor="Transparent"
-                    FontSize="12" />
-          </Border>
-        </HorizontalStackLayout>
-      </ScrollView>
-      <!-- Uniform slider rows -->
-      <VerticalStackLayout Spacing="12">
-        <Grid ColumnDefinitions="140,*,50" ColumnSpacing="8" VerticalOptions="Center">
-          <Label Text="Playback BPM" VerticalOptions="Center" Grid.Column="0" />
-          <Slider Minimum="30" Maximum="200"
-                  Value="{Binding PlaybackBpm, Mode=TwoWay}"
-                  HorizontalOptions="Fill" Style="{StaticResource BrownSlider}" Grid.Column="1" />
-          <Label Text="{Binding PlaybackBpm}" VerticalOptions="Center" HorizontalTextAlignment="Center" Grid.Column="2" />
-        </Grid>
-
-        <Grid ColumnDefinitions="140,*,50" ColumnSpacing="8" VerticalOptions="Center">
-          <Label Text="Accidental %" VerticalOptions="Center" Grid.Column="0" />
-          <Slider Minimum="0" Maximum="100"
-                  Value="{Binding AccidentalPercent, Mode=TwoWay}"
-                  HorizontalOptions="Fill" Style="{StaticResource BrownSlider}" Grid.Column="1" />
-          <Label Text="{Binding AccidentalPercent}" VerticalOptions="Center" HorizontalTextAlignment="Center" Grid.Column="2" />
-        </Grid>
-
-        <Grid ColumnDefinitions="140,*,50" ColumnSpacing="8" VerticalOptions="Center">
-          <Label Text="Omit notes at/above % correct" VerticalOptions="Center" Grid.Column="0" />
-          <Slider Minimum="0" Maximum="100"
-                  Value="{Binding CorrectThreshold, Mode=TwoWay}"
-                  HorizontalOptions="Fill" Style="{StaticResource BrownSlider}" Grid.Column="1" />
-          <Label Text="{Binding CorrectThreshold}" VerticalOptions="Center" HorizontalTextAlignment="Center" Grid.Column="2" />
-        </Grid>
-
-        <Grid ColumnDefinitions="140,*,50" ColumnSpacing="8" VerticalOptions="Center">
-          <Label Text="Minimum Correct Count" VerticalOptions="Center" Grid.Column="0" />
-          <Slider Minimum="1" Maximum="20"
-                  Value="{Binding MinCorrectCount, Mode=TwoWay}"
-                  HorizontalOptions="Fill" Style="{StaticResource BrownSlider}" Grid.Column="1" />
-          <Label Text="{Binding MinCorrectCount}" VerticalOptions="Center" HorizontalTextAlignment="Center" Grid.Column="2" />
-        </Grid>
-
-        <Grid ColumnDefinitions="140,*,50" ColumnSpacing="8" VerticalOptions="Center">
-          <Label Text="Omit notes below MsAvg =" VerticalOptions="Center" Grid.Column="0" />
-          <Slider Minimum="0" Maximum="5000"
-                  Value="{Binding OmitMsAvgThreshold, Mode=TwoWay}"
-                  HorizontalOptions="Fill" Style="{StaticResource BrownSlider}" Grid.Column="1" />
-          <Label Text="{Binding OmitMsAvgThreshold}" VerticalOptions="Center" HorizontalTextAlignment="Center" LineBreakMode="NoWrap" Grid.Column="2" />
-        </Grid>
-      </VerticalStackLayout>
-
-      <!-- Auto-start with custom styling -->
-      <HorizontalStackLayout Spacing="12" VerticalOptions="Center">
-        <Label Text="Auto start on appear" />
-        <Border Stroke="#8B4513"
-                StrokeThickness="2"
-                StrokeShape="RoundRectangle 15"
-                Padding="0"
-                BackgroundColor="Transparent"
-                WidthRequest="52"
-                HeightRequest="32">
-        <Switch IsToggled="{Binding AutoStart, Mode=TwoWay}"
-                  OnColor="#8B4513"
-                  ThumbColor="#8B4513"
-                  HorizontalOptions="Center"
-                  VerticalOptions="Center" />
+        <!-- Display -->
+        <Border Style="{StaticResource SettingsPanelBorder}">
+          <Border.StrokeShape>
+            <RoundRectangle CornerRadius="10"/>
+          </Border.StrokeShape>
+          <VerticalStackLayout Spacing="8">
+            <Label Text="Display" Style="{StaticResource SettingsPanelTitle}" />
+            <Button Text="Colors selection"
+                    Clicked="OnColorsSelectionClicked"
+                    HorizontalOptions="Fill" />
+            <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Show note names" />
+              <Picker Grid.Column="1"
+                      ItemsSource="{Binding NoteNameDisplayOptions}"
+                      SelectedItem="{Binding NoteNameDisplay, Mode=TwoWay}"
+                      Style="{StaticResource SettingsPickerStyle}" />
+            </Grid>
+            <Grid ColumnDefinitions="200,*,60" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Show key and time signatures on both staffs" LineBreakMode="WordWrap" />
+              <Switch Grid.Column="1" IsToggled="{Binding ShowSignaturesOnBothStaffs, Mode=TwoWay}"
+                      OnColor="{DynamicResource ThemeSlider}" HorizontalOptions="End" />
+            </Grid>
+            <Grid ColumnDefinitions="200,*,60" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Show Conductor Cues" />
+              <Switch Grid.Column="1" IsToggled="{Binding ShowConductorCues, Mode=TwoWay}"
+                      OnColor="{DynamicResource ThemeSlider}" HorizontalOptions="End" />
+            </Grid>
+            <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Font used in About page" />
+              <Picker Grid.Column="1"
+                      ItemsSource="{Binding AboutFontSizeOptions}"
+                      SelectedItem="{Binding AboutFontSize, Mode=TwoWay}"
+                      Style="{StaticResource SettingsPickerStyle}" />
+            </Grid>
+          </VerticalStackLayout>
         </Border>
-      </HorizontalStackLayout>
-    </VerticalStackLayout>
-  </ScrollView>
+
+        <!-- Waiting count-in -->
+        <Border Style="{StaticResource SettingsPanelBorder}">
+          <Border.StrokeShape>
+            <RoundRectangle CornerRadius="10"/>
+          </Border.StrokeShape>
+          <VerticalStackLayout Spacing="8">
+            <Label Text="Waiting Count-In" Style="{StaticResource SettingsPanelTitle}" />
+            <Grid ColumnDefinitions="200,*,60" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Count-in enabled" />
+              <Switch Grid.Column="1" IsToggled="{Binding CountInEnabled, Mode=TwoWay}"
+                      OnColor="{DynamicResource ThemeSlider}" HorizontalOptions="End" />
+            </Grid>
+            <Grid ColumnDefinitions="170,*,48" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Accented-beat volume" />
+              <Slider Grid.Column="1"
+                      Minimum="{Binding CountInMinVolume}"
+                      Maximum="{Binding CountInMaxVolume}"
+                      Value="{Binding CountInAccentedVolume, Mode=TwoWay}"
+                      Style="{StaticResource SliderStyle}" />
+              <Label Grid.Column="2" Text="{Binding CountInAccentedVolume, StringFormat='{0:0.00}'}"
+                     HorizontalTextAlignment="End" />
+            </Grid>
+            <Grid ColumnDefinitions="170,*,48" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Unaccented-beat volume" />
+              <Slider Grid.Column="1"
+                      Minimum="{Binding CountInMinVolume}"
+                      Maximum="{Binding CountInMaxVolume}"
+                      Value="{Binding CountInUnaccentedVolume, Mode=TwoWay}"
+                      Style="{StaticResource SliderStyle}" />
+              <Label Grid.Column="2" Text="{Binding CountInUnaccentedVolume, StringFormat='{0:0.00}'}"
+                     HorizontalTextAlignment="End" />
+            </Grid>
+            <Grid ColumnDefinitions="170,*,56" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Accented-beat pitch (Hz)" />
+              <Slider Grid.Column="1"
+                      Minimum="{Binding CountInMinPitchHz}"
+                      Maximum="{Binding CountInMaxPitchHz}"
+                      Value="{Binding CountInAccentedPitchHz, Mode=TwoWay}"
+                      Style="{StaticResource SliderStyle}" />
+              <Label Grid.Column="2" Text="{Binding CountInAccentedPitchHz, StringFormat='{0:0}'}"
+                     HorizontalTextAlignment="End" />
+            </Grid>
+            <Grid ColumnDefinitions="170,*,56" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Unaccented-beat pitch (Hz)" />
+              <Slider Grid.Column="1"
+                      Minimum="{Binding CountInMinPitchHz}"
+                      Maximum="{Binding CountInMaxPitchHz}"
+                      Value="{Binding CountInUnaccentedPitchHz, Mode=TwoWay}"
+                      Style="{StaticResource SliderStyle}" />
+              <Label Grid.Column="2" Text="{Binding CountInUnaccentedPitchHz, StringFormat='{0:0}'}"
+                     HorizontalTextAlignment="End" />
+            </Grid>
+            <Grid ColumnDefinitions="170,*,48" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Beat-sound duration (% of beat)" />
+              <Slider Grid.Column="1"
+                      Minimum="{Binding CountInMinDurationPercent}"
+                      Maximum="{Binding CountInMaxDurationPercent}"
+                      Value="{Binding CountInBeatDurationPercent, Mode=TwoWay}"
+                      Style="{StaticResource SliderStyle}" />
+              <Label Grid.Column="2" Text="{Binding CountInBeatDurationPercent, StringFormat='{0:0}%'}"
+                     HorizontalTextAlignment="End" />
+            </Grid>
+          </VerticalStackLayout>
+        </Border>
+
+        <!-- Tempo -->
+        <Border Style="{StaticResource SettingsPanelBorder}">
+          <Border.StrokeShape>
+            <RoundRectangle CornerRadius="10"/>
+          </Border.StrokeShape>
+          <VerticalStackLayout Spacing="8">
+            <Label Text="Tempo" Style="{StaticResource SettingsPanelTitle}" />
+            <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="BPM" />
+              <Slider Grid.Column="1"
+                      Minimum="{Binding MinTempo}"
+                      Maximum="{Binding MaxTempo}"
+                      Value="{Binding Tempo, Mode=TwoWay}"
+                      Style="{StaticResource SliderStyle}" />
+              <Label Grid.Column="2" Text="{Binding Tempo}"
+                     HorizontalTextAlignment="End" />
+            </Grid>
+          </VerticalStackLayout>
+        </Border>
+
+        <!-- Music -->
+        <Border Style="{StaticResource SettingsPanelBorder}">
+          <Border.StrokeShape>
+            <RoundRectangle CornerRadius="10"/>
+          </Border.StrokeShape>
+          <VerticalStackLayout Spacing="8">
+            <Label Text="Music" Style="{StaticResource SettingsPanelTitle}" />
+            <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Accidental %" />
+              <Slider Grid.Column="1" Minimum="0" Maximum="100"
+                      Value="{Binding AccidentalPercent, Mode=TwoWay}"
+                      Style="{StaticResource SliderStyle}"
+                      DragCompleted="OnAccidentalPercentDragCompleted" />
+              <Label Grid.Column="2" Text="{Binding AccidentalPercent}"
+                     HorizontalTextAlignment="End" />
+            </Grid>
+            <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Highest note" />
+              <Picker x:Name="HighestNotePicker"
+                      Grid.Column="1"
+                      ItemsSource="{Binding NoteRangePickerNoteNames}"
+                      SelectedItem="{Binding HighestNote, Mode=TwoWay}"
+                      Style="{StaticResource SettingsPickerStyle}" />
+            </Grid>
+            <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Lowest note" />
+              <Picker x:Name="LowestNotePicker"
+                      Grid.Column="1"
+                      ItemsSource="{Binding NoteRangePickerNoteNames}"
+                      SelectedItem="{Binding LowestNote, Mode=TwoWay}"
+                      Style="{StaticResource SettingsPickerStyle}" />
+            </Grid>
+            <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Rhythm mode" />
+              <Picker Grid.Column="1"
+                      ItemsSource="{Binding RhythmModeOptions}"
+                      SelectedItem="{Binding RhythmMode, Mode=TwoWay}"
+                      Style="{StaticResource SettingsPickerStyle}" />
+            </Grid>
+            <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Smallest note" />
+              <Picker Grid.Column="1"
+                      ItemsSource="{Binding SmallestRhythmNoteOptions}"
+                      SelectedItem="{Binding SmallestRhythmNote, Mode=TwoWay}"
+                      Style="{StaticResource SettingsPickerStyle}" />
+            </Grid>
+            <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Syncopation" />
+              <Picker Grid.Column="1"
+                      ItemsSource="{Binding SyncopationSettingOptions}"
+                      SelectedItem="{Binding SyncopationSetting, Mode=TwoWay}"
+                      Style="{StaticResource SettingsPickerStyle}" />
+            </Grid>
+            <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Time signature" />
+              <Picker Grid.Column="1"
+                      ItemsSource="{Binding MeterTimeSignatureOptions}"
+                      SelectedItem="{Binding MeterTimeSignature, Mode=TwoWay}"
+                      Style="{StaticResource SettingsPickerStyle}" />
+            </Grid>
+          </VerticalStackLayout>
+        </Border>
+
+        <!-- Action switches -->
+        <Border Style="{StaticResource SettingsPanelBorder}">
+          <Border.StrokeShape>
+            <RoundRectangle CornerRadius="10"/>
+          </Border.StrokeShape>
+          <VerticalStackLayout Spacing="8">
+            <Label Text="Action switches" Style="{StaticResource SettingsPanelTitle}" />
+            
+            <Grid ColumnDefinitions="200,*,60" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Listening starts when music appears." />
+              <Switch Grid.Column="1" IsToggled="{Binding AutoStart, Mode=TwoWay}"
+                      OnColor="{DynamicResource ThemeSlider}" HorizontalOptions="End" />
+            </Grid>
+            
+            <Grid ColumnDefinitions="200,*,60" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Number of latest attempts per note to keep" LineBreakMode="WordWrap" />
+              <Slider Grid.Column="1" Minimum="0" Maximum="1000"
+                      Value="{Binding MaxAttemptsPerNote, Mode=TwoWay}"
+                      Style="{StaticResource SliderStyle}" />
+              <Label Grid.Column="2" Text="{Binding MaxAttemptsPerNote, StringFormat='{0:F0}'}"
+                     HorizontalTextAlignment="End" />
+            </Grid>
+            <Grid ColumnDefinitions="200,*,60" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Collect session statistics" />
+              <Switch Grid.Column="1" IsToggled="{Binding CollectSessionStats, Mode=TwoWay}"
+                      OnColor="{DynamicResource ThemeSlider}" HorizontalOptions="End" />
+            </Grid>
+          </VerticalStackLayout>
+        </Border>
+
+        <!-- Mastery of notes -->
+        <Border Style="{StaticResource SettingsPanelBorder}">
+          <Border.StrokeShape>
+            <RoundRectangle CornerRadius="10"/>
+          </Border.StrokeShape>
+          <VerticalStackLayout Spacing="8">
+            <Label Text="Mastery of notes" Style="{StaticResource SettingsPanelTitle}" />
+            <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Method" />
+              <Picker Grid.Column="1"
+                      ItemsSource="{Binding MasteredMethodOptions}"
+                      SelectedItem="{Binding MasteredMethod, Mode=TwoWay}"
+                      Style="{StaticResource SettingsPickerStyle}" />
+            </Grid>
+            <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center"
+                  IsVisible="{Binding IsPercentCorrectMethod}">
+              <Label Grid.Column="0" Text="Minimum correct count" />
+              <Slider Grid.Column="1" Minimum="1" Maximum="20"
+                      Value="{Binding MinCorrectCount, Mode=TwoWay}"
+                      Style="{StaticResource SliderStyle}" />
+              <Label Grid.Column="2" Text="{Binding MinCorrectCount}"
+                     HorizontalTextAlignment="End" />
+            </Grid>
+            <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="{Binding OmitSliderLabel}" />
+              <Slider x:Name="OmitThresholdSlider"
+                      Grid.Column="1"
+                      Minimum="{Binding OmitSliderMin}"
+                      Maximum="{Binding OmitSliderMax}"
+                      Value="{Binding OmitSliderValue, Mode=TwoWay}"
+                      Style="{StaticResource SliderStyle}" />
+              <Label Grid.Column="2" Text="{Binding OmitSliderValue, StringFormat='{0:F0}'}"
+                     HorizontalTextAlignment="End" />
+            </Grid>
+            <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center"
+                  IsVisible="{Binding IsPercentCorrectMethod}">
+              <Label Grid.Column="0" Text="Omit below MsAvg" />
+              <Slider Grid.Column="1" Minimum="0" Maximum="5000"
+                      Value="{Binding OmitMsAvgThreshold, Mode=TwoWay}"
+                      Style="{StaticResource SliderStyle}" />
+              <Label Grid.Column="2" Text="{Binding OmitMsAvgThreshold}"
+                     HorizontalTextAlignment="End" LineBreakMode="NoWrap" />
+            </Grid>
+          </VerticalStackLayout>
+        </Border>
+
+      </VerticalStackLayout>
+    </ScrollView>
+
+    <controls:ColorPickerDialog x:Name="ColorPickerDialog" IsVisible="False" />
+  </Grid>
 </ContentPage>

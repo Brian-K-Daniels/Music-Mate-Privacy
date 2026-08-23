@@ -1,128 +1,294 @@
 ﻿<?xml version="1.0" encoding="utf-8" ?>
-<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             xmlns:conv="clr-namespace:musicmate.Converters"
-             x:Class="musicmate.Pages.AboutPage"
-             x:Name="AboutPageRoot"
-             Title="About"
-             Shell.NavBarIsVisible="True"
-             BackgroundColor="{Binding PanelBackgroundColor}">
+
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:conv="clr-namespace:musicmate.Converters"
+    xmlns:vm="clr-namespace:musicmate.ViewModels"
+    x:Class="musicmate.Pages.AboutPage"
+    x:DataType="vm:AboutPageViewModel"
+    x:Name="AboutPageRoot"
+    Title="About"
+    Shell.NavBarIsVisible="True"
+    BackgroundColor="{DynamicResource ThemePanelBackground}">
 
   <ContentPage.Resources>
-    <conv:BoolToYesNoConverter x:Key="BoolToYesNoConverter" />
+
+    <conv:BoolToYesNoConverter
+            x:Key="BoolToYesNoConverter" />
+
     <Style TargetType="Label">
-      <Setter Property="TextColor" Value="{Binding ContrastingTextColor}" />
-      <Setter Property="FontSize" Value="13" />
+      <Setter
+                Property="TextColor"
+                Value="{DynamicResource ThemeContrastingText}" />
+      <Setter
+                Property="FontSize"
+                Value="13" />
     </Style>
+
     <Style TargetType="Button">
-      <Setter Property="TextColor" Value="{Binding ContrastingTextColor}" />
-      <Setter Property="BackgroundColor" Value="#8B4513" />
-      <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="FontAttributes" Value="Bold" />
-      <Setter Property="Padding" Value="12,4" />
-      <Setter Property="FontSize" Value="13" />
+      <Setter
+                Property="TextColor"
+                Value="{DynamicResource ThemeButtonText}" />
+      <Setter
+                Property="BackgroundColor"
+                Value="{DynamicResource ThemeButtonBackground}" />
+      <Setter
+                Property="CornerRadius"
+                Value="8" />
+      <Setter
+                Property="FontAttributes"
+                Value="Bold" />
+      <Setter
+                Property="Padding"
+                Value="12,4" />
+      <Setter
+                Property="FontSize"
+                Value="13" />
     </Style>
+
     <Style TargetType="Picker">
-      <Setter Property="TextColor" Value="Black" />
-      <Setter Property="BackgroundColor" Value="White" />
-      <Setter Property="FontSize" Value="13" />
+      <Setter
+                Property="TextColor"
+                Value="{DynamicResource ThemePickerText}" />
+      <Setter
+                Property="BackgroundColor"
+                Value="{DynamicResource ThemePickerBackground}" />
+      <Setter
+                Property="FontSize"
+                Value="13" />
     </Style>
+
   </ContentPage.Resources>
 
+  <!--
+        Shell provides the hamburger. TitleView: ← Music | About | m/n | Next | Back | Clear.
+        Search Entry stays in page content so large fonts are never clipped by the nav chrome.
+    -->
   <Shell.TitleView>
-    <Grid ColumnDefinitions="*,Auto" HeightRequest="30" VerticalOptions="Center">
-      <HorizontalStackLayout Spacing="10" VerticalOptions="Center" Grid.Column="0">
-        <Button Text="&#x2190;"
-                Clicked="OnNavigateHomeClicked"
-                BackgroundColor="Transparent"
-                TextColor="White"
-                FontSize="18"
-                Padding="0"
-                WidthRequest="32" />
-        <Label Text="About"
-               FontAttributes="Bold"
-               FontSize="18"
-               TextColor="White"
-               VerticalOptions="Center" />
-      </HorizontalStackLayout>
-      <Image Source="logo.png"
-             HeightRequest="32"
-             WidthRequest="32"
-             VerticalOptions="Center"
-             HorizontalOptions="End"
-             Grid.Column="1" />
-    </Grid>
-  </Shell.TitleView>
 
-   <ScrollView x:Name="AboutScrollView">
-     <VerticalStackLayout x:Name="AboutMainLayout">
+    <Grid
+                ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto"
+            ColumnSpacing="6"
+            HeightRequest="44"
+            Padding="0,0,8,0"
+            VerticalOptions="Center">
 
-      <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
-        <Label Text="Font Size" FontSize="16" VerticalOptions="Center" />
-        <Border Stroke="#8B4513" StrokeThickness="2" BackgroundColor="Transparent"
-                Padding="8,4" MinimumHeightRequest="44" MinimumWidthRequest="80">
-          <Picker x:Name="FontSizePicker"
-                  FontSize="16"
-                  ItemsSource="{Binding FontSizeOptions}"
-                  SelectedItem="{Binding SelectedFontSize, Mode=TwoWay}"
-                  VerticalOptions="Center" />
-        </Border>
-      </HorizontalStackLayout>
+      <Button
+                Grid.Column="0"
+                Style="{StaticResource MusicNavBackButton}"
+                Clicked="OnNavigateMusicClicked"
+                SemanticProperties.Description="Go to Music page" />
 
-      <!-- Search field: type text to find and scroll to matching content in the About WebView -->
-      <HorizontalStackLayout Spacing="8" Margin="0,6,0,6" VerticalOptions="Center">
-        <!-- brown magnifier glyph -->
-        <Label Text="🔍"
-               FontSize="18"
-               TextColor="#8B4513"
-               VerticalOptions="Center"
-               Margin="4,0" />
+      <Label
+                Grid.Column="1"
+                Text="About"
+                FontAttributes="Bold"
+                FontSize="16"
+                FontAutoScalingEnabled="False"
+                TextColor="{DynamicResource ThemeContrastingText}"
+                VerticalOptions="Center"
+                LineBreakMode="TailTruncation"
+                MaxLines="1" />
 
-        <!-- thin brown outline around search box -->
-        <Border Stroke="#8B4513" StrokeThickness="1" StrokeShape="RoundRectangle 6" Padding="2" VerticalOptions="Center" HorizontalOptions="FillAndExpand">
-          <SearchBar x:Name="AboutSearchBar"
-                     Placeholder="Search About..."
-                     TextColor="{Binding ContrastingTextColor}"
-                     PlaceholderColor="{Binding ContrastingTextColor}"
-                     BackgroundColor="Transparent"
-                     HorizontalOptions="FillAndExpand"
-                     TextChanged="OnAboutSearchTextChanged"
-                     SearchButtonPressed="OnAboutSearchButtonPressed" />
-        </Border>
+      <Label
+                x:Name="AboutTitleLineNumberLabel"
+                Grid.Column="2"
+                Text=""
+                FontAutoScalingEnabled="False"
+                FontSize="13"
+                FontAttributes="Bold"
+                TextColor="{DynamicResource ThemeContrastingText}"
+                VerticalOptions="Center"
+                VerticalTextAlignment="Center"
+                HorizontalOptions="End"
+                HorizontalTextAlignment="End"
+                LineBreakMode="NoWrap"
+                MaxLines="1"
+                MinimumWidthRequest="56"
+                SemanticProperties.Description="Source line of the highlighted About search match" />
 
-        <Button x:Name="AboutFindNextButton"
+      <Button
+                x:Name="AboutTitleFindNextButton"
+                Grid.Column="3"
                 Text="Next"
                 IsEnabled="False"
                 Clicked="OnAboutFindNextClicked"
-                VerticalOptions="Center" />
-        <Label x:Name="AboutFindPositionLabel"
-               Text=""
-               VerticalOptions="Center"
-               HorizontalOptions="End" />
-      </HorizontalStackLayout>
+                FontAutoScalingEnabled="False"
+                FontSize="13"
+                FontAttributes="Bold"
+                Padding="10,4"
+                HeightRequest="36"
+                MinimumHeightRequest="36"
+                VerticalOptions="Center"
+                HorizontalOptions="End"
+                SemanticProperties.Description="Go to the next search match" />
+
+      <Button
+                x:Name="AboutTitleFindBackButton"
+                Grid.Column="4"
+                Text="Back"
+                IsEnabled="False"
+                Clicked="OnAboutFindBackClicked"
+                FontAutoScalingEnabled="False"
+                FontSize="13"
+                FontAttributes="Bold"
+                Padding="10,4"
+                HeightRequest="36"
+                MinimumHeightRequest="36"
+                VerticalOptions="Center"
+                HorizontalOptions="End"
+                SemanticProperties.Description="Go to the previous search match" />
+
+      <Button
+                x:Name="AboutTitleClearSearchButton"
+                Grid.Column="5"
+                Text="Clear"
+                IsEnabled="False"
+                Clicked="OnAboutClearSearchClicked"
+                FontAutoScalingEnabled="False"
+                FontSize="13"
+                FontAttributes="Bold"
+                Padding="10,4"
+                HeightRequest="36"
+                MinimumHeightRequest="36"
+                VerticalOptions="Center"
+                HorizontalOptions="End"
+                SemanticProperties.Description="Clear the About search and remove highlights" />
+
+    </Grid>
+
+  </Shell.TitleView>
+
+  <!--
+        One page scroll: search, Premium, and the guide all move together so more
+        guide text can fill the screen after the chrome scrolls away.
+        The WebView is sized to its full HTML height (no nested scrollbar).
+    -->
+  <ScrollView
+      x:Name="AboutScrollView"
+      Orientation="Vertical"
+      VerticalScrollBarVisibility="Default"
+      HorizontalScrollBarVisibility="Never"
+      Padding="0"
+      HorizontalOptions="Fill"
+      VerticalOptions="Fill">
+
+    <VerticalStackLayout
+        x:Name="AboutMainLayout"
+        Spacing="0"
+        HorizontalOptions="Fill"
+        VerticalOptions="Start">
+
+      <!-- Search field + match position (Next/Clear live in the title bar). -->
+      <Grid
+          x:Name="AboutSearchRow"
+          ColumnDefinitions="*,Auto"
+          ColumnSpacing="6"
+          Padding="8,6,8,4"
+          VerticalOptions="Start">
+
+        <Border
+            x:Name="AboutSearchBorder"
+            Grid.Column="0"
+            Stroke="{DynamicResource ThemePickerBorder}"
+            StrokeThickness="1"
+            StrokeShape="RoundRectangle 8"
+            Padding="8,0"
+            VerticalOptions="Fill"
+            HorizontalOptions="Fill">
+
+          <Entry
+              x:Name="AboutSearchEntry"
+              Placeholder="Search"
+              ReturnType="Search"
+              ClearButtonVisibility="WhileEditing"
+              IsSpellCheckEnabled="False"
+              IsTextPredictionEnabled="False"
+              Focused="OnAboutSearchEntryFocused"
+              TextChanged="OnAboutSearchEntryTextChanged"
+              Completed="OnAboutSearchEntryCompleted"
+              TextColor="{DynamicResource ThemeEntryText}"
+              PlaceholderColor="{DynamicResource ThemeContrastingText}"
+              BackgroundColor="{DynamicResource ThemeEntryBackground}"
+              HorizontalOptions="Fill"
+              VerticalOptions="Fill"
+              VerticalTextAlignment="Center"
+              FontAutoScalingEnabled="False"
+              FontSize="{Binding SelectedFontSize}" />
+
+        </Border>
+
+        <Label
+            x:Name="AboutFindPositionLabel"
+            Grid.Column="1"
+            Text=""
+            FontAutoScalingEnabled="False"
+            FontSize="{Binding SelectedFontSize}"
+            VerticalOptions="Center"
+            VerticalTextAlignment="Center"
+            HorizontalOptions="Center"
+            MinimumWidthRequest="52"
+            LineBreakMode="NoWrap" />
+
+      </Grid>
 
       <!-- Premium purchase controls -->
-      <HorizontalStackLayout Spacing="10" VerticalOptions="Center" Padding="0,8,0,8">
-        <Button Text="Get Premium"
-                Command="{Binding BuyPremiumCommand}"
-                TextColor="White"
-                MinimumHeightRequest="44"
-                Padding="12,8" />
-        <Button Text="Restore"
-                Command="{Binding RestorePurchasesCommand}"
-                IsVisible="{Binding IsPremium}"
-                TextColor="White"
-                MinimumHeightRequest="44"
-                Padding="12,8" />
-        <Label Text="Premium"
-               IsVisible="{Binding IsPremium}"
-               VerticalOptions="Center" HorizontalOptions="EndAndExpand" />
-      </HorizontalStackLayout>
+      <Grid
+          x:Name="AboutPremiumRow"
+          ColumnDefinitions="Auto,Auto,*"
+          ColumnSpacing="10"
+          VerticalOptions="Start"
+          Padding="8,2,8,4">
 
-      <WebView x:Name="AboutWebView"
-               Margin="0,8,0,0" />
+        <Button
+              Grid.Column="0"
+              Text="Get Premium"
+              Command="{Binding BuyPremiumCommand}"
+              IsVisible="{Binding NotIsPremium}"
+              TextColor="{DynamicResource ThemeContrastingText}"
+              FontSize="13"
+              FontAutoScalingEnabled="False"
+              Padding="8,4" />
+
+        <Button
+              Grid.Column="2"
+              Text="🔄 Remove Premium (debug)"
+              Command="{Binding RestorePurchasesCommand}"
+              IsVisible="{Binding IsDebugRestoreVisible}"
+              BackgroundColor="{DynamicResource ThemeButtonBackground}"
+              TextColor="#888888"
+              BorderColor="#555555"
+              BorderWidth="1"
+              CornerRadius="6"
+              FontSize="11"
+              FontAutoScalingEnabled="False"
+              HorizontalOptions="End"
+              Padding="8,4" />
+
+        <Label
+              Grid.Column="0"
+              Grid.ColumnSpan="2"
+              Text="⭐ You have all premium privileges"
+              IsVisible="{Binding IsPremium}"
+              FontAttributes="Bold"
+              FontSize="13"
+              FontAutoScalingEnabled="False"
+              TextColor="#FFD700"
+              VerticalOptions="Center" />
+
+      </Grid>
+
+      <WebView
+          x:Name="AboutWebView"
+          Margin="0,4,0,0"
+          MinimumHeightRequest="120"
+          HeightRequest="400"
+          HorizontalOptions="Fill"
+          VerticalOptions="Start" />
 
     </VerticalStackLayout>
+
   </ScrollView>
 
 </ContentPage>

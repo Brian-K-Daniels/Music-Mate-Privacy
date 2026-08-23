@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:services="clr-namespace:musicmate.Services"
+             xmlns:controls="clr-namespace:musicmate.Controls"
+             xmlns:converters="clr-namespace:musicmate.Converters"
+             xmlns:pages="clr-namespace:musicmate.Pages"
+             x:Class="musicmate.Pages.WhatToPlayPage"
+             x:Name="whatToPlayPage"
+             Shell.NavBarIsVisible="True"
+             Padding="0"             
+             BackgroundColor="{DynamicResource ThemePanelBackground}">
+  <!--BackgroundColor="#F7F7F7"> -->
+
+  <Shell.TitleView>
+    <Grid ColumnDefinitions="*,Auto" HeightRequest="44" VerticalOptions="Center" BackgroundColor="Transparent">
+      <HorizontalStackLayout Spacing="10" VerticalOptions="Center" Grid.Column="0">
+        <Button Text="←"
+                Clicked="OnNavigatePracticeClicked"
+                BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                TextColor="{DynamicResource ThemeContrastingText}"
+                FontSize="18"
+                Padding="12,0"
+                WidthRequest="56" />
+        <Label Text="What to Play"
+               TextColor="{DynamicResource ThemeContrastingText}"
+               FontAttributes="Bold"
+               FontSize="18"
+               VerticalOptions="Center" />
+        <Label x:Name="StatusLabel"
+               Text="{Binding Source={x:Static services:StatusService.Instance}, Path=StatusMessage, x:DataType=services:StatusService}"
+               TextColor="Yellow"
+               FontAttributes="Bold"
+               FontSize="10"
+               Margin="8,0,0,0"
+               VerticalOptions="Center" />
+      </HorizontalStackLayout>
+      <Border Style="{StaticResource TitleLogoBorder}"
+              VerticalOptions="Center"
+              HorizontalOptions="End"
+              Grid.Column="1">
+        <Image Source="logo.png" Aspect="AspectFill" />
+      </Border>
+    </Grid>
+  </Shell.TitleView>
+
+  <ContentPage.Resources>
+    <Style x:Key="WtpBrownBox" TargetType="Border">
+      <Setter Property="Background" Value="{DynamicResource ThemeButtonBackground}" />
+      <Setter Property="Stroke" Value="Black" />
+      <Setter Property="StrokeThickness" Value="2" />
+      <Setter Property="StrokeShape">
+        <Setter.Value>
+          <RoundRectangle CornerRadius="8" />
+        </Setter.Value>
+      </Setter>
+      <Setter Property="Padding" Value="8,2" />
+      <Setter Property="HeightRequest" Value="28" />
+      <Setter Property="VerticalOptions" Value="Center" />
+      <Setter Property="HorizontalOptions" Value="Center" />
+    </Style>
+    <Style x:Key="WtpBrownButton" TargetType="Button">
+      <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemeButtonText}" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="HeightRequest" Value="44" />
+      <Setter Property="Padding" Value="8,4" />
+      <Setter Property="BorderColor" Value="Black" />
+      <Setter Property="BorderWidth" Value="2" />
+      <Setter Property="VerticalOptions" Value="Center" />
+      <Setter Property="HorizontalOptions" Value="Center" />
+    </Style>
+    <Style x:Key="WtpPlayModePickerBorder" TargetType="Border">
+      <Setter Property="Background" Value="{DynamicResource ThemeButtonBackground}" />
+      <Setter Property="Stroke" Value="Black" />
+      <Setter Property="StrokeThickness" Value="2" />
+      <Setter Property="Padding" Value="6,4" />
+      <Setter Property="MinimumHeightRequest" Value="36" />
+      <Setter Property="HorizontalOptions" Value="Fill" />
+      <Setter Property="HeightRequest" Value="44" />
+      <Setter Property="StrokeShape">
+        <Setter.Value>
+          <RoundRectangle CornerRadius="8" />
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="WtpPlayModePicker" TargetType="Picker">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="TextColor" Value="{DynamicResource ThemePickerText}" />
+      <Setter Property="BackgroundColor" Value="Transparent" />
+      <Setter Property="VerticalOptions" Value="Center" />
+      <Setter Property="HorizontalOptions" Value="Fill" />
+      <Setter Property="HorizontalTextAlignment" Value="Center" />
+      <Setter Property="Margin" Value="2,0" />
+      <Setter Property="HeightRequest" Value="42" />
+      <Setter Property="MinimumHeightRequest" Value="0" />
+    </Style>
+  </ContentPage.Resources>
+
+  <!-- Root Grid so ColorPickerDialog can overlay everything -->
+  <Grid>
+
+    <ScrollView Orientation="Vertical">
+      <VerticalStackLayout Spacing="10"
+                          Padding="0,4,0,32">
+
+      <!-- Tunes | Scales | Arpeggios | Other -->
+      <VerticalStackLayout Spacing="8"
+                           HorizontalOptions="Fill"
+                           Margin="8,8,8,0">
+        <Grid ColumnDefinitions="*,*"
+              RowDefinitions="Auto,Auto"
+              ColumnSpacing="10"
+              RowSpacing="10"
+              HorizontalOptions="Fill">
+          <!-- Tunes -->
+          <VerticalStackLayout Grid.Row="0" Grid.Column="0" Spacing="4" HorizontalOptions="Fill">
+            <Label Text="Tunes"
+                   FontSize="13"
+                   FontAttributes="Bold"
+                   TextColor="{DynamicResource ThemeContrastingText}"
+                   HorizontalOptions="Center" />
+            <Border Style="{StaticResource WtpPlayModePickerBorder}">
+              <Grid BackgroundColor="{DynamicResource ThemePickerBackground}">
+                <Picker x:Name="TunesPicker"
+                        Style="{StaticResource WtpPlayModePicker}"
+                        SelectedIndexChanged="OnTunesPickerChanged" />
+              </Grid>
+            </Border>
+          </VerticalStackLayout>
+
+          <!-- Scales -->
+          <VerticalStackLayout Grid.Row="0" Grid.Column="1" Spacing="4" HorizontalOptions="Fill">
+            <Label Text="Scales"
+                   FontSize="13"
+                   FontAttributes="Bold"
+                   TextColor="{DynamicResource ThemeContrastingText}"
+                   HorizontalOptions="Center" />
+            <Border Style="{StaticResource WtpPlayModePickerBorder}">
+              <Grid BackgroundColor="{DynamicResource ThemePickerBackground}">
+                <Picker x:Name="ScalesPicker"
+                        Style="{StaticResource WtpPlayModePicker}"
+                        SelectedIndexChanged="OnScalesPickerChanged" />
+              </Grid>
+            </Border>
+          </VerticalStackLayout>
+
+          <!-- Arpeggios -->
+          <VerticalStackLayout Grid.Row="1" Grid.Column="0" Spacing="4" HorizontalOptions="Fill">
+            <Label Text="Arpeggios"
+                   FontSize="13"
+                   FontAttributes="Bold"
+                   TextColor="{DynamicResource ThemeContrastingText}"
+                   HorizontalOptions="Center" />
+            <Border Style="{StaticResource WtpPlayModePickerBorder}">
+              <Grid BackgroundColor="{DynamicResource ThemePickerBackground}">
+                <Picker x:Name="ArpeggiosPicker"
+                        Style="{StaticResource WtpPlayModePicker}"
+                        SelectedIndexChanged="OnArpeggiosPickerChanged" />
+              </Grid>
+            </Border>
+          </VerticalStackLayout>
+
+          <!-- Other -->
+          <VerticalStackLayout Grid.Row="1" Grid.Column="1" Spacing="4" HorizontalOptions="Fill">
+            <Label Text="Other"
+                   FontSize="13"
+                   FontAttributes="Bold"
+                   TextColor="{DynamicResource ThemeContrastingText}"
+                   HorizontalOptions="Center" />
+            <Border Style="{StaticResource WtpPlayModePickerBorder}">
+              <Grid BackgroundColor="{DynamicResource ThemePickerBackground}">
+                <Picker x:Name="OtherPicker"
+                        Style="{StaticResource WtpPlayModePicker}"
+                        SelectedIndexChanged="OnOtherPickerChanged" />
+              </Grid>
+            </Border>
+          </VerticalStackLayout>
+        </Grid>
+      </VerticalStackLayout>
+
+      <!-- Repeat / Background Color buttons -->
+      <VerticalStackLayout Spacing="8"
+                           Margin="12,4,12,0">
+
+        <!-- Scale mode: single Repeat button -->
+        <Button x:Name="AutoRepeatScaleButton"
+                Text="Repeat"
+                Style="{StaticResource WtpBrownButton}"
+                TextColor="Ivory"
+                HeightRequest="36"
+                HorizontalOptions="Fill"
+                Clicked="OnAutoRepeatScaleClicked"
+                IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsScaleRepeatButtonVisible, x:DataType=pages:WhatToPlayPage}" />
+
+        <!-- Random mode: New Each Time + Repeat Same side by side -->
+        <Grid ColumnDefinitions="*,*"
+              ColumnSpacing="8"
+              IsVisible="{Binding Source={x:Reference whatToPlayPage}, Path=IsRandomRepeatButtonsVisible, x:DataType=pages:WhatToPlayPage}">
+          <Button x:Name="AutoRepeatNewButton"
+                  Grid.Column="0"
+                  Text="Repeat New Each Time"
+                  Style="{StaticResource WtpBrownButton}"
+                  TextColor="Ivory"
+                  HeightRequest="44"
+                  HorizontalOptions="Fill"
+                  Clicked="OnAutoRepeatNewClicked" />
+          <Button x:Name="AutoRepeatSameButton"
+                  Grid.Column="1"
+                  Text="Repeat Same"
+                  Style="{StaticResource WtpBrownButton}"                  
+                  TextColor="Ivory"
+                  HeightRequest="44"
+                  HorizontalOptions="Fill"
+                  Clicked="OnAutoRepeatSameClicked" />
+        </Grid>
+
+        </VerticalStackLayout>
+
+      </VerticalStackLayout>
+    </ScrollView>
+
+  </Grid>
+
+</ContentPage>
