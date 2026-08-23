@@ -98,6 +98,8 @@ public class BeginnerSafeRightClampTests
             $"Upper clipped: maxRight={upperRight:F1} layoutRightLimit={layoutRightLimit:F1}");
         Assert.True(lowerRight <= layoutRightLimit + 0.5f,
             $"Lower clipped: maxRight={lowerRight:F1} layoutRightLimit={layoutRightLimit:F1}");
+        AssertNotesDoNotPassFinalBar(drawable, upperNotesLay, upperBarsLay);
+        AssertNotesDoNotPassFinalBar(drawable, lowerNotesLay, lowerBarsLay);
 
         // No events dropped by the finish pass.
         Assert.Equal(upperCount, upper.Count);
@@ -465,6 +467,25 @@ public class BeginnerSafeRightClampTests
             MeasureIndex = measure,
             BeatPosition = beat,
         };
+
+    private static void AssertNotesDoNotPassFinalBar(StaffDrawable drawable, Array noteLayouts, Array barLayouts)
+    {
+        if (noteLayouts.Length == 0 || barLayouts.Length == 0)
+            return;
+
+        float endX = ReadBarX(barLayouts, barLayouts.Length - 1);
+        var inkRight = typeof(StaffDrawable).GetMethod(
+            "NoteInkRightForLayout",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        for (int i = 0; i < noteLayouts.Length; i++)
+        {
+            object lay = noteLayouts.GetValue(i)!;
+            float right = (float)inkRight.Invoke(drawable, new object[] { lay })!;
+            Assert.True(right <= endX + 0.5f,
+                $"Note {i} ink {right:F1} is past final bar X={endX:F1}");
+        }
+    }
 
     private static void AssertStaffGaps(StaffDrawable drawable, List<GeneratedNote> notes, Array layouts)
     {

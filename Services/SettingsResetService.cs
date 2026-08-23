@@ -280,7 +280,7 @@ namespace musicmate.Services
             SessionPreferences.Set(CollectSessionStatsKey, SettingsPageViewModel.DefaultCollectSession);
             SessionPreferences.Set(MaxSessionDbSizeMbKey, SettingsPageViewModel.DefaultMaxSessionDbMb);
             SessionPreferences.Set(MaxAttemptsPerNoteKey, 100);
-            SessionPreferences.Set(AboutPageViewModel.FontSizePreferenceKey, 14.0);
+            SessionPreferences.Set(AboutPageViewModel.FontSizePreferenceKey, 20.0);
             SessionPreferences.Set(RepeatDelaySecondsKey, 2.0);
             SessionPreferences.Set(
                 IntervalEarTrainingLogic.NoteDurationPreferenceKey,

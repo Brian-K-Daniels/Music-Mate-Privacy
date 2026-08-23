@@ -37,6 +37,14 @@ public class ByLevelScaleSelectionTests
     }
 
     [Fact]
+    public void HasMultipleScaleWalkIdentities_FalseAtBeginnerPentatonicOnlyLevels()
+    {
+        Assert.False(ChildLevelProgression.HasMultipleScaleWalkIdentities(1));
+        Assert.False(ChildLevelProgression.HasMultipleScaleWalkIdentities(5));
+        Assert.True(ChildLevelProgression.HasMultipleScaleWalkIdentities(6));
+    }
+
+    [Fact]
     public void ResolveScaleForFreshGeneration_Level24RandomExercise_IncludesMajor()
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);

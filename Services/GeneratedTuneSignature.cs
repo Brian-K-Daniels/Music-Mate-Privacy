@@ -5,7 +5,10 @@ using musicmate.Models;
 namespace musicmate.Services
 {
     /// <summary>
-    /// Deterministic identity of generated musical content (not object identity, not title).
+    /// Deterministic identity of generated musical content (not object identity, not title,
+    /// and not staff packing). Measure and beat positions are omitted so the same melody
+    /// packed at a different width (common in Release when the first layout is provisional)
+    /// is still recognized as a repeat.
     /// </summary>
     public static class GeneratedTuneSignature
     {
@@ -22,18 +25,14 @@ namespace musicmate.Services
 
                 if (n.IsRest)
                 {
-                    sb.Append("R|").Append(n.Duration).Append('|')
-                        .Append(n.MeasureIndex ?? -1).Append('|')
-                        .Append((n.BeatPosition ?? 0).ToString("0.###"));
+                    sb.Append("R|").Append(n.Duration);
                 }
                 else
                 {
                     sb.Append(n.MidiNumber).Append('|')
                         .Append(n.SpelledName).Append('|')
                         .Append(n.Duration).Append('|')
-                        .Append(n.Accidental).Append('|')
-                        .Append(n.MeasureIndex ?? -1).Append('|')
-                        .Append((n.BeatPosition ?? 0).ToString("0.###"));
+                        .Append(n.Accidental);
                 }
             }
 

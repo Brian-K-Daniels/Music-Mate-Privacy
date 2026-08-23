@@ -126,6 +126,20 @@ namespace musicmate.Services
             return GetAllowedScalesForLevel(level).Contains(scale, StringComparer.Ordinal);
         }
 
+        /// <summary>
+        /// False at beginner levels where Assortment can only emit one ordered scale walk
+        /// (e.g. C Major Pentatonic at levels 1–5).
+        /// </summary>
+        public static bool HasMultipleScaleWalkIdentities(int level)
+        {
+            var scales = GetAllowedScalesForLevel(level);
+            if (scales.Count > 1)
+                return true;
+            if (scales.Count == 0)
+                return false;
+            return KeyDifficultyRules.GetAllowedKeyNamesForScale(level, scales[0]).Count > 1;
+        }
+
         /// <summary>Level-appropriate default when scale selection is By Level.</summary>
         public static string GetDefaultScaleForLevel(int level)
         {

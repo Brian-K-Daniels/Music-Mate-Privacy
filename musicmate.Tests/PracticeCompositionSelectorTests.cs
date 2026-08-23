@@ -79,4 +79,21 @@ public class PracticeCompositionSelectorTests
 
         Assert.False(PlayModePickerOptions.IsUserSelectedPracticeTuneTitle("Selected Scale"));
     }
+
+    [Fact]
+    public void ShouldPreferRandomToAvoidFixedRepeat_BeginnerScaleWalk()
+    {
+        var session = new NoteSessionService
+        {
+            Tune = "Selected Scale",
+            IsRandomMode = false,
+            ScaleSelectionMode = ScaleSelectionMode.ByLevel,
+            ChildLevel = 1,
+        };
+
+        Assert.True(PracticeCompositionSelector.ShouldPreferRandomToAvoidFixedRepeat(session));
+
+        session.IsRandomMode = true;
+        Assert.False(PracticeCompositionSelector.ShouldPreferRandomToAvoidFixedRepeat(session));
+    }
 }

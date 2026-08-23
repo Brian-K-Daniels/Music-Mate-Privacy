@@ -19,8 +19,6 @@
       <Setter Property="Padding" Value="2,1" />
       <Setter Property="HorizontalOptions" Value="Fill" />
       <Setter Property="VerticalOptions" Value="Fill" />
-      <Setter Property="HorizontalTextAlignment" Value="Center" />
-      <Setter Property="VerticalTextAlignment" Value="Center" />
       <Setter Property="LineBreakMode" Value="TailTruncation" />
     </Style>
 
@@ -36,8 +34,6 @@
       <Setter Property="Padding" Value="2,1" />
       <Setter Property="HorizontalOptions" Value="Fill" />
       <Setter Property="VerticalOptions" Value="Fill" />
-      <Setter Property="HorizontalTextAlignment" Value="Center" />
-      <Setter Property="VerticalTextAlignment" Value="Center" />
       <Setter Property="LineBreakMode" Value="TailTruncation" />
       <Setter Property="VisualStateManager.VisualStateGroups">
         <VisualStateGroupList>

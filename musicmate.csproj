@@ -20,11 +20,12 @@
     <ApplicationId>com.bkdaniels.musicmate</ApplicationId>
 
     <!-- Versions -->
-    <ApplicationDisplayVersion>1.23</ApplicationDisplayVersion>
-    <ApplicationVersion>23</ApplicationVersion>
-    <PackageVersion>1.23</PackageVersion>
+    <ApplicationDisplayVersion>1.24</ApplicationDisplayVersion>
+    <ApplicationVersion>24</ApplicationVersion>
+    <PackageVersion>1.24</PackageVersion>
 
     <WindowsPackageType>None</WindowsPackageType>
+    <AllowUnsafeBlocks Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">true</AllowUnsafeBlocks>
 
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">21.0</SupportedOSPlatformVersion>
   </PropertyGroup>

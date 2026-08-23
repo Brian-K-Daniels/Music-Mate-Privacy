@@ -218,6 +218,34 @@ namespace musicmate.Services
         }
 
         /// <summary>
+        /// After a rejected duplicate, do not roll another beginner scale walk / single
+        /// arpeggio that can only reproduce the same notes.
+        /// </summary>
+        public static bool ShouldPreferRandomToAvoidFixedRepeat(NoteSessionService session)
+        {
+            if (session.IsRandomMode)
+                return false;
+
+            int level = ResolveLevel(session);
+            bool deterministicScale =
+                session.Tune == "Selected Scale"
+                && !ChildLevelProgression.HasMultipleScaleWalkIdentities(level);
+            bool deterministicArpeggio =
+                session.Tune == "Arpeggio"
+                && ArpeggioCatalog.GetAvailablePatterns(level).Count <= 1;
+
+            return deterministicScale || deterministicArpeggio;
+        }
+
+        public static void PreferRandomWhenFixedPatternWouldRepeat(NoteSessionService session, int seed)
+        {
+            if (!ShouldPreferRandomToAvoidFixedRepeat(session))
+                return;
+
+            ApplyExerciseKind(session, ExerciseKind.Random, new Random(seed));
+        }
+
+        /// <summary>
         /// Composition may assign a scale/random exercise under Assortment by Level without
         /// changing the user's What to Play selection.
         /// </summary>

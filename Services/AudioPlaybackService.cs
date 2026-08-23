@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Plugin.Maui.Audio;
 #if ANDROID
 using Android.Media;
@@ -76,6 +77,320 @@ namespace musicmate.Services
             }
         }
 
+        public async Task PlaySustainedAsync(double freq, float volume, CancellationToken ct)
+        {
+            if (freq <= 0 || double.IsNaN(freq) || double.IsInfinity(freq))
+                return;
+
+            float gain = Math.Clamp(volume, 0f, 1f);
+
+            CancellationTokenSource linked;
+            lock (_gate)
+            {
+                try
+                {
+                    _internalCts?.Cancel();
+                    _internalCts?.Dispose();
+                }
+                catch { }
+
+                StopActiveAndroidTrack_NoLock();
+
+                linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                _internalCts = linked;
+            }
+
+            var token = linked.Token;
+            try
+            {
+#if ANDROID
+                await PlaySustainedAudioTrackAsync(freq, gain, token).ConfigureAwait(false);
+#elif WINDOWS
+                await PlaySustainedWindowsGraphAsync(freq, gain, token).ConfigureAwait(false);
+#else
+                await PlaySustainedMediaPlayerAsync(freq, gain, token).ConfigureAwait(false);
+#endif
+            }
+            finally
+            {
+                lock (_gate)
+                {
+                    if (ReferenceEquals(_internalCts, linked))
+                        _internalCts = null;
+                }
+
+                try { linked.Dispose(); } catch { }
+            }
+        }
+
+        private async Task PlaySustainedMediaPlayerAsync(double freq, float volume, CancellationToken ct)
+        {
+            var tone = BuildToneWavStream(freq, 1.0, volume, seamlessLoop: true);
+            IAudioPlayer? player = null;
+            try
+            {
+                tone.Position = 0;
+                player = _audioManager.CreatePlayer(tone);
+                if (player == null)
+                    throw new InvalidOperationException("CreatePlayer returned null.");
+
+                player.Volume = 1f;
+                player.Loop = true;
+                player.Play();
+
+                try
+                {
+                    await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false);
+                }
+                finally
+                {
+                    try { player.Stop(); } catch { }
+                }
+            }
+            finally
+            {
+                try { player?.Dispose(); } catch { }
+                try { await tone.DisposeAsync().ConfigureAwait(false); } catch { try { tone.Dispose(); } catch { } }
+            }
+        }
+
+#if ANDROID
+        /// <summary>
+        /// Streams a sine wave into AudioTrack until cancelled — no MediaPlayer loop gaps.
+        /// </summary>
+        private async Task PlaySustainedAudioTrackAsync(double freq, float volume, CancellationToken ct)
+        {
+            if (!OperatingSystem.IsAndroidVersionAtLeast(23))
+            {
+                await PlaySustainedMediaPlayerAsync(freq, volume, ct).ConfigureAwait(false);
+                return;
+            }
+
+            int minBuf = AudioTrack.GetMinBufferSize(
+                SampleRate, ChannelOut.Mono, Android.Media.Encoding.Pcm16bit);
+            if (minBuf <= 0)
+                minBuf = SampleRate / 5;
+
+            AudioTrack? track = null;
+            try
+            {
+                var attrsBuilder = new AudioAttributes.Builder();
+                attrsBuilder.SetUsage(AudioUsageKind.Media);
+                attrsBuilder.SetContentType(AudioContentType.Music);
+                var attrs = attrsBuilder.Build()
+                    ?? throw new InvalidOperationException("AudioAttributes.Builder.Build returned null.");
+
+                var formatBuilder = new AudioFormat.Builder();
+                formatBuilder.SetSampleRate(SampleRate);
+                formatBuilder.SetEncoding(Android.Media.Encoding.Pcm16bit);
+                formatBuilder.SetChannelMask(ChannelOut.Mono);
+                var format = formatBuilder.Build()
+                    ?? throw new InvalidOperationException("AudioFormat.Builder.Build returned null.");
+
+                var trackBuilder = new AudioTrack.Builder();
+                trackBuilder.SetAudioAttributes(attrs);
+                trackBuilder.SetAudioFormat(format);
+                trackBuilder.SetBufferSizeInBytes(Math.Max(minBuf * 4, SampleRate / 5 * 2));
+                trackBuilder.SetTransferMode(AudioTrackMode.Stream);
+                track = trackBuilder.Build()
+                    ?? throw new InvalidOperationException("AudioTrack.Builder.Build returned null.");
+
+                if (track.State == AudioTrackState.Uninitialized)
+                    throw new InvalidOperationException($"AudioTrack uninitialized (state={track.State}).");
+
+                lock (_gate)
+                {
+                    StopActiveAndroidTrack_NoLock();
+                    _activeTrack = track;
+                }
+
+                track.SetVolume(1f);
+                track.Play();
+
+                var held = track;
+                await Task.Run(() => StreamSinePcm16(held, freq, volume, ct), ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[AudioPlayback] Sustained AudioTrack failed: {ex.Message}");
+                await PlaySustainedMediaPlayerAsync(freq, volume, ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                lock (_gate)
+                {
+                    if (ReferenceEquals(_activeTrack, track))
+                        _activeTrack = null;
+                }
+
+                try { track?.Pause(); } catch { }
+                try { track?.Stop(); } catch { }
+                try { track?.Release(); } catch { }
+                try { track?.Dispose(); } catch { }
+            }
+        }
+
+        private static void StreamSinePcm16(
+            AudioTrack track, double freq, float volume, CancellationToken ct)
+        {
+            const int chunk = 2048;
+            var pcm = new short[chunk];
+            double phase = 0;
+            double phaseStep = 2.0 * Math.PI * freq / SampleRate;
+            int fadeSamples = (int)(SampleRate * 0.010);
+            long sampleIndex = 0;
+            double amp = short.MaxValue * volume;
+
+            while (!ct.IsCancellationRequested)
+            {
+                for (int i = 0; i < chunk; i++)
+                {
+                    double envelope = sampleIndex < fadeSamples
+                        ? (double)sampleIndex / fadeSamples
+                        : 1.0;
+                    pcm[i] = (short)(Math.Sin(phase) * amp * envelope);
+                    phase += phaseStep;
+                    if (phase > 2.0 * Math.PI)
+                        phase -= 2.0 * Math.PI;
+                    sampleIndex++;
+                }
+
+                int offset = 0;
+                while (offset < chunk && !ct.IsCancellationRequested)
+                {
+                    int written;
+                    try
+                    {
+                        written = track.Write(pcm, offset, chunk - offset);
+                    }
+                    catch
+                    {
+                        return;
+                    }
+                    if (written < 0)
+                        return;
+                    if (written == 0)
+                        break;
+                    offset += written;
+                }
+            }
+        }
+#endif
+
+#if WINDOWS
+        [ComImport]
+        [Guid("5B0D3235-4DBA-4D44-865E-8F1D0E4FD04D")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private unsafe interface IMemoryBufferByteAccess
+        {
+            void GetBuffer(out byte* buffer, out uint capacity);
+        }
+
+        private async Task PlaySustainedWindowsGraphAsync(double freq, float volume, CancellationToken ct)
+        {
+            var settings = new Windows.Media.Audio.AudioGraphSettings(
+                Windows.Media.Render.AudioRenderCategory.Media);
+            var graphResult = await Windows.Media.Audio.AudioGraph.CreateAsync(settings);
+            if (graphResult.Status != Windows.Media.Audio.AudioGraphCreationStatus.Success
+                || graphResult.Graph is null)
+            {
+                await PlaySustainedMediaPlayerAsync(freq, volume, ct).ConfigureAwait(false);
+                return;
+            }
+
+            var graph = graphResult.Graph;
+            Windows.Media.Audio.AudioDeviceOutputNode? output = null;
+            Windows.Media.Audio.AudioFrameInputNode? input = null;
+            try
+            {
+                var outResult = await graph.CreateDeviceOutputNodeAsync();
+                if (outResult.Status != Windows.Media.Audio.AudioDeviceNodeCreationStatus.Success
+                    || outResult.DeviceOutputNode is null)
+                {
+                    await PlaySustainedMediaPlayerAsync(freq, volume, ct).ConfigureAwait(false);
+                    return;
+                }
+
+                output = outResult.DeviceOutputNode;
+                input = graph.CreateFrameInputNode();
+                input.AddOutgoingConnection(output);
+
+                double sampleRate = graph.EncodingProperties.SampleRate;
+                uint channels = graph.EncodingProperties.ChannelCount;
+                double phase = 0;
+                double phaseStep = 2.0 * Math.PI * freq / sampleRate;
+                double amp = Math.Clamp(volume, 0f, 1f);
+                long sampleIndex = 0;
+                int fadeSamples = (int)(sampleRate * 0.010);
+
+                input.QuantumStarted += (sender, args) =>
+                {
+                    if (ct.IsCancellationRequested || args.RequiredSamples == 0)
+                        return;
+
+                    uint samples = (uint)args.RequiredSamples;
+                    uint bytes = samples * channels * sizeof(float);
+                    var frame = new Windows.Media.AudioFrame(bytes);
+                    using (var buffer = frame.LockBuffer(Windows.Media.AudioBufferAccessMode.Write))
+                    using (var reference = buffer.CreateReference())
+                    {
+                        unsafe
+                        {
+                            ((IMemoryBufferByteAccess)reference).GetBuffer(out byte* data, out uint capacity);
+                            float* floats = (float*)data;
+                            uint count = capacity / sizeof(float);
+                            for (uint i = 0; i < count; i += channels)
+                            {
+                                double envelope = sampleIndex < fadeSamples
+                                    ? sampleIndex / (double)fadeSamples
+                                    : 1.0;
+                                float s = (float)(Math.Sin(phase) * amp * envelope);
+                                for (uint c = 0; c < channels && (i + c) < count; c++)
+                                    floats[i + c] = s;
+                                phase += phaseStep;
+                                if (phase > 2.0 * Math.PI)
+                                    phase -= 2.0 * Math.PI;
+                                sampleIndex++;
+                            }
+                        }
+                    }
+
+                    sender.AddFrame(frame);
+                };
+
+                graph.Start();
+                try
+                {
+                    await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false);
+                }
+                finally
+                {
+                    try { graph.Stop(); } catch { }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[AudioPlayback] Sustained AudioGraph failed: {ex.Message}");
+                await PlaySustainedMediaPlayerAsync(freq, volume, ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                try { input?.Stop(); } catch { }
+                try { input?.Dispose(); } catch { }
+                try { output?.Dispose(); } catch { }
+                try { graph.Dispose(); } catch { }
+            }
+        }
+#endif
+
         private async Task PlayOneToneAsync(double freq, double durationSeconds, float volume, CancellationToken ct)
         {
 #if ANDROID
@@ -90,7 +405,7 @@ namespace musicmate.Services
 
         private async Task PlayOneToneMediaPlayerAsync(double freq, double durationSeconds, float volume, CancellationToken ct)
         {
-            var tone = BuildToneWavStream(freq, durationSeconds, volume);
+            var tone = BuildToneWavStream(freq, durationSeconds, volume, seamlessLoop: false);
             IAudioPlayer? player = null;
             try
             {
@@ -233,9 +548,10 @@ namespace musicmate.Services
         private void StopActiveAndroidTrack_NoLock() { }
 #endif
 
-        private static MemoryStream BuildToneWavStream(double freq, double durationSeconds, float volume)
+        private static MemoryStream BuildToneWavStream(
+            double freq, double durationSeconds, float volume, bool seamlessLoop)
         {
-            short[] pcm = BuildPcm16(freq, durationSeconds, volume);
+            short[] pcm = BuildPcm16(freq, durationSeconds, volume, seamlessLoop);
             var wav = new byte[44 + pcm.Length * 2];
             WriteWavHeader(wav, pcm.Length);
             for (int i = 0; i < pcm.Length; i++)
@@ -243,22 +559,39 @@ namespace musicmate.Services
             return new MemoryStream(wav, writable: false);
         }
 
-        private static short[] BuildPcm16(double freq, double durationSeconds, float volume)
+        private static short[] BuildPcm16(
+            double freq, double durationSeconds, float volume, bool seamlessLoop = false)
         {
-            int samples = Math.Max(1, (int)(SampleRate * durationSeconds));
+            int samples;
+            if (seamlessLoop && freq > 0)
+            {
+                // Integer cycles so the loop point does not click.
+                int cycles = Math.Max(1, (int)Math.Round(durationSeconds * freq));
+                samples = Math.Max(1, (int)Math.Round(cycles * (double)SampleRate / freq));
+            }
+            else
+            {
+                samples = Math.Max(1, (int)(SampleRate * durationSeconds));
+            }
+
             var pcm = new short[samples];
 
             // Fade in/out over up to 10 ms (or 1/4 of the tone) to avoid clicks.
-            int fadeSamples = Math.Min((int)(SampleRate * 0.010), Math.Max(1, samples / 4));
+            int fadeSamples = seamlessLoop
+                ? 0
+                : Math.Min((int)(SampleRate * 0.010), Math.Max(1, samples / 4));
 
             for (int i = 0; i < samples; i++)
             {
                 double t = (double)i / SampleRate;
                 double envelope = 1.0;
-                if (i < fadeSamples)
-                    envelope = (double)i / fadeSamples;
-                else if (i >= samples - fadeSamples)
-                    envelope = (double)(samples - 1 - i) / fadeSamples;
+                if (fadeSamples > 0)
+                {
+                    if (i < fadeSamples)
+                        envelope = (double)i / fadeSamples;
+                    else if (i >= samples - fadeSamples)
+                        envelope = (double)(samples - 1 - i) / fadeSamples;
+                }
 
                 pcm[i] = (short)(Math.Sin(2 * Math.PI * freq * t) * short.MaxValue * volume * envelope);
             }
