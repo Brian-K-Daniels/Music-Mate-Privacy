@@ -166,6 +166,12 @@ namespace musicmate.Drawables
         private float LeftMargin => _leftMargin;
         private StaffHeaderMetrics _headerMetrics;
 
+        /// <summary>
+        /// False during staff-local musical layout (<see cref="PlanHorizontalLayout"/>).
+        /// Set true once geometry is mapped to screen; structural mutators must not run after that.
+        /// </summary>
+        private bool _horizontalScreenStage;
+
         private const float AccidentalRightGap = 0.5f;
         /// <summary>Extra clear ink before a note that draws a body accidental (e.g. A → B♭).</summary>
         private const float AccidentalLeadingInkPad = 4f;
@@ -262,10 +268,57 @@ namespace musicmate.Drawables
         private const float BeamedInternalInkGap = 8f;
 
         /// <summary>
-        /// Floor for uniform horizontal compress/scale. Below this, dense measures overlap
-        /// glyphs; prefer overflow / fewer measures per staff over crushing ink.
+        /// Minimum uniform horizontal scale before fixed-size ink (noteheads, accidentals,
+        /// bar pads) outruns scaled beat lanes. Screen mapping and measure packing must not
+        /// go below this value — repack whole measures instead.
+        /// <para>
+        /// Derivation: after scale <c>s</c>, bar–note clearance is
+        /// <c>s·C − (1−s)·F</c> where <c>C</c> is plan clearance at scale 1 and <c>F</c> is
+        /// fixed trailing/leading reach (<see cref="NoteCenterTrailingReach"/>,
+        /// accidental column ≈ <see cref="BodyAccidentalSymbolWidth"/> +
+        /// <see cref="BodyAccidentalRightGapPx"/> + <see cref="AccidentalLeadingInkPad"/>).
+        /// Requiring clearance ≥ <see cref="BarLeftPadding"/> + <see cref="BarStemClearance"/>
+        /// yields <c>s ≥ (barPad + F) / (C + F)</c>; worst dense-accidental measures land near 0.78–0.82.
+        /// <see cref="HorizontalCompressFloor"/> is set to this same conservative value (0.85).
+        /// </para>
         /// </summary>
-        private const float HorizontalCompressFloor = 0.85f;
+        internal const float MinimumSafeHorizontalScale = 0.85f;
+
+        /// <summary>
+        /// Floor for uniform horizontal compress/scale (alias of
+        /// <see cref="MinimumSafeHorizontalScale"/>).
+        /// </summary>
+        private const float HorizontalCompressFloor = MinimumSafeHorizontalScale;
+
+        /// <summary>
+        /// Largest sum of staff-local measure minimum widths that may share one staff row
+        /// at <paramref name="usableScreenWidth"/> without needing scale below
+        /// <see cref="MinimumSafeHorizontalScale"/>.
+        /// </summary>
+        internal static float MaxSafePackableLocalWidth(float usableScreenWidth)
+            => usableScreenWidth / MinimumSafeHorizontalScale;
+
+        /// <summary>
+        /// Scale needed to map <paramref name="requiredLocalWidth"/> into
+        /// <paramref name="usableScreenWidth"/> (content span, excluding header margin).
+        /// </summary>
+        internal static float ComputeRequiredHorizontalScale(
+            float requiredLocalWidth,
+            float usableScreenWidth)
+        {
+            if (requiredLocalWidth <= 0f)
+                return 1f;
+            return usableScreenWidth / requiredLocalWidth;
+        }
+
+        /// <summary>
+        /// True when packing this local content width on a staff would force sub-safe scale.
+        /// </summary>
+        internal static bool RequiresMeasureRepackForScale(
+            float requiredLocalWidth,
+            float usableScreenWidth)
+            => ComputeRequiredHorizontalScale(requiredLocalWidth, usableScreenWidth)
+               < MinimumSafeHorizontalScale - 1e-4f;
 
         /// <summary>Minimum ink gap before a note that carries a body accidental (keeps ♭/♯ with its head).</summary>
         private const float AccidentalPairInkGap = 14f;
@@ -1175,6 +1228,8 @@ namespace musicmate.Drawables
         /// <summary>
         /// Greedy consecutive pack of measure minimum widths onto one staff row.
         /// The first candidate measure is always taken (even if wider than the staff).
+        /// Uses <see cref="MaxSafePackableLocalWidth"/> so no packed prefix forces
+        /// horizontal scale below <see cref="MinimumSafeHorizontalScale"/>.
         /// </summary>
         internal static int PackConsecutiveMeasureWidths(
             IReadOnlyList<float> minimumWidths,
@@ -1187,6 +1242,7 @@ namespace musicmate.Drawables
             if (startMeasureIndex < 0 || startMeasureIndex >= minimumWidths.Count)
                 return 0;
 
+            float maxLocalSpan = MaxSafePackableLocalWidth(usableWidth);
             float usedWidth = 0f;
             int placed = 0;
 
@@ -1195,7 +1251,7 @@ namespace musicmate.Drawables
                  measureIndex++)
             {
                 float measureWidth = minimumWidths[measureIndex];
-                float remainingWidth = usableWidth - usedWidth;
+                float remainingWidth = maxLocalSpan - usedWidth;
 
                 bool mustWrap =
                     placed > 0 &&
@@ -1981,22 +2037,42 @@ namespace musicmate.Drawables
             return Math.Clamp(raw, floor, 1f);
         }
 
-        /// <summary>Forward pass in beat order — enforces <see cref="MinInkGap"/> between items.</summary>
+        /// <summary>Forward pass in beat order — enforces <see cref="MinInkGap"/> between items. Staff-local only.</summary>
         private void EnforceGlobalBeatOrderSpacing(
             IReadOnlyList<GeneratedNote> notes,
             NoteLayout[] noteLayouts,
             double beatOrigin,
             float inkGap = MinInkGap,
             IReadOnlyList<double>? barBeats = null)
-            => EnforceGroupOrderSpacing(notes, noteLayouts, beatOrigin, inkGap, barBeats);
+        {
+            if (_horizontalScreenStage)
+            {
+                StaffLayoutDiag.Count("EnforceGlobalBeatOrderSpacing_BLOCKED_AFTER_SCREEN_MAP");
+                return;
+            }
+            EnforceGroupOrderSpacing(notes, noteLayouts, beatOrigin, inkGap, barBeats);
+        }
 
-        /// <summary>Beat-order spacing that never resets at bar lines (prevents cross-measure overlap).</summary>
+        /// <summary>
+        /// Beat-order spacing that keeps forward-only pushes inside each measure.
+        /// Passing <paramref name="barBeats"/> resets the trailing edge at every bar so
+        /// accidental/ink gaps cannot shove notes past a fixed bar line (the diminished /
+        /// dense-accidental regression). Without bar beats this matches the old
+        /// bar-blind behaviour used only where no bars exist (e.g. tuner).
+        /// </summary>
         private void EnforceStrictBeatOrderSpacing(
             IReadOnlyList<GeneratedNote> notes,
             NoteLayout[] noteLayouts,
             double beatOrigin,
-            float inkGap = MinInkGap)
+            float inkGap = MinInkGap,
+            IReadOnlyList<double>? barBeats = null)
         {
+            if (_horizontalScreenStage)
+            {
+                StaffLayoutDiag.Count("EnforceStrictBeatOrderSpacing_BLOCKED_AFTER_SCREEN_MAP");
+                return;
+            }
+            StaffLayoutDiag.Count(nameof(EnforceStrictBeatOrderSpacing));
             if (notes.Count == 0 || noteLayouts.Length == 0)
                 return;
 
@@ -2004,7 +2080,114 @@ namespace musicmate.Drawables
                 .OrderBy(i => (notes[i].BeatPosition ?? 0.0) - beatOrigin)
                 .ThenBy(i => i)
                 .ToList();
-            EnforceGroupOrderSpacingOnIndices(notes, noteLayouts, order, inkGap);
+            var sortedBarBeatsRel = barBeats?.Select(b => b - beatOrigin).OrderBy(b => b).ToList();
+            EnforceGroupOrderSpacingOnIndices(notes, noteLayouts, order, inkGap, beatOrigin, sortedBarBeatsRel);
+        }
+
+        /// <summary>
+        /// Places each internal bar line from the completed measure's ink (last trailing edge
+        /// + clearance), then ensures the next measure's first object clears that bar.
+        /// Bar X follows content; content is not allowed to cross a frozen bar slot.
+        /// </summary>
+        private void PlaceBarLinesFromMeasureContent(
+            IReadOnlyList<GeneratedNote> notes,
+            NoteLayout[] noteLayouts,
+            IList<BarLayout> barLayouts,
+            IReadOnlyList<double> barBeats,
+            double beatOrigin)
+        {
+            // Staff-local only — must not run after MapStaffLayoutToScreen.
+            if (_horizontalScreenStage)
+            {
+                StaffLayoutDiag.Count("PlaceBarLinesFromMeasureContent_BLOCKED_AFTER_SCREEN_MAP");
+                return;
+            }
+            StaffLayoutDiag.Count(nameof(PlaceBarLinesFromMeasureContent));
+            if (notes.Count == 0 || noteLayouts.Length == 0 || barLayouts.Count == 0)
+                return;
+
+            var noteList = notes as List<GeneratedNote> ?? notes.ToList();
+            var sortedBarBeats = barBeats.Select(b => b - beatOrigin).OrderBy(b => b).ToList();
+            double totalBeats = 0;
+            for (int i = 0; i < notes.Count; i++)
+            {
+                double rel = (notes[i].BeatPosition ?? 0.0) - beatOrigin;
+                totalBeats = Math.Max(totalBeats, rel + notes[i].BeatDuration);
+            }
+
+            var segments = BuildMeasureSegments(noteList, sortedBarBeats, beatOrigin, totalBeats);
+            int internalBarCount = Math.Min(sortedBarBeats.Count, barLayouts.Count);
+
+            for (int b = 0; b < internalBarCount; b++)
+            {
+                if (b >= segments.Count || segments[b].NoteIndices.Count == 0)
+                    continue;
+
+                var sorted = SortIndicesByBeat(noteList, segments[b].NoteIndices, beatOrigin);
+                int lastIdx = sorted[^1];
+                float trailing = NoteInkRightForLayout(noteLayouts[lastIdx]);
+                float requiredBarX = trailing + BarLeftPadding + BarStemClearance;
+                if (barLayouts[b].X < requiredBarX)
+                {
+                    var bar = barLayouts[b];
+                    bar.X = requiredBarX;
+                    barLayouts[b] = bar;
+                }
+
+                if (b + 1 >= segments.Count || segments[b + 1].NoteIndices.Count == 0)
+                    continue;
+
+                float minLeading = barLayouts[b].X + BarLeftPadding + BarStemClearance;
+                var nextSorted = SortIndicesByBeat(noteList, segments[b + 1].NoteIndices, beatOrigin);
+                ShiftMeasureIndicesToMinGroupLeft(noteLayouts, nextSorted, minLeading);
+                EnforceGroupOrderSpacingOnIndices(notes, noteLayouts, nextSorted, MinInkGap);
+
+                float nextBarX = b + 1 < barLayouts.Count
+                    ? barLayouts[b + 1].X
+                    : barLayouts[^1].X;
+                float nextTrailing = NoteInkRightForLayout(noteLayouts[nextSorted[^1]]);
+                if (nextTrailing > nextBarX - BarLeftPadding - BarStemClearance + 0.5f)
+                {
+                    ResolveMeasureNoteSpacing(
+                        noteList, noteLayouts, nextSorted,
+                        minLeading,
+                        nextBarX - BarLeftPadding * 0.5f,
+                        nextBarX,
+                        beatOrigin,
+                        segments[b + 1].EndBeat);
+
+                    // If the measure still cannot fit, move the following bar with the content
+                    // rather than leaving noteheads under the bar line.
+                    nextTrailing = NoteInkRightForLayout(noteLayouts[nextSorted[^1]]);
+                    float minNextBar = nextTrailing + BarLeftPadding + BarStemClearance;
+                    if (b + 1 < barLayouts.Count && barLayouts[b + 1].X < minNextBar)
+                    {
+                        var bar = barLayouts[b + 1];
+                        bar.X = minNextBar;
+                        barLayouts[b + 1] = bar;
+                    }
+                }
+            }
+
+            // Final bar: mirror ReconcileFinalBarLayout for IList.
+            float lastNoteRight = float.NegativeInfinity;
+            for (int i = 0; i < noteLayouts.Length; i++)
+            {
+                float right = NoteInkRightForLayout(noteLayouts[i]);
+                if (right > lastNoteRight)
+                    lastNoteRight = right;
+            }
+
+            if (lastNoteRight > float.NegativeInfinity)
+            {
+                int finalBarIndex = barLayouts.Count - 1;
+                float endBarX = Math.Max(barLayouts[finalBarIndex].X, lastNoteRight + BarRightPadding);
+                if (finalBarIndex > 0)
+                    endBarX = Math.Max(endBarX, barLayouts[finalBarIndex - 1].X + 5f);
+                var endBar = barLayouts[finalBarIndex];
+                endBar.X = endBarX;
+                barLayouts[finalBarIndex] = endBar;
+            }
         }
 
         /// <summary>Packs notes at min ink gap when proportional beat spacing cannot fit.</summary>
@@ -2031,17 +2214,19 @@ namespace musicmate.Drawables
                 if (prevRight <= float.NegativeInfinity)
                 {
                     center = innerLeft + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, note.Duration);
-                    if (isFirstMeasureOnStaff && k == 0)
-                    {
-                        float headerEdge = _planUseFullHeader
-                            ? _headerMetrics.FullHeaderRightRel
-                            : _planStaffLeftMargin;
-                        center = Math.Max(center, headerEdge + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, note.Duration));
-                    }
                 }
                 else
                 {
                     center = MinCenterAfterPrevRight(prevRight, note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, duration: note.Duration);
+                }
+
+                if (isFirstMeasureOnStaff)
+                {
+                    float headerEdge = _planUseFullHeader
+                        ? _headerMetrics.FullHeaderRightRel
+                        : _planStaffLeftMargin;
+                    float headerMin = headerEdge + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, note.Duration);
+                    center = Math.Max(center, headerMin);
                 }
 
                 noteLayouts[i] = new NoteLayout
@@ -2293,15 +2478,16 @@ namespace musicmate.Drawables
                     float onBarMin = measureLeft + BarLeftPadding + MeasureStartExtraPad + BarStemClearance
                                      + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, note.Duration);
                     idealX = Math.Max(idealX, onBarMin);
+                }
 
-                    if (isFirstMeasureOnStaff && k == 0)
-                    {
-                        float headerEdge = _planUseFullHeader
-                            ? _headerMetrics.FullHeaderRightRel
-                            : _planStaffLeftMargin;
-                        float headerMin = headerEdge + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, note.Duration);
-                        idealX = Math.Max(idealX, headerMin);
-                    }
+                if (isFirstMeasureOnStaff)
+                {
+                    float headerEdge = _planUseFullHeader
+                        ? _headerMetrics.FullHeaderRightRel
+                        : _planStaffLeftMargin;
+                    float headerMin = headerEdge + NoteCenterLeftReach(note.IsRest, acc.HasAccidental, acc.IsFlat, acc.IsNatural, note.Duration)
+                                      + StaffStartExtraPad;
+                    idealX = Math.Max(idealX, headerMin);
                 }
 
                 if (prevRight > float.NegativeInfinity)
@@ -2349,6 +2535,8 @@ namespace musicmate.Drawables
                 bool isFinalStaff,
                 bool hasEndSingleBar)
         {
+            StaffLayoutDiag.Count(nameof(PlanHorizontalLayout));
+            _horizontalScreenStage = false; // staff-local musical geometry stage
             _planStaffLeftMargin = staffLeftMargin;
             _planUseFullHeader = useFullHeaderAnchor;
             availableWidth = Math.Max(availableWidth, 64f);
@@ -2458,23 +2646,25 @@ namespace musicmate.Drawables
                 SyncAccidentalX(noteLayouts, 0);
             }
 
-            float totalWidth = barList.Count > 0
-                ? barList.Max(b => b.X) + EffectiveRightMargin
-                : staffLeftMargin + availableWidth;
-
             LastComputedPxPerBeat = totalBeats > 0 ? availableWidth / (float)totalBeats : 42f;
 
             if (!beginner)
             {
-                EnforceGlobalBeatOrderSpacing(notes, noteLayouts, beatOrigin, _planInkGap);
-                EnforceStrictBeatOrderSpacing(notes, noteLayouts, beatOrigin, MinInkGap);
+                EnforceGlobalBeatOrderSpacing(notes, noteLayouts, beatOrigin, _planInkGap, barBeats);
+                EnforceStrictBeatOrderSpacing(notes, noteLayouts, beatOrigin, MinInkGap, barBeats);
+                PlaceBarLinesFromMeasureContent(notes, noteLayouts, barList, barBeats, beatOrigin);
             }
             else
             {
                 // Per-measure sequential fallback may slightly overflow a bar; restore MinInkGap
-                // across the staff without fitScale-crushing (push forward / allow end overflow).
-                EnforceStrictBeatOrderSpacing(notes, noteLayouts, beatOrigin, MinInkGap);
+                // inside each measure, then re-anchor bars to measure ink.
+                EnforceStrictBeatOrderSpacing(notes, noteLayouts, beatOrigin, MinInkGap, barBeats);
+                PlaceBarLinesFromMeasureContent(notes, noteLayouts, barList, barBeats, beatOrigin);
             }
+
+            float totalWidth = barList.Count > 0
+                ? barList.Max(b => b.X) + EffectiveRightMargin
+                : staffLeftMargin + availableWidth;
 
             if (tunerNoBars && notes.Count == 1 && noteLayouts.Length == 1)
             {
@@ -2789,116 +2979,43 @@ namespace musicmate.Drawables
                 return;
             }
 
-            // Step 3: Calculate horizontal compression if needed
-            float upperContentWidth = upperTotalWidth - upperStaffMargin;
-            float lowerContentWidth = lowerTotalWidth - lowerStaffMargin;
-            float upperOverflow = upperContentWidth > upperUsableWidth
-                ? upperUsableWidth / upperContentWidth : 1f;
-            float lowerOverflow = lowerContentWidth > lowerUsableWidth
-                ? lowerUsableWidth / lowerContentWidth : 1f;
-            float horizontalScale = Math.Min(upperOverflow, lowerOverflow);
-            float maxContentWidth = Math.Max(upperContentWidth, lowerContentWidth);
+            // Step 3 — Screen stage: map finished staff-local geometry with at most one
+            // uniform scale per staff. Do NOT run Strict / Refinish / PlaceBarLines /
+            // Reconcile / Align after mapping (those mutate musical geometry in screen space).
+            float upperContentWidth = Math.Max(1f, upperTotalWidth - upperStaffMargin);
+            float lowerContentWidth = Math.Max(1f, lowerTotalWidth - lowerStaffMargin);
+            float upperScale = upperContentWidth > upperUsableWidth
+                ? upperUsableWidth / upperContentWidth
+                : 1f;
+            float lowerScale = lowerContentWidth > lowerUsableWidth
+                ? lowerUsableWidth / lowerContentWidth
+                : 1f;
+            // Prefer readable size when mild overflow; never map below safe engraving scale.
+            upperScale = Math.Clamp(upperScale, MinimumSafeHorizontalScale, 1f);
+            lowerScale = Math.Clamp(lowerScale, MinimumSafeHorizontalScale, 1f);
 
-            float safeContentSpan = safeRight - safeLeft - upperStaffMargin - 4f;
-            if (horizontalScale < 0.999f)
+            if (upperScale < 0.999f || lowerScale < 0.999f)
             {
-                if (safeContentSpan > 0f)
-                    horizontalScale = Math.Min(horizontalScale, safeContentSpan / maxContentWidth);
-                horizontalScale = Math.Clamp(horizontalScale, HorizontalCompressFloor, 1f);
-                StaffLog($"[Staff] Compression needed: contentWidth={maxContentWidth:F0}, " +
-                      $"upperUsable={upperUsableWidth:F0}, lowerUsable={lowerUsableWidth:F0}, scale={horizontalScale:F3}");
+                StaffLog($"[Staff] Screen map scale: upper={upperScale:F3} lower={lowerScale:F3} " +
+                      $"(content U={upperContentWidth:F0} L={lowerContentWidth:F0})");
+            }
 
-                ApplyHorizontalScale(upperNoteLayouts, upperBarLayouts, horizontalScale, safeLeft, upperStaffMargin);
-                ApplyHorizontalScale(lowerNoteLayouts, lowerBarLayouts, horizontalScale, safeLeft, lowerStaffMargin);
-            }
-            else
-            {
-                MapStaffLayoutToScreen(upperNoteLayouts, upperBarLayouts, safeLeft, upperStaffMargin);
-                MapStaffLayoutToScreen(lowerNoteLayouts, lowerBarLayouts, safeLeft, lowerStaffMargin);
-            }
+            MapStaffLayoutToScreen(upperNoteLayouts, upperBarLayouts, safeLeft, upperStaffMargin, upperScale);
+            MapStaffLayoutToScreen(lowerNoteLayouts, lowerBarLayouts, safeLeft, lowerStaffMargin, lowerScale);
+
+            // One exact uniform fit if floor-clamped scale still left ink past the limit.
+            FitMappedLayoutIntoRightLimit(upperNoteLayouts, upperBarLayouts, layoutRightLimit, safeLeft, upperStaffMargin);
+            FitMappedLayoutIntoRightLimit(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit, safeLeft, lowerStaffMargin);
 
             double upperBeatOrigin = GetStaffBeatOrigin(UpperNotes, UpperBarBeats);
             double lowerBeatOrigin = GetStaffBeatOrigin(LowerNotes, LowerBarBeats);
-            bool compressed = horizontalScale < 0.999f;
 
-            RefinishMeasureSpacing(UpperNotes, upperNoteLayouts, upperBarLayouts, UpperBarBeats, upperBeatOrigin);
-            RefinishMeasureSpacing(LowerNotes, lowerNoteLayouts, lowerBarLayouts, LowerBarBeats, lowerBeatOrigin);
-            EnforceGlobalBeatOrderSpacing(UpperNotes, upperNoteLayouts, upperBeatOrigin, MinInkGap, UpperBarBeats);
-            EnforceGlobalBeatOrderSpacing(LowerNotes, lowerNoteLayouts, lowerBeatOrigin, MinInkGap, LowerBarBeats);
-
-            if (!compressed)
-            {
-                _planInkGap = upperPlanInkGap;
-                EnforceGlobalBeatOrderSpacing(UpperNotes, upperNoteLayouts, upperBeatOrigin, upperPlanInkGap, UpperBarBeats);
-                _planInkGap = lowerPlanInkGap;
-                EnforceGlobalBeatOrderSpacing(LowerNotes, lowerNoteLayouts, lowerBeatOrigin, lowerPlanInkGap, LowerBarBeats);
-            }
-
-            NudgeNotesClearOfBarlines(UpperNotes, upperNoteLayouts, upperBarLayouts, UpperBarBeats, upperBeatOrigin, upperTop, upperMid, upperBot);
-            NudgeNotesClearOfBarlines(LowerNotes, lowerNoteLayouts, lowerBarLayouts, LowerBarBeats, lowerBeatOrigin, lowerTop, lowerMid, lowerBot);
-            ReconcileFinalBarLayout(upperNoteLayouts, upperBarLayouts);
-            ReconcileFinalBarLayout(lowerNoteLayouts, lowerBarLayouts);
-
-            ClampLayoutToSafeRight(upperNoteLayouts, upperBarLayouts, layoutRightLimit, safeLeft, upperStaffMargin);
-            ClampLayoutToSafeRight(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit, safeLeft, lowerStaffMargin);
-            RefinishMeasureSpacing(UpperNotes, upperNoteLayouts, upperBarLayouts, UpperBarBeats, upperBeatOrigin);
-            RefinishMeasureSpacing(LowerNotes, lowerNoteLayouts, lowerBarLayouts, LowerBarBeats, lowerBeatOrigin);
-            ClampLayoutToSafeRight(upperNoteLayouts, upperBarLayouts, layoutRightLimit, safeLeft, upperStaffMargin);
-            ClampLayoutToSafeRight(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit, safeLeft, lowerStaffMargin);
-
-            if (!compressed && !SingleStaffLayout)
-            {
-                ExpandLayoutToFillSafeRight(upperNoteLayouts, upperBarLayouts, layoutRightLimit, safeLeft, upperStaffMargin);
-                if (lowerFillsWidth)
-                    ExpandLayoutToFillSafeRight(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit, safeLeft, lowerStaffMargin);
-                _planInkGap = upperPlanInkGap;
-                EnforceGlobalBeatOrderSpacing(UpperNotes, upperNoteLayouts, upperBeatOrigin, upperPlanInkGap, UpperBarBeats);
-                _planInkGap = lowerPlanInkGap;
-                EnforceGlobalBeatOrderSpacing(LowerNotes, lowerNoteLayouts, lowerBeatOrigin, lowerPlanInkGap, LowerBarBeats);
-            }
-
-            ReconcileFinalBarLayout(upperNoteLayouts, upperBarLayouts);
-            ReconcileFinalBarLayout(lowerNoteLayouts, lowerBarLayouts);
-            if (!SingleStaffLayout)
-            {
-                PadLayoutGutterToLimit(upperNoteLayouts, upperBarLayouts, layoutRightLimit);
-                if (lowerFillsWidth)
-                    PadLayoutGutterToLimit(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit);
-            }
-            ReconcileFinalBarLayout(upperNoteLayouts, upperBarLayouts);
-            ReconcileFinalBarLayout(lowerNoteLayouts, lowerBarLayouts);
-            AlignIndependentStaffEndBars(upperBarLayouts, upperNoteLayouts, lowerBarLayouts, lowerNoteLayouts, layoutRightLimit, safeLeft, upperStaffMargin, lowerStaffMargin);
-            ClampLayoutToSafeRight(upperNoteLayouts, upperBarLayouts, layoutRightLimit, safeLeft, upperStaffMargin);
-            ClampLayoutToSafeRight(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit, safeLeft, lowerStaffMargin);
-            EnforceStrictBeatOrderSpacing(UpperNotes, upperNoteLayouts, upperBeatOrigin, MinInkGap);
-            EnforceStrictBeatOrderSpacing(LowerNotes, lowerNoteLayouts, lowerBeatOrigin, MinInkGap);
-            ClampLayoutToSafeRight(upperNoteLayouts, upperBarLayouts, layoutRightLimit, safeLeft, upperStaffMargin);
-            ClampLayoutToSafeRight(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit, safeLeft, lowerStaffMargin);
-            ReconcileFinalBarLayout(upperNoteLayouts, upperBarLayouts);
-            ReconcileFinalBarLayout(lowerNoteLayouts, lowerBarLayouts);
-            AlignIndependentStaffEndBars(upperBarLayouts, upperNoteLayouts, lowerBarLayouts, lowerNoteLayouts, layoutRightLimit, safeLeft, upperStaffMargin, lowerStaffMargin);
-
-            FinalizeStaffBarClearance(UpperNotes, upperNoteLayouts, upperBarLayouts, UpperBarBeats, upperBeatOrigin, upperTop, upperMid, upperBot);
-            FinalizeStaffBarClearance(LowerNotes, lowerNoteLayouts, lowerBarLayouts, LowerBarBeats, lowerBeatOrigin, lowerTop, lowerMid, lowerBot);
-
-            // Sight Training: drop internal bars before final spacing so phantom bars cannot
-            // nudge notes past the eventual double bar (root cause of stray end notation).
+            // Sight Training: drop internal bars before draw (not a musical re-layout).
             if (SingleStaffLayout)
                 upperBarLayouts = Array.Empty<BarLayout>();
 
             SanitizeLayoutPositions(upperNoteLayouts, upperBarLayouts);
             SanitizeLayoutPositions(lowerNoteLayouts, lowerBarLayouts);
-
-            EnforceStrictBeatOrderSpacing(UpperNotes, upperNoteLayouts, upperBeatOrigin, MinInkGap);
-            EnforceStrictBeatOrderSpacing(LowerNotes, lowerNoteLayouts, lowerBeatOrigin, MinInkGap);
-            ReconcileFinalBarLayout(upperNoteLayouts, upperBarLayouts);
-            ReconcileFinalBarLayout(lowerNoteLayouts, lowerBarLayouts);
-            AlignIndependentStaffEndBars(upperBarLayouts, upperNoteLayouts, lowerBarLayouts, lowerNoteLayouts, layoutRightLimit, safeLeft, upperStaffMargin, lowerStaffMargin);
-            ClampLayoutToSafeRight(upperNoteLayouts, upperBarLayouts, layoutRightLimit, safeLeft, upperStaffMargin);
-            ClampLayoutToSafeRight(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit, safeLeft, lowerStaffMargin);
-            ReconcileFinalBarLayout(upperNoteLayouts, upperBarLayouts);
-            ReconcileFinalBarLayout(lowerNoteLayouts, lowerBarLayouts);
-            AlignIndependentStaffEndBars(upperBarLayouts, upperNoteLayouts, lowerBarLayouts, lowerNoteLayouts, layoutRightLimit, safeLeft, upperStaffMargin, lowerStaffMargin);
 
             // Tuner: discard any residual bars and keep the selected note centered.
             if (_session.Tune == "Tuner")
@@ -2973,6 +3090,7 @@ namespace musicmate.Drawables
                 upperNoteLayouts, upperBarLayouts, lowerNoteLayouts, lowerBarLayouts,
                 upperBeatOrigin, lowerBeatOrigin,
                 safeLeft, safeRight, layoutRightLimit, upperStaffMargin, lowerStaffMargin);
+            return;
         }
 
         /// <summary>
@@ -3192,7 +3310,11 @@ namespace musicmate.Drawables
                 HorizontalAlignment.Left, VerticalAlignment.Top);
         }
 
-        /// <summary>Maps planned layout to screen for child levels 1–30 (single uniform scale if needed).</summary>
+        /// <summary>
+        /// Screen stage for child levels 1–30: map finished staff-local Plan geometry once,
+        /// then at most one uniform fit into <paramref name="layoutRightLimit"/>.
+        /// No Strict / PlaceBarLines / Refinish / Reconcile / Align after mapping.
+        /// </summary>
         private void FinishBeginnerHorizontalLayout(
             List<GeneratedNote> upperNotes,
             NoteLayout[] upperNoteLayouts,
@@ -3216,46 +3338,23 @@ namespace musicmate.Drawables
             float lowerBot,
             bool expandLowerToFill)
         {
+            _ = upperNotes;
+            _ = lowerNotes;
+            _ = upperTop;
+            _ = upperMid;
+            _ = upperBot;
+            _ = lowerTop;
+            _ = lowerMid;
+            _ = lowerBot;
+            _ = expandLowerToFill;
+
             ApplyBeginnerStaffToScreen(upperNoteLayouts, upperBarLayouts, safeLeft, upperStaffMargin,
                 upperTotalWidth, upperUsableWidth);
             ApplyBeginnerStaffToScreen(lowerNoteLayouts, lowerBarLayouts, safeLeft, lowerStaffMargin,
                 lowerTotalWidth, lowerUsableWidth);
 
-            ExpandLayoutToFillSafeRight(upperNoteLayouts, upperBarLayouts, layoutRightLimit, safeLeft, upperStaffMargin);
-            if (expandLowerToFill)
-                ExpandLayoutToFillSafeRight(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit, safeLeft, lowerStaffMargin);
-            PadLayoutGutterToLimit(upperNoteLayouts, upperBarLayouts, layoutRightLimit);
-            if (expandLowerToFill)
-                PadLayoutGutterToLimit(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit);
-
-            // Child path used to skip bar/stem clearance; without it bars land on measure-starting notes.
-            // Use nudge + bar ink margins only — full RefinishMeasureSpacing would undo beat-proportional layout.
-            double upperBeatOrigin = GetStaffBeatOrigin(upperNotes, UpperBarBeats);
-            double lowerBeatOrigin = GetStaffBeatOrigin(lowerNotes, LowerBarBeats);
-            EnforceMeasureBarInkMargins(upperNotes, upperNoteLayouts, upperBarLayouts, UpperBarBeats, upperBeatOrigin);
-            EnforceMeasureBarInkMargins(lowerNotes, lowerNoteLayouts, lowerBarLayouts, LowerBarBeats, lowerBeatOrigin);
-            NudgeNotesClearOfBarlines(
-                upperNotes, upperNoteLayouts, upperBarLayouts, UpperBarBeats, upperBeatOrigin,
-                upperTop, upperMid, upperBot);
-            NudgeNotesClearOfBarlines(
-                lowerNotes, lowerNoteLayouts, lowerBarLayouts, LowerBarBeats, lowerBeatOrigin,
-                lowerTop, lowerMid, lowerBot);
-
-            ReconcileFinalBarLayout(upperNoteLayouts, upperBarLayouts);
-            ReconcileFinalBarLayout(lowerNoteLayouts, lowerBarLayouts);
-            AlignIndependentStaffEndBars(upperBarLayouts, upperNoteLayouts, lowerBarLayouts, lowerNoteLayouts, layoutRightLimit, safeLeft, upperStaffMargin, lowerStaffMargin);
-
-            // Match the adult path: Expand / Pad / Nudge / Align can push ink past the
-            // safe-right limit. Clamp last so notes, accidentals, and end bars stay inside.
-            ClampLayoutToSafeRight(
-                upperNoteLayouts, upperBarLayouts, layoutRightLimit, safeLeft, upperStaffMargin);
-            ClampLayoutToSafeRight(
-                lowerNoteLayouts, lowerBarLayouts, layoutRightLimit, safeLeft, lowerStaffMargin);
-            ReconcileFinalBarLayout(upperNoteLayouts, upperBarLayouts);
-            ReconcileFinalBarLayout(lowerNoteLayouts, lowerBarLayouts);
-            AlignIndependentStaffEndBars(upperBarLayouts, upperNoteLayouts, lowerBarLayouts, lowerNoteLayouts, layoutRightLimit, safeLeft, upperStaffMargin, lowerStaffMargin);
-            // Do not clamp after this Align: uniform X-scale does not shrink ledger half-width,
-            // so a trailing clamp can push note ink past the final bar again.
+            FitMappedLayoutIntoRightLimit(upperNoteLayouts, upperBarLayouts, layoutRightLimit, safeLeft, upperStaffMargin);
+            FitMappedLayoutIntoRightLimit(lowerNoteLayouts, lowerBarLayouts, layoutRightLimit, safeLeft, lowerStaffMargin);
         }
 
         private void LogBeginnerLayoutBounds(
@@ -3294,10 +3393,15 @@ namespace musicmate.Drawables
             MapStaffLayoutToScreen(noteLayouts, barLayouts, safeLeft, staffLeftMargin, scale);
         }
 
+        /// <summary>
+        /// Screen stage: affine map of finished staff-local X → screen X.
+        /// After this returns, structural musical mutators are blocked via <see cref="_horizontalScreenStage"/>.
+        /// </summary>
         private void MapStaffLayoutToScreen(
             NoteLayout[] noteLayouts, BarLayout[] barLayouts,
             float safeLeft, float staffLeftMargin, float scale = 1f)
         {
+            StaffLayoutDiag.Count(nameof(MapStaffLayoutToScreen));
             for (int i = 0; i < noteLayouts.Length; i++)
             {
                 float relativeX = noteLayouts[i].X - staffLeftMargin;
@@ -3314,11 +3418,98 @@ namespace musicmate.Drawables
                 float relativeX = barLayouts[i].X - staffLeftMargin;
                 barLayouts[i].X = safeLeft + staffLeftMargin + (relativeX * scale);
             }
+
+            // Enter screen stage: no further independent note/bar/measure mutation.
+            _horizontalScreenStage = true;
         }
 
         private void ApplyHorizontalScale(NoteLayout[] noteLayouts, BarLayout[] barLayouts,
                                           float scale, float safeLeft, float staffLeftMargin)
             => MapStaffLayoutToScreen(noteLayouts, barLayouts, safeLeft, staffLeftMargin, scale);
+
+        /// <summary>
+        /// Screen-stage only: one uniform scale (and/or shift) so the whole staff's ink fits
+        /// left of <paramref name="layoutRightLimit"/>. Applies the same affine transform to
+        /// notes, accidentals, and bars — never repairs individual objects.
+        /// Scale accounts for constant ink pads (notehead/accidental/bar width) that do not
+        /// shrink with X, so a naive center-span scale cannot leave ink past the limit.
+        /// </summary>
+        private void FitMappedLayoutIntoRightLimit(
+            NoteLayout[] noteLayouts,
+            BarLayout[] barLayouts,
+            float layoutRightLimit,
+            float safeLeft,
+            float staffLeftMargin)
+        {
+            StaffLayoutDiag.Count(nameof(FitMappedLayoutIntoRightLimit));
+            float limit = layoutRightLimit;
+            float floorCenter = safeLeft + staffLeftMargin;
+
+            float minX = GetLayoutMinX(noteLayouts, barLayouts);
+            float maxRight = GetLayoutMaxRight(noteLayouts, barLayouts);
+            if (maxRight <= limit + 0.5f)
+                return;
+
+            // x' = floor + (x - minX) * s  ⇒  inkRight' = floor + (x - minX)*s + trail
+            // Require inkRight' <= limit for every object (trail/barExtra are not scaled).
+            float scale = 1f;
+            for (int i = 0; i < noteLayouts.Length; i++)
+            {
+                float x = noteLayouts[i].X;
+                float trail = NoteInkRightForLayout(noteLayouts[i]) - x;
+                float denom = x - minX;
+                if (denom <= 0.01f)
+                    continue;
+                float allowed = limit - floorCenter - trail;
+                if (allowed <= 0f)
+                    continue;
+                scale = Math.Min(scale, allowed / denom);
+            }
+
+            for (int i = 0; i < barLayouts.Length; i++)
+            {
+                float x = barLayouts[i].X;
+                float extra = BarLineRightEdge(barLayouts[i]) - x;
+                float denom = x - minX;
+                if (denom <= 0.01f)
+                    continue;
+                float allowed = limit - floorCenter - extra;
+                if (allowed <= 0f)
+                    continue;
+                scale = Math.Min(scale, allowed / denom);
+            }
+
+            if (scale < 0.999f)
+            {
+                scale = Math.Clamp(scale, MinimumSafeHorizontalScale, 1f);
+                ScaleLayoutOntoFloor(noteLayouts, barLayouts, minX, floorCenter, scale);
+            }
+
+            maxRight = GetLayoutMaxRight(noteLayouts, barLayouts);
+            if (maxRight <= limit + 0.5f)
+                return;
+
+            // Residual: shift left as a unit without crossing the header floor.
+            float shift = limit - maxRight;
+            float newMin = GetLayoutMinX(noteLayouts, barLayouts) + shift;
+            if (newMin < floorCenter)
+                shift += floorCenter - newMin;
+
+            if (Math.Abs(shift) >= 0.01f)
+            {
+                for (int i = 0; i < noteLayouts.Length; i++)
+                {
+                    noteLayouts[i].X += shift;
+                    if (noteLayouts[i].HasAccidental)
+                        SyncAccidentalX(noteLayouts, i);
+                    else
+                        noteLayouts[i].AccidentalX = noteLayouts[i].X;
+                }
+
+                for (int i = 0; i < barLayouts.Length; i++)
+                    barLayouts[i].X += shift;
+            }
+        }
 
         /// <summary>
         /// Lines up only the final bar between independent staves when both end at a similar
@@ -3335,6 +3526,7 @@ namespace musicmate.Drawables
             float upperStaffMargin,
             float lowerStaffMargin)
         {
+            StaffLayoutDiag.Count(nameof(AlignIndependentStaffEndBars));
             if (upperBarLayouts.Length == 0 || lowerBarLayouts.Length == 0)
                 return;
 
@@ -3568,6 +3760,7 @@ namespace musicmate.Drawables
         /// <summary>Ensures the final bar clears the last note without moving internal bar lines.</summary>
         private void ReconcileFinalBarLayout(NoteLayout[] noteLayouts, BarLayout[] barLayouts)
         {
+            StaffLayoutDiag.Count(nameof(ReconcileFinalBarLayout));
             if (noteLayouts.Length == 0 || barLayouts.Length == 0)
                 return;
 
@@ -3840,6 +4033,7 @@ namespace musicmate.Drawables
             float safeLeft,
             float staffLeftMargin)
         {
+            StaffLayoutDiag.Count(nameof(ClampLayoutToSafeRight));
             float limit = layoutRightLimit;
             float floorCenter = safeLeft + staffLeftMargin;
 
@@ -3920,6 +4114,7 @@ namespace musicmate.Drawables
             float safeLeft,
             float staffLeftMargin)
         {
+            StaffLayoutDiag.Count(nameof(ExpandLayoutToFillSafeRight));
             const float fillThreshold = 4f;
             float limit = layoutRightLimit;
             float anchor = safeLeft + staffLeftMargin;
@@ -3958,6 +4153,7 @@ namespace musicmate.Drawables
             BarLayout[] barLayouts,
             float layoutRightLimit)
         {
+            StaffLayoutDiag.Count(nameof(PadLayoutGutterToLimit));
             float maxRight = GetLayoutMaxRight(noteLayouts, barLayouts);
             if (maxRight >= layoutRightLimit - 1f)
                 return;
@@ -4297,7 +4493,7 @@ namespace musicmate.Drawables
             }
         }
 
-        /// <summary>Ensures ink clears internal bar lines on both sides of each measure boundary.</summary>
+        /// <summary>Ensures ink clears internal bar lines on both sides of each measure boundary. Staff-local only.</summary>
         private void EnforceMeasureBarInkMargins(
             IReadOnlyList<GeneratedNote> notes,
             NoteLayout[] noteLayouts,
@@ -4305,6 +4501,11 @@ namespace musicmate.Drawables
             IReadOnlyList<double> barBeats,
             double beatOrigin)
         {
+            if (_horizontalScreenStage)
+            {
+                StaffLayoutDiag.Count("EnforceMeasureBarInkMargins_BLOCKED_AFTER_SCREEN_MAP");
+                return;
+            }
             if (notes.Count == 0 || barLayouts.Length == 0)
                 return;
 
@@ -4356,6 +4557,23 @@ namespace musicmate.Drawables
                         }
 
                         EnforceGroupOrderSpacingOnIndices(notes, noteLayouts, sortedNext, MinInkGap);
+
+                        // Shifting a whole measure right can shove its last notes past the next
+                        // bar (looks like empty early beats / staircase piles). Repack in-slot.
+                        float nextBarX = b + 1 < barLayouts.Length
+                            ? barLayouts[b + 1].X
+                            : barLayouts[^1].X;
+                        float trailing = NoteTrailingRight(notes[sortedNext[^1]], noteLayouts[sortedNext[^1]].X);
+                        if (trailing > nextBarX - BarLeftPadding - BarStemClearance + 0.5f)
+                        {
+                            ResolveMeasureNoteSpacing(
+                                noteList, noteLayouts, sortedNext,
+                                minLeading,
+                                nextBarX - BarLeftPadding * 0.5f,
+                                nextBarX,
+                                beatOrigin,
+                                segments[b + 1].EndBeat);
+                        }
                     }
                 }
             }
@@ -4369,6 +4587,12 @@ namespace musicmate.Drawables
             IReadOnlyList<double> barBeats,
             double beatOrigin)
         {
+            if (_horizontalScreenStage)
+            {
+                StaffLayoutDiag.Count("RefinishMeasureSpacing_BLOCKED_AFTER_SCREEN_MAP");
+                return;
+            }
+            StaffLayoutDiag.Count(nameof(RefinishMeasureSpacing));
             _planInkGap = MinInkGap;
             EnforceMonotonicNoteSpacingInMeasures(notes, noteLayouts, barLayouts, barBeats, beatOrigin);
             EnforceMeasureBarInkMargins(notes, noteLayouts, barLayouts, barBeats, beatOrigin);
@@ -4746,11 +4970,12 @@ namespace musicmate.Drawables
             }
 
             barBeats ??= Array.Empty<double>();
-            // Headerless Ear Training has no clef/key/time — do not treat the note-placement
-            // left margin as a paint-exclusion zone (that hid accidentals after centering).
+            // Exclude only the drawn clef/key/time region. Using staffLeftMargin (first-note
+            // center) made the paint-exclusion zone cover early note accidentals — e.g. the
+            // D♮ of an E7 arpeggio in a tight first bar after four sharps.
             float headerRightAbs = OmitStaffHeader
                 ? safeLeft
-                : safeLeft + staffLeftMargin - _layout.NoteHeadR;
+                : safeLeft + _headerMetrics.FullHeaderRightRel;
             var beamGroups = ComputeBeamGroups(notes, noteLayouts, staffTop, staffMid, barBeats, beatOrigin);
             var beamStemEnds = ComputeBeamStemEnds(notes, noteLayouts, beamGroups, staffTop, staffMid);
 
@@ -4812,7 +5037,9 @@ namespace musicmate.Drawables
                         beamStemTips[i] = (stemTipX, stemTipY, ResolveDrawnNoteColor(state, ink, fadeAlpha), note.Duration);
 
                     DrawLedgerLines(canvas, note, layout.X, staffTop, staffBot, ink, fadeAlpha);
-                    DrawAccidental(canvas, note, layout, ny, ink, accHistory, barCancelledAccidentals, fadeAlpha, headerRightAbs);
+                    DrawAccidental(
+                        canvas, note, notes, noteLayouts, i, barLayouts, barBeats, beatOrigin,
+                        ny, ink, accHistory, barCancelledAccidentals, fadeAlpha, headerRightAbs);
 
                     var nameDisplay = _session.NoteNameDisplay;
                     bool showName = _session.Tune != "Tuner"
@@ -5879,11 +6106,25 @@ namespace musicmate.Drawables
                 HorizontalAlignment.Right, VerticalAlignment.Center);
         }
 
-        private void DrawAccidental(ICanvas canvas, GeneratedNote note, NoteLayout layout, float y,
-                                    Color ink, Dictionary<(char, int), Accidental>? history,
-                                    HashSet<(char, int)>? barCancelled,
-                                    byte fadeAlpha, float headerRightAbs)
+        private void DrawAccidental(
+            ICanvas canvas,
+            GeneratedNote note,
+            IReadOnlyList<GeneratedNote> notes,
+            NoteLayout[] noteLayouts,
+            int index,
+            BarLayout[] barLayouts,
+            IReadOnlyList<double> barBeats,
+            double beatOrigin,
+            float y,
+            Color ink,
+            Dictionary<(char, int), Accidental>? history,
+            HashSet<(char, int)>? barCancelled,
+            byte fadeAlpha,
+            float headerRightAbs)
         {
+            if (index < 0 || index >= noteLayouts.Length)
+                return;
+
             if (!TryResolveBodyAccidental(note, history, barCancelled, out var eff, out bool draw))
                 return;
 
@@ -5910,13 +6151,14 @@ namespace musicmate.Drawables
                 bool isFlat = IsFlatBodyAccidental(eff);
                 bool isNatural = eff == Accidental.Natural;
                 float symW = BodyAccidentalDrawWidth(isFlat, isNatural);
-                float boxRight = AccidentalBoxRight(layout.X, isNatural);
+
+                TryClearAccidentalHeaderClip(
+                    notes, noteLayouts, barLayouts, barBeats, beatOrigin,
+                    index, headerRightAbs, isFlat, isNatural);
+
+                float boxRight = AccidentalBoxRight(noteLayouts[index].X, isNatural);
                 float boxLeft = boxRight - symW;
                 float boxW = Math.Max(1f, symW);
-
-                // Never paint body accidentals over this staff's header (clef, or clef+key+time).
-                if (boxLeft < headerRightAbs)
-                    return;
 
                 canvas.FontColor = ApplyAlpha(ink, fadeAlpha);
 
@@ -5951,6 +6193,53 @@ namespace musicmate.Drawables
                     barCancelled?.Remove((note.Letter, note.Octave));
             }
             finally { canvas.RestoreState(); }
+        }
+
+        /// <summary>
+        /// If a body accidental would paint under the clef/key/time header, shift this note and
+        /// later notes in the same measure right — never past the following bar line.
+        /// </summary>
+        private void TryClearAccidentalHeaderClip(
+            IReadOnlyList<GeneratedNote> notes,
+            NoteLayout[] noteLayouts,
+            BarLayout[] barLayouts,
+            IReadOnlyList<double> barBeats,
+            double beatOrigin,
+            int index,
+            float headerRightAbs,
+            bool isFlat,
+            bool isNatural)
+        {
+            float boxLeft = AccidentalBoxLeft(noteLayouts[index].X, isFlat, isNatural);
+            if (boxLeft >= headerRightAbs - 0.5f)
+                return;
+
+            float desiredPush = headerRightAbs - boxLeft + 0.5f;
+            var sortedBarBeatsRel = barBeats.Select(b => b - beatOrigin).OrderBy(b => b).ToList();
+            double noteBeat = (notes[index].BeatPosition ?? 0.0) - beatOrigin;
+            int measure = GetMeasureIndexForBeat(noteBeat, sortedBarBeatsRel);
+
+            float maxCenter = float.PositiveInfinity;
+            if (measure < barLayouts.Length)
+            {
+                maxCenter = barLayouts[measure].X
+                    - BarLeftPadding
+                    - NoteCenterTrailingReach(notes[index].IsRest, notes[index].Duration);
+            }
+
+            float maxPush = maxCenter - noteLayouts[index].X;
+            if (maxPush < 0.5f)
+                return;
+
+            float push = Math.Min(desiredPush, maxPush);
+            for (int i = index; i < notes.Count && i < noteLayouts.Length; i++)
+            {
+                double rel = (notes[i].BeatPosition ?? 0.0) - beatOrigin;
+                if (GetMeasureIndexForBeat(rel, sortedBarBeatsRel) != measure)
+                    break;
+                noteLayouts[i].X += push;
+                SyncAccidentalX(noteLayouts, i);
+            }
         }
 
         /// <summary>
@@ -6250,8 +6539,10 @@ namespace musicmate.Drawables
         {
             if (!string.IsNullOrWhiteSpace(NotationScaleOverride))
                 return NotationScaleOverride!;
+            // Arpeggios spell notes via GetNotationKeyAndScale (Natural Minor for minor-family).
+            // Forcing Major here dropped written accidentals (e.g. Ab reading as A).
             if (_session.Tune == "Arpeggio")
-                return "Major";
+                return _session.GetNotationKeyAndScale().Scale;
             return string.IsNullOrWhiteSpace(_session.EffectiveScale)
                 ? _session.SelectedScale
                 : _session.EffectiveScale;

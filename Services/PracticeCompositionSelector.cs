@@ -309,12 +309,11 @@ namespace musicmate.Services
             var pattern = patterns[rng.Next(patterns.Count)];
             string rootKey = PickArpeggioRootKey(session, level, rng, pattern);
             string rootNote = ChooseArpeggioRootInRange(session, rootKey);
-            string displayName = $"{TrimOctave(rootNote)} {pattern.DisplayName.ToLowerInvariant()}";
             session.IsRandomMode = false;
-            session.SelectArpeggio(pattern, rootNote, displayName);
-            string writtenKey = session.ResolveArpeggioWrittenKeySignature(pattern, rootNote);
+            session.SelectArpeggio(pattern, rootNote, ArpeggioCatalog.QualityLabel(pattern));
+            string writtenTonic = session.ToWrittenKey(TrimOctave(rootNote));
             session.Key = KeyDifficultyRules.EnsureKeyAllowedAtLevel(
-                writtenKey, "Major", level, rng);
+                writtenTonic, "Major", level, rng);
             return true;
         }
 
@@ -328,11 +327,12 @@ namespace musicmate.Services
             Random rng,
             ArpeggioPattern pattern)
         {
+            _ = pattern;
             var permittedRoots = ChildLevelProgression.GetAllowedKeys(level)
                 .Where(rootKey =>
                 {
-                    string written = session.ResolveArpeggioWrittenKeySignature(pattern, $"{rootKey}4");
-                    return KeyDifficultyRules.IsKeyAllowedAtLevel(written, "Major", level);
+                    string writtenTonic = session.ToWrittenKey(rootKey);
+                    return KeyDifficultyRules.IsKeyAllowedAtLevel(writtenTonic, "Major", level);
                 })
                 .ToList();
 

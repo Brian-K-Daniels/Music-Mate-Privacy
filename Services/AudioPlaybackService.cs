@@ -13,7 +13,7 @@ namespace musicmate.Services
         private readonly IAudioManager _audioManager;
         private CancellationTokenSource? _internalCts;
         private readonly object _gate = new();
-        private const int SampleRate = 44100;
+        private const int SampleRate = AudioTonePcm.SampleRate;
         /// <summary>Android MediaPlayer is unreliable below ~20 ms of PCM.</summary>
         private const double MinToneSeconds = 0.020;
         /// <summary>Short tones use AudioTrack on Android — MediaPlayer often stays silent for metronome clicks.</summary>
@@ -420,17 +420,59 @@ namespace musicmate.Services
                 try
                 {
                     await Task.Delay(TimeSpan.FromSeconds(durationSeconds), ct).ConfigureAwait(false);
+                    ScheduleSilentRelease(player, tone, PadMilliseconds(durationSeconds));
+                    player = null;
+                    tone = null;
                 }
-                finally
+                catch (OperationCanceledException)
                 {
-                    try { player.Stop(); } catch { }
+                    if (player != null)
+                    {
+                        try { player.Volume = 0f; } catch { }
+                        try { player.Pause(); } catch { }
+                        try { player.Dispose(); } catch { }
+                        player = null;
+                    }
+                    if (tone != null)
+                    {
+                        try { tone.Dispose(); } catch { }
+                        tone = null;
+                    }
+                    throw;
                 }
             }
             finally
             {
                 try { player?.Dispose(); } catch { }
-                try { await tone.DisposeAsync().ConfigureAwait(false); } catch { try { tone.Dispose(); } catch { } }
+                if (tone != null)
+                {
+                    try { await tone.DisposeAsync().ConfigureAwait(false); } catch { try { tone.Dispose(); } catch { } }
+                }
             }
+        }
+
+        private static int PadMilliseconds(double durationSeconds)
+            => durationSeconds >= 0.08 ? 80 : 15;
+
+        private static void ScheduleSilentRelease(IAudioPlayer player, System.IO.Stream tone, int padMilliseconds)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    if (padMilliseconds > 0)
+                        await Task.Delay(padMilliseconds).ConfigureAwait(false);
+                    try { player.Volume = 0f; } catch { }
+                    try { player.Pause(); } catch { }
+                    try { player.Dispose(); } catch { }
+                    try { tone.Dispose(); } catch { }
+                }
+                catch
+                {
+                    try { player.Dispose(); } catch { }
+                    try { tone.Dispose(); } catch { }
+                }
+            });
         }
 
 #if ANDROID
@@ -499,8 +541,20 @@ namespace musicmate.Services
                     offset += written;
                 }
 
-                // Hold for the tone length so the buffer can drain.
+                // Hold for the audible length. Trailing silence stays in the buffer so we
+                // can release after a short pad without Stop() on a live sine.
                 await Task.Delay(TimeSpan.FromSeconds(durationSeconds), ct).ConfigureAwait(false);
+
+                AudioTrack? releasing = null;
+                lock (_gate)
+                {
+                    if (ReferenceEquals(_activeTrack, track))
+                        _activeTrack = null;
+                    releasing = track;
+                    track = null;
+                }
+
+                ScheduleAndroidTrackSilentRelease(releasing, PadMilliseconds(durationSeconds));
             }
             catch (OperationCanceledException)
             {
@@ -526,11 +580,34 @@ namespace musicmate.Services
                         _activeTrack = null;
                 }
 
+                try { track?.SetVolume(0f); } catch { }
                 try { track?.Pause(); } catch { }
-                try { track?.Stop(); } catch { }
                 try { track?.Release(); } catch { }
                 try { track?.Dispose(); } catch { }
             }
+        }
+
+        private static void ScheduleAndroidTrackSilentRelease(AudioTrack? track, int padMilliseconds)
+        {
+            if (track == null)
+                return;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    if (padMilliseconds > 0)
+                        await Task.Delay(padMilliseconds).ConfigureAwait(false);
+                    try { track.SetVolume(0f); } catch { }
+                    try { track.Pause(); } catch { }
+                    try { track.Release(); } catch { }
+                    try { track.Dispose(); } catch { }
+                }
+                catch
+                {
+                    try { track.Release(); } catch { }
+                    try { track.Dispose(); } catch { }
+                }
+            });
         }
 
         private void StopActiveAndroidTrack_NoLock()
@@ -539,8 +616,8 @@ namespace musicmate.Services
             _activeTrack = null;
             if (track == null)
                 return;
+            try { track.SetVolume(0f); } catch { }
             try { track.Pause(); } catch { }
-            try { track.Stop(); } catch { }
             try { track.Release(); } catch { }
             try { track.Dispose(); } catch { }
         }
@@ -551,7 +628,7 @@ namespace musicmate.Services
         private static MemoryStream BuildToneWavStream(
             double freq, double durationSeconds, float volume, bool seamlessLoop)
         {
-            short[] pcm = BuildPcm16(freq, durationSeconds, volume, seamlessLoop);
+            short[] pcm = AudioTonePcm.Build(freq, durationSeconds, volume, seamlessLoop, out _, out _);
             var wav = new byte[44 + pcm.Length * 2];
             WriteWavHeader(wav, pcm.Length);
             for (int i = 0; i < pcm.Length; i++)
@@ -561,43 +638,7 @@ namespace musicmate.Services
 
         private static short[] BuildPcm16(
             double freq, double durationSeconds, float volume, bool seamlessLoop = false)
-        {
-            int samples;
-            if (seamlessLoop && freq > 0)
-            {
-                // Integer cycles so the loop point does not click.
-                int cycles = Math.Max(1, (int)Math.Round(durationSeconds * freq));
-                samples = Math.Max(1, (int)Math.Round(cycles * (double)SampleRate / freq));
-            }
-            else
-            {
-                samples = Math.Max(1, (int)(SampleRate * durationSeconds));
-            }
-
-            var pcm = new short[samples];
-
-            // Fade in/out over up to 10 ms (or 1/4 of the tone) to avoid clicks.
-            int fadeSamples = seamlessLoop
-                ? 0
-                : Math.Min((int)(SampleRate * 0.010), Math.Max(1, samples / 4));
-
-            for (int i = 0; i < samples; i++)
-            {
-                double t = (double)i / SampleRate;
-                double envelope = 1.0;
-                if (fadeSamples > 0)
-                {
-                    if (i < fadeSamples)
-                        envelope = (double)i / fadeSamples;
-                    else if (i >= samples - fadeSamples)
-                        envelope = (double)(samples - 1 - i) / fadeSamples;
-                }
-
-                pcm[i] = (short)(Math.Sin(2 * Math.PI * freq * t) * short.MaxValue * volume * envelope);
-            }
-
-            return pcm;
-        }
+            => AudioTonePcm.Build(freq, durationSeconds, volume, seamlessLoop, out _, out _);
 
         private static void WriteWavHeader(byte[] buffer, int samples)
         {

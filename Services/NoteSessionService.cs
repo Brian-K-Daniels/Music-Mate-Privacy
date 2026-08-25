@@ -439,7 +439,7 @@ namespace musicmate.Services
         private string? _tune = SessionPreferences.Get(PrefTuneKey, "Selected Scale");
         private string _selectedArpeggioId = SessionPreferences.Get(PrefSelectedArpeggioIdKey, "major-triad");
         private string _selectedArpeggioRoot = SessionPreferences.Get(PrefSelectedArpeggioRootKey, "C4");
-        private string _selectedArpeggioDisplay = SessionPreferences.Get(PrefSelectedArpeggioDisplayKey, "C major triad");
+        private string _selectedArpeggioDisplay = SessionPreferences.Get(PrefSelectedArpeggioDisplayKey, "Major triad");
         private int _childLevel;
         private int _tempo = LoadUnifiedTempo();
         private int _tolerance = SessionPreferences.Get(PrefToleranceKey, DefaultTolerance);
@@ -1547,7 +1547,13 @@ namespace musicmate.Services
                 && !string.IsNullOrWhiteSpace(CurrentTune.Key))
                 return ResolvePracticeTuneNotation(CurrentTune);
             if (Tune == "Arpeggio")
-                return (Key, "Major");
+            {
+                var pattern = ArpeggioCatalog.All.FirstOrDefault(p => p.Id == SelectedArpeggioId)
+                    ?? ArpeggioCatalog.MajorTriad;
+                return ArpeggioUsesMinorFamilyKeySignature(pattern)
+                    ? (Key, "Natural Minor")
+                    : (Key, "Major");
+            }
             return (Key, EffectiveScale);
         }
 
@@ -1674,11 +1680,16 @@ namespace musicmate.Services
             return true;
         }
 
-        private int ResolvePracticeLevel()
+        /// <summary>
+        /// Active practice level for pickers and generation. Uses <see cref="ChildLevel"/>
+        /// when set; otherwise the saved Home/Music level (never 0).
+        /// </summary>
+        public int ResolvePracticeLevel()
         {
-            if (ChildLevel > 0)
-                return ChildLevel;
-            return SessionPreferences.Get("ChildPractice.Level", 0);
+            int level = ChildLevel > 0 ? ChildLevel : SessionPreferences.Get("ChildPractice.Level", 1);
+            if (level <= 0)
+                level = 1;
+            return Math.Clamp(level, 1, 100);
         }
 
         private void LogScaleLevel(int level, string activeScale, bool weightedRandom, string? resetReason)
@@ -2219,6 +2230,67 @@ namespace musicmate.Services
             SelectedArpeggioRoot = rootNote;
             SelectedArpeggioDisplay = displayName;
             Tune = "Arpeggio";
+        }
+
+        /// <summary>
+        /// Selects an arpeggio quality in the current written Key (tonic). Does not change Key.
+        /// Concert root is derived from Key + instrument transpose and fitted to the playable range.
+        /// </summary>
+        public void ApplyArpeggioQuality(ArpeggioPattern pattern)
+        {
+            string concertRoot = ChooseConcertRootForWrittenTonic(Key);
+            SelectArpeggio(pattern, concertRoot, ArpeggioCatalog.QualityLabel(pattern));
+        }
+
+        /// <summary>
+        /// Keeps the selected quality and retargets the concert root when Key or instrument changes.
+        /// </summary>
+        public void SyncArpeggioRootToCurrentKey()
+        {
+            if (Tune != "Arpeggio")
+                return;
+
+            var pattern = ArpeggioCatalog.All.FirstOrDefault(p => p.Id == SelectedArpeggioId)
+                ?? ArpeggioCatalog.MajorTriad;
+            string concertRoot = ChooseConcertRootForWrittenTonic(Key);
+            string display = ArpeggioCatalog.QualityLabel(pattern);
+            if (SelectedArpeggioId != pattern.Id)
+                SelectedArpeggioId = pattern.Id;
+            if (SelectedArpeggioRoot != concertRoot)
+                SelectedArpeggioRoot = concertRoot;
+            if (SelectedArpeggioDisplay != display)
+                SelectedArpeggioDisplay = display;
+        }
+
+        /// <summary>Concert-pitch root for a written tonic, in range of LowestNote–HighestNote.</summary>
+        public string ChooseConcertRootForWrittenTonic(string? writtenTonic = null)
+        {
+            string tonic = string.IsNullOrWhiteSpace(writtenTonic) ? Key : writtenTonic.Trim();
+            tonic = NormalizeKeyNameForSignature(TrimNoteOctave(tonic));
+            string concertClass = TransposeKey(tonic, GetInstrumentTransposeOffset());
+            return FitPitchClassInInstrumentRange(concertClass);
+        }
+
+        public string FitPitchClassInInstrumentRange(string pitchClass)
+        {
+            const int baseOctave = 4;
+            pitchClass = TrimNoteOctave(pitchClass);
+            int rootMidi = NoteNameToMidi($"{pitchClass}{baseOctave}");
+            int minMidi = NoteNameToMidi(LowestNote);
+            int maxMidi = NoteNameToMidi(HighestNote);
+            if (rootMidi < 0)
+                return $"{pitchClass}{baseOctave}";
+            if (minMidi < 0 || maxMidi < minMidi)
+                return $"{pitchClass}{baseOctave}";
+
+            int candidate = rootMidi;
+            while (candidate < minMidi)
+                candidate += 12;
+            while (candidate > maxMidi)
+                candidate -= 12;
+
+            int octave = baseOctave + ((candidate - rootMidi) / 12);
+            return $"{pitchClass}{octave}";
         }
         private readonly Queue<double> _pitchMedianHistory = new();
         public double SmoothPitch(double freq)
@@ -3240,10 +3312,11 @@ namespace musicmate.Services
                 writtenRootNote = ToWrittenNoteName(rootNote.Trim());
             }
 
+            var (notationKey, notationScale) = GetNotationKeyAndScale();
             var builder = new ArpeggioSequenceBuilder
             {
-                Key = Key,
-                Scale = "Major",
+                Key = notationKey,
+                Scale = notationScale,
                 LowestNote = LowestNote,
                 HighestNote = HighestNote,
                 Duration = NoteDuration.Quarter

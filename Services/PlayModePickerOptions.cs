@@ -124,18 +124,7 @@ namespace musicmate.Services
 
         /// <summary>True when the user explicitly chose an arpeggio from the Arpeggios picker.</summary>
         public static bool IsUserSelectedArpeggioTitle(string? selectedTunePreference)
-        {
-            if (string.IsNullOrEmpty(selectedTunePreference))
-                return false;
-            if (IsUserSelectedPracticeTuneTitle(selectedTunePreference))
-                return false;
-            if (IsRhythmNoteTuneSelection(selectedTunePreference))
-                return false;
-            if (NoteSessionService.IsNamedScaleOption(selectedTunePreference))
-                return false;
-            return selectedTunePreference is not ("Random" or "Tuner" or "Selected Scale"
-                or NoteSessionService.ScaleSelectionByLevel);
-        }
+            => ArpeggioCatalog.TryResolveQuality(selectedTunePreference, out _);
 
         public static string NormalizeRhythmNoteTunePreference(string? value)
             => string.Equals(value, LegacyFixedTune, StringComparison.Ordinal)
@@ -433,18 +422,20 @@ namespace musicmate.Services
             if (string.IsNullOrWhiteSpace(label))
                 return string.Empty;
 
-            var trimmed = label.Trim();
-            var words = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (words.Length >= 3
-                && words[1].Equals("major", StringComparison.OrdinalIgnoreCase)
-                && words[2].StartsWith("tri", StringComparison.OrdinalIgnoreCase))
-                return $"{words[0]} maj tri";
-            if (words.Length >= 3
-                && words[1].Equals("minor", StringComparison.OrdinalIgnoreCase)
-                && words[2].StartsWith("tri", StringComparison.OrdinalIgnoreCase))
-                return $"{words[0]} min tri";
-
-            return AbbreviateTitle(trimmed, 14);
+            var quality = ArpeggioCatalog.NormalizeQualityLabel(label) ?? label.Trim();
+            return quality.ToLowerInvariant() switch
+            {
+                "major triad" => "Maj tri",
+                "minor triad" => "Min tri",
+                "dominant 7th" => "Dom 7th",
+                "major 7th" => "Maj 7th",
+                "minor 7th" => "Min 7th",
+                "diminished triad" => "Dim tri",
+                "augmented triad" => "Aug tri",
+                "half-diminished 7th" => "Half-dim",
+                "diminished 7th" => "Dim 7th",
+                _ => AbbreviateTitle(quality, 14)
+            };
         }
 
         private static string AbbreviateTitle(string text, int maxLen)
@@ -634,11 +625,12 @@ namespace musicmate.Services
                 return;
             }
 
-            // Arpeggio labels are free-form; MusicPage wires concrete pattern selection.
-            if (IsUserSelectedArpeggioTitle(saved))
+            if (ArpeggioCatalog.TryResolveQuality(saved, out var arpeggioPattern))
             {
                 session.IsRandomMode = false;
-                setSelectedTune(saved);
+                session.ApplyArpeggioQuality(arpeggioPattern);
+                setSelectedTune(ArpeggioCatalog.QualityLabel(arpeggioPattern));
+                return;
             }
         }
 

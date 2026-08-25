@@ -5,7 +5,7 @@ namespace musicmate.Services
     /// <summary>
     /// Accept/retry rules for automatically generated tunes before they are displayed.
     /// Saved tunes, scales, and arpeggios are exempt via
-    /// <see cref="DisplayedTuneHistory.IsUniquenessRequired"/>.
+    /// <see cref="DisplayedTuneHistory.IsUniquenessRequired(NoteSessionService, bool)"/>.
     /// </summary>
     public static class GeneratedTuneAcceptance
     {

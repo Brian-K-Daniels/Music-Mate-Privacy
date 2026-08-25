@@ -107,6 +107,64 @@ namespace musicmate.Services
                 .ToArray();
         }
 
+        /// <summary>
+        /// Quality-only picker label (no tonic). Tonic comes from the Music page Key picker.
+        /// </summary>
+        public static string QualityLabel(ArpeggioPattern pattern) => pattern.DisplayName;
+
+        /// <summary>
+        /// Maps a picker or persisted title to a catalog quality, including legacy
+        /// labels that baked in a root (<c>C major triad</c> → Major triad).
+        /// </summary>
+        public static bool TryResolveQuality(string? label, out ArpeggioPattern pattern)
+        {
+            pattern = null!;
+            var quality = NormalizeQualityLabel(label);
+            if (quality == null)
+                return false;
+
+            var match = All.FirstOrDefault(p =>
+                p.DisplayName.Equals(quality, StringComparison.OrdinalIgnoreCase));
+            if (match == null)
+                return false;
+
+            pattern = match;
+            return true;
+        }
+
+        /// <summary>Canonical quality name, or null when <paramref name="label"/> is not an arpeggio title.</summary>
+        public static string? NormalizeQualityLabel(string? label)
+        {
+            if (string.IsNullOrWhiteSpace(label))
+                return null;
+
+            var text = label.Trim();
+            if (text.StartsWith("★ ", StringComparison.Ordinal))
+                text = text[2..].Trim();
+
+            if (TryMatchDisplayName(text, out var exact))
+                return exact.DisplayName;
+
+            var parts = text.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 2 && IsPitchClassToken(parts[0]) && TryMatchDisplayName(parts[1], out var fromRoot))
+                return fromRoot.DisplayName;
+
+            return null;
+        }
+
+        private static bool TryMatchDisplayName(string text, out ArpeggioPattern pattern)
+        {
+            var match = All.FirstOrDefault(p =>
+                p.DisplayName.Equals(text, StringComparison.OrdinalIgnoreCase));
+            pattern = match!;
+            return match != null;
+        }
+
+        private static bool IsPitchClassToken(string token)
+            => token is "C" or "C#" or "Cb" or "D" or "D#" or "Db" or "E" or "E#" or "Eb"
+                or "F" or "F#" or "Fb" or "G" or "G#" or "Gb" or "A" or "A#" or "Ab"
+                or "B" or "B#" or "Bb";
+
         public static ArpeggioLevelAvailability GetAvailabilityForLevel(int level)
         {
             level = Math.Clamp(level, 1, 100);

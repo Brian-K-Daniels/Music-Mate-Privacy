@@ -361,7 +361,7 @@ public class PlayModePickerOptionsTests
             tune: "Arpeggio",
             isRandomMode: false,
             scaleSelectionMode: ScaleSelectionMode.ByLevel,
-            selectedTunePreference: "C major arpeggio"));
+            selectedTunePreference: "Major triad"));
     }
 
     [Fact]
@@ -568,14 +568,14 @@ public class PlayModePickerOptionsTests
     public void ResolveExerciseStatusLabel_ByLevelCompositionArpeggio_NamesTheArpeggio()
     {
         Assert.Equal(
-            "C major triad (Assortment by Level)",
+            "Major triad (Assortment by Level)",
             PlayModePickerOptions.ResolveExerciseStatusLabel(
                 layoutTestTuneEnabled: false,
                 tune: "Arpeggio",
                 scaleSelectionMode: ScaleSelectionMode.ByLevel,
                 isRandomMode: false,
                 practiceTuneTitle: null,
-                arpeggioDisplay: "C major triad",
+                arpeggioDisplay: "Major triad",
                 key: "C",
                 effectiveScale: "Blues",
                 selectedScale: "Blues",
@@ -608,7 +608,8 @@ public class PlayModePickerOptionsTests
     [InlineData(PlayModePickerCategory.Scales, "Natural Minor", "Nat Min")]
     [InlineData(PlayModePickerCategory.Scales, "Major", "Major")]
     [InlineData(PlayModePickerCategory.Tunes, "Mary Had a Little Lamb", "Mary Had a Li…")]
-    [InlineData(PlayModePickerCategory.Arpeggios, "C major triad", "C maj tri")]
+    [InlineData(PlayModePickerCategory.Arpeggios, "Major triad", "Maj tri")]
+    [InlineData(PlayModePickerCategory.Arpeggios, "C major triad", "Maj tri")]
     public void AbbreviateDisplayedSelection_UsesShortLabels(
         PlayModePickerCategory category,
         string selection,

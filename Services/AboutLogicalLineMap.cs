@@ -49,7 +49,7 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// <paramref name="MatchLines"/> is aligned with in-document search hits
+        /// <see cref="Result.MatchLines"/> is aligned with in-document search hits
         /// (body text-node order, same idea as About highlight spans), 1-based from Welcome.
         /// </summary>
         public static Result Analyze(string html, string? query)

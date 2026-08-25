@@ -37,26 +37,27 @@ namespace musicmate.Services
             int root = rootMidi + chordIntervals[0];
             int third = rootMidi + chordIntervals[1];
             int fifth = rootMidi + chordIntervals[2];
-            int octave = rootMidi + chordIntervals[3];
+            // Triads: octave. Seventh chords: chordal seventh (replaces the octave slot).
+            int top = rootMidi + chordIntervals[3];
 
             var exercise = new (int MeasureOffset, double Beat, int Midi, NoteDuration Duration)[]
             {
-                // M1: root, third, fifth, octave
+                // M1: root, third, fifth, top
                 (0, 0.0, root, NoteDuration.Quarter),
                 (0, 1.0, third, NoteDuration.Quarter),
                 (0, 2.0, fifth, NoteDuration.Quarter),
-                (0, 3.0, octave, NoteDuration.Quarter),
+                (0, 3.0, top, NoteDuration.Quarter),
 
-                // M2: octave, fifth, third, root
-                (1, 0.0, octave, NoteDuration.Quarter),
+                // M2: top, fifth, third, root
+                (1, 0.0, top, NoteDuration.Quarter),
                 (1, 1.0, fifth, NoteDuration.Quarter),
                 (1, 2.0, third, NoteDuration.Quarter),
                 (1, 3.0, root, NoteDuration.Quarter),
 
-                // M3: third, fifth, octave, fifth
+                // M3: third, fifth, top, fifth
                 (2, 0.0, third, NoteDuration.Quarter),
                 (2, 1.0, fifth, NoteDuration.Quarter),
-                (2, 2.0, octave, NoteDuration.Quarter),
+                (2, 2.0, top, NoteDuration.Quarter),
                 (2, 3.0, fifth, NoteDuration.Quarter),
 
                 // M4: third, root, root as a half note
@@ -70,8 +71,8 @@ namespace musicmate.Services
                 (4, 2.0, third, NoteDuration.Quarter),
                 (4, 3.0, fifth, NoteDuration.Quarter),
 
-                // M6: octave, fifth, third, root
-                (5, 0.0, octave, NoteDuration.Quarter),
+                // M6: top, fifth, third, root
+                (5, 0.0, top, NoteDuration.Quarter),
                 (5, 1.0, fifth, NoteDuration.Quarter),
                 (5, 2.0, third, NoteDuration.Quarter),
                 (5, 3.0, root, NoteDuration.Quarter),
@@ -101,7 +102,7 @@ namespace musicmate.Services
             int rootMidi,
             bool descendingAfterAscending = true)
         {
-            bool preferFlats = PreferFlats(Key);
+            bool preferFlats = PreferFlats(Key, Scale);
             return Build(pattern, NoteSessionService.MidiToNoteName(rootMidi, preferFlats),
                 descendingAfterAscending);
         }
@@ -174,9 +175,12 @@ namespace musicmate.Services
             int root = unique.FirstOrDefault();
             int third = FindInterval(unique, interval => interval is 3 or 4, fallback: 4);
             int fifth = FindInterval(unique, interval => interval is 6 or 7 or 8, fallback: 7);
-            int octave = FindInterval(unique, interval => interval >= 12, fallback: 12);
+            // Keep the fixed 4-slot exercise: triads use the octave; seventh chords use the 7th.
+            int top = pattern.IncludesSeventh
+                ? FindInterval(unique, interval => interval is >= 9 and <= 11, fallback: 10)
+                : FindInterval(unique, interval => interval >= 12, fallback: 12);
 
-            return new[] { root, third, fifth, octave };
+            return new[] { root, third, fifth, top };
         }
 
         private static int FindInterval(IEnumerable<int> intervals, Func<int, bool> predicate, int fallback)
@@ -214,7 +218,7 @@ namespace musicmate.Services
             int measureIndex,
             double beatPosition)
         {
-            bool preferFlats = PreferFlats(Key);
+            bool preferFlats = PreferFlats(Key, Scale);
             string spelledName = NoteSessionService.MidiToNoteName(midi, preferFlats);
             char letter = char.ToUpperInvariant(spelledName[0]);
             int octave = int.TryParse(spelledName[^1].ToString(), out var parsedOctave)
@@ -254,7 +258,7 @@ namespace musicmate.Services
                 .AppendLine();
         }
 
-        private static bool PreferFlats(string key)
-            => key is "F" or "Bb" or "Eb" or "Ab" or "Db" or "Gb" or "Cb";
+        private static bool PreferFlats(string key, string scale)
+            => KeySignatureRules.KeySignatureUsesFlats(key, scale);
     }
 }

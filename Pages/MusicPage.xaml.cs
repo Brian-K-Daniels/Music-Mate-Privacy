@@ -656,9 +656,9 @@ namespace musicmate.Pages
                 if (PlayModePickerOptions.IsRhythmNoteTuneSelection(savedTune))
                     LayoutTestTune.SetEnabled(true);
                 else if (!string.IsNullOrEmpty(savedTune)
-                         && _arpeggioPickerChoices.TryGetValue(savedTune, out var savedArpeggio))
+                         && ArpeggioCatalog.TryResolveQuality(savedTune, out var savedArpeggio))
                 {
-                    _session.SelectArpeggio(savedArpeggio.Pattern, savedArpeggio.RootNote, savedArpeggio.Label);
+                    _session.ApplyArpeggioQuality(savedArpeggio);
                 }
 
                 var (displayCategory, displaySelection) = PlayModePickerOptions.ResolveDisplayedPicker(
@@ -1519,8 +1519,11 @@ namespace musicmate.Pages
                     lowerFlat = allNotes
                         .Where(n => (n.MeasureIndex ?? 0) >= arpeggioUpperMeasureCount)
                         .ToList();
-                    upperBarBeats = ComputeNewBarBeats(upperFlat, existingUpper);
-                    lowerBarBeats = ComputeNewBarBeats(lowerFlat, existingLower);
+                    double measureBeats = TimeSignature.FromDisplayString(_session.GetDisplayTimeSignature()).TotalBeats;
+                    if (measureBeats <= 0)
+                        measureBeats = 4;
+                    upperBarBeats = ComputeStaffBarBeats(upperFlat, measureBeats, existingUpper);
+                    lowerBarBeats = ComputeStaffBarBeats(lowerFlat, measureBeats, existingLower);
 
                     _seqNextMeasureIndex = 8;
                     _seqNextBeatOffset = allNotes.Sum(n => n.BeatDuration);
@@ -4710,6 +4713,13 @@ namespace musicmate.Pages
                     SelectReferenceNote(_referenceWrittenMidi, stopTone: false);
                 }
             }
+
+            if (e.PropertyName == nameof(NoteSessionService.Key)
+                || e.PropertyName == nameof(NoteSessionService.Instrument))
+            {
+                if (_session.Tune == "Arpeggio" && !_applyingArpeggioSelection)
+                    _session.SyncArpeggioRootToCurrentKey();
+            }
             if (e.PropertyName == nameof(NoteSessionService.AutoRepeat)
                 || e.PropertyName == nameof(NoteSessionService.RepeatSameTune))
             {
@@ -4893,7 +4903,7 @@ namespace musicmate.Pages
         }
         private void UpdateKeyPickerVisibility()
         {
-            var show = _session.Tune != "Tuner" && _session.Tune != "Arpeggio";
+            var show = _session.Tune != "Tuner";
             if (KeyPicker != null)
             {
                 KeyPicker.IsVisible = show;
@@ -5850,71 +5860,22 @@ namespace musicmate.Pages
         private IReadOnlyList<ArpeggioPickerChoice> BuildArpeggioPickerChoices()
         {
             _arpeggioPickerChoices.Clear();
-            int level = _session.ChildLevel > 0 ? _session.ChildLevel : 1;
-            var availability = ArpeggioCatalog.GetAvailabilityForLevel(level);
+            int level = _session.ResolvePracticeLevel();
             var choices = new List<ArpeggioPickerChoice>();
-            var seen = new HashSet<string>(StringComparer.Ordinal);
 
-            // Match WhatToPlayPage: list arpeggios from fixed root keys, not scale degrees
-            // of the current session key (which changes when an arpeggio is selected).
-            foreach (string rootKey in GetArpeggioRootKeys())
+            foreach (var pattern in ArpeggioCatalog.GetAvailablePatterns(level))
             {
-                foreach (var pattern in availability.Patterns)
-                {
-                    string rootNote = ChooseArpeggioRootInRange(rootKey);
-                    string rootName = TrimOctave(rootNote);
-                    string label = $"{rootName} {pattern.DisplayName.ToLowerInvariant()}";
-                    if (!seen.Add($"{rootNote}|{pattern.Id}"))
-                        continue;
-                    if (_arpeggioPickerChoices.ContainsKey(label))
-                        continue;
+                string label = ArpeggioCatalog.QualityLabel(pattern);
+                if (_arpeggioPickerChoices.ContainsKey(label))
+                    continue;
 
-                    var choice = new ArpeggioPickerChoice(label, pattern, rootNote);
-                    _arpeggioPickerChoices[label] = choice;
-                    choices.Add(choice);
-                }
+                var choice = new ArpeggioPickerChoice(label, pattern, _session.ChooseConcertRootForWrittenTonic());
+                _arpeggioPickerChoices[label] = choice;
+                choices.Add(choice);
             }
 
             return choices;
         }
-        private static IEnumerable<string> GetArpeggioRootKeys()
-        {
-            yield return "C";
-            yield return "G";
-            yield return "D";
-            yield return "A";
-            yield return "E";
-            yield return "B";
-            yield return "F#";
-            yield return "C#";
-            yield return "F";
-            yield return "Bb";
-            yield return "Eb";
-            yield return "Ab";
-            yield return "Db";
-            yield return "Gb";
-            yield return "Cb";
-        }
-        private string ChooseArpeggioRootInRange(string rootKey)
-        {
-            const int baseOctave = 4;
-            int rootMidi = NoteSessionService.NoteNameToMidi($"{rootKey}{baseOctave}");
-            int minMidi = NoteSessionService.NoteNameToMidi(_session.LowestNote);
-            int maxMidi = NoteSessionService.NoteNameToMidi(_session.HighestNote);
-            if (minMidi < 0 || maxMidi < minMidi)
-                return $"{rootKey}{baseOctave}";
-
-            int candidate = rootMidi;
-            while (candidate < minMidi)
-                candidate += 12;
-            while (candidate > maxMidi)
-                candidate -= 12;
-
-            int octave = baseOctave + ((candidate - rootMidi) / 12);
-            return $"{rootKey}{octave}";
-        }
-        private static string TrimOctave(string noteName)
-            => new(noteName.TakeWhile(c => !char.IsDigit(c)).ToArray());
         private void UpdateScaleTunePicker()
         {
             if (ScaleTunePicker == null)
@@ -5935,8 +5896,7 @@ namespace musicmate.Pages
             {
                 idx = Array.FindIndex(items, label =>
                     _arpeggioPickerChoices.TryGetValue(label, out var choice)
-                    && choice.Pattern.Id == _session.SelectedArpeggioId
-                    && choice.RootNote == _session.SelectedArpeggioRoot);
+                    && choice.Pattern.Id == _session.SelectedArpeggioId);
             }
 
             EnterPickerSyncSuppress();
@@ -5965,11 +5925,7 @@ namespace musicmate.Pages
             EnterPickerSyncSuppress();
             try
             {
-                // Select arpeggio before Key so PropertyChanged picker-sync handlers
-                // see the new display name, not the previous arpeggio (e.g. Ab vs Gb loop).
-                _session.SelectArpeggio(arpeggioChoice.Pattern, arpeggioChoice.RootNote, arpeggioChoice.Label);
-                _session.Key = _session.ResolveArpeggioWrittenKeySignature(
-                    arpeggioChoice.Pattern, arpeggioChoice.RootNote);
+                _session.ApplyArpeggioQuality(arpeggioChoice.Pattern);
                 Preferences.Default.Set("SelectedTune", preferenceLabel);
                 IsAutoRepeatVisible = true;
                 UpdateKeyPickerSelection();
@@ -6010,8 +5966,7 @@ namespace musicmate.Pages
             {
                 idx = Array.FindIndex(items, label =>
                     _arpeggioPickerChoices.TryGetValue(label, out var choice)
-                    && choice.Pattern.Id == _session.SelectedArpeggioId
-                    && choice.RootNote == _session.SelectedArpeggioRoot);
+                    && choice.Pattern.Id == _session.SelectedArpeggioId);
             }
 
             EnterPickerSyncSuppress();
