@@ -163,4 +163,32 @@
     </MauiXaml>
   </ItemGroup>
 
+  <!-- Inject git commit + UTC build timestamp into BuildIdentificationMetadata.g.cs -->
+  <Target Name="GenerateBuildIdentification" BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <_BuildMetaPath>$(MSBuildProjectDirectory)\Diagnostics\BuildIdentificationMetadata.g.cs</_BuildMetaPath>
+    </PropertyGroup>
+    <Exec Command="git -C &quot;$(MSBuildProjectDirectory)&quot; rev-parse --short HEAD"
+          ConsoleToMSBuild="true"
+          IgnoreExitCode="true"
+          StandardOutputImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_GitCommitRaw" />
+    </Exec>
+    <PropertyGroup>
+      <_GitCommit>$([System.String]::Copy('$(_GitCommitRaw)').Trim())</_GitCommit>
+      <_GitCommit Condition="'$(_GitCommit)' == ''">unknown</_GitCommit>
+      <_BuildUtc>$([System.DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')) UTC</_BuildUtc>
+    </PropertyGroup>
+    <ItemGroup>
+      <_BuildMetaLine Include="// Auto-generated at build — do not edit manually." />
+      <_BuildMetaLine Include="namespace musicmate.Diagnostics%3B" />
+      <_BuildMetaLine Include="internal static class BuildIdentificationMetadata" />
+      <_BuildMetaLine Include="{" />
+      <_BuildMetaLine Include="    internal const string GitCommit = &quot;$(_GitCommit)&quot;%3B" />
+      <_BuildMetaLine Include="    internal const string BuildTimestampUtc = &quot;$(_BuildUtc)&quot;%3B" />
+      <_BuildMetaLine Include="}" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(_BuildMetaPath)" Lines="@(_BuildMetaLine)" Overwrite="true" />
+  </Target>
+
 </Project>

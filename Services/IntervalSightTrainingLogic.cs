@@ -298,17 +298,21 @@ namespace musicmate.Services
             for (int i = 0; i < states.Length; i++)
                 states[i] = StaffNoteState.Pending;
 
-            if (!_hasPair)
-                return states;
-
             foreach (int idx in _completedAnchorFlatIndices)
             {
                 if ((uint)idx < (uint)states.Length)
                     states[idx] = StaffNoteState.Correct;
             }
 
+            // Completed: keep greens only — never leave a stale yellow pair.
+            if (!_hasPair || _sessionComplete)
+                return states;
+
             int a = _current.AnchorFlatIndex;
             int b = _current.TargetFlatIndex;
+            if ((uint)a >= (uint)states.Length || (uint)b >= (uint)states.Length)
+                return states;
+
             if (_wrongThisPair)
             {
                 states[a] = StaffNoteState.Wrong;
@@ -327,20 +331,62 @@ namespace musicmate.Services
         {
             _completedAnchorFlatIndices.Add(_current.AnchorFlatIndex);
             int previousTargetFlat = _current.TargetFlatIndex;
-            _anchorPitchedPos = _currentTargetPitchedPos;
+            int previousTargetPitched = _currentTargetPitchedPos;
+            _anchorPitchedPos = previousTargetPitched;
             _wrongThisPair = false;
 
-            if (TrySetPairFromCurrentAnchor())
+#if DEBUG
+            LogTerminalTransition("BEFORE next-pair search", previousTargetPitched);
+#endif
+
+            // Need a full remaining pair: pitched positions (anchor, anchor+1) both in range.
+            if (_anchorPitchedPos < 0
+                || _anchorPitchedPos >= _pitchedFlatIndices.Count - 1
+                || !TrySetPairFromCurrentAnchor())
+            {
+                if ((uint)previousTargetFlat < (uint)_notes.Count)
+                    _completedAnchorFlatIndices.Add(previousTargetFlat);
+
+                _hasPair = false;
+                _sessionComplete = true;
+#if DEBUG
+                LogTerminalTransition("AFTER final correct → complete", previousTargetPitched);
+#endif
                 return;
+            }
 
-            _completedAnchorFlatIndices.Add(previousTargetFlat);
-
-            _hasPair = false;
-            _sessionComplete = true;
+#if DEBUG
+            LogTerminalTransition("AFTER advance → next pair", _anchorPitchedPos);
+#endif
         }
+
+#if DEBUG
+        private void LogTerminalTransition(string phase, int pitchedPos)
+        {
+            var pair = _hasPair ? _current : default;
+            string yellow = _hasPair
+                ? $"{pair.AnchorFlatIndex},{pair.TargetFlatIndex}"
+                : "none";
+            System.Diagnostics.Debug.WriteLine(
+                $"[SightTerminal] {phase}: pitchedPos={pitchedPos} " +
+                $"noteCount={_notes.Count} pitchedCount={_pitchedFlatIndices.Count} " +
+                $"hasPair={_hasPair} hasNextPairCandidate={pitchedPos < _pitchedFlatIndices.Count - 1} " +
+                $"yellow=[{yellow}] complete={_sessionComplete} " +
+                $"anchorFlat={(_hasPair ? pair.AnchorFlatIndex : -1)} " +
+                $"targetFlat={(_hasPair ? pair.TargetFlatIndex : -1)}");
+        }
+#endif
 
         private bool TrySetPairFromCurrentAnchor()
         {
+            if (_pitchedFlatIndices.Count < 2
+                || _anchorPitchedPos < 0
+                || _anchorPitchedPos >= _pitchedFlatIndices.Count - 1)
+            {
+                _hasPair = false;
+                return false;
+            }
+
             var found = FindNextTestablePairInMeasure(
                 _notes, _pitchedFlatIndices, _anchorPitchedPos,
                 _notationKey, _notationScale);
@@ -351,12 +397,29 @@ namespace musicmate.Services
             }
 
             var (aPos, bPos, abs) = found.Value;
+            if (aPos < 0 || bPos <= aPos
+                || bPos >= _pitchedFlatIndices.Count
+                || aPos >= _pitchedFlatIndices.Count)
+            {
+                _hasPair = false;
+                return false;
+            }
+
+            int anchorFlat = _pitchedFlatIndices[aPos];
+            int targetFlat = _pitchedFlatIndices[bPos];
+            if ((uint)anchorFlat >= (uint)_notes.Count
+                || (uint)targetFlat >= (uint)_notes.Count)
+            {
+                _hasPair = false;
+                return false;
+            }
+
             _anchorPitchedPos = aPos;
             _currentTargetPitchedPos = bPos;
             _current = new NotePair
             {
-                AnchorFlatIndex = _pitchedFlatIndices[aPos],
-                TargetFlatIndex = _pitchedFlatIndices[bPos],
+                AnchorFlatIndex = anchorFlat,
+                TargetFlatIndex = targetFlat,
                 AbsoluteSemitones = abs,
             };
             _hasPair = true;

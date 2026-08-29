@@ -144,7 +144,7 @@
       </Setter>
       <Setter Property="HeightRequest" Value="44" />
       <Setter Property="MinimumHeightRequest" Value="44" />
-      <Setter Property="Padding" Value="8,0" />
+      <Setter Property="Padding" Value="6,0" />
       <Setter Property="VerticalOptions" Value="Center" />
       <Setter Property="HorizontalOptions" Value="Fill" />
       <Setter Property="IsClippedToBounds" Value="False" />
@@ -259,6 +259,21 @@
                  TextColor="#8B4513"
                  Margin="8,2,8,0"
                  HorizontalOptions="Start" />
+
+          <Label x:Name="BuildIdentificationLabel"
+                 FontSize="10"
+                 TextColor="#555555"
+                 Margin="8,0,8,0"
+                 LineBreakMode="WordWrap"
+                 HorizontalOptions="Fill" />
+
+          <Label x:Name="Midi61DiagnosticLabel"
+                 FontSize="10"
+                 TextColor="#CC0000"
+                 FontAttributes="Bold"
+                 Margin="8,0,8,2"
+                 LineBreakMode="WordWrap"
+                 HorizontalOptions="Fill" />
 
           <Grid x:Name="NoteEmphasisBanner"
                 IsVisible="False"
@@ -409,8 +424,9 @@
                     </Grid>
 
                     <!-- Inst. + Note pickers on one row; chrome sized to the selected text -->
-                    <Grid Grid.Row="2"
-                          ColumnDefinitions="Auto,Auto,Auto,Auto"
+                    <Grid x:Name="TunerPickerRow"
+                          Grid.Row="2"
+                          ColumnDefinitions="Auto,3*,Auto,2*"
                           ColumnSpacing="{StaticResource TunerControlSpacing}"
                           HeightRequest="{StaticResource TunerActionRowHeight}"
                           MinimumHeightRequest="{StaticResource TunerActionRowHeight}"
@@ -429,9 +445,8 @@
                               Style="{StaticResource TunerPickerChrome}"
                               HeightRequest="{StaticResource TunerActionRowHeight}"
                               MinimumHeightRequest="{StaticResource TunerActionRowHeight}"
-                              WidthRequest="132"
-                              Padding="8,0"
-                              HorizontalOptions="Start">
+                              Padding="6,0"
+                              HorizontalOptions="Fill">
                         <Picker x:Name="TunerInstrumentPicker"
                                 Title="Inst."
                                 FontSize="11"
@@ -458,9 +473,8 @@
                               Style="{StaticResource TunerPickerChrome}"
                               HeightRequest="{StaticResource TunerActionRowHeight}"
                               MinimumHeightRequest="{StaticResource TunerActionRowHeight}"
-                              WidthRequest="72"
-                              Padding="8,0"
-                              HorizontalOptions="Start">
+                              Padding="6,0"
+                              HorizontalOptions="Fill">
                         <Picker x:Name="TunerNotePicker"
                                 Title="Note"
                                 FontSize="11"

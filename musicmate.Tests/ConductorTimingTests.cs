@@ -169,10 +169,298 @@ public class ConductorTimingTests : IDisposable
     }
 
     [Fact]
+    public void Tempo30_FourQuarterNotes_RushedAt120BpmPace_DoesNotAcceptNotesTwoThroughFour()
+    {
+        const int bpm = 30;
+        int[] midi = [60, 62, 64, 65]; // C D E F
+        double elapsed = 0;
+        var session = CreateSession(midi, bpm, showConductorCues: false, () => elapsed);
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+        double rushInterval = ConductorOnsetTiming.MsPerBeat(120); // 500 ms
+
+        // Expected onsets: 0, 2000, 4000, 6000 ms
+        Assert.Equal(0, ConductorOnsetTiming.ExpectedOnsetMs(0, 0, bpm));
+        Assert.Equal(msPerBeat, ConductorOnsetTiming.ExpectedOnsetMs(0, 1, bpm), precision: 3);
+        Assert.Equal(2 * msPerBeat, ConductorOnsetTiming.ExpectedOnsetMs(0, 2, bpm), precision: 3);
+        Assert.Equal(3 * msPerBeat, ConductorOnsetTiming.ExpectedOnsetMs(0, 3, bpm), precision: 3);
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(midi[0]), expectedIndex: 0);
+
+        // Player races through all four pitches at ~120 BPM (500 ms apart).
+        int[] arrivalMs = [500, 1000, 1500];
+        for (int i = 0; i < arrivalMs.Length; i++)
+        {
+            elapsed = arrivalMs[i];
+            var freq = Freq(midi[i + 1]);
+            var result = session.Evaluate(freq);
+            session.UpdateFeedbackForCurrent(freq, result);
+            session.NotifySilence();
+        }
+
+        Assert.Equal(1, session.CurrentNoteIndex);
+        Assert.Single(session.CorrectNoteIndices);
+    }
+
+    [Fact]
+    public void Tempo30_FourQuarterNotes_AtWrittenTempo_AcceptsAll()
+    {
+        const int bpm = 30;
+        int[] midi = [60, 62, 64, 65];
+        double elapsed = 0;
+        var session = CreateSession(midi, bpm, showConductorCues: false, () => elapsed);
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+
+        for (int i = 0; i < midi.Length; i++)
+        {
+            elapsed = i * msPerBeat;
+            AssertAccepted(session, Freq(midi[i]), expectedIndex: i);
+        }
+
+        Assert.Equal(midi.Length, session.CurrentNoteIndex);
+        Assert.Equal(midi.Length, session.CorrectNoteIndices.Count);
+    }
+
+    [Fact]
+    public void EighthNotes_At60Bpm_RequireHalfBeatSpacing()
+    {
+        const int bpm = 60;
+        double elapsed = 0;
+        var session = CreateRhythmSession(
+            bpm,
+            showConductorCues: false,
+            () => elapsed,
+            new RhythmNote(60, 0.5, 0),
+            new RhythmNote(62, 0.5, 0.5),
+            new RhythmNote(64, 0.5, 0.5));
+
+        double eighthMs = ConductorOnsetTiming.MsPerBeat(bpm) / 2; // 500 ms
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+
+        elapsed = 200; // clearly before beat 0.5 at 500 ms (early tolerance = 250 ms)
+        AssertNotAdvanced(session, Freq(62), expectedIndex: 1);
+
+        elapsed = eighthMs;
+        AssertAccepted(session, Freq(62), expectedIndex: 1);
+
+        elapsed = eighthMs + 200;
+        AssertNotAdvanced(session, Freq(64), expectedIndex: 2);
+
+        elapsed = 2 * eighthMs;
+        AssertAccepted(session, Freq(64), expectedIndex: 2);
+    }
+
+    [Fact]
+    public void HalfNotes_At30Bpm_SecondNoteExpectedAt4000Ms()
+    {
+        const int bpm = 30;
+        double elapsed = 0;
+        var session = CreateRhythmSession(
+            bpm,
+            showConductorCues: false,
+            () => elapsed,
+            new RhythmNote(60, 2, 0),
+            new RhythmNote(62, 1, 2));
+
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+        Assert.Equal(2 * msPerBeat, ConductorOnsetTiming.ExpectedOnsetMs(0, 2, bpm), precision: 3);
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+
+        elapsed = msPerBeat; // 2000 ms — still within first half note
+        AssertNotAdvanced(session, Freq(62), expectedIndex: 1);
+
+        elapsed = 2 * msPerBeat;
+        AssertAccepted(session, Freq(62), expectedIndex: 1);
+    }
+
+    [Fact]
+    public void RestBetweenNotes_PushesExpectedOnsetByRestBeats()
+    {
+        const int bpm = 60;
+        double elapsed = 0;
+        // Quarter, quarter rest (gate=2), quarter
+        var session = CreateRhythmSession(
+            bpm,
+            showConductorCues: false,
+            () => elapsed,
+            new RhythmNote(60, 1, 0),
+            new RhythmNote(62, 1, 2));
+
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+        Assert.Equal(2 * msPerBeat, ConductorOnsetTiming.ExpectedOnsetMs(0, 2, bpm), precision: 3);
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+
+        elapsed = msPerBeat; // beat 1 — rest; note 2 expected at beat 2
+        AssertNotAdvanced(session, Freq(62), expectedIndex: 1);
+
+        elapsed = 2 * msPerBeat;
+        AssertAccepted(session, Freq(62), expectedIndex: 1);
+    }
+
+    [Fact]
+    public void TempoChange_MidSession_UsesNewBpmForRemainingNotes()
+    {
+        const int startBpm = 30;
+        double elapsed = 0;
+        var session = CreateSession([60, 62, 64], startBpm, showConductorCues: false, () => elapsed);
+        double ms30 = ConductorOnsetTiming.MsPerBeat(30);
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+
+        session.Tempo = 60;
+        double ms60 = ConductorOnsetTiming.MsPerBeat(60);
+
+        // Note 1 still at beat 1; now 1000 ms at 60 BPM
+        elapsed = ms60;
+        AssertAccepted(session, Freq(62), expectedIndex: 1);
+
+        // Note 2 at beat 2 under 60 BPM = 2000 ms
+        elapsed = 2 * ms60;
+        AssertAccepted(session, Freq(64), expectedIndex: 2);
+
+        Assert.Equal(3, session.CurrentNoteIndex);
+    }
+
+    [Fact]
+    public void EarlyTolerance_AllowsSlightlyEarlyWithinQuarterSixteenth()
+    {
+        const int bpm = 60;
+        double elapsed = 0;
+        var session = CreateSession([60, 62], bpm, showConductorCues: false, () => elapsed);
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+        double earlyTol = ConductorOnsetTiming.EarlyToleranceMs(bpm);
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+
+        // Just inside early tolerance (beat 1 minus a hair)
+        elapsed = msPerBeat - earlyTol + 1;
+        AssertAccepted(session, Freq(62), expectedIndex: 1);
+    }
+
+    [Fact]
+    public void LateTolerance_AllowsSlightlyLateWithinHalfBeat()
+    {
+        const int bpm = 60;
+        double elapsed = 0;
+        var session = CreateSession([60, 62], bpm, showConductorCues: false, () => elapsed);
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+        double lateTol = ConductorOnsetTiming.LateToleranceMs(bpm);
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+
+        elapsed = msPerBeat + lateTol - 1;
+        AssertAccepted(session, Freq(62), expectedIndex: 1);
+    }
+
+    [Fact]
+    public void RepeatedPitchOnConsecutiveBeats_RequiresTimingAndNoteOn()
+    {
+        const int bpm = 60;
+        double elapsed = 0;
+        var session = CreateSession([60, 60], bpm, showConductorCues: false, () => elapsed);
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+        double freq = Freq(60);
+
+        elapsed = 0;
+        AssertAccepted(session, freq, expectedIndex: 0);
+        Assert.True(session.IsAwaitingNoteOn);
+
+        // Same pitch before beat 1 — blocked (timing + note-on)
+        elapsed = msPerBeat / 2;
+        AssertNotAdvanced(session, freq, expectedIndex: 1);
+
+        session.NotifySilenceFor(session.SamePitchSilenceMs);
+        session.NotifyNoteAttack();
+        elapsed = msPerBeat;
+        AssertAccepted(session, freq, expectedIndex: 1);
+    }
+
+    [Fact]
+    public void EarlyAttemptThenCorrectAtOnset_AcceptsOnRetry()
+    {
+        const int bpm = 30;
+        double elapsed = 0;
+        var session = CreateSession([60, 62], bpm, showConductorCues: false, () => elapsed);
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+
+        elapsed = 500;
+        AssertNotAdvanced(session, Freq(62), expectedIndex: 1);
+        Assert.True(session.NoteFeedbacks.TryGetValue(1, out var fb) && fb.Wrong > 0);
+
+        session.NotifySilence();
+        elapsed = msPerBeat;
+        AssertAccepted(session, Freq(62), expectedIndex: 1);
+    }
+
+    [Fact]
+    public void Tempo30_EarlyCorrectPitch_MarksWrongAndDoesNotAdvance()
+    {
+        const int bpm = 30;
+        double elapsed = 0;
+        var session = CreateSession([60, 62, 64], bpm, showConductorCues: false, () => elapsed);
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+
+        elapsed = 400; // well before beat 1 at 2000ms
+        var result = session.Evaluate(Freq(62));
+        Assert.True(result.correct);
+        Assert.True(session.UpdateFeedbackForCurrent(Freq(62), result));
+        Assert.Equal(1, session.CurrentNoteIndex);
+        Assert.True(session.NoteFeedbacks.TryGetValue(1, out var fb) && fb.Wrong > 0);
+    }
+
+    [Fact]
+    public void Tempo30_ConductorCuesOff_BlocksNotePlayedAt120BpmPace()
+    {
+        const int bpm = 30;
+        double elapsed = 0;
+        var session = CreateSession([60, 62], bpm, showConductorCues: false, () => elapsed);
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+
+        // ~120 BPM ≈ 500ms per quarter; written tempo is 30 BPM (2000ms per quarter).
+        elapsed = 500;
+        AssertNotAdvanced(session, Freq(62), expectedIndex: 1);
+    }
+
+    [Fact]
+    public void Tempo30_ConductorCuesOff_AcceptsNotesAtWrittenTempo()
+    {
+        const int bpm = 30;
+        double elapsed = 0;
+        var session = CreateSession(CMajorScaleMidi, bpm, showConductorCues: false, () => elapsed);
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+
+        for (int i = 0; i < CMajorScaleMidi.Length; i++)
+        {
+            elapsed = i * msPerBeat;
+            AssertAccepted(session, Freq(CMajorScaleMidi[i]), expectedIndex: i);
+        }
+
+        Assert.Equal(CMajorScaleMidi.Length, session.CurrentNoteIndex);
+    }
+
+    [Fact]
     public void ConductorOff_FreeTiming_Unchanged_RapidPitchesAdvance()
     {
         double elapsed = 0;
+        // Tuner mode skips conductor onset gating entirely.
         var session = CreateSession(CMajorScaleMidi, bpm: 34, showConductorCues: false, () => elapsed);
+        session.Tune = "Tuner";
 
         for (int i = 0; i < CMajorScaleMidi.Length; i++)
         {
@@ -219,6 +507,81 @@ public class ConductorTimingTests : IDisposable
         Assert.Equal(0.25 * msPerBeat, ConductorOnsetTiming.EarlyToleranceMs(bpm), precision: 6);
         Assert.Equal(0.50 * msPerBeat, ConductorOnsetTiming.LateToleranceMs(bpm), precision: 6);
     }
+
+    private readonly record struct RhythmNote(
+        int Midi,
+        double DurationBeats,
+        double GateBeatsAfterPrevious);
+
+    private static NoteSessionService CreateRhythmSession(
+        int bpm,
+        bool showConductorCues,
+        Func<double> elapsedMs,
+        params RhythmNote[] notes)
+    {
+        var session = new NoteSessionService
+        {
+            Instrument = "concert-pitch",
+            Tune = "Selected Scale",
+            CooldownMs = 0,
+            Tempo = bpm,
+            ShowConductorCues = showConductorCues,
+            ChildLevel = 1,
+        };
+        session.Reset();
+        session.Tune = "Selected Scale";
+        session.Instrument = "concert-pitch";
+        session.CooldownMs = 0;
+        session.Tempo = bpm;
+        session.ShowConductorCues = showConductorCues;
+        session.SamePitchSilenceMs = NoteSessionService.DefaultSamePitchSilenceMs;
+        session.SessionElapsedMsOverride = elapsedMs;
+
+        for (int i = 0; i < notes.Length; i++)
+        {
+            var spec = notes[i];
+            session.NotesToDraw.Add(new NoteInfo
+            {
+                Midi = spec.Midi,
+                Name = NoteSessionService.MidiToNoteName(spec.Midi, flats: false),
+                TargetFreq = NoteSessionService.MidiToFreqPublic(spec.Midi),
+                Duration = DurationFromBeats(spec.DurationBeats),
+                DurationBeats = spec.DurationBeats,
+                StartBeat = ConductorOnsetTiming.GetAnchoredBeatPosition(
+                    BuildNoteListUpTo(notes, i), i),
+                GateBeatsAfterPrevious = spec.GateBeatsAfterPrevious,
+            });
+            session.FeedbackViewModels.Add(new FeedbackItem(i, 0, 0, false));
+        }
+
+        session.ConfigureRhythmStartGates();
+        session.StartListeningClock();
+        session.SessionElapsedMsOverride = elapsedMs;
+        return session;
+    }
+
+    private static List<NoteInfo> BuildNoteListUpTo(RhythmNote[] specs, int index)
+    {
+        var list = new List<NoteInfo>();
+        for (int i = 0; i <= index; i++)
+        {
+            list.Add(new NoteInfo
+            {
+                DurationBeats = specs[i].DurationBeats,
+                GateBeatsAfterPrevious = specs[i].GateBeatsAfterPrevious,
+            });
+        }
+        return list;
+    }
+
+    private static NoteDuration DurationFromBeats(double beats) => beats switch
+    {
+        >= 4 => NoteDuration.Whole,
+        >= 2 => NoteDuration.Half,
+        >= 1 => NoteDuration.Quarter,
+        >= 0.5 => NoteDuration.Eighth,
+        _ => NoteDuration.Sixteenth,
+    };
 
     private static NoteSessionService CreateConductorSession(
         int[] midiNotes,

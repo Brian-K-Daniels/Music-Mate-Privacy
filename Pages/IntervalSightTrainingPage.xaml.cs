@@ -17,6 +17,7 @@ namespace musicmate.Pages
         private List<GeneratedNote> _notes = new();
         private CancellationTokenSource? _feedbackCts;
         private bool _busy;
+        private bool _pendingLevelRefresh;
         private readonly Dictionary<int, Button> _buttons = new();
         private Button? _newTuneButton;
         private int? _excludeFirstMagnitude;
@@ -123,6 +124,45 @@ namespace musicmate.Pages
             _sightLevel = next;
             LevelValueLabel.Text = _sightLevel.ToString();
             IntervalSightTrainingLogic.PersistLevel(_sightLevel);
+            // Same refresh path as New / OnAppearing — regenerate for the new level immediately.
+            _ = RefreshExerciseForCurrentLevelAsync();
+        }
+
+        /// <summary>
+        /// Regenerates the staff exercise for <see cref="_sightLevel"/> using
+        /// <see cref="StartNewSessionAsync"/>. Coalesces rapid Level slider moves.
+        /// </summary>
+        private async Task RefreshExerciseForCurrentLevelAsync()
+        {
+            if (_busy)
+            {
+                _pendingLevelRefresh = true;
+                return;
+            }
+
+            _busy = true;
+            try
+            {
+                do
+                {
+                    _pendingLevelRefresh = false;
+                    _feedbackCts?.Cancel();
+                    FeedbackOverlay.IsVisible = false;
+                    // Fresh exercise for the new level — do not carry the previous cycle's exclude.
+                    _excludeFirstMagnitude = null;
+                    await NavigationBusyService.Instance.RunAsync(StartNewSessionAsync);
+                }
+                while (_pendingLevelRefresh);
+            }
+            catch (Exception ex)
+            {
+                Utils.Log($"[SightTraining] LevelRefresh: {ex}");
+                SetStatus("Could not refresh for the new Level. Tap New to try again.");
+            }
+            finally
+            {
+                _busy = false;
+            }
         }
 
         private async void OnNewTuneClicked(object? sender, EventArgs e)
@@ -146,6 +186,8 @@ namespace musicmate.Pages
             finally
             {
                 _busy = false;
+                if (_pendingLevelRefresh)
+                    await RefreshExerciseForCurrentLevelAsync();
             }
         }
 
@@ -397,7 +439,9 @@ namespace musicmate.Pages
             if (_staffDrawable == null || _logic == null)
                 return;
             _staffDrawable.UpperNoteStates = _logic.BuildNoteStates();
-            if (_logic.CurrentPair is { } pair)
+            if (_logic.IsSessionComplete || !_logic.HasCurrentPair)
+                _staffDrawable.ActiveNoteIndex = -1;
+            else if (_logic.CurrentPair is { } pair)
                 _staffDrawable.ActiveNoteIndex = pair.AnchorFlatIndex;
         }
 
@@ -420,21 +464,24 @@ namespace musicmate.Pages
 
                 await ShowCorrectOverlayAsync();
 
+                RefreshStaffStates();
+                StaffGraphicsView.Invalidate();
+
                 if (_logic.IsSessionComplete)
                 {
-                    // Continue indefinitely: next exercise avoids repeating the last magnitude.
                     _excludeFirstMagnitude = absoluteSemitones;
-                    await StartNewSessionAsync();
+                    SetStatus($"{_logic.Stats.FormatSummary()}. Tap New for another.");
+                    SetButtonsEnabled(false);
                     return;
                 }
 
-                RefreshStaffStates();
-                StaffGraphicsView.Invalidate();
                 SetStatus("Correct — next yellow pair.");
             }
             finally
             {
                 _busy = false;
+                if (_pendingLevelRefresh)
+                    await RefreshExerciseForCurrentLevelAsync();
             }
         }
 

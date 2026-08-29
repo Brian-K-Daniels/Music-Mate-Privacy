@@ -20,6 +20,7 @@ public enum DebugLogCategory
     Autoplay,
     ResetOptions,
     SmuFL,
+    Midi61Diagnostic,
 }
 
 /// <summary>
@@ -52,6 +53,7 @@ public static class DebugLogSettings
         DebugLogCategory.Autoplay => "Autoplay rhythm",
         DebugLogCategory.ResetOptions => "Reset options test",
         DebugLogCategory.SmuFL => "SmuFL font loading",
+        DebugLogCategory.Midi61Diagnostic => "C#4 (MIDI 61) draw diagnostics",
         _ => category.ToString(),
     };
 
@@ -123,6 +125,9 @@ public static class DebugLogSettings
         if (message.StartsWith("[NoteStatisticsViewModel]", StringComparison.Ordinal)
             || message.StartsWith("[StatisticsCacheService]", StringComparison.Ordinal))
             return DebugLogCategory.Statistics;
+
+        if (message.StartsWith("[Midi61Diag]", StringComparison.Ordinal))
+            return DebugLogCategory.Midi61Diagnostic;
 
         if (message.StartsWith("[StaffGen]", StringComparison.Ordinal)
             || message.StartsWith("[Staff Standard]", StringComparison.Ordinal)

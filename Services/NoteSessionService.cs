@@ -1752,6 +1752,9 @@ namespace musicmate.Services
             OnPropertyChanged(nameof(Tempo));
             OnPropertyChanged(nameof(MusicBpm));
             OnPropertyChanged(nameof(PlaybackBpm));
+
+            if (NotesToDraw.Count > 0)
+                ConfigureRhythmStartGates();
         }
         /// <summary>
         /// Pool weights (sum 100): practice tunes, random, scales, arpeggios.
@@ -2402,12 +2405,12 @@ namespace musicmate.Services
         private double BeatToGateMs(double beats)
             => beats * 60000.0 / _rhythmGateMusicBpm;
         /// <summary>
-        /// When conductor cues are on, live acceptance must wait for the conductor-absolute
-        /// earliest-start window. Rest-only rhythm gates remain separate.
+        /// Live acceptance waits for the conductor-absolute onset window at the session
+        /// tempo. Visual conductor cues are independent (<see cref="ShowConductorCues"/>).
+        /// Rest-only rhythm gates remain separate.
         /// </summary>
         private bool IsConductorOnsetGateEnabled()
-            => ShowConductorCues
-               && Tune != "Tuner"
+            => Tune != "Tuner"
                && NotesToDraw.Count > 0;
         private int GetConductorTimingBpm()
             => _rhythmGateMusicBpm > 0
@@ -2999,6 +3002,38 @@ namespace musicmate.Services
                     || ConductorOnsetTiming.IsWithinTimingWindow(
                         actualMs, conductorExpectedMs, conductorEarlyTolMs, conductorLateTolMs);
 
+                if (conductorGateEnabled && !timingOk)
+                {
+                    StatusService.Instance.StatusMessage =
+                        $"Expected: {expectedNote}, Heard: {heardNote}, {result.cents}¢ (too late), Notes: {NotesToDraw.Count}";
+
+                    const string reason = "Late";
+                    LogConductorTimingDecision(
+                        idx, targetNote, heardNote, detMidiWritten, actualMs,
+                        conductorExpectedMs, conductorExpectedBeat,
+                        conductorEarlyTolMs, conductorLateTolMs,
+                        pitchAccepted: true, timingAccepted: false,
+                        advanceReason: "blocked-late-conductor");
+
+                    if (TryMarkDebouncedWrong(idx, curFeedback, result.cents))
+                    {
+                        var outcome = BuildNoteOutcome(
+                            targetNote, heardNote, result.cents,
+                            pitchCorrect: true, timingCorrect: false, reason: reason,
+                            actualMs: actualMs, expectedStartMs: conductorExpectedMs,
+                            timingErrorMs: actualMs - conductorExpectedMs,
+                            timingToleranceMs: conductorLateTolMs);
+                        RecordAttemptOutcome(outcome);
+                        TryEnqueueTimingWrong(
+                            targetNote, heardNote, actualMs, reason,
+                            pitchCorrect: true, timingCorrect: false,
+                            expectedMsOverride: conductorExpectedMs,
+                            toleranceMs: conductorLateTolMs);
+                        return true;
+                    }
+                    return false;
+                }
+
                 // Timing: record onset time and expected beat position
                 RecordOnsetIfNeeded(idx);
 
@@ -3343,35 +3378,9 @@ namespace musicmate.Services
             Reset();
             CurrentTune = null;
 
-            var rhythmSlots = RhythmStartGate.BuildSlots(previewNotes);
-            int sessionIdx = 0;
-            int pitchIdx = 0;
-            var (noteKey, noteScale) = GetNotationKeyAndScale();
-            foreach (var note in previewNotes)
-            {
-                if (note.IsRest)
-                    continue;
-
-                var slot = rhythmSlots[pitchIdx++];
-                var (midi, name) = ResolveTargetPitch(note, noteKey, noteScale);
-
-                NotesToDraw.Add(new NoteInfo
-                {
-                    Midi = midi,
-                    Name = name,
-                    TargetFreq = 440.0 * Math.Pow(2.0, (midi - 69) / 12.0),
-                    X = 0f,
-                    Duration = note.Duration,
-                    StartBeat = slot.StartBeat,
-                    DurationBeats = slot.DurationBeats,
-                    GateBeatsAfterPrevious = slot.GateBeatsAfterPrevious
-                });
-                FeedbackViewModels.Add(new FeedbackItem(sessionIdx++, 0, 0, false));
-            }
-
-            ConfigureRhythmStartGates();
+            // NotesToDraw is rebuilt from placed upper+lower staff lists after width packing.
             DebugLog.WriteLine(
-                $"[Arpeggio] Loaded {NotesToDraw.Count} playable notes into session state.");
+                $"[Arpeggio] Built {previewNotes.Count(n => !n.IsRest)} pitched notes; staff assign pending.");
 
             return Task.FromResult(previewNotes);
         }

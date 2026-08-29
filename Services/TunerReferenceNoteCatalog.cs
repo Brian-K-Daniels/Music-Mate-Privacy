@@ -187,5 +187,29 @@ namespace musicmate.Services
             int target = (lo + hi) / 2;
             return ClampToRange(target, midis);
         }
+
+        /// <summary>
+        /// On the Tuner page, voice categories use concert-pitch notation and range
+        /// without changing the stored <see cref="NoteSessionService.Instrument"/> value.
+        /// </summary>
+        public static bool UsesConcertPitchOnTuner(string? instrument)
+            => IntervalSingingTrainingLogic.IsVoiceInstrument(instrument);
+
+        /// <summary>
+        /// Instrument profile for Tuner note lists, transposition, and frequency math.
+        /// Voice instruments map to <see cref="InstrumentCatalog.Default"/> (Concert Pitch).
+        /// </summary>
+        public static InstrumentProfile GetEffectiveInstrumentProfile(string? instrument)
+            => UsesConcertPitchOnTuner(instrument)
+                ? InstrumentCatalog.Default
+                : InstrumentCatalog.Resolve(instrument);
+
+        /// <summary>Transpose offset for Tuner reference tone and written-note math.</summary>
+        public static int GetEffectiveTransposeOffset(string? instrument)
+            => GetEffectiveInstrumentProfile(instrument).TransposeOffset;
+
+        /// <summary>Closed Tuner instrument picker label (voice → Concert Pitch).</summary>
+        public static string GetTunerInstrumentPickerDisplayName(string? instrument)
+            => GetEffectiveInstrumentProfile(instrument).DisplayName;
     }
 }

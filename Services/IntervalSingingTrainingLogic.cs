@@ -352,9 +352,39 @@ namespace musicmate.Services
         public static string FormatIdentifyInstruction()
             => "Listen, then tap the interval you heard.";
 
-        public static bool ShouldShowNotation(IntervalSingingExerciseState state)
-            => state is IntervalSingingExerciseState.Correct
+        /// <summary>
+        /// True when the singing-training staff should engrave the interval's two target notes.
+        /// In Sing Interval mode the staff stays empty until the singer succeeds or taps Reveal.
+        /// </summary>
+        public static bool ShouldShowStaffNotes(
+            IntervalSingingExerciseState state,
+            IntervalSingingTrainingMode mode = IntervalSingingTrainingMode.SingInterval)
+        {
+            _ = mode;
+            return state is IntervalSingingExerciseState.Correct
                 or IntervalSingingExerciseState.Revealed;
+        }
+
+        /// <summary>Backward-compatible alias of <see cref="ShouldShowStaffNotes"/>.</summary>
+        public static bool ShouldShowNotation(IntervalSingingExerciseState state)
+            => ShouldShowStaffNotes(state);
+
+        /// <summary>
+        /// Staff notes for the current interval: empty while hidden; exactly two written target
+        /// pitches when revealed or answered correctly. Does not generate a new interval.
+        /// </summary>
+        public static IReadOnlyList<Models.GeneratedNote> ResolveStaffDisplayNotes(
+            IntervalEarTrainingLogic.IntervalPitches? exercise,
+            IntervalSingingExerciseState state,
+            IntervalSingingTrainingMode mode = IntervalSingingTrainingMode.SingInterval,
+            string key = IntervalEarTrainingNotation.StaffDisplayKey,
+            string scale = IntervalEarTrainingNotation.StaffDisplayScale)
+        {
+            if (exercise is not { } pitches || !ShouldShowStaffNotes(state, mode))
+                return Array.Empty<Models.GeneratedNote>();
+
+            return IntervalEarTrainingNotation.BuildDisplayNotes(pitches, key, scale);
+        }
 
         public static bool ShouldListen(
             IntervalSingingExerciseState state,

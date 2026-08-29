@@ -35,6 +35,7 @@ namespace musicmate.Pages
         private int _level = IntervalSingingTrainingLogic.DefaultLevel;
         private int? _selectedStartWrittenMidi;
         private int _transposeOffsetForStartNote;
+        private int _transposeOffsetForExercise;
         private int _startNotePickerSyncSuppress;
         private int _instrumentPickerSyncSuppress;
         private int _modePickerSyncSuppress;
@@ -58,6 +59,7 @@ namespace musicmate.Pages
             LoadPreferences();
             InitInstrumentPicker();
             _transposeOffsetForStartNote = _session.InstrumentTransposeOffset;
+            _transposeOffsetForExercise = _session.InstrumentTransposeOffset;
             InitStartNotePicker();
             ApplyModeButtonVisibility();
             UpdateActionButtons();
@@ -368,11 +370,39 @@ namespace musicmate.Pages
             {
                 SyncInstrumentPickerFromSession();
                 RefreshStartNotePicker(preserveConcertPitch: true);
+                RefreshDisplayedIntervalTransposition();
             }
             else if (e.PropertyName == nameof(NoteSessionService.LowestNote)
                 || e.PropertyName == nameof(NoteSessionService.HighestNote))
             {
                 RefreshStartNotePicker(preserveConcertPitch: false);
+                RefreshDisplayedIntervalTransposition();
+            }
+        }
+
+        /// <summary>
+        /// When instrument or vocal range changes, rewrite the active interval's written
+        /// pitches for the new transposition and redraw staff notation if visible.
+        /// </summary>
+        private void RefreshDisplayedIntervalTransposition()
+        {
+            if (_exercise is not { } pitches)
+                return;
+
+            int newOffset = _session.InstrumentTransposeOffset;
+            pitches = IntervalEarTrainingLogic.RetransposePreservingConcert(
+                pitches, _transposeOffsetForExercise, newOffset);
+            _transposeOffsetForExercise = newOffset;
+            _exercise = pitches;
+
+            ApplyStaffForState();
+
+            if (_mode == IntervalSingingTrainingMode.ImitateInterval
+                && _state is IntervalSingingExerciseState.WaitingForSinger
+                    or IntervalSingingExerciseState.Incorrect
+                    or IntervalSingingExerciseState.Presenting)
+            {
+                StatusLabel.Text = IntervalSingingTrainingLogic.FormatImitateInstruction(pitches);
             }
         }
 
@@ -709,7 +739,9 @@ namespace musicmate.Pages
         {
             StopListening();
             RestoreAllIntervalFamilyColors();
+            HideStaffReveal();
             _exercise = pitches;
+            _transposeOffsetForExercise = _session.InstrumentTransposeOffset;
             _revealed = false;
             _succeeded = false;
             _imitate = null;
@@ -827,6 +859,7 @@ namespace musicmate.Pages
 
             SetState(IntervalSingingExerciseState.WaitingForSinger);
             UpdateActionButtons();
+            ApplyStaffForState();
 
             try
             {
@@ -1028,7 +1061,10 @@ namespace musicmate.Pages
         {
             StopListening();
             if (!keepPitches)
+            {
                 _exercise = null;
+                _transposeOffsetForExercise = _session.InstrumentTransposeOffset;
+            }
             _revealed = false;
             _succeeded = false;
             _imitate = null;
@@ -1052,14 +1088,15 @@ namespace musicmate.Pages
 
         private void ApplyStaffForState()
         {
-            if (!IntervalSingingTrainingLogic.ShouldShowNotation(_state)
-                || _exercise is not { } pitches)
+            var notes = IntervalSingingTrainingLogic.ResolveStaffDisplayNotes(
+                _exercise, _state, _mode);
+            if (notes.Count == 0)
             {
                 HideStaffReveal();
                 return;
             }
 
-            ShowStaffForPitches(pitches);
+            ShowStaffNotes(notes);
         }
 
         private void HideStaffReveal()
@@ -1104,19 +1141,15 @@ namespace musicmate.Pages
             StaffGraphicsView.Invalidate();
         }
 
-        private void ShowStaffForPitches(IntervalEarTrainingLogic.IntervalPitches pitches)
+        private void ShowStaffNotes(IReadOnlyList<GeneratedNote> notes)
         {
             EnsureStaffDrawable();
             ApplyStaffKey();
 
-            var notes = IntervalEarTrainingNotation.BuildDisplayNotes(
-                pitches,
-                IntervalEarTrainingNotation.StaffDisplayKey,
-                IntervalEarTrainingNotation.StaffDisplayScale);
             _staffDrawable!.SingleStaffLayout = true;
             _staffDrawable.OmitStaffHeader = true;
             _staffDrawable.InvalidateLayoutCache();
-            _staffDrawable.UpperNotes = notes;
+            _staffDrawable.UpperNotes = notes.ToList();
             _staffDrawable.LowerNotes = new List<GeneratedNote>();
             _staffDrawable.UpperBarBeats = IntervalEarTrainingNotation.BuildBarBeats();
             _staffDrawable.LowerBarBeats = new List<double>();

@@ -235,6 +235,39 @@ namespace musicmate.Pages
                 SyncPlayItemStatusMessage();
             }
         }
+
+#if DEBUG
+        private void RefreshBuildIdentificationLabels()
+        {
+            if (BuildIdentificationLabel is null)
+                return;
+
+            BuildIdentificationLabel.Text = BuildIdentification.FullMultiline;
+            BuildIdentificationLabel.IsVisible = true;
+        }
+
+        private void RefreshMidi61DiagnosticLabel()
+        {
+            if (Midi61DiagnosticLabel is null)
+                return;
+
+            var lines = new List<string>();
+            if (!string.IsNullOrEmpty(ChromaticMidi61Diagnostics.LastRendererInputSummary))
+                lines.Add(ChromaticMidi61Diagnostics.LastRendererInputSummary);
+            if (!string.IsNullOrEmpty(ChromaticMidi61Diagnostics.LastDrawTableSummary))
+                lines.Add(ChromaticMidi61Diagnostics.LastDrawTableSummary);
+            if (!string.IsNullOrEmpty(ChromaticMidi61Diagnostics.LastPlaybackSummary))
+                lines.Add(ChromaticMidi61Diagnostics.LastPlaybackSummary);
+            lines.Add(ChromaticMidi61Diagnostics.CompactStatusLine());
+
+            Midi61DiagnosticLabel.Text = string.Join("\n", lines.Where(l => !string.IsNullOrWhiteSpace(l)));
+            Midi61DiagnosticLabel.IsVisible = ChromaticMidi61Diagnostics.IsEnabled;
+        }
+#else
+        private void RefreshBuildIdentificationLabels() { }
+        private void RefreshMidi61DiagnosticLabel() { }
+#endif
+
         private void UpdateNoteEmphasisBanner()
         {
             bool show = _session.HasTemporaryNoteEmphasis;
@@ -1507,30 +1540,54 @@ namespace musicmate.Pages
                 }
                 else if (_session.Tune == "Arpeggio")
                 {
-                    ClearStaffPagePack();
                     var pattern = ArpeggioCatalog.All.FirstOrDefault(p => p.Id == _session.SelectedArpeggioId)
                         ?? ArpeggioCatalog.MajorTriad;
                     var allNotes = await _session.LoadArpeggioAsync(pattern, _session.SelectedArpeggioRoot);
 
-                    const int arpeggioUpperMeasureCount = 4;
-                    upperFlat = allNotes
-                        .Where(n => (n.MeasureIndex ?? 0) < arpeggioUpperMeasureCount)
-                        .ToList();
-                    lowerFlat = allNotes
-                        .Where(n => (n.MeasureIndex ?? 0) >= arpeggioUpperMeasureCount)
-                        .ToList();
+                    var (canvasWidth, canvasHeight, isProvisional) = ResolveStaffCanvasSize();
                     double measureBeats = TimeSignature.FromDisplayString(_session.GetDisplayTimeSignature()).TotalBeats;
                     if (measureBeats <= 0)
                         measureBeats = 4;
+                    var pageBars = ComputeStaffBarBeats(allNotes, measureBeats, new HashSet<double>());
+
+                    StoreStaffPagePack(
+                        allNotes, pageBars, measureBeats,
+                        isTwoOctaveScaleCut: false,
+                        canvasWidth, canvasHeight, isProvisional);
+
+                    var split = _staffDrawable!.SplitMeasuresAcrossStaves(
+                        allNotes, pageBars, canvasWidth, canvasHeight);
+                    upperFlat = split.UpperNotes;
+                    lowerFlat = split.LowerNotes;
+
+                    double lowerBeatShift = lowerFlat.Count > 0 ? (lowerFlat[0].BeatPosition ?? 0.0) : 0.0;
+                    lowerFlat = ShiftStaffBeatPositions(lowerFlat, lowerBeatShift);
+
                     upperBarBeats = ComputeStaffBarBeats(upperFlat, measureBeats, existingUpper);
                     lowerBarBeats = ComputeStaffBarBeats(lowerFlat, measureBeats, existingLower);
 
-                    _seqNextMeasureIndex = 8;
-                    _seqNextBeatOffset = allNotes.Sum(n => n.BeatDuration);
-                    _seqNextGlobalNoteIndex = allNotes.Count(n => !n.IsRest);
+                    int placedMeasures = split.UpperMeasureCount + split.LowerMeasureCount;
+                    double upperBeats = upperFlat.Sum(n => n.BeatDuration);
+                    double lowerBeats = lowerFlat.Sum(n => n.BeatDuration);
+                    int upperPitches = upperFlat.Count(n => !n.IsRest);
+                    int lowerPitches = lowerFlat.Count(n => !n.IsRest);
+
+                    _seqNextMeasureIndex = placedMeasures;
+                    _seqNextBeatOffset = upperBeats + lowerBeats;
+                    _seqNextGlobalNoteIndex = upperPitches + lowerPitches;
                     _lowerMeasureIndex = _seqNextMeasureIndex;
                     _lowerBeatOffset = _seqNextBeatOffset;
                     _lowerGlobalNoteIndex = _seqNextGlobalNoteIndex;
+
+#if DEBUG
+                    DebugLog.WriteLine(
+                        $"[Staff Arpeggio] {pattern.DisplayName} packed upper={split.UpperMeasureCount} " +
+                        $"lower={split.LowerMeasureCount} unplaced={split.UnplacedMeasureCount} " +
+                        $"(events unplaced={split.UnplacedNotes.Count}) provisional={isProvisional} width={canvasWidth:F0} " +
+                        $"Upper: {upperFlat.Count} notes ({upperPitches} pitched), " +
+                        $"Lower: {lowerFlat.Count} notes ({lowerPitches} pitched)");
+#endif
+
                     if (_staffDrawable != null) _staffDrawable.UpperHasEndBar = false;
                 }
                 else
@@ -1588,12 +1645,13 @@ namespace musicmate.Pages
 
                         StoreStaffPagePack(
                             allNotes, allBarBeats, measureBeats,
-                            isTwoOctaveScaleCut: true,
+                            isTwoOctaveScaleCut: false,
                             canvasWidth, canvasHeight, isProvisional);
 
-                        var split = StaffPageWidthPolicy.SplitTwoOctaveScaleAtPeak(allNotes);
+                        var split = _staffDrawable!.SplitMeasuresAcrossStaves(
+                            allNotes, allBarBeats, canvasWidth, canvasHeight);
                         upperFlat = split.UpperNotes;
-                        lowerFlat = StaffPageWidthPolicy.ApplyTwoOctaveLowerCut(split.LowerNotes);
+                        lowerFlat = split.LowerNotes;
 
                         double lowerBeatShift = lowerFlat.Count > 0 ? (lowerFlat[0].BeatPosition ?? 0.0) : 0.0;
                         lowerFlat = ShiftStaffBeatPositions(lowerFlat, lowerBeatShift);
@@ -1601,17 +1659,27 @@ namespace musicmate.Pages
                         upperBarBeats = ComputeStaffBarBeats(upperFlat, measureBeats, existingUpper);
                         lowerBarBeats = ComputeStaffBarBeats(lowerFlat, measureBeats, existingLower);
 
+                        int placedMeasures = split.UpperMeasureCount + split.LowerMeasureCount;
                         double upperBeats = upperFlat.Sum(n => n.BeatDuration);
                         double lowerBeats = lowerFlat.Sum(n => n.BeatDuration);
                         int upperPitches = upperFlat.Count(n => !n.IsRest);
                         int lowerPitches = lowerFlat.Count(n => !n.IsRest);
 
-                        _seqNextMeasureIndex = generated.MeasureCount;
+                        _seqNextMeasureIndex = placedMeasures;
                         _seqNextBeatOffset = upperBeats + lowerBeats;
                         _seqNextGlobalNoteIndex = upperPitches + lowerPitches;
                         _lowerMeasureIndex = _seqNextMeasureIndex;
                         _lowerBeatOffset = _seqNextBeatOffset;
                         _lowerGlobalNoteIndex = _seqNextGlobalNoteIndex;
+
+#if DEBUG
+                        DebugLog.WriteLine(
+                            $"[Staff TwoOctave] { _session.SelectedScale} packed upper={split.UpperMeasureCount} " +
+                            $"lower={split.LowerMeasureCount} unplaced={split.UnplacedMeasureCount} " +
+                            $"(events unplaced={split.UnplacedNotes.Count}) provisional={isProvisional} width={canvasWidth:F0} " +
+                            $"Upper: {upperFlat.Count} notes ({upperPitches} pitched), " +
+                            $"Lower: {lowerFlat.Count} notes ({lowerPitches} pitched)");
+#endif
                         }
                     }
                     else
@@ -1697,6 +1765,10 @@ namespace musicmate.Pages
                 v3Drawable.UpperBarBeats = upperBarBeats;
                 v3Drawable.LowerBarBeats = lowerBarBeats;
                 v3Drawable.InvalidateLayoutCache();
+#if DEBUG
+                ChromaticMidi61Diagnostics.LogRendererInput("upper", upperFlat);
+                ChromaticMidi61Diagnostics.LogRendererInput("lower", lowerFlat);
+#endif
                 v3Drawable.UpperNoteStates = new StaffNoteState[upperFlat.Count];
                 v3Drawable.LowerNoteStates = new StaffNoteState[lowerFlat.Count];
                 v3Drawable.IsUpperActive = true;
@@ -1748,6 +1820,10 @@ namespace musicmate.Pages
 
                 if (!_suppressStaffViewCommit)
                     await PublishStaffViewAsync();
+
+#if DEBUG
+                RefreshMidi61DiagnosticLabel();
+#endif
                 }
             }
             catch (Exception ex)
@@ -1767,6 +1843,13 @@ namespace musicmate.Pages
                 if (_staffPagePack == null && StaffGraphicsView?.Width > 0)
                     _staffWidthUsedForLayout = StaffGraphicsView.Width;
                 StaffGraphicsView?.Invalidate();
+#if DEBUG
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(120);
+                    await MainThread.InvokeOnMainThreadAsync(RefreshMidi61DiagnosticLabel);
+                });
+#endif
             });
         }
         private static bool StaffNoteStatesEqual(StaffNoteState[] a, StaffNoteState[] b)
@@ -2941,6 +3024,9 @@ namespace musicmate.Pages
             _orientation?.ForceLandscape();
 
             DebugLog.WriteLine($"[DEBUG] OnAppearing: IsAutoRepeatVisible={IsAutoRepeatVisible}, Tune={_session.Tune}");
+#if DEBUG
+            RefreshBuildIdentificationLabels();
+#endif
             IsAutoRepeatVisible = !PlayModePickerOptions.IsTunerMode(_session);
             UpdateAutoRepeatButtons();
             UpdateEffectiveScaleLabel();
@@ -4407,7 +4493,8 @@ namespace musicmate.Pages
         private List<GeneratedNote>? TryGetAutoplayRhythmSequence()
         {
             if (_staffDrawable != null)
-                return _staffDrawable.UpperNotes.Concat(_staffDrawable.LowerNotes).ToList();
+                return DisplayedPlaybackSync.BuildDisplayedRhythmSequence(
+                    _staffDrawable.UpperNotes, _staffDrawable.LowerNotes);
             return null;
         }
         private void ApplyAutoplayRhythmHighlight(int eventIndex, IReadOnlyList<GeneratedNote> sequence, int pitchIndex)
@@ -4485,6 +4572,15 @@ namespace musicmate.Pages
                                 await Task.Delay(TimeSpan.FromSeconds(totalSeconds), ct);
                             else
                             {
+#if DEBUG
+                                if (ev.MidiNumber is ChromaticMidi61Diagnostics.MidiC4
+                                    or ChromaticMidi61Diagnostics.MidiCs4
+                                    or ChromaticMidi61Diagnostics.MidiD4)
+                                {
+                                    ChromaticMidi61Diagnostics.RecordPlayback(ev.MidiNumber, ev.SpelledName);
+                                    RefreshMidi61DiagnosticLabel();
+                                }
+#endif
                                 await _player.PlayAsync(new[] { ev.TargetFrequency }, noteSeconds, gapSeconds, 0.22f, ct);
                                 notePlayed = true;
                                 pitchIndex++;
@@ -4544,6 +4640,15 @@ namespace musicmate.Pages
                     bool notePlayed = false;
                     try
                     {
+#if DEBUG
+                        if (note.Midi is ChromaticMidi61Diagnostics.MidiC4
+                            or ChromaticMidi61Diagnostics.MidiCs4
+                            or ChromaticMidi61Diagnostics.MidiD4)
+                        {
+                            ChromaticMidi61Diagnostics.RecordPlayback(note.Midi, note.Name);
+                            RefreshMidi61DiagnosticLabel();
+                        }
+#endif
                         await _player.PlayAsync(new[] { note.TargetFreq }, noteSeconds, gapSeconds, 0.22f, ct);
                         notePlayed = true;
                     }
@@ -4669,6 +4774,9 @@ namespace musicmate.Pages
                 // trigger the first regeneration once the page is actually on screen.
                 if (_isPageVisible && !_suppressSessionRegenerate)
                 {
+                    // Post-Play freeze keeps green feedback; a Key change must redraw for the new tonic.
+                    if (e.PropertyName == nameof(NoteSessionService.Key))
+                        _freezeStaff = false;
 #if DEBUG
                     if (e.PropertyName == nameof(NoteSessionService.IsRandomMode))
                         DebugLog.WriteLine($"[PickerTest] IsRandomMode={_session.IsRandomMode} Tune={_session.Tune} → RegenerateNotesAsync");
@@ -4870,8 +4978,8 @@ namespace musicmate.Pages
                 EnterPickerSyncSuppress();
                 try
                 {
-                    TunerInstrumentPicker.ItemsSource = NoteSessionService.InstrumentOptions;
-                    var tunerIdx = ResolveInstrumentOptionIndex(_session.InstrumentDisplayName);
+                    TunerInstrumentPicker.ItemsSource = TunerInstrumentPickerItem.BuildAll().ToList();
+                    var tunerIdx = ResolveInstrumentOptionIndex(_session.Instrument);
                     if (tunerIdx < 0)
                         tunerIdx = InstrumentPicker?.SelectedIndex ?? 0;
                     if (tunerIdx >= 0)
@@ -5068,7 +5176,7 @@ namespace musicmate.Pages
 
         private void BuildReferenceNoteChoices()
         {
-            var profile = _session.CurrentInstrumentProfile;
+            var profile = TunerReferenceNoteCatalog.GetEffectiveInstrumentProfile(_session.Instrument);
             _referenceNoteChoices = TunerReferenceNoteCatalog.BuildChoices(
                 profile,
                 PreferFlatsForReferenceSpelling());
@@ -5165,7 +5273,7 @@ namespace musicmate.Pages
                 SyncReferenceNoteChrome();
                 UpdateTunerStaffDisplay();
 
-                int offset = _session.InstrumentTransposeOffset;
+                int offset = TunerReferenceNoteCatalog.GetEffectiveTransposeOffset(_session.Instrument);
                 int concertMidi = TunerReferenceNoteCatalog.ToConcertMidi(_referenceWrittenMidi, offset);
                 double hz = NoteSessionService.MidiToFreqPublic(concertMidi);
                 DebugLog.WriteLine(
@@ -5189,30 +5297,41 @@ namespace musicmate.Pages
 
         private void SizeTunerCompactPickers()
         {
-            string inst = _session?.InstrumentDisplayName
-                ?? TunerInstrumentPicker?.SelectedItem?.ToString()
-                ?? "Inst.";
-            SizeTunerPickerChrome(TunerInstrumentPickerChrome, inst, minWidth: 96, maxWidth: 168, fontSize: 11);
-
+            string inst = TunerReferenceNoteCatalog.GetTunerInstrumentPickerDisplayName(_session?.Instrument);
             string note = _referenceWrittenMidi > 0
                 ? TunerReferenceNoteCatalog.FormatCompactWrittenLabel(_referenceWrittenMidi)
                 : "C4";
-            SizeTunerPickerChrome(TunerNotePickerChrome, note, minWidth: 56, maxWidth: 88, fontSize: 11);
+
+            double rowWidth = TunerPickerRow?.Width ?? TunerReferenceControls?.Width ?? 0;
+            if (rowWidth <= 1 && TunerInfoBorder?.Width > 1)
+                rowWidth = TunerInfoBorder.Width - 12;
+
+            double instTextWidth = MeasureTunerPickerTextWidth(inst, TunerPickerLayout.BaseFontSize);
+            double noteTextWidth = MeasureTunerPickerTextWidth(note, TunerPickerLayout.BaseFontSize);
+            var layout = TunerPickerLayout.Allocate(rowWidth, instTextWidth, noteTextWidth);
+
+            ApplyTunerPickerChrome(TunerInstrumentPickerChrome, TunerInstrumentPicker, layout.InstrumentChromeMin, layout.FontSize);
+            ApplyTunerPickerChrome(TunerNotePickerChrome, TunerNotePicker, layout.NoteChromeMin, layout.FontSize);
         }
 
-        private static void SizeTunerPickerChrome(
-            Border? chrome, string text, double minWidth, double maxWidth, float fontSize)
+        private static double MeasureTunerPickerTextWidth(string text, float fontSize)
+        {
+            using var font = new SKFont();
+            ConfigureTitleUiBoldFont(font, fontSize);
+            font.MeasureText(string.IsNullOrEmpty(text) ? "M" : text, out var bounds);
+            return Math.Max(0, bounds.Width) + TunerPickerLayout.TextRenderSlack;
+        }
+
+        private static void ApplyTunerPickerChrome(Border? chrome, Picker? picker, double minimumWidth, float fontSize)
         {
             if (chrome == null)
                 return;
 
-            using var font = new SKFont();
-            ConfigureTitleUiBoldFont(font, fontSize);
-            font.MeasureText(string.IsNullOrEmpty(text) ? "M" : text, out var bounds);
-            const double horizontalPad = 16;
-            const double spinnerChevron = 28;
-            double width = Math.Ceiling(bounds.Width + horizontalPad + spinnerChevron);
-            chrome.WidthRequest = Math.Clamp(width, minWidth, maxWidth);
+            chrome.MinimumWidthRequest = minimumWidth;
+            chrome.WidthRequest = -1;
+            chrome.HorizontalOptions = LayoutOptions.Fill;
+            if (picker != null)
+                picker.FontSize = fontSize;
         }
 
         private bool _tunerPickerHandlersWired;
@@ -5225,6 +5344,8 @@ namespace musicmate.Pages
             AttachTunerPickerTextFit(TunerInstrumentPicker);
             AttachTunerPickerTextFit(TunerNotePicker);
             AttachTunerPickerTextFit(TunerTempoPicker);
+            if (TunerPickerRow != null)
+                TunerPickerRow.SizeChanged += (_, _) => SizeTunerCompactPickers();
         }
 
         private static void AttachTunerPickerTextFit(Picker? picker)
@@ -5245,16 +5366,15 @@ namespace musicmate.Pages
             spinner.SetMinimumHeight(0);
             spinner.SetClipToPadding(false);
             spinner.SetClipChildren(false);
-            var metrics = spinner.Resources?.DisplayMetrics;
-            int pad = metrics != null ? (int)Math.Round(8 * metrics.Density) : 16;
-            spinner.SetPadding(pad, 0, pad, 0);
+            // Border chrome already applies horizontal inset — avoid double padding that clips text.
+            spinner.SetPadding(0, 0, 0, 0);
 
             if (spinner.GetChildAt(0) is Android.Widget.TextView selected)
             {
                 selected.SetIncludeFontPadding(false);
                 selected.SetPadding(0, 0, 0, 0);
                 selected.Gravity = Android.Views.GravityFlags.CenterVertical | Android.Views.GravityFlags.Start;
-                selected.Ellipsize = Android.Text.TextUtils.TruncateAt.End;
+                selected.Ellipsize = null;
                 selected.SetSingleLine(true);
             }
 #endif
@@ -5428,7 +5548,8 @@ namespace musicmate.Pages
             try
             {
                 double hz = TunerReferenceNoteCatalog.ConcertFrequencyHz(
-                    _referenceWrittenMidi, _session.InstrumentTransposeOffset);
+                    _referenceWrittenMidi,
+                    TunerReferenceNoteCatalog.GetEffectiveTransposeOffset(_session.Instrument));
                 if (hz <= 0)
                     return;
 
@@ -6017,8 +6138,17 @@ namespace musicmate.Pages
             if (IsPickerSyncSuppressed) return;
             if (TunerInstrumentPicker == null) return;
             var idx = TunerInstrumentPicker.SelectedIndex;
-            if (idx < 0 || idx >= NoteSessionService.InstrumentOptions.Length) return;
-            _session.Instrument = NoteSessionService.InstrumentOptions[idx];
+            if (idx < 0) return;
+
+            string fullInstrument;
+            if (TunerInstrumentPicker.SelectedItem is TunerInstrumentPickerItem item)
+                fullInstrument = item.StoredInstrument;
+            else if (idx < NoteSessionService.InstrumentOptions.Length)
+                fullInstrument = NoteSessionService.InstrumentOptions[idx];
+            else
+                return;
+
+            _session.Instrument = fullInstrument;
             SelectedInstrumentShort = _session.InstrumentDisplayName;
 
             EnterPickerSyncSuppress();
@@ -6060,7 +6190,10 @@ namespace musicmate.Pages
             UpdateConcertKeyLabel();
             _staffDrawable?.InvalidateLayoutCache();
             if (_isPageVisible && !_suppressSessionRegenerate)
+            {
+                _freezeStaff = false;
                 await RegenerateNotesAsync();
+            }
         }
         private async void OnScaleTunePickerChanged(object? sender, EventArgs e)
         {

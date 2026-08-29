@@ -5,14 +5,15 @@ namespace musicmate.Pages
 {
     public partial class ResetOptionsPage : ContentPage
     {
-        private static readonly Color FactoryDefaultsActiveBackground = Colors.Green;
-        private static readonly Color FactoryDefaultsInactiveBackground = Colors.White;
-        private static readonly Color FactoryDefaultsInactiveText = Colors.Black;
+        private static readonly Color ActiveBackground = Colors.Green;
+        private static readonly Color ActiveText = Colors.White;
+        private static readonly Color InactiveBackground = Colors.White;
+        private static readonly Color InactiveText = Colors.Black;
 
         private readonly SettingsResetService _resetService;
         private readonly ThemeService _themeService;
         private readonly IOrientationService _orientation;
-        private bool _factoryDefaultsUiReady;
+        private bool _defaultsUiReady;
 
         public Color PanelBackgroundColor => _themeService.PanelBackgroundColor;
         public Color ContrastingTextColor => _themeService.ContrastingTextColor;
@@ -31,23 +32,28 @@ namespace musicmate.Pages
                     OnPropertyChanged(nameof(PanelBackgroundColor));
                     OnPropertyChanged(nameof(ContrastingTextColor));
                 }
-                if (e.PropertyName == nameof(ThemeService.ButtonBackgroundColor))
-                    UpdateActiveDefaultsButtonHighlight();
             };
-            _resetService.PropertyChanged += (_, e) =>
+            _resetService.PropertyChanged += OnResetServicePropertyChanged;
+        }
+
+        private void OnResetServicePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is nameof(SettingsResetService.AreFactoryDefaultsApplied)
+                or nameof(SettingsResetService.AreCustomDefaultsApplied)
+                or nameof(SettingsResetService.IsCurrentSavedAsCustomDefaults)
+                or nameof(SettingsResetService.HasCustomDefaults))
             {
-                if (e.PropertyName == nameof(SettingsResetService.AreFactoryDefaultsApplied))
-                    UpdateActiveDefaultsButtonHighlight();
-            };
+                UpdateCustomDefaultsButtonState();
+                UpdateActiveDefaultsButtonHighlight();
+            }
         }
 
         protected override void OnAppearing()
         {
             _orientation?.ForceLandscape();
             base.OnAppearing();
-            // Evaluate before painting so we never flash the wrong Factory Defaults color.
-            _resetService.EvaluateAreFactoryDefaultsApplied();
-            _factoryDefaultsUiReady = true;
+            _resetService.EvaluateDefaultsButtonHighlightState();
+            _defaultsUiReady = true;
             UpdateCustomDefaultsButtonState();
             UpdateActiveDefaultsButtonHighlight();
         }
@@ -59,39 +65,22 @@ namespace musicmate.Pages
 
         private void UpdateActiveDefaultsButtonHighlight()
         {
-            if (!_factoryDefaultsUiReady)
+            if (!_defaultsUiReady)
                 return;
 
-            var normal = _themeService.ButtonBackgroundColor;
+            var state = _resetService.EvaluateDefaultsButtonHighlightState();
 
-            if (_resetService.AreFactoryDefaultsApplied)
-            {
-                ApplyDefaultsButtonHighlight(
-                    FactoryResetButton,
-                    FactoryDefaultsActiveBackground,
-                    ThemeColorContrast.GetContrastingTextColor(FactoryDefaultsActiveBackground));
-            }
-            else
-            {
-                ApplyDefaultsButtonHighlight(
-                    FactoryResetButton,
-                    FactoryDefaultsInactiveBackground,
-                    FactoryDefaultsInactiveText);
-            }
-
-            ApplyDefaultsButtonHighlight(
-                RestoreCustomDefaultsButton,
-                _resetService.ActiveDefaults == ActiveDefaultsSet.Custom
-                    ? Colors.Green
-                    : normal);
-            SaveCustomDefaultsButton.BackgroundColor = normal;
-            SaveCustomDefaultsButton.TextColor = ThemeColorContrast.GetContrastingTextColor(normal);
+            ApplyDefaultsButtonHighlight(FactoryResetButton, state.FactoryActive);
+            ApplyDefaultsButtonHighlight(RestoreCustomDefaultsButton, state.CustomActive);
+            ApplyDefaultsButtonHighlight(SaveCustomDefaultsButton, state.SaveCustomActive);
         }
 
-        private static void ApplyDefaultsButtonHighlight(Button button, Color background)
+        private static void ApplyDefaultsButtonHighlight(Button button, bool active)
         {
             ApplyDefaultsButtonHighlight(
-                button, background, ThemeColorContrast.GetContrastingTextColor(background));
+                button,
+                active ? ActiveBackground : InactiveBackground,
+                active ? ActiveText : InactiveText);
         }
 
         private static void ApplyDefaultsButtonHighlight(Button button, Color background, Color text)
@@ -157,6 +146,7 @@ namespace musicmate.Pages
 
             _resetService.SaveCustomDefaultsFromCurrent();
             UpdateCustomDefaultsButtonState();
+            UpdateActiveDefaultsButtonHighlight();
             await DisplayAlertAsync("Saved", "Current settings have been saved as your custom defaults.", "OK");
         }
 
@@ -180,6 +170,7 @@ namespace musicmate.Pages
                 return;
 
             _resetService.RestoreCustomDefaults();
+            UpdateCustomDefaultsButtonState();
             UpdateActiveDefaultsButtonHighlight();
             await DisplayAlertAsync("Restored", "Settings have been restored from your custom defaults.", "OK");
         }

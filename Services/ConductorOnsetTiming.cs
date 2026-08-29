@@ -4,7 +4,8 @@ namespace musicmate.Services;
 
 /// <summary>
 /// Conductor-anchored note onset timing: expected times are fixed to the session/conductor
-/// start and Music BPM. Used when <see cref="NoteSessionService.ShowConductorCues"/> is on.
+/// start and Music BPM. Live acceptance uses this whenever practice notes are active
+/// (visual conductor cues are optional via <see cref="NoteSessionService.ShowConductorCues"/>).
 /// </summary>
 public static class ConductorOnsetTiming
 {

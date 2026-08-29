@@ -114,6 +114,13 @@ namespace musicmate.Drawables
         private string ActiveNotationKey
             => !string.IsNullOrWhiteSpace(NotationKeyOverride) ? NotationKeyOverride! : _session.Key;
 
+        /// <summary>
+        /// Music-page Tuner reference staff only — not Ear/Singing interval reveal panels
+        /// (<see cref="OmitStaffHeader"/>).
+        /// </summary>
+        private bool IsTunerReferenceStaff
+            => _session.Tune == "Tuner" && !OmitStaffHeader;
+
         /// <summary>Result of assigning whole measures to upper/lower staves by width.</summary>
         public sealed class StaffMeasureSplitResult
         {
@@ -173,6 +180,8 @@ namespace musicmate.Drawables
         private bool _horizontalScreenStage;
 
         private const float AccidentalRightGap = 0.5f;
+        /// <summary>Minimum clear ink between a body accidental and the notehead left edge (px).</summary>
+        private const float MinimumAccidentalNoteGap = 4f;
         /// <summary>Extra clear ink before a note that draws a body accidental (e.g. A → B♭).</summary>
         private const float AccidentalLeadingInkPad = 4f;
         private const float FlatAccidentalExtraInkPad = 2f;
@@ -332,14 +341,23 @@ namespace musicmate.Drawables
         private float KeySigSymbolWidth()
             => CompactAccidentalRefPx * (_layout.Sls / 12f) * KeySigAccidentalScale() * ArpeggioKeySigSizeBoost();
 
-        private float BodyAccidentalSymbolWidth(bool isFlat = false)
+        private float BodyAccidentalSymbolWidth(bool isFlat = false, bool isNatural = false)
         {
             if (OmitStaffHeader)
             {
-                string smufl = isFlat ? "\uE260" : "\uE262";
+                string smufl = isFlat ? "\uE260" : isNatural ? "\uE261" : "\uE262";
                 if (SmuFLGlyphMetrics.TryMeasure(smufl, OmitHeaderSmuFLFontSize, out var m))
                     return Math.Max(m.Width, OmitHeaderStaffSpace * (isFlat ? 0.90f : 0.75f));
                 return OmitHeaderStaffSpace * (isFlat ? OmitHeaderAccidentalColumnSpaces : 0.85f);
+            }
+
+            float fontSize = BodyAccidentalFontSize(isFlat, isNatural);
+            string bodySmufl = isFlat ? "\uE260" : isNatural ? "\uE261" : "\uE262";
+            if (SmuFLGlyphMetrics.TryMeasure(bodySmufl, fontSize, out var measured))
+            {
+                float fallback = CompactAccidentalRefPx * (_layout.Sls / 12f) * BodyAccidentalGlyphScale()
+                    * (isFlat ? BodyFlatSizeBoost : 1f);
+                return Math.Max(measured.Width, fallback);
             }
 
             return CompactAccidentalRefPx * (_layout.Sls / 12f) * BodyAccidentalGlyphScale()
@@ -356,26 +374,45 @@ namespace musicmate.Drawables
         private float BodyAccidentalDrawWidth(bool isFlat, bool isNatural = false)
             => isFlat
                 ? BodyAccidentalSymbolWidth(isFlat: true)
-                : BodyAccidentalSymbolWidth() * (isNatural ? 0.92f : 1.0f);
+                : BodyAccidentalSymbolWidth(isNatural: isNatural) * (isNatural ? 0.92f : 1.0f);
 
-        private float NoteHeadLeft(float centerX) => centerX - _layout.NoteHeadR;
+        /// <summary>Left edge of the drawn notehead ellipse (matches <see cref="DrawNote"/>).</summary>
+        private float NoteHeadVisualHalfWidth()
+            => OmitStaffHeader ? OmitHeaderNoteHeadHalfWidth : NoteHeadDrawR(filled: true);
+
+        private float NoteHeadLeft(float centerX) => centerX - NoteHeadVisualHalfWidth();
 
         /// <summary>Gap before notehead; naturals use a tighter gap than sharps/flats.</summary>
-        private float BodyAccidentalRightGapPxFor(bool isNatural)
+        private float BodyAccidentalRightGapPxFor(bool isNatural, bool isFlat = false)
         {
             if (OmitStaffHeader)
                 return OmitHeaderAccidentalGap;
-            return isNatural
+            float gap = isNatural
                 ? Math.Max(2f * BodyAccidentalGlyphScale(), AccidentalRightGap * _layout.Sls * 0.06f)
                 : BodyAccidentalRightGapPx;
+            gap = Math.Max(gap, MinimumAccidentalNoteGap);
+            if (isFlat)
+                gap += FlatAccidentalExtraInkPad;
+            return gap;
         }
 
-        private float AccidentalBoxRight(float noteCenterX, bool isNatural = false)
-            => NoteHeadLeft(noteCenterX) - BodyAccidentalRightGapPxFor(isNatural);
+        private float AccidentalBoxRight(float noteCenterX, bool isFlat, bool isNatural = false)
+            => NoteHeadLeft(noteCenterX) - BodyAccidentalRightGapPxFor(isNatural, isFlat);
 
-        /// <summary>Left edge of accidental draw box; right edge is <see cref="AccidentalRightGap"/> before notehead.</summary>
+        /// <summary>Left edge of accidental draw box; right edge clears the notehead by <see cref="BodyAccidentalRightGapPxFor"/>.</summary>
         private float AccidentalBoxLeft(float noteCenterX, bool isFlat, bool isNatural = false)
-            => AccidentalBoxRight(noteCenterX, isNatural) - BodyAccidentalDrawWidth(isFlat, isNatural);
+            => AccidentalBoxRight(noteCenterX, isFlat, isNatural) - BodyAccidentalDrawWidth(isFlat, isNatural);
+
+        private void ResolveBodyAccidentalHorizontalBounds(
+            float noteCenterX,
+            bool isFlat,
+            bool isNatural,
+            out float boxLeft,
+            out float boxRight)
+        {
+            boxRight = AccidentalBoxRight(noteCenterX, isFlat, isNatural);
+            boxLeft = boxRight - BodyAccidentalDrawWidth(isFlat, isNatural);
+        }
 
         /// <summary>Leftmost ink edge of a note/rest group (accidental or notehead).</summary>
         private float NoteGroupLeft(float centerX, bool isRest, bool hasAcc, bool isFlatAcc, bool isNaturalAcc = false, NoteDuration duration = NoteDuration.Quarter)
@@ -401,8 +438,8 @@ namespace musicmate.Drawables
         /// <summary>Distance from note center to the left edge of its drawable group.</summary>
         private float NoteCenterLeftReach(bool isRest, bool hasAcc, bool isFlatAcc, bool isNaturalAcc = false, NoteDuration duration = NoteDuration.Quarter)
             => hasAcc
-                ? _layout.NoteHeadR + BodyAccidentalRightGapPxFor(isNaturalAcc) + BodyAccidentalDrawWidth(isFlatAcc, isNaturalAcc)
-                  + AccidentalLeadingInkPad + (isFlatAcc ? FlatAccidentalExtraInkPad : 0f)
+                ? NoteHeadVisualHalfWidth() + BodyAccidentalRightGapPxFor(isNaturalAcc, isFlatAcc) + BodyAccidentalDrawWidth(isFlatAcc, isNaturalAcc)
+                  + AccidentalLeadingInkPad
                 : NoteHalfWidth(isRest, duration);
 
         /// <summary>Distance from note center to its right drawable edge.</summary>
@@ -431,10 +468,13 @@ namespace musicmate.Drawables
         {
             if (noteLayouts[index].HasAccidental)
             {
-                noteLayouts[index].AccidentalX = AccidentalBoxLeft(
+                ResolveBodyAccidentalHorizontalBounds(
                     noteLayouts[index].X,
                     noteLayouts[index].AccidentalIsFlat,
-                    noteLayouts[index].AccidentalIsNatural);
+                    noteLayouts[index].AccidentalIsNatural,
+                    out float boxLeft,
+                    out _);
+                noteLayouts[index].AccidentalX = boxLeft;
             }
         }
 
@@ -935,7 +975,7 @@ namespace musicmate.Drawables
                 UpperNotes, UpperNoteStates, upperNoteLayouts, upperBarLayouts,
                 UpperBarBeats, upperBeatOrigin,
                 UpperAlpha, IsUpperActive, IsUpperActive ? ActiveNoteIndex : -1,
-                safeLeft, safeRight, layoutRightLimit, upperStaffMargin);
+                safeLeft, safeRight, layoutRightLimit, upperStaffMargin, "upper");
 
             if (_session.Tune != "Tuner" && !SingleStaffLayout)
             {
@@ -943,7 +983,7 @@ namespace musicmate.Drawables
                     LowerNotes, LowerNoteStates, lowerNoteLayouts, lowerBarLayouts,
                     LowerBarBeats, lowerBeatOrigin,
                     LowerAlpha, !IsUpperActive, !IsUpperActive ? ActiveNoteIndex : -1,
-                    safeLeft, safeRight, layoutRightLimit, lowerStaffMargin);
+                    safeLeft, safeRight, layoutRightLimit, lowerStaffMargin, "lower");
             }
         }
 
@@ -2791,7 +2831,7 @@ namespace musicmate.Drawables
             LowerBarBeats ??= new();
 
             // Tuner must show at most one note on a single staff — never leftover Music notes.
-            if (_session.Tune == "Tuner")
+            if (IsTunerReferenceStaff)
                 EnforceTunerSingleNoteDisplay();
 
             if (dirtyRect.Width < 32f || dirtyRect.Height < 32f)
@@ -2908,7 +2948,7 @@ namespace musicmate.Drawables
                 SanitizeLayoutPositions(upperNoteLayouts, upperBarLayouts);
                 SanitizeLayoutPositions(lowerNoteLayouts, lowerBarLayouts);
 
-                if (_session.Tune == "Tuner")
+                if (IsTunerReferenceStaff)
                 {
                     upperBarLayouts = Array.Empty<BarLayout>();
                     CenterTunerReferenceNote(
@@ -3018,7 +3058,7 @@ namespace musicmate.Drawables
             SanitizeLayoutPositions(lowerNoteLayouts, lowerBarLayouts);
 
             // Tuner: discard any residual bars and keep the selected note centered.
-            if (_session.Tune == "Tuner")
+            if (IsTunerReferenceStaff)
             {
                 upperBarLayouts = Array.Empty<BarLayout>();
                 CenterTunerReferenceNote(
@@ -3159,37 +3199,14 @@ namespace musicmate.Drawables
                     pairIdx.Add(i);
             }
 
-            // If only one highlighted note made it into states, still try to keep its
-            // within-measure partner on-screen (the usual "lone yellow at the end" case).
-            if (pairIdx.Count == 1)
-            {
-                int only = pairIdx[0];
-                int measure = notes[only].MeasureIndex ?? 0;
-                for (int j = only + 1; j < notes.Count; j++)
-                {
-                    if (notes[j].IsRest)
-                        continue;
-                    if ((notes[j].MeasureIndex ?? 0) != measure)
-                        break;
-                    pairIdx.Add(j);
-                    break;
-                }
-
-                if (pairIdx.Count == 1)
-                {
-                    for (int j = only - 1; j >= 0; j--)
-                    {
-                        if (notes[j].IsRest)
-                            continue;
-                        if ((notes[j].MeasureIndex ?? 0) != measure)
-                            break;
-                        pairIdx.Insert(0, j);
-                        break;
-                    }
-                }
-            }
-
+            // Only pan notes the quiz actually highlights — never invent a partner past
+            // the active pair (that pulled a following note into view as if it were current).
             if (pairIdx.Count == 0)
+                return;
+
+            // Final interval pair: keep the fitted layout so Current notes stay on the staff
+            // (panning here pulled the last yellow targets past the double bar).
+            if (IsFinalSightTrainingPair(notes, pairIdx))
                 return;
 
             float head = Math.Max(4f, _layout.NoteHeadR);
@@ -3250,6 +3267,46 @@ namespace musicmate.Drawables
             ShiftNoteAndBarLayouts(noteLayouts, barLayouts, shift);
             StaffLog($"[Staff] Sight pair pan shift={shift:F1} pair=[{pairLeft:F0},{pairRight:F0}] " +
                      $"visible=[{visibleLeft:F0},{visibleRight:F0}] count={pairIdx.Count}");
+        }
+
+        /// <summary>
+        /// True when the highlighted pair is the last two pitched notes in the melody
+        /// (Interval Sight Training's final question).
+        /// </summary>
+        private static bool IsFinalSightTrainingPair(List<GeneratedNote> notes, List<int> pairIdx)
+        {
+            if (pairIdx.Count != 2)
+                return false;
+
+            int lastPitched = -1;
+            for (int i = notes.Count - 1; i >= 0; i--)
+            {
+                if (!notes[i].IsRest)
+                {
+                    lastPitched = i;
+                    break;
+                }
+            }
+
+            if (lastPitched < 1)
+                return false;
+
+            int prevPitched = -1;
+            for (int i = lastPitched - 1; i >= 0; i--)
+            {
+                if (!notes[i].IsRest)
+                {
+                    prevPitched = i;
+                    break;
+                }
+            }
+
+            if (prevPitched < 0)
+                return false;
+
+            int a = Math.Min(pairIdx[0], pairIdx[1]);
+            int b = Math.Max(pairIdx[0], pairIdx[1]);
+            return a == prevPitched && b == lastPitched;
         }
 
         private void ShiftNoteAndBarLayouts(NoteLayout[] noteLayouts, BarLayout[] barLayouts, float shift)
@@ -3800,7 +3857,12 @@ namespace musicmate.Drawables
             if (right <= left)
                 return;
 
-            noteLayouts[0].X = (left + right) * 0.5f;
+            float targetCenter = (left + right) * 0.5f;
+            float groupLeft = NoteGroupLeftFromLayout(noteLayouts[0]);
+            float groupRight = noteLayouts[0].X + NoteCenterTrailingReach(
+                noteLayouts[0].IsRest, noteLayouts[0].Duration);
+            float groupCenter = (groupLeft + groupRight) * 0.5f;
+            noteLayouts[0].X += targetCenter - groupCenter;
             SyncAccidentalX(noteLayouts, 0);
         }
 
@@ -4950,13 +5012,31 @@ namespace musicmate.Drawables
             float alpha,
             bool isActive, int currentIdx,
             float safeLeft, float safeRight, float layoutRightLimit,
-            float staffLeftMargin)
+            float staffLeftMargin,
+            string staffLabel)
         {
+            if (ChromaticMidi61Diagnostics.IsEnabled)
+                ChromaticMidi61Diagnostics.ResetDrawPass(staffLabel);
+
             if (notes.Count == 0 || noteLayouts.Length == 0)
+            {
+                if (ChromaticMidi61Diagnostics.IsEnabled)
+                {
+                    ChromaticMidi61Diagnostics.RecordSkip(ChromaticMidi61Diagnostics.MidiCs4,
+                        $"DrawStaffDynamic ({staffLabel}): empty notes or layouts");
+                    ChromaticMidi61Diagnostics.FinalizeDrawPass();
+                }
                 return;
+            }
             if (notes.Count != noteLayouts.Length)
             {
                 StaffLog($"[Staff] Skipping staff draw: {notes.Count} notes vs {noteLayouts.Length} layouts");
+                if (ChromaticMidi61Diagnostics.IsEnabled)
+                {
+                    ChromaticMidi61Diagnostics.RecordSkip(ChromaticMidi61Diagnostics.MidiCs4,
+                        $"DrawStaffDynamic ({staffLabel}): note/layout count mismatch");
+                    ChromaticMidi61Diagnostics.FinalizeDrawPass();
+                }
                 return;
             }
 
@@ -4995,10 +5075,26 @@ namespace musicmate.Drawables
                 var note = notes[i];
                 var layout = noteLayouts[i];
                 if (!float.IsFinite(layout.X))
+                {
+                    if (ChromaticMidi61Diagnostics.IsEnabled && note.MidiNumber == ChromaticMidi61Diagnostics.MidiCs4)
+                        ChromaticMidi61Diagnostics.RecordSkip(note.MidiNumber,
+                            $"DrawStaffDynamic ({staffLabel}): non-finite layout.X at index {i}");
                     continue;
+                }
 
                 var state = (states.Length > i) ? states[i] : StaffNoteState.Pending;
                 double beat = (note.BeatPosition ?? 0.0) - beatOrigin;
+
+                if (i > 0)
+                {
+                    int prevMeasure = notes[i - 1].MeasureIndex ?? -1;
+                    int curMeasure = note.MeasureIndex ?? prevMeasure;
+                    if (curMeasure != prevMeasure)
+                    {
+                        accHistory.Clear();
+                        barCancelledAccidentals.Clear();
+                    }
+                }
 
                 ResetAccidentalStateIfCrossedBar(beat, prevBeat, barBeats, beatOrigin,
                     accHistory, barCancelledAccidentals);
@@ -5029,9 +5125,37 @@ namespace musicmate.Drawables
                     float? stemEndOverride = isBeamed && beamStemEnds.TryGetValue(i, out float beamedEndY)
                         ? beamedEndY
                         : null;
+
+                    string accidentalType = "none";
+                    bool drawAccidental = false;
+                    if (TryResolveBodyAccidental(note, accHistory, barCancelledAccidentals, out var effAcc, out bool drawAcc))
+                    {
+                        drawAccidental = drawAcc && effAcc != Accidental.None;
+                        accidentalType = drawAccidental ? effAcc.ToString() : "none";
+                    }
+
+                    EstimateNoteHeadBounds(note.Duration, layout.X, ny, out float headLeft, out float headTop, out float headW, out float headH);
+
+                    if (ChromaticMidi61Diagnostics.IsEnabled
+                        && (note.MidiNumber == ChromaticMidi61Diagnostics.MidiC4
+                            || note.MidiNumber == ChromaticMidi61Diagnostics.MidiCs4
+                            || note.MidiNumber == ChromaticMidi61Diagnostics.MidiD4))
+                    {
+                        ChromaticMidi61Diagnostics.RecordDrawLoop(
+                            note, i, layout.X, ny, dirtyRect, safeLeft, layoutRightLimit,
+                            headLeft, headTop, headW, headH, drawAccidental, accidentalType);
+                    }
+
                     DrawNote(canvas, note.Duration, layout.X, ny, staffTop, staffBot, ink, state, fadeAlpha,
                              forceStemUp, isBeamed, stemEndOverride,
                              out float stemTipX, out float stemTipY);
+                    if (ChromaticMidi61Diagnostics.IsEnabled
+                        && (note.MidiNumber == ChromaticMidi61Diagnostics.MidiC4
+                            || note.MidiNumber == ChromaticMidi61Diagnostics.MidiCs4
+                            || note.MidiNumber == ChromaticMidi61Diagnostics.MidiD4))
+                    {
+                        ChromaticMidi61Diagnostics.RecordDrawNoteHead(note.MidiNumber);
+                    }
 
                     if (isBeamed)
                         beamStemTips[i] = (stemTipX, stemTipY, ResolveDrawnNoteColor(state, ink, fadeAlpha), note.Duration);
@@ -5039,7 +5163,15 @@ namespace musicmate.Drawables
                     DrawLedgerLines(canvas, note, layout.X, staffTop, staffBot, ink, fadeAlpha);
                     DrawAccidental(
                         canvas, note, notes, noteLayouts, i, barLayouts, barBeats, beatOrigin,
-                        ny, ink, accHistory, barCancelledAccidentals, fadeAlpha, headerRightAbs);
+                        ny, ink, accHistory, barCancelledAccidentals, fadeAlpha, headerRightAbs,
+                        out bool accidentalDrawReached);
+                    if (ChromaticMidi61Diagnostics.IsEnabled
+                        && (note.MidiNumber == ChromaticMidi61Diagnostics.MidiC4
+                            || note.MidiNumber == ChromaticMidi61Diagnostics.MidiCs4
+                            || note.MidiNumber == ChromaticMidi61Diagnostics.MidiD4))
+                    {
+                        ChromaticMidi61Diagnostics.RecordDrawAccidental(note.MidiNumber, accidentalDrawReached, accidentalType);
+                    }
 
                     var nameDisplay = _session.NoteNameDisplay;
                     bool showName = _session.Tune != "Tuner"
@@ -5056,6 +5188,31 @@ namespace musicmate.Drawables
 
             // Draw beams using pre-computed stem positions
             DrawBeams(canvas, beamGroups, beamStemTips, barLayouts);
+
+            if (ChromaticMidi61Diagnostics.IsEnabled)
+                ChromaticMidi61Diagnostics.FinalizeDrawPass();
+        }
+
+        private void EstimateNoteHeadBounds(
+            NoteDuration duration, float x, float y,
+            out float headLeft, out float headTop, out float headW, out float headH)
+        {
+            bool filled = duration != NoteDuration.Whole && duration != NoteDuration.Half;
+            if (OmitStaffHeader)
+            {
+                headW = OmitHeaderStaffSpace * OmitHeaderNoteHeadWidthSpaces;
+                headH = OmitHeaderStaffSpace * OmitHeaderNoteHeadHeightSpaces;
+                headLeft = x - headW * 0.5f;
+                headTop = y - headH * 0.5f;
+            }
+            else
+            {
+                float drawR = NoteHeadDrawR(filled);
+                headW = drawR * 2f;
+                headH = drawR * NoteHeadHeightFactor;
+                headLeft = x - drawR;
+                headTop = y - drawR * NoteHeadHeightFactor * 0.5f;
+            }
         }
 
         private static double? GetHighlightedConductedBeatRel(
@@ -5713,9 +5870,8 @@ namespace musicmate.Drawables
 
             string key = ActiveNotationKey;
             string scale = ActiveKeySignatureScale();
-            bool suppressKeySig = _session.Tune == "Tuner"
-                || _session.Tune == "Practice Tune"
-                || (_session.Tune != "Arpeggio" && scale == "Chromatic");
+            // Body accidentals must use the same suppress decision (see IsKeySignatureVisiblyDrawn).
+            bool suppressKeySig = !IsKeySignatureVisiblyDrawn();
             int accCount = suppressKeySig ? 0 : KeySignatureRules.GetAccidentalCount(key, scale);
 
             float clefX = safeLeft + clefPad;
@@ -5924,7 +6080,7 @@ namespace musicmate.Drawables
         /// <summary>Tuner notes are always green; other pages keep their existing note colors.</summary>
         private Color ResolveDrawnNoteColor(StaffNoteState state, Color ink, byte fadeAlpha)
         {
-            if (_session.Tune == "Tuner")
+            if (IsTunerReferenceStaff)
                 return ApplyAlpha(Color.FromArgb("#22AA44"), fadeAlpha);
 
             // Match the historical DrawNote palette (Current = Gold on Music/Sight).
@@ -6120,19 +6276,34 @@ namespace musicmate.Drawables
             Dictionary<(char, int), Accidental>? history,
             HashSet<(char, int)>? barCancelled,
             byte fadeAlpha,
-            float headerRightAbs)
+            float headerRightAbs,
+            out bool drawReached)
         {
+            drawReached = false;
             if (index < 0 || index >= noteLayouts.Length)
+            {
+                if (ChromaticMidi61Diagnostics.IsEnabled && note.MidiNumber == ChromaticMidi61Diagnostics.MidiCs4)
+                    ChromaticMidi61Diagnostics.RecordSkip(note.MidiNumber, "DrawAccidental: index out of range");
                 return;
+            }
 
             if (!TryResolveBodyAccidental(note, history, barCancelled, out var eff, out bool draw))
+            {
+                if (ChromaticMidi61Diagnostics.IsEnabled && note.MidiNumber == ChromaticMidi61Diagnostics.MidiCs4)
+                    ChromaticMidi61Diagnostics.RecordSkip(note.MidiNumber, "DrawAccidental: TryResolveBodyAccidental returned false");
                 return;
+            }
 
             if (history != null && eff != Accidental.None)
                 history[(note.Letter, note.Octave)] = eff;
 
             if (!draw || eff == Accidental.None)
+            {
+                if (ChromaticMidi61Diagnostics.IsEnabled && note.MidiNumber == ChromaticMidi61Diagnostics.MidiCs4)
+                    ChromaticMidi61Diagnostics.RecordSkip(note.MidiNumber,
+                        $"DrawAccidental: suppressed draw={draw} eff={eff}");
                 return;
+            }
 
             canvas.SaveState();
             try
@@ -6146,7 +6317,12 @@ namespace musicmate.Drawables
                     Accidental.DoubleFlat => "𝄫",
                     _ => ""
                 };
-                if (string.IsNullOrEmpty(glyph)) return;
+                if (string.IsNullOrEmpty(glyph))
+                {
+                    if (ChromaticMidi61Diagnostics.IsEnabled && note.MidiNumber == ChromaticMidi61Diagnostics.MidiCs4)
+                        ChromaticMidi61Diagnostics.RecordSkip(note.MidiNumber, "DrawAccidental: empty glyph");
+                    return;
+                }
 
                 bool isFlat = IsFlatBodyAccidental(eff);
                 bool isNatural = eff == Accidental.Natural;
@@ -6156,11 +6332,13 @@ namespace musicmate.Drawables
                     notes, noteLayouts, barLayouts, barBeats, beatOrigin,
                     index, headerRightAbs, isFlat, isNatural);
 
-                float boxRight = AccidentalBoxRight(noteLayouts[index].X, isNatural);
-                float boxLeft = boxRight - symW;
+                ResolveBodyAccidentalHorizontalBounds(
+                    noteLayouts[index].X, isFlat, isNatural, out float boxLeft, out float boxRight);
+                noteLayouts[index].AccidentalX = boxLeft;
                 float boxW = Math.Max(1f, symW);
 
                 canvas.FontColor = ApplyAlpha(ink, fadeAlpha);
+                drawReached = true;
 
                 if (isFlat)
                 {
@@ -6548,14 +6726,39 @@ namespace musicmate.Drawables
                 : _session.EffectiveScale;
         }
 
+        /// <summary>
+        /// True when a key signature is actually engraved on the staff.
+        /// Chromatic, Tuner, Practice Tune, and omit-header modes draw no signature.
+        /// Accidental-state rules must follow this flag — never the selected key alone —
+        /// or flats/sharps implied by a hidden signature are wrongly suppressed.
+        /// </summary>
+        private bool IsKeySignatureVisiblyDrawn()
+        {
+            if (OmitStaffHeader)
+                return false;
+            if (_session.Tune is "Tuner" or "Practice Tune")
+                return false;
+            // Chromatic walks start on the selected tonic but show no key signature.
+            if (_session.Tune != "Arpeggio" && ActiveKeySignatureScale() == "Chromatic")
+                return false;
+            return true;
+        }
+
+        /// <summary>
+        /// Key/scale used for body-accidental implication. When the signature is not drawn,
+        /// treat as C major (no letter alterations) so every written accidental is explicit.
+        /// </summary>
+        private (string Key, string Scale) DisplayedKeySignature()
+            => IsKeySignatureVisiblyDrawn()
+                ? (ActiveNotationKey, ActiveKeySignatureScale())
+                : ("C", "Major");
+
         private float DrawKeySignature(ICanvas canvas, float staffTop, float staffMid, Color ink)
         {
             float symW = KeySigGlyphWidth();
             float symSlot = KeySigSymbolSlot();
 
-            if (_session.Tune == "Tuner"
-                || _session.Tune == "Practice Tune"
-                || (_session.Tune != "Arpeggio" && ActiveKeySignatureScale() == "Chromatic"))
+            if (!IsKeySignatureVisiblyDrawn())
                 return _headerMetrics.KeySigStartX;
 
             string key = ActiveNotationKey;
@@ -6634,31 +6837,37 @@ namespace musicmate.Drawables
         }
 
         private string? GetSignatureAccidentalForLetter(char letter)
-            => KeySignatureRules.GetSignatureAccidentalForLetter(letter, ActiveNotationKey, ActiveKeySignatureScale());
+        {
+            var (key, scale) = DisplayedKeySignature();
+            return KeySignatureRules.GetSignatureAccidentalForLetter(letter, key, scale);
+        }
 
         private bool IsAccidentalInKeySig(Accidental accidental, char letter)
         {
             if (accidental == Accidental.None || accidental == Accidental.Natural) return false;
 
-            string scale = ActiveKeySignatureScale();
-            bool useFlats = KeySignatureRules.KeySignatureUsesFlats(ActiveNotationKey, scale);
+            var (key, scale) = DisplayedKeySignature();
+            bool useFlats = KeySignatureRules.KeySignatureUsesFlats(key, scale);
             bool typeMatch = useFlats
                 ? accidental == Accidental.Flat
                 : accidental == Accidental.Sharp;
             if (!typeMatch) return false;
 
-            return KeySignatureRules.IsLetterInKeySignature(letter, ActiveNotationKey, scale);
+            return KeySignatureRules.IsLetterInKeySignature(letter, key, scale);
         }
 
         /// <summary>
-        /// Returns true if this note's letter is governed by the key signature
-        /// (i.e. the key sig applies a sharp or flat to this pitch-class),
+        /// Returns true if this note's letter is governed by the <em>drawn</em> key signature
+        /// (i.e. the visible signature applies a sharp or flat to this letter),
         /// regardless of the accidental currently on the note.
         /// Used to detect when a key-sig note is given a different accidental,
         /// cancelling the key sig within the bar.
         /// </summary>
         private bool IsNoteInKeySig(GeneratedNote note)
-            => KeySignatureRules.IsLetterInKeySignature(note.Letter, ActiveNotationKey, ActiveKeySignatureScale());
+        {
+            var (key, scale) = DisplayedKeySignature();
+            return KeySignatureRules.IsLetterInKeySignature(note.Letter, key, scale);
+        }
 
 #if DEBUG
         private static void StaffLog(string message)

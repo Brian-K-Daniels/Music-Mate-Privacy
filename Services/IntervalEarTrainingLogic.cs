@@ -45,6 +45,31 @@ namespace musicmate.Services
             int Semitones,
             bool IsAscending);
 
+        /// <summary>
+        /// Rewrites both written MIDIs for a new instrument transpose while preserving
+        /// the sounding concert pitches (uses <see cref="TunerReferenceNoteCatalog"/>).
+        /// </summary>
+        public static IntervalPitches RetransposePreservingConcert(
+            IntervalPitches pitches,
+            int previousTransposeOffset,
+            int newTransposeOffset)
+        {
+            if (previousTransposeOffset == newTransposeOffset)
+                return pitches;
+
+            int startConcert = TunerReferenceNoteCatalog.ToConcertMidi(
+                pitches.StartWrittenMidi, previousTransposeOffset);
+            int endConcert = TunerReferenceNoteCatalog.ToConcertMidi(
+                pitches.EndWrittenMidi, previousTransposeOffset);
+            return pitches with
+            {
+                StartWrittenMidi = TunerReferenceNoteCatalog.FromConcertMidi(
+                    startConcert, newTransposeOffset),
+                EndWrittenMidi = TunerReferenceNoteCatalog.FromConcertMidi(
+                    endConcert, newTransposeOffset),
+            };
+        }
+
         public static int ClampNoteDurationMs(int ms)
             => Math.Clamp(ms, MinNoteDurationMs, MaxNoteDurationMs);
 

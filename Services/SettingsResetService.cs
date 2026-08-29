@@ -27,6 +27,8 @@ namespace musicmate.Services
         private readonly NoteSessionService _session;
         private readonly ThemeService _theme;
         private bool _areFactoryDefaultsApplied;
+        private bool _areCustomDefaultsApplied;
+        private bool _isCurrentSavedAsCustomDefaults;
         private bool _suppressFactoryEvaluation;
         private bool _isEvaluating;
 
@@ -59,13 +61,38 @@ namespace musicmate.Services
         public bool AreFactoryDefaultsApplied
         {
             get => _areFactoryDefaultsApplied;
-            private set
-            {
-                if (_areFactoryDefaultsApplied == value)
-                    return;
-                _areFactoryDefaultsApplied = value;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AreFactoryDefaultsApplied)));
-            }
+            private set => SetHighlightFlag(ref _areFactoryDefaultsApplied, value, nameof(AreFactoryDefaultsApplied));
+        }
+
+        /// <summary>
+        /// True when saved custom defaults exist, current settings match them, and factory
+        /// defaults do not (factory takes precedence on the Custom Defaults button).
+        /// </summary>
+        public bool AreCustomDefaultsApplied
+        {
+            get => _areCustomDefaultsApplied;
+            private set => SetHighlightFlag(ref _areCustomDefaultsApplied, value, nameof(AreCustomDefaultsApplied));
+        }
+
+        /// <summary>
+        /// True when saved custom defaults exist and current settings exactly match them.
+        /// Drives the "Make Custom Default Settings equal to Current Settings" button.
+        /// </summary>
+        public bool IsCurrentSavedAsCustomDefaults
+        {
+            get => _isCurrentSavedAsCustomDefaults;
+            private set => SetHighlightFlag(
+                ref _isCurrentSavedAsCustomDefaults, value, nameof(IsCurrentSavedAsCustomDefaults));
+        }
+
+        /// <summary>Resolved highlight states for Reset Options buttons.</summary>
+        public DefaultsButtonHighlightState EvaluateDefaultsButtonHighlightState()
+        {
+            EvaluateDefaultsButtonStates();
+            return new DefaultsButtonHighlightState(
+                AreFactoryDefaultsApplied,
+                AreCustomDefaultsApplied,
+                IsCurrentSavedAsCustomDefaults);
         }
 
         public void SetActiveDefaults(ActiveDefaultsSet set)
@@ -76,7 +103,7 @@ namespace musicmate.Services
         /// <see cref="NoteSessionService.PropertyChanged"/>.
         /// </summary>
         public void NotifySettingsChanged()
-            => EvaluateAreFactoryDefaultsApplied();
+            => EvaluateDefaultsButtonStates();
 
         /// <summary>Resets all Settings / Advanced values to factory defaults.</summary>
         public void ResetToFactoryDefaults()
@@ -93,7 +120,7 @@ namespace musicmate.Services
                 _suppressFactoryEvaluation = false;
             }
 
-            EvaluateAreFactoryDefaultsApplied();
+            EvaluateDefaultsButtonStates();
             DebugLog.WriteLine(
                 $"[ResetOptionsTest] After factory reset: Tune={_session.Tune} Scale={_session.SelectedScale} " +
                 $"Key={_session.Key} AccPct={_session.AccidentalPercent} AreFactory={AreFactoryDefaultsApplied}");
@@ -158,6 +185,7 @@ namespace musicmate.Services
             SessionPreferences.Remove(CustomDefaultsJsonKey);
             SessionPreferences.Remove(CustomDefaultsExistsKey);
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasCustomDefaults)));
+            EvaluateDefaultsButtonStates();
         }
 
         private static async Task ClearProgressDatabasesAsync(
@@ -199,6 +227,8 @@ namespace musicmate.Services
             var json = JsonSerializer.Serialize(snapshot);
             SessionPreferences.Set(CustomDefaultsJsonKey, json);
             SessionPreferences.Set(CustomDefaultsExistsKey, true);
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasCustomDefaults)));
+            EvaluateDefaultsButtonStates();
         }
 
         /// <summary>Restores settings from the saved custom defaults.</summary>
@@ -227,10 +257,13 @@ namespace musicmate.Services
                 _suppressFactoryEvaluation = false;
             }
 
-            EvaluateAreFactoryDefaultsApplied();
+            EvaluateDefaultsButtonStates();
         }
 
         public void EvaluateAreFactoryDefaultsApplied()
+            => EvaluateDefaultsButtonStates();
+
+        private void EvaluateDefaultsButtonStates()
         {
             if (_suppressFactoryEvaluation || _isEvaluating)
                 return;
@@ -238,12 +271,46 @@ namespace musicmate.Services
             _isEvaluating = true;
             try
             {
-                AreFactoryDefaultsApplied = MatchesFactoryDefaults(CaptureCurrentSnapshot());
+                var current = CaptureCurrentSnapshot();
+                bool matchesFactory = MatchesFactoryDefaults(current);
+                bool matchesCustom = HasCustomDefaults
+                    && TryLoadSavedCustomDefaultsSnapshot(out var custom)
+                    && current.EqualsSnapshot(custom);
+
+                AreFactoryDefaultsApplied = matchesFactory;
+                AreCustomDefaultsApplied = matchesCustom && !matchesFactory;
+                IsCurrentSavedAsCustomDefaults = matchesCustom;
             }
             finally
             {
                 _isEvaluating = false;
             }
+        }
+
+        private void SetHighlightFlag(ref bool field, bool value, string propertyName)
+        {
+            if (field == value)
+                return;
+            field = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        private bool TryLoadSavedCustomDefaultsSnapshot(out AppSettingsSnapshot snapshot)
+        {
+            snapshot = null!;
+            if (!HasCustomDefaults)
+                return false;
+
+            var json = SessionPreferences.Get(CustomDefaultsJsonKey, string.Empty);
+            if (string.IsNullOrWhiteSpace(json))
+                return false;
+
+            var loaded = JsonSerializer.Deserialize<AppSettingsSnapshot>(json);
+            if (loaded == null)
+                return false;
+
+            snapshot = loaded;
+            return true;
         }
 
         /// <summary>Test / diagnostics: build the factory snapshot for the current instrument level.</summary>
@@ -280,7 +347,7 @@ namespace musicmate.Services
             SessionPreferences.Set(CollectSessionStatsKey, SettingsPageViewModel.DefaultCollectSession);
             SessionPreferences.Set(MaxSessionDbSizeMbKey, SettingsPageViewModel.DefaultMaxSessionDbMb);
             SessionPreferences.Set(MaxAttemptsPerNoteKey, 100);
-            SessionPreferences.Set(AboutPageViewModel.FontSizePreferenceKey, 20.0);
+            SessionPreferences.Set(AboutPageViewModel.FontSizePreferenceKey, AboutFontSizes.Default);
             SessionPreferences.Set(RepeatDelaySecondsKey, 2.0);
             SessionPreferences.Set(
                 IntervalEarTrainingLogic.NoteDurationPreferenceKey,
@@ -355,7 +422,8 @@ namespace musicmate.Services
                 NoteNameDisplay = _session.NoteNameDisplay,
                 ShowConductorCues = _session.ShowConductorCues,
                 ShowSignaturesOnBothStaffs = _session.ShowSignaturesOnBothStaffs,
-                AboutFontSize = SessionPreferences.Get(AboutPageViewModel.FontSizePreferenceKey, 14.0),
+                AboutFontSize = SessionPreferences.Get(
+                    AboutPageViewModel.FontSizePreferenceKey, AboutFontSizes.Default),
                 CollectNoteStats = SessionPreferences.Get(CollectNoteStatsKey, true),
                 CollectSessionStats = SessionPreferences.Get(CollectSessionStatsKey, true),
                 MaxSessionDbSizeMb = SessionPreferences.Get(MaxSessionDbSizeMbKey, 50),
@@ -414,7 +482,7 @@ namespace musicmate.Services
                 NoteNameDisplay = "Current only",
                 ShowConductorCues = false,
                 ShowSignaturesOnBothStaffs = true,
-                AboutFontSize = 14.0,
+                AboutFontSize = AboutFontSizes.Default,
                 CollectNoteStats = SettingsPageViewModel.DefaultCollectNote,
                 CollectSessionStats = SettingsPageViewModel.DefaultCollectSession,
                 MaxSessionDbSizeMb = SettingsPageViewModel.DefaultMaxSessionDbMb,
@@ -471,10 +539,7 @@ namespace musicmate.Services
         }
 
         private bool MatchesFactoryDefaults(AppSettingsSnapshot current)
-        {
-            var factory = BuildFactoryDefaultsSnapshot();
-            return current.EqualsFactory(factory);
-        }
+            => current.EqualsSnapshot(BuildFactoryDefaultsSnapshot());
 
         private static string NormalizeHex(string hex)
             => (hex ?? string.Empty).Trim().ToUpperInvariant();
@@ -601,7 +666,7 @@ namespace musicmate.Services
             public double LevelUpMinOverallPct { get; init; } = LevelUpService.DefaultMinOverallAccuracyPercent;
             public int LevelUpMinNotes { get; init; } = LevelUpService.DefaultMinNotesPerSession;
 
-            public bool EqualsFactory(AppSettingsSnapshot other)
+            public bool EqualsSnapshot(AppSettingsSnapshot other)
             {
                 if (other == null) return false;
                 return StringEq(SelectedScale, other.SelectedScale)
@@ -688,4 +753,9 @@ namespace musicmate.Services
         Factory,
         Custom
     }
+
+    public readonly record struct DefaultsButtonHighlightState(
+        bool FactoryActive,
+        bool CustomActive,
+        bool SaveCustomActive);
 }

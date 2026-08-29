@@ -93,6 +93,12 @@ namespace musicmate.Services
         /// </summary>
         public const int MinPitchPoolAfterMasteryExclusion = 4;
 
+        /// <summary>
+        /// Compile-time sentinel: scale-order walks bypass mastery pool filtering
+        /// (<see cref="BuildPitchPool"/> when <see cref="UseScaleOrder"/> is true).
+        /// </summary>
+        public static bool ScaleWalkMasteryBypassCompiled => true;
+
         /// <summary>Last mastery-omission decision from <see cref="BuildPitchPool"/>.</summary>
         public MasteredNoteOmission.FallbackKind LastMasteryFallback { get; private set; }
             = MasteredNoteOmission.FallbackKind.None;
@@ -1084,7 +1090,33 @@ namespace musicmate.Services
                     fullPool.Add(midi);
             }
 
-            if (ExcludedMidiNumbers.Count == 0 && (!UseScaleOrder && AccidentalPercent <= 0))
+            // Scale-order walks (chromatic, major, etc.) must include every scale degree.
+            // Mastery omission applies to random melodic picking only — filtering the pool
+            // here creates 2-semitone gaps (e.g. C4 → D4 when C#4 is mastered).
+            if (UseScaleOrder)
+            {
+                if (ExcludedMidiNumbers.Count > 0)
+                {
+                    DebugLog.WriteLine(
+                        DebugLogCategory.StaffAndSequence,
+                        $"[MasteryOmit] Scale walk ignores {ExcludedMidiNumbers.Count} mastered " +
+                        $"written MIDI(s) so every scale degree is preserved.");
+                }
+
+                LastMasteryFallback = MasteredNoteOmission.FallbackKind.None;
+                LastMasteryFallbackReason = string.Empty;
+                LastTemporarilyRestoredMidis = Array.Empty<int>();
+                _lastOmissionResult = new MasteredNoteOmission.Result(
+                    fullPool,
+                    MasteredNoteOmission.FallbackKind.None,
+                    string.Empty,
+                    fullPool.Count,
+                    0,
+                    fullPool.Count);
+                return fullPool;
+            }
+
+            if (ExcludedMidiNumbers.Count == 0 && AccidentalPercent <= 0)
                 return fullPool;
 
             // When AccidentalPercent > 0 (random mode only) add chromatic non-scale tones
@@ -1092,7 +1124,7 @@ namespace musicmate.Services
             // entries proportionally: for every 100 diatonic slots we add
             // AccidentalPercent chromatic slots so the random picker naturally hits them
             // at roughly the requested frequency.
-            if (!UseScaleOrder && AccidentalPercent > 0)
+            if (AccidentalPercent > 0)
             {
                 var chromaticPool = new List<int>();
                 for (int midi = minMidi; midi <= maxMidi; midi++)
@@ -1137,9 +1169,8 @@ namespace musicmate.Services
                 return fullPool;
             }
 
-            // Scale walks must keep every degree — callers leave ExcludedMidiNumbers empty
-            // for scales/tunes/arpeggios. Random selection omits mastered midis, then
-            // may temporarily restore the minimum needed for distinct-pitch variety.
+            // Random selection omits mastered midis, then may temporarily restore the
+            // minimum needed for distinct-pitch variety. Scale-order walks bypass this above.
             int minDistinct = ResolveMinDistinctPitches();
             var omission = MasteredNoteOmission.Apply(
                 fullPool, ExcludedMidiNumbers, EmphasizedMidiNumber, minDistinct);

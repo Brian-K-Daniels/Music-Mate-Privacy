@@ -76,4 +76,76 @@ public class IntervalSightTrainingLevelTests : IDisposable
         Assert.Equal("musicmate.SightTrainingLevel", IntervalSightTrainingLogic.LevelPreferenceKey);
         Assert.NotEqual("ChildPractice.Level", IntervalSightTrainingLogic.LevelPreferenceKey);
     }
+
+    [Fact]
+    public void ChangingLevel_ImmediatelyChangesAllowedIntervalSetAndExercise()
+    {
+        // Models OnLevelSliderValueChanged → StartNewSessionAsync(childLevelOverride: newLevel).
+        var session = new NoteSessionService
+        {
+            ChildLevel = 12,
+            LowestNote = "C4",
+            HighestNote = "C6",
+            AccidentalPercent = 0,
+            Key = "C",
+            SelectedScale = "Major",
+        };
+
+        const int levelLow = 1;
+        const int levelHigh = 100;
+        int maxLow = IntervalSightTrainingMelody.MaxSightIntervalForLevel(levelLow);
+        int maxHigh = IntervalSightTrainingMelody.MaxSightIntervalForLevel(levelHigh);
+        Assert.True(maxHigh > maxLow);
+
+        var before = IntervalSightTrainingSequenceBuilder.Generate(
+            session, measureCount: null, randomSeed: 42, childLevelOverride: levelLow);
+        Assert.Equal(maxLow, before.MaxAbsoluteSemitones);
+        Assert.All(
+            IntervalSightTrainingMelody.CollectMagnitudes(before.Notes),
+            m => Assert.InRange(m, 0, maxLow));
+
+        // Immediate level change: regenerate with the new override (same path as page load / New).
+        IntervalSightTrainingLogic.PersistLevel(levelHigh);
+        var after = IntervalSightTrainingSequenceBuilder.Generate(
+            session, measureCount: null, randomSeed: 42, childLevelOverride: levelHigh);
+
+        Assert.Equal(maxHigh, after.MaxAbsoluteSemitones);
+        Assert.Equal(levelHigh, IntervalSightTrainingLogic.LoadPersistedLevel());
+        Assert.All(
+            IntervalSightTrainingMelody.CollectMagnitudes(after.Notes),
+            m => Assert.InRange(m, 0, maxHigh));
+        Assert.Contains(
+            IntervalSightTrainingMelody.CollectMagnitudes(after.Notes),
+            m => m > maxLow);
+        // Session Music level / instrument settings are not mutated by Sight Level.
+        Assert.Equal(12, session.ChildLevel);
+    }
+
+    [Theory]
+    [InlineData(1, 11)]
+    [InlineData(20, 41)]
+    [InlineData(60, 100)]
+    public void ChangingLevelAcrossBands_ChangesMaxAbsoluteSemitones(int fromLevel, int toLevel)
+    {
+        var session = new NoteSessionService
+        {
+            ChildLevel = 1,
+            LowestNote = "C4",
+            HighestNote = "C5",
+            AccidentalPercent = 0,
+        };
+
+        var from = IntervalSightTrainingSequenceBuilder.Generate(
+            session, randomSeed: 7, childLevelOverride: fromLevel);
+        var to = IntervalSightTrainingSequenceBuilder.Generate(
+            session, randomSeed: 7, childLevelOverride: toLevel);
+
+        Assert.Equal(
+            IntervalSightTrainingMelody.MaxSightIntervalForLevel(fromLevel),
+            from.MaxAbsoluteSemitones);
+        Assert.Equal(
+            IntervalSightTrainingMelody.MaxSightIntervalForLevel(toLevel),
+            to.MaxAbsoluteSemitones);
+        Assert.NotEqual(from.MaxAbsoluteSemitones, to.MaxAbsoluteSemitones);
+    }
 }

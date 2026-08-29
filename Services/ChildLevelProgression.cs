@@ -77,14 +77,13 @@ namespace musicmate.Services
         public static (string Scale, string Key) PickScaleAndKey(int level, Random? rng = null)
             => PickScaleAndKey(GetProfile(level), rng);
 
-        /// <summary>Scale names allowed at this child level.</summary>
+        /// <summary>Scale names allowed at this child level (manual picks and validation).</summary>
         public static IReadOnlyList<string> GetAllowedScalesForLevel(int level)
         {
             level = Math.Clamp(level, 1, 100);
             return level switch
             {
-                <= 5 => ["Major Pentatonic"],
-                <= 15 => ["Major Pentatonic", "Major"],
+                <= 15 => ["Major", "Major Pentatonic"],
                 <= 30 => ["Major", "Natural Minor"],
                 <= 45 => ["Major", "Natural Minor", "Harmonic Minor"],
                 <= 55 => ["Major", "Natural Minor", "Harmonic Minor", "Melodic Minor"],
@@ -128,7 +127,7 @@ namespace musicmate.Services
 
         /// <summary>
         /// False at beginner levels where Assortment can only emit one ordered scale walk
-        /// (e.g. C Major Pentatonic at levels 1–5).
+        /// (e.g. C Major at level 1 random pool).
         /// </summary>
         public static bool HasMultipleScaleWalkIdentities(int level)
         {
@@ -146,7 +145,6 @@ namespace musicmate.Services
             level = Math.Clamp(level, 1, 100);
             return level switch
             {
-                <= 5 => "Major Pentatonic",
                 <= 15 => "Major",
                 <= 30 => "Natural Minor",
                 <= 45 => "Harmonic Minor",
@@ -180,6 +178,35 @@ namespace musicmate.Services
                 ["Locrian"] = 1,
                 ["Enigmatic"] = 1,
             };
+
+        private static int ScaleWeightForLevel(int level, string scale)
+        {
+            if (scale == "Major")
+            {
+                return level switch
+                {
+                    <= 1 => 100,
+                    <= 5 => 90,
+                    <= 10 => 75,
+                    <= 15 => 55,
+                    _ => MusicalScaleWeights.GetValueOrDefault(scale, 1)
+                };
+            }
+
+            if (scale == "Major Pentatonic")
+            {
+                return level switch
+                {
+                    <= 1 => 0,
+                    <= 5 => 10,
+                    <= 10 => 25,
+                    <= 15 => 30,
+                    _ => MusicalScaleWeights.GetValueOrDefault(scale, 1)
+                };
+            }
+
+            return MusicalScaleWeights.GetValueOrDefault(scale, 1);
+        }
 
         /// <summary>Weighted random scale from the level's allowed pool.</summary>
         public static string PickWeightedRandomScale(int level, Random rng)
@@ -263,7 +290,7 @@ namespace musicmate.Services
         {
             var allowed = GetAllowedScalesForLevel(level);
             var raw = allowed
-                .Select(scale => new WeightedScaleOption(scale, MusicalScaleWeights.GetValueOrDefault(scale, 1)))
+                .Select(scale => new WeightedScaleOption(scale, ScaleWeightForLevel(level, scale)))
                 .ToArray();
             return FilterScales(raw);
         }

@@ -279,6 +279,20 @@
 
       </Grid>
 
+      <!-- Temporary build fingerprint (DEBUG diagnostics) -->
+      <Border x:Name="AboutBuildInfoBorder"
+              Stroke="#888888"
+              StrokeThickness="1"
+              StrokeShape="RoundRectangle 6"
+              BackgroundColor="{DynamicResource ThemePanelBackground}"
+              Padding="10,8"
+              Margin="8,4,8,4">
+        <Label x:Name="AboutBuildIdentificationLabel"
+               FontSize="11"
+               LineBreakMode="WordWrap"
+               TextColor="{DynamicResource ThemeContrastingText}" />
+      </Border>
+
       <WebView
           x:Name="AboutWebView"
           Margin="0,4,0,0"

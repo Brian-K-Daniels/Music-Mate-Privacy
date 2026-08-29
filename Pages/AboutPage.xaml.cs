@@ -45,6 +45,13 @@ namespace musicmate.Pages
             var vm = new AboutPageViewModel(_themeService);
             BindingContext = vm;
             SyncAboutSearchRowHeight();
+#if DEBUG
+            if (AboutBuildIdentificationLabel is not null)
+                AboutBuildIdentificationLabel.Text = Diagnostics.BuildIdentification.FullMultiline;
+#else
+            if (AboutBuildInfoBorder is not null)
+                AboutBuildInfoBorder.IsVisible = false;
+#endif
 
             // Reload WebView only when appearance settings change — not on IsPremium, etc.
             // Premium checks were wiping search highlights by reloading the whole document.

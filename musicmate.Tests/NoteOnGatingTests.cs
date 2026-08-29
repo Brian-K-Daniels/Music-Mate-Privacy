@@ -311,11 +311,11 @@ public class NoteOnGatingTests : IDisposable
         var session = new NoteSessionService
         {
             Instrument = "concert-pitch",
-            Tune = "Random",
+            Tune = "Tuner",
             CooldownMs = 0,
         };
         session.Reset();
-        session.Tune = "Random";
+        session.Tune = "Tuner";
         session.Instrument = "concert-pitch";
         session.CooldownMs = 0;
         session.SamePitchSilenceMs = NoteSessionService.DefaultSamePitchSilenceMs;
