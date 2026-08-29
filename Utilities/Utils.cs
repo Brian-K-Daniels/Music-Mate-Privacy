@@ -2,8 +2,9 @@ using System.Diagnostics;
 using System;
 using System.Linq;
 using System.Reflection;
-#if DEBUG
 using musicmate.Diagnostics;
+
+#if DEBUG
 #endif
 
 namespace musicmate.Utilities

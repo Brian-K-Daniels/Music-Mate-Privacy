@@ -131,6 +131,7 @@ namespace musicmate.LayoutDebug
                 return;
 #endif
             var text = BuildLogText(tune);
+
             Diagnostics.DebugLog.WriteLine(text);
             Utilities.Utils.Log(text);
         }

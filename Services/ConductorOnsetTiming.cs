@@ -12,7 +12,7 @@ public static class ConductorOnsetTiming
     /// <summary>Allowed earliness in quarter-note beats (one sixteenth of a quarter).</summary>
     public const double EarlyToleranceBeats = 0.25;
 
-    /// <summary>Late scoring window in quarter-note beats (does not block acceptance).</summary>
+    /// <summary>Late scoring window in quarter-note beats.</summary>
     public const double LateToleranceBeats = 0.50;
 
     public static double MsPerBeat(int bpm)
@@ -44,6 +44,16 @@ public static class ConductorOnsetTiming
         double lateToleranceMs)
         => actualMs >= expectedMs - earlyToleranceMs
            && actualMs <= expectedMs + lateToleranceMs;
+
+    public static double EarliestAcceptableMs(double expectedMs, double earlyToleranceMs)
+        => expectedMs - earlyToleranceMs;
+
+    public static double LatestAcceptableMs(double expectedMs, double lateToleranceMs)
+        => expectedMs + lateToleranceMs;
+
+    /// <summary>True when musical time has moved past the note's late-scoring window.</summary>
+    public static bool IsWindowExpired(double actualMs, double expectedMs, double lateToleranceMs)
+        => actualMs > expectedMs + lateToleranceMs;
 
     /// <summary>
     /// Beat position of note <paramref name="noteIndex"/> on a conductor-absolute timeline.

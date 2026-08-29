@@ -1,11 +1,11 @@
 using musicmate.Services;
-using musicmate.Diagnostics;
 using musicmate.Models;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using musicmate.Utilities;
 using System.Threading;
 using System.Windows.Input;
+using musicmate.Diagnostics;
 
 namespace musicmate.ViewModels
 {

@@ -71,8 +71,7 @@
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</SupportedOSPlatformVersion>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'
-                          And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'&#xD;&#xA;                          And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
     <AndroidLinkTool>r8</AndroidLinkTool>
   </PropertyGroup>
 
@@ -97,9 +96,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Xamarin.Android.Google.BillingClient"
-                  Version="8.0.0"
-                  Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'" />
+    <PackageReference Include="Xamarin.Android.Google.BillingClient" Version="8.0.0" Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'" />
     <PackageReference Include="CommunityToolkit.Maui" Version="14.1.0" />
     <PackageReference Include="CommunityToolkit.Maui.Core" Version="14.1.0" />
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.51" />
@@ -168,10 +165,7 @@
     <PropertyGroup>
       <_BuildMetaPath>$(MSBuildProjectDirectory)\Diagnostics\BuildIdentificationMetadata.g.cs</_BuildMetaPath>
     </PropertyGroup>
-    <Exec Command="git -C &quot;$(MSBuildProjectDirectory)&quot; rev-parse --short HEAD"
-          ConsoleToMSBuild="true"
-          IgnoreExitCode="true"
-          StandardOutputImportance="low">
+    <Exec Command="git -C &quot;$(MSBuildProjectDirectory)&quot; rev-parse --short HEAD" ConsoleToMSBuild="true" IgnoreExitCode="true" StandardOutputImportance="low">
       <Output TaskParameter="ConsoleOutput" PropertyName="_GitCommitRaw" />
     </Exec>
     <PropertyGroup>

@@ -1,11 +1,11 @@
 using Microsoft.Maui.Graphics;
 using Microsoft.Maui.Graphics.Skia;
-  //  2026.07.09 1946  using Microsoft.UI.Xaml.Controls;
-  using Microsoft.Maui.Controls;
-using musicmate.Diagnostics;
+//  2026.07.09 1946  using Microsoft.UI.Xaml.Controls;
+using Microsoft.Maui.Controls;
 using musicmate.Models;
 using musicmate.Services;
 using System.Diagnostics;
+using musicmate.Diagnostics;
 
 namespace musicmate.Drawables
 {

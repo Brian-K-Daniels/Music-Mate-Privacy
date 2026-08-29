@@ -473,6 +473,162 @@ public class ConductorTimingTests : IDisposable
     }
 
     [Fact]
+    public void LateCorrectPitch_MarksWrongAndAdvances()
+    {
+        const int bpm = 60;
+        double elapsed = 0;
+        var session = CreateSession([60, 62], bpm, showConductorCues: false, () => elapsed);
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+        double lateTol = ConductorOnsetTiming.LateToleranceMs(bpm);
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+
+        elapsed = msPerBeat + lateTol + 100;
+        var result = session.Evaluate(Freq(62));
+        Assert.True(result.correct);
+        Assert.True(session.UpdateFeedbackForCurrent(Freq(62), result));
+        Assert.Equal(2, session.CurrentNoteIndex);
+        Assert.DoesNotContain(1, session.CorrectNoteIndices);
+        Assert.True(session.NoteFeedbacks.TryGetValue(1, out var fb) && fb.Wrong > 0);
+    }
+
+    [Fact]
+    public void AfterLateNote_NextNoteCanBePlayedOnTime()
+    {
+        const int bpm = 30;
+        double elapsed = 0;
+        var session = CreateSession([60, 62, 64], bpm, showConductorCues: false, () => elapsed);
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+        double lateTol = ConductorOnsetTiming.LateToleranceMs(bpm);
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+
+        elapsed = msPerBeat + lateTol + 50;
+        session.UpdateFeedbackForCurrent(Freq(62), session.Evaluate(Freq(62)));
+        Assert.Equal(2, session.CurrentNoteIndex);
+
+        elapsed = 2 * msPerBeat;
+        session.NotifySilenceFor(session.SamePitchSilenceMs);
+        session.NotifyNoteAttack();
+        AssertAccepted(session, Freq(64), expectedIndex: 2);
+    }
+
+    [Fact]
+    public void SilentMiss_AutoAdvancesWithoutPitch()
+    {
+        const int bpm = 60;
+        double elapsed = 0;
+        var session = CreateSession([60, 62, 64], bpm, showConductorCues: false, () => elapsed);
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+        double lateTol = ConductorOnsetTiming.LateToleranceMs(bpm);
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+
+        elapsed = msPerBeat + lateTol + 200;
+        Assert.True(session.AdvanceTimelineForExpiredNotes());
+        Assert.Equal(2, session.CurrentNoteIndex);
+        Assert.True(session.NoteFeedbacks[1].Wrong > 0);
+        Assert.DoesNotContain(1, session.CorrectNoteIndices);
+
+        elapsed = 2 * msPerBeat;
+        session.NotifySilenceFor(session.SamePitchSilenceMs);
+        session.NotifyNoteAttack();
+        AssertAccepted(session, Freq(64), expectedIndex: 2);
+    }
+
+    [Fact]
+    public void TwoMissedNotes_CatchUpToStillPlayableNote()
+    {
+        const int bpm = 60;
+        double elapsed = 0;
+        var session = CreateSession([60, 62, 64, 65], bpm, showConductorCues: false, () => elapsed);
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+        double lateTol = ConductorOnsetTiming.LateToleranceMs(bpm);
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+
+        // Past notes 1 and 2; note 3 (beat 3) window still open at 3000 ms.
+        elapsed = 3 * msPerBeat;
+        Assert.True(session.AdvanceTimelineForExpiredNotes());
+        Assert.Equal(3, session.CurrentNoteIndex);
+        Assert.True(session.NoteFeedbacks[1].Wrong > 0);
+        Assert.True(session.NoteFeedbacks[2].Wrong > 0);
+        Assert.DoesNotContain(1, session.CorrectNoteIndices);
+        Assert.DoesNotContain(2, session.CorrectNoteIndices);
+    }
+
+    [Fact]
+    public void LateNote_DoesNotShiftSubsequentScoreOnsets()
+    {
+        const int bpm = 30;
+        double elapsed = 0;
+        var session = CreateSession([60, 62, 64], bpm, showConductorCues: false, () => elapsed);
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+        double lateTol = ConductorOnsetTiming.LateToleranceMs(bpm);
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+
+        // Miss note 1 far late — note 2 must still anchor at beat 2 (4000 ms), not performance time.
+        elapsed = 5000;
+        session.UpdateFeedbackForCurrent(Freq(62), session.Evaluate(Freq(62)));
+        Assert.Equal(2, session.CurrentNoteIndex);
+
+        elapsed = 2 * msPerBeat;
+        session.NotifySilenceFor(session.SamePitchSilenceMs);
+        session.NotifyNoteAttack();
+        AssertAccepted(session, Freq(64), expectedIndex: 2);
+    }
+
+    [Fact]
+    public void CatchUp_WithRest_SkipsMissedNotesOnScoreTimeline()
+    {
+        const int bpm = 60;
+        double elapsed = 0;
+        var session = CreateRhythmSession(
+            bpm,
+            showConductorCues: false,
+            () => elapsed,
+            new RhythmNote(60, 1, 0),
+            new RhythmNote(62, 1, 2));
+
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+        double lateTol = ConductorOnsetTiming.LateToleranceMs(bpm);
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+
+        elapsed = 2 * msPerBeat + lateTol + 100;
+        Assert.True(session.AdvanceTimelineForExpiredNotes());
+        Assert.Equal(2, session.CurrentNoteIndex);
+        Assert.True(session.NoteFeedbacks[1].Wrong > 0);
+    }
+
+    [Fact]
+    public void FinalMissedNote_CompletesExerciseWithoutStuckState()
+    {
+        const int bpm = 60;
+        double elapsed = 0;
+        var session = CreateSession([60, 62], bpm, showConductorCues: false, () => elapsed);
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+        double lateTol = ConductorOnsetTiming.LateToleranceMs(bpm);
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+
+        elapsed = msPerBeat + lateTol + 100;
+        Assert.True(session.AdvanceTimelineForExpiredNotes());
+        Assert.Equal(2, session.CurrentNoteIndex);
+        Assert.Equal(2, session.NotesToDraw.Count);
+        Assert.Single(session.CorrectNoteIndices);
+        Assert.True(session.NoteFeedbacks[1].Wrong > 0);
+    }
+
+    [Fact]
     public void GetAnchoredBeatPosition_UsesGateSpacingIncludingRests()
     {
         var notes = new List<NoteInfo>

@@ -4,7 +4,8 @@ namespace musicmate.Diagnostics;
 
 /// <summary>DEBUG-only log output gated by <see cref="DebugLogSettings"/>.</summary>
 public static class DebugLog
-{    [Conditional("DEBUG")]
+{
+    [Conditional("DEBUG")]
     public static void WriteLine(string message)
     {
         if (!DebugLogSettings.IsEnabled(DebugLogSettings.ResolveFromMessage(message)))

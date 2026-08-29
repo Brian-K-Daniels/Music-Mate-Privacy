@@ -5,11 +5,11 @@ using musicmate.Services;
 using musicmate.Utilities;
 
 using musicmate.LayoutDebug;
-using musicmate.Diagnostics;
 
 using System.ComponentModel;
 
 using System.Diagnostics;
+using musicmate.Diagnostics;
 
 
 

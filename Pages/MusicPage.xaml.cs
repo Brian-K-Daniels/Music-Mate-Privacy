@@ -3656,6 +3656,14 @@ namespace musicmate.Pages
                     DebugLog.WriteLine("[Audio] Sustained quiet — resetting pitch window");
                     _isBelowThreshold = true;
                     _session.NotifySilence();
+                    if (_session.AdvanceTimelineForExpiredNotes())
+                    {
+                        MainThread.BeginInvokeOnMainThread(() =>
+                        {
+                            if (!_session.SessionCompleted)
+                                SyncStaffNoteStates();
+                        });
+                    }
                 }
                 return;
             }

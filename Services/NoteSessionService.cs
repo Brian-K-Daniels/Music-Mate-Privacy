@@ -2624,6 +2624,154 @@ namespace musicmate.Services
                 Reason = reason,
             });
         }
+
+        private readonly record struct ConductorNoteTiming(
+            double ExpectedBeat,
+            double ExpectedMs,
+            double EarlyToleranceMs,
+            double LateToleranceMs);
+
+        private ConductorNoteTiming GetConductorNoteTiming(int noteIndex)
+        {
+            int bpm = GetConductorTimingBpm();
+            double beat = GetConductorExpectedBeat(noteIndex);
+            double expectedMs = ConductorOnsetTiming.ExpectedOnsetMs(0.0, beat, bpm);
+            return new ConductorNoteTiming(
+                beat,
+                expectedMs,
+                ConductorOnsetTiming.EarlyToleranceMs(bpm),
+                ConductorOnsetTiming.LateToleranceMs(bpm));
+        }
+
+        /// <summary>
+        /// Skips notes whose conductor windows have closed. Optional pitch context marks an
+        /// expired note Late when the player hit the right pitch too late; otherwise Missed.
+        /// Expected onsets stay score-anchored. Returns true when <see cref="CurrentNoteIndex"/> moved.
+        /// </summary>
+        internal bool CatchUpExpiredConductorNotes(
+            double freq = 0,
+            (bool correct, int cents)? pitchResult = null)
+        {
+            if (!IsConductorOnsetGateEnabled() || SessionCompleted)
+                return false;
+
+            bool advanced = false;
+            double actualMs = GetSessionElapsedMs();
+
+            while (CurrentNoteIndex < NotesToDraw.Count)
+            {
+                int idx = CurrentNoteIndex;
+                var timing = GetConductorNoteTiming(idx);
+                if (!ConductorOnsetTiming.IsWindowExpired(
+                        actualMs, timing.ExpectedMs, timing.LateToleranceMs))
+                    break;
+
+                var targetNote = NotesToDraw[idx];
+                var expectedWrittenMidi = ResolveWrittenEvaluationMidi(targetNote);
+                string heardNote = "-";
+                int cents = 0;
+                bool latePitchMatch = false;
+
+                if (freq > 0 && pitchResult.HasValue)
+                {
+                    var detectedMidi = (int)Math.Round(69 + 12 * Math.Log(freq / 440.0, 2));
+                    var detMidiWritten = detectedMidi - GetInstrumentTransposeOffset();
+                    heardNote = MidiToNoteName(detMidiWritten, KeyUsesFlats(Key));
+                    cents = pitchResult.Value.cents;
+                    latePitchMatch = pitchResult.Value.correct
+                        && Mod12(expectedWrittenMidi) == Mod12(detMidiWritten);
+                }
+
+                string reason = latePitchMatch ? "Late" : "Missed";
+                RecordConductorTimingFailure(
+                    idx, targetNote, heardNote, cents, timing, actualMs,
+                    reason, pitchCorrect: latePitchMatch);
+                AdvanceAfterTimingFailure(idx);
+                advanced = true;
+            }
+
+            return advanced;
+        }
+
+        /// <summary>Called when musical time passes without a timely response (e.g. after silence).</summary>
+        public bool AdvanceTimelineForExpiredNotes()
+            => CatchUpExpiredConductorNotes();
+
+        private void RecordConductorTimingFailure(
+            int idx,
+            NoteInfo targetNote,
+            string heardNote,
+            int cents,
+            ConductorNoteTiming timing,
+            double actualMs,
+            string reason,
+            bool pitchCorrect)
+        {
+            var curFeedback = NoteFeedbacks.TryGetValue(idx, out var v2) ? v2 : (Wrong: 0, Cents: 0);
+            bool marked = reason == "Missed"
+                ? MarkWrongOnce(idx, curFeedback, cents)
+                : TryMarkDebouncedWrong(idx, curFeedback, cents);
+
+            if (!marked && reason != "Missed")
+                return;
+
+            LogConductorTimingDecision(
+                idx, targetNote, heardNote,
+                detectedMidi: 0, actualMs,
+                timing.ExpectedMs, timing.ExpectedBeat,
+                timing.EarlyToleranceMs, timing.LateToleranceMs,
+                pitchAccepted: pitchCorrect, timingAccepted: false,
+                advanceReason: reason == "Late" ? "advanced-late-conductor" : "advanced-missed-conductor");
+
+            var outcome = BuildNoteOutcome(
+                targetNote, heardNote, cents,
+                pitchCorrect: pitchCorrect, timingCorrect: false, reason: reason,
+                actualMs: actualMs, expectedStartMs: timing.ExpectedMs,
+                timingErrorMs: actualMs - timing.ExpectedMs,
+                timingToleranceMs: timing.LateToleranceMs);
+            RecordAttemptOutcome(outcome);
+            TryEnqueueTimingWrong(
+                targetNote, heardNote, actualMs, reason,
+                pitchCorrect: pitchCorrect, timingCorrect: false,
+                expectedMsOverride: timing.ExpectedMs,
+                toleranceMs: timing.LateToleranceMs);
+        }
+
+        private bool MarkWrongOnce(int idx, (int Wrong, int Cents) curFeedback, int cents)
+        {
+            if (curFeedback.Wrong > 0)
+                return false;
+
+            var updated = (Wrong: curFeedback.Wrong + 1, Cents: cents);
+            NoteFeedbacks[idx] = updated;
+            FeedbackViewModels[idx] = new FeedbackItem(idx, updated.Wrong, updated.Cents, false);
+            return true;
+        }
+
+        private void AdvanceAfterTimingFailure(int idx)
+        {
+            _lockedPitchClassAfterAdvance = null;
+            _pitchMedianHistory.Clear();
+            IgnoreAudioUntilUtc = DateTime.UtcNow.AddMilliseconds(CooldownMs);
+            _lastWrongTimePerIndex.Remove(idx);
+
+            CurrentNoteIndex = idx + 1;
+            if (CurrentNoteIndex >= NotesToDraw.Count)
+            {
+                CurrentNoteIndex = NotesToDraw.Count;
+                ClearNoteOnWait();
+                _lockedPitchClassAfterAdvance = null;
+                _rhythmGateUntilMs = 0;
+                FinalizeSessionStats();
+                _ = SessionCompletedAsync?.Invoke();
+            }
+            else
+            {
+                ArmRhythmGateAfterAdvance(idx);
+                BeginAwaitingNoteOn();
+            }
+        }
+
         /// <summary>
         /// Stop the current session gracefully: mark completed, stop timing,
         /// and clear any short-term ignore state so the app can perform cleanup.
@@ -2903,6 +3051,25 @@ namespace musicmate.Services
                 conductorLateTolMs = ConductorOnsetTiming.LateToleranceMs(bpm);
                 conductorTooEarly = ConductorOnsetTiming.IsTooEarly(
                     actualMs, conductorExpectedMs, conductorEarlyTolMs);
+
+                if (CatchUpExpiredConductorNotes(freq, result))
+                    return true;
+
+                // Catch-up may have moved the target; refresh for the remainder of this call.
+                idx = CurrentNoteIndex;
+                if (idx >= NotesToDraw.Count)
+                    return false;
+
+                targetNote = NotesToDraw[idx];
+                expectedWrittenMidi = ResolveWrittenEvaluationMidi(targetNote);
+                expectedNote = ResolveWrittenEvaluationName(targetNote);
+                conductorExpectedBeat = GetConductorExpectedBeat(idx);
+                conductorExpectedMs = ConductorOnsetTiming.ExpectedOnsetMs(
+                    0.0, conductorExpectedBeat, GetConductorTimingBpm());
+                conductorEarlyTolMs = ConductorOnsetTiming.EarlyToleranceMs(GetConductorTimingBpm());
+                conductorLateTolMs = ConductorOnsetTiming.LateToleranceMs(GetConductorTimingBpm());
+                conductorTooEarly = ConductorOnsetTiming.IsTooEarly(
+                    actualMs, conductorExpectedMs, conductorEarlyTolMs);
             }
 
             // Conductor absolute earliest-start: do not complete a note played far before its beat.
@@ -3001,38 +3168,6 @@ namespace musicmate.Services
                 bool timingOk = !conductorGateEnabled
                     || ConductorOnsetTiming.IsWithinTimingWindow(
                         actualMs, conductorExpectedMs, conductorEarlyTolMs, conductorLateTolMs);
-
-                if (conductorGateEnabled && !timingOk)
-                {
-                    StatusService.Instance.StatusMessage =
-                        $"Expected: {expectedNote}, Heard: {heardNote}, {result.cents}¢ (too late), Notes: {NotesToDraw.Count}";
-
-                    const string reason = "Late";
-                    LogConductorTimingDecision(
-                        idx, targetNote, heardNote, detMidiWritten, actualMs,
-                        conductorExpectedMs, conductorExpectedBeat,
-                        conductorEarlyTolMs, conductorLateTolMs,
-                        pitchAccepted: true, timingAccepted: false,
-                        advanceReason: "blocked-late-conductor");
-
-                    if (TryMarkDebouncedWrong(idx, curFeedback, result.cents))
-                    {
-                        var outcome = BuildNoteOutcome(
-                            targetNote, heardNote, result.cents,
-                            pitchCorrect: true, timingCorrect: false, reason: reason,
-                            actualMs: actualMs, expectedStartMs: conductorExpectedMs,
-                            timingErrorMs: actualMs - conductorExpectedMs,
-                            timingToleranceMs: conductorLateTolMs);
-                        RecordAttemptOutcome(outcome);
-                        TryEnqueueTimingWrong(
-                            targetNote, heardNote, actualMs, reason,
-                            pitchCorrect: true, timingCorrect: false,
-                            expectedMsOverride: conductorExpectedMs,
-                            toleranceMs: conductorLateTolMs);
-                        return true;
-                    }
-                    return false;
-                }
 
                 // Timing: record onset time and expected beat position
                 RecordOnsetIfNeeded(idx);

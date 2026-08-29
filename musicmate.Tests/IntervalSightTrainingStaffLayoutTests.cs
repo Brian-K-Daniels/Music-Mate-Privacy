@@ -260,7 +260,7 @@ public class IntervalSightTrainingStaffLayoutTests
         {
             if (notes[i].IsRest)
                 continue;
-            float right = (float)inkRight.Invoke(drawable, new object[] { noteLayouts.GetValue(i) })!;
+            float right = (float)inkRight.Invoke(drawable, new object[] { noteLayouts.GetValue(i)! })!;
             Assert.True(right <= barX + 0.5f,
                 $"Note {i} ink right {right:F1} extends past end bar at {barX:F1}");
         }
