@@ -147,7 +147,6 @@
       <Setter Property="Padding" Value="6,0" />
       <Setter Property="VerticalOptions" Value="Center" />
       <Setter Property="HorizontalOptions" Value="Fill" />
-      <Setter Property="IsClippedToBounds" Value="False" />
     </Style>
   </ContentPage.Resources>
 

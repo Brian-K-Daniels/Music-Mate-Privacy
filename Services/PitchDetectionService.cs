@@ -36,7 +36,10 @@ namespace musicmate.Services
                 }
                 double rms = Math.Sqrt(sumsq / length);
                 if (rms < 0.0025) // allow lower RMS so very high notes with lower energy can still be detected
+                {
+                    LastDetectionClarity = 0f;
                     return 0;
+                }
 
                 // Remove DC offset (helps NSDF) and apply a Hann window to reduce edge effects
                 double mean = sum / length;
@@ -82,7 +85,11 @@ namespace musicmate.Services
                     }
                 }
 
-                if (globalMax <= 0.0) return 0;
+                if (globalMax <= 0.0)
+                {
+                    LastDetectionClarity = 0f;
+                    return 0;
+                }
 
                 double threshold = Math.Max(0.5, 0.9 * globalMax); // require reasonably strong peak (tunable)
 
@@ -118,7 +125,11 @@ namespace musicmate.Services
                 {
                     // fallback: use the tracked global-max index
                     if (globalMaxIdx > minLag) bestLag = globalMaxIdx;
-                    else return 0;
+                    else
+                    {
+                        LastDetectionClarity = 0f;
+                        return 0;
+                    }
                 }
 
                 // Low-end overtone guard: for instruments such as piano, the 2nd harmonic
@@ -210,19 +221,34 @@ namespace musicmate.Services
                     }
                 }
 
-                if (refinedLag <= 0) return 0;
+                if (refinedLag <= 0)
+                {
+                    LastDetectionClarity = 0f;
+                    return 0;
+                }
                 double freq = sampleRate / refinedLag;
 
                 // Quick plausibility checks: frequency must be within expected range
-                if (freq < 30 || freq > sampleRate / 2.0) return 0;
+                if (freq < 30 || freq > sampleRate / 2.0)
+                {
+                    LastDetectionClarity = 0f;
+                    return 0;
+                }
 
+                LastDetectionClarity = bestLag > 0 && bestLag < nsdfLen
+                    ? (float)nsdf[bestLag]
+                    : 0f;
                 return (float)freq;
             }
             catch (Exception ex)
             {
+                LastDetectionClarity = 0f;
                 Utils.Log($"DetectPitchMcLeod: {ex.Message}");
                 return 0;
             }
         }
+
+        /// <summary>NSDF peak clarity from the most recent McLeod detection (0 when none).</summary>
+        public static float LastDetectionClarity { get; private set; }
     }
 }

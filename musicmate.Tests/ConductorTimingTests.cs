@@ -792,6 +792,58 @@ public class ConductorTimingTests : IDisposable
         return session;
     }
 
+    [Fact]
+    public void SessionRelativeOnset_FirstNoteWithScoreStartBeat_AcceptsAtClockZero()
+    {
+        const int bpm = 98;
+        double elapsed = 0;
+        var session = new NoteSessionService
+        {
+            Instrument = "concert-pitch",
+            Tune = "Selected Scale",
+            CooldownMs = 0,
+            Tempo = bpm,
+            ShowConductorCues = true,
+            ChildLevel = 1,
+        };
+        session.Reset();
+        session.Tune = "Selected Scale";
+        session.Instrument = "concert-pitch";
+        session.CooldownMs = 0;
+        session.Tempo = bpm;
+        session.ShowConductorCues = true;
+        session.SamePitchSilenceMs = NoteSessionService.DefaultSamePitchSilenceMs;
+        session.SessionElapsedMsOverride = () => elapsed;
+
+        session.NotesToDraw.Add(new NoteInfo
+        {
+            Midi = 67,
+            Name = NoteSessionService.MidiToNoteName(67, flats: false),
+            TargetFreq = Freq(67),
+            Duration = NoteDuration.Quarter,
+            DurationBeats = 1,
+            StartBeat = 4,
+            GateBeatsAfterPrevious = 0,
+        });
+        session.FeedbackViewModels.Add(new FeedbackItem(0, 0, 0, false));
+        session.NotesToDraw.Add(new NoteInfo
+        {
+            Midi = 69,
+            Name = NoteSessionService.MidiToNoteName(69, flats: false),
+            TargetFreq = Freq(69),
+            Duration = NoteDuration.Quarter,
+            DurationBeats = 1,
+            StartBeat = 5,
+            GateBeatsAfterPrevious = 1,
+        });
+        session.FeedbackViewModels.Add(new FeedbackItem(1, 0, 0, false));
+        session.ConfigureRhythmStartGates();
+        session.StartListeningClock();
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(67), expectedIndex: 0);
+    }
+
     private static double Freq(int midi) => NoteSessionService.MidiToFreqPublic(midi);
 
     private static void AssertAccepted(NoteSessionService session, double freq, int expectedIndex)

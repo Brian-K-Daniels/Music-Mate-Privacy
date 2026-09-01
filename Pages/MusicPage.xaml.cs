@@ -45,6 +45,20 @@ namespace musicmate.Pages
         private readonly SemaphoreSlim _regenerateSemaphore = new SemaphoreSlim(1, 1);
         private int _pickerSyncSuppressCount;
         private bool IsPickerSyncSuppressed => _pickerSyncSuppressCount > 0;
+
+        private static Task EnsureMainThreadAsync()
+            => MainThread.IsMainThread
+                ? Task.CompletedTask
+                : MainThread.InvokeOnMainThreadAsync(() => { });
+
+        private void RunOnMainThread(Action action)
+        {
+            if (MainThread.IsMainThread)
+                action();
+            else
+                MainThread.BeginInvokeOnMainThread(action);
+        }
+
         private string? _savedInstrumentForPlayback = null;
         private int _savedInstrumentIndexForPlayback = -1;
 
@@ -227,6 +241,12 @@ namespace musicmate.Pages
         }
         private void UpdateEffectiveScaleLabel()
         {
+            if (!MainThread.IsMainThread)
+            {
+                RunOnMainThread(UpdateEffectiveScaleLabel);
+                return;
+            }
+
             OnPropertyChanged(nameof(IsEffectiveScaleLabelVisible));
             OnPropertyChanged(nameof(EffectiveScaleLabelText));
             if (_session?.IsRandomMode == true)
@@ -270,6 +290,12 @@ namespace musicmate.Pages
 
         private void UpdateNoteEmphasisBanner()
         {
+            if (!MainThread.IsMainThread)
+            {
+                RunOnMainThread(UpdateNoteEmphasisBanner);
+                return;
+            }
+
             bool show = _session.HasTemporaryNoteEmphasis;
             if (NoteEmphasisBanner is not null)
                 NoteEmphasisBanner.IsVisible = show;
@@ -288,6 +314,15 @@ namespace musicmate.Pages
         /// </summary>
         private void SyncPlayItemStatusMessage()
         {
+            if (!MainThread.IsMainThread)
+            {
+                RunOnMainThread(SyncPlayItemStatusMessage);
+                return;
+            }
+
+            if (StatusService.Instance.IsTemporaryMessageActive)
+                return;
+
             if (_session.Tune == "Tuner")
             {
                 StatusService.Instance.StatusMessage = _isTunerPitchPlaying
@@ -650,7 +685,7 @@ namespace musicmate.Pages
                         // Signatures-on-both changes first-note X; bust layout cache without regenerating notes.
                         if (e.PropertyName == nameof(NoteSessionService.ShowSignaturesOnBothStaffs))
                             _staffDrawable?.InvalidateLayoutCache();
-                        StaffGraphicsView?.Invalidate();
+                        MainThread.BeginInvokeOnMainThread(() => StaffGraphicsView?.Invalidate());
                     }
                 };
 
@@ -777,7 +812,8 @@ namespace musicmate.Pages
                     || _holdResultForChildSession || _isRunning)
                     return;
 
-                await StartListeningAndEvaluatingAsync(scaleKeyTrigger: "AutoStart");
+                await MainThread.InvokeOnMainThreadAsync(async () =>
+                    await StartListeningAndEvaluatingAsync(scaleKeyTrigger: "AutoStart"));
             }
             catch (OperationCanceledException)
             {
@@ -790,6 +826,8 @@ namespace musicmate.Pages
         }
         private async Task RegenerateNotesAsync()
         {
+            await EnsureMainThreadAsync();
+
             // Repeat Same keeps the saved exercise unless the user changes key/scale/tune.
             if (_session.RepeatSameTune
                 && _repeatSameSnapshot?.Notes.Count > 0
@@ -803,6 +841,7 @@ namespace musicmate.Pages
 
             // Wait for any in-flight regeneration — never skip after session Reset() cleared notes.
             await _regenerateSemaphore.WaitAsync();
+            await EnsureMainThreadAsync();
             try
             {
                 // Tuner: skip Assortment by Level / composition / note-generation entirely.
@@ -875,11 +914,15 @@ namespace musicmate.Pages
                         {
                             var sw2 = System.Diagnostics.Stopwatch.StartNew();
                             while (StaffGraphicsView?.Width <= 0 && sw2.ElapsedMilliseconds < 500)
+                            {
                                 await Task.Delay(20);
+                                await EnsureMainThreadAsync();
+                            }
                         }
 
                         using (PracticeSessionStartProfiler.Scope("RegenerateNotes.StaffDisplay"))
                             await UpdateStaffDisplayAsync();
+                        await EnsureMainThreadAsync();
 
                         generatedTuneChecks = GeneratedTuneAcceptance.ChecksRequired(
                             _session, LayoutTestTune.IsEnabled);
@@ -1460,6 +1503,7 @@ namespace musicmate.Pages
         private async Task UpdateStaffDisplayAsync()
         {
             if (_staffDrawable == null) return;
+            await EnsureMainThreadAsync();
             try
             {
                 // Reset queue offsets.
@@ -1543,6 +1587,7 @@ namespace musicmate.Pages
                     var pattern = ArpeggioCatalog.All.FirstOrDefault(p => p.Id == _session.SelectedArpeggioId)
                         ?? ArpeggioCatalog.MajorTriad;
                     var allNotes = await _session.LoadArpeggioAsync(pattern, _session.SelectedArpeggioRoot);
+                    await EnsureMainThreadAsync();
 
                     var (canvasWidth, canvasHeight, isProvisional) = ResolveStaffCanvasSize();
                     double measureBeats = TimeSignature.FromDisplayString(_session.GetDisplayTimeSignature()).TotalBeats;
@@ -1594,6 +1639,7 @@ namespace musicmate.Pages
                 {
                     using (PracticeSessionStartProfiler.Scope("StaffDisplay.LoadExcluded"))
                         await LoadExcludedMidisAsync();
+                    await EnsureMainThreadAsync();
 
                     // Detect a two-octave scale range: when the hi−lo span is ≥ 24 semitones
                     // (two full octaves) and we are in scale-order mode, generate the full
@@ -1637,6 +1683,7 @@ namespace musicmate.Pages
                             var bars = ComputeStaffBarBeats(flat, beats, new HashSet<double>());
                             return (genAll, flat, beats, bars, MeasureCount: allMeasures.Count);
                         });
+                        await EnsureMainThreadAsync();
 
                         ReportMasteryOmissionFallback(generated.genAll);
                         var allNotes = generated.flat;
@@ -1707,6 +1754,7 @@ namespace musicmate.Pages
                                 return (gen, flat, beats, bars);
                             });
                         }
+                        await EnsureMainThreadAsync();
 
                         ReportMasteryOmissionFallback(pageGen);
 
@@ -1873,43 +1921,79 @@ namespace musicmate.Pages
 
             int upperPitchCount = _sessionUpperPitchCount;
             int currentSession = _session.CurrentNoteIndex;
-
+            var diag = _session.BuildNoteStateDiagContext(currentSession);
             bool isUpperActive = currentSession < upperPitchCount;
 
             // ── Upper staff states ────────────────────────────────────────────────
             var upperStates = new StaffNoteState[_staffDrawable.UpperNotes.Count];
+            var upperSessionIndices = new List<int>();
+            var upperNames = new List<string>();
             int si = 0;
             for (int i = 0; i < _staffDrawable.UpperNotes.Count; i++)
             {
                 if (_staffDrawable.UpperNotes[i].IsRest) { upperStates[i] = StaffNoteState.Pending; continue; }
-                if (si < currentSession || _session.CorrectNoteIndices.Contains(si))
-                    upperStates[i] = _session.CorrectNoteIndices.Contains(si) ? StaffNoteState.Correct : StaffNoteState.Wrong;
-                else if (si == currentSession && isUpperActive)
+                string noteName = si < _session.NotesToDraw.Count
+                    ? _session.ResolveWrittenEvaluationName(_session.NotesToDraw[si])
+                    : $"idx{si}";
+                var oldState = i < (_staffDrawable.UpperNoteStates?.Length ?? 0)
+                    ? _staffDrawable.UpperNoteStates![i]
+                    : StaffNoteState.Pending;
+                upperStates[i] = ResolveStaffNoteState(si, currentSession, isUpperActive, noteName, diag);
+                if (oldState != upperStates[i])
                 {
-                    bool hasWrong = _session.NoteFeedbacks.TryGetValue(si, out var fb) && fb.Wrong > 0;
-                    upperStates[i] = hasWrong ? StaffNoteState.Wrong : StaffNoteState.Current;
+                    NoteStateChangeDiagnostics.GetCaller(out var method, out var file, out var line);
+                    NoteStateChangeDiagnostics.LogStaffStateTransition(
+                        method,
+                        file,
+                        line,
+                        "Upper",
+                        i,
+                        si,
+                        noteName,
+                        oldState,
+                        upperStates[i],
+                        diag,
+                        "SyncStaffNoteStates per-slot diff");
                 }
-                else
-                    upperStates[i] = StaffNoteState.Pending;
+                upperSessionIndices.Add(si);
+                upperNames.Add(noteName);
                 si++;
             }
 
             // ── Lower staff states ────────────────────────────────────────────────
             var lowerStates = new StaffNoteState[_staffDrawable.LowerNotes.Count];
+            var lowerSessionIndices = new List<int>();
+            var lowerNames = new List<string>();
             int li = 0;
             for (int i = 0; i < _staffDrawable.LowerNotes.Count; i++)
             {
                 if (_staffDrawable.LowerNotes[i].IsRest) { lowerStates[i] = StaffNoteState.Pending; continue; }
                 int globalIdx = upperPitchCount + li;
-                if (globalIdx < currentSession || _session.CorrectNoteIndices.Contains(globalIdx))
-                    lowerStates[i] = _session.CorrectNoteIndices.Contains(globalIdx) ? StaffNoteState.Correct : StaffNoteState.Wrong;
-                else if (globalIdx == currentSession && !isUpperActive)
+                string noteName = globalIdx < _session.NotesToDraw.Count
+                    ? _session.ResolveWrittenEvaluationName(_session.NotesToDraw[globalIdx])
+                    : $"idx{globalIdx}";
+                var oldState = i < (_staffDrawable.LowerNoteStates?.Length ?? 0)
+                    ? _staffDrawable.LowerNoteStates![i]
+                    : StaffNoteState.Pending;
+                lowerStates[i] = ResolveStaffNoteState(globalIdx, currentSession, !isUpperActive, noteName, diag);
+                if (oldState != lowerStates[i])
                 {
-                    bool hasWrong = _session.NoteFeedbacks.TryGetValue(globalIdx, out var fb2) && fb2.Wrong > 0;
-                    lowerStates[i] = hasWrong ? StaffNoteState.Wrong : StaffNoteState.Current;
+                    NoteStateChangeDiagnostics.GetCaller(out var method, out var file, out var line);
+                    NoteStateChangeDiagnostics.LogStaffStateTransition(
+                        method,
+                        file,
+                        line,
+                        "Lower",
+                        i,
+                        globalIdx,
+                        noteName,
+                        oldState,
+                        lowerStates[i],
+                        diag,
+                        "SyncStaffNoteStates per-slot diff");
                 }
-                else
-                    lowerStates[i] = StaffNoteState.Pending;
+                lowerSessionIndices.Add(globalIdx);
+                lowerNames.Add(noteName);
                 li++;
             }
 
@@ -1921,6 +2005,30 @@ namespace musicmate.Pages
             {
                 return;
             }
+
+            NoteStateChangeDiagnostics.GetCaller(out var bulkMethod, out var bulkFile, out var bulkLine);
+            NoteStateChangeDiagnostics.LogStaffBulkAssign(
+                bulkMethod,
+                bulkFile,
+                bulkLine,
+                "Upper",
+                _staffDrawable.UpperNoteStates,
+                upperStates,
+                upperSessionIndices.ToArray(),
+                upperNames.ToArray(),
+                diag,
+                "SyncStaffNoteStates commit upper array");
+            NoteStateChangeDiagnostics.LogStaffBulkAssign(
+                bulkMethod,
+                bulkFile,
+                bulkLine,
+                "Lower",
+                _staffDrawable.LowerNoteStates,
+                lowerStates,
+                lowerSessionIndices.ToArray(),
+                lowerNames.ToArray(),
+                diag,
+                "SyncStaffNoteStates commit lower array");
 
             _staffDrawable.IsUpperActive = isUpperActive;
             _staffDrawable.UpperNoteStates = upperStates;
@@ -1934,6 +2042,27 @@ namespace musicmate.Pages
             // UpperNoteStates to Pending, which turned correct upper notes black at the
             // upper→lower transition; defer upper refresh until RegenerateNotesAsync.
         }
+
+        /// <summary>
+        /// Colors a pitched note from session feedback — only notes with explicit wrong
+        /// feedback render red, so conductor catch-up cannot paint unattempted notes red.
+        /// </summary>
+        private StaffNoteState ResolveStaffNoteState(
+            int sessionIndex,
+            int currentSession,
+            bool isActiveStaff,
+            string noteName,
+            NoteStateChangeDiagnostics.NoteStateDiagContext diag)
+            => StaffNoteStateResolver.Resolve(
+                sessionIndex,
+                currentSession,
+                isActiveStaff,
+                _session.CorrectNoteIndices,
+                _session.NoteFeedbacks,
+                diag,
+                noteName,
+                "SyncStaffNoteStates.Resolve");
+
         /// <summary>
         /// Generates new notes for the upper staff while the player is on the lower staff,
         /// then fades in the new upper staff content.
@@ -3635,6 +3764,7 @@ namespace musicmate.Pages
             }
 
             var rms = PitchDetectionService.ComputeRms(buf);
+            _session.SetLastDetectionTelemetry(rms);
             _session.ObserveLoudness(rms);
 
             // Don't accumulate audio during ignore period — ensures the first
@@ -3761,7 +3891,11 @@ namespace musicmate.Pages
                     // Re-check gates on the UI thread so queued callbacks cannot
                     // advance more than one note from a single sustained tone.
                     if (_session.ShouldIgnoreAudio(DateTime.UtcNow))
+                    {
+                        var cooldownResult = _session.Evaluate(freq);
+                        _session.LogAudioCooldownRejectionIfPitchIdentified(freq, cooldownResult.cents);
                         return;
+                    }
 
                     // Waiting count-in: listen only for the correct first note.
                     // Incorrect pitches and click bleed-through must not stop the count-in.
@@ -3790,6 +3924,9 @@ namespace musicmate.Pages
 
                     if (_session.IsAwaitingNoteOn)
                     {
+                        var pendingResult = _session.Evaluate(freq);
+                        _session.LogNoteOnGateRejectionIfPitchIdentified(freq, pendingResult.cents);
+
                         // Keep the status bar honest during same-pitch repeats (E-E-E): the
                         // previous note already matched; we are waiting for re-articulation.
                         if (_session.IsAwaitingSamePitchRetrigger
@@ -3802,6 +3939,9 @@ namespace musicmate.Pages
                         }
                         return;
                     }
+
+                    if (!_session.IsListeningClockRunning)
+                        _session.StartListeningClock();
 
                     // Only accept the note as correct if it matches the expected note (including octave) at the current index
                     var result = _session.Evaluate(freq);
@@ -3840,6 +3980,7 @@ namespace musicmate.Pages
             _waitingCountInCts = new CancellationTokenSource();
             var ct = _waitingCountInCts.Token;
             _waitingCountInActive = true;
+            _session?.MarkCountInStartUtc();
 
             try
             {
@@ -3873,6 +4014,17 @@ namespace musicmate.Pages
                     externalCt: ct);
 
                 DebugLog.WriteLine("[CountIn] loop ended");
+
+                // Downbeat after count-in: do not start the conductor clock here.
+                // Elapsed time must begin at the first detected pitch so notes are not
+                // marked missed while the player waits to begin playing.
+                if (_isRunning
+                    && myGen == Volatile.Read(ref _waitingCountInGeneration)
+                    && _session != null)
+                {
+                    _session.MarkCountInEndUtc();
+                    DebugLog.WriteLine("[CountIn] downbeat — conductor clock deferred until first pitch");
+                }
 
                 // Keep mic open if still waiting for the first note.
                 if (_isRunning && _waitingCountInActive && !_audio.IsCapturing)
@@ -4178,6 +4330,8 @@ namespace musicmate.Pages
             bool forceNewNotes = false,
             string? scaleKeyTrigger = null)
         {
+            await EnsureMainThreadAsync();
+
             // Duplicate AutoStart / OnNavigatedTo must not cancel an in-flight count-in.
             if (_isRunning
                 && !playBack
@@ -4189,7 +4343,10 @@ namespace musicmate.Pages
             }
 
             if (_session.Tune == "Tuner" && _isTunerPitchPlaying)
+            {
                 await StopTunerPitchAsync();
+                await EnsureMainThreadAsync();
+            }
 
             int epoch = Interlocked.Increment(ref _startListeningEpoch);
             _sessionStartCts = PracticeSessionLifecycle.ReplaceSessionStartCancellation(_sessionStartCts);
@@ -4281,6 +4438,7 @@ namespace musicmate.Pages
                                 notesToRestore = await PracticeSessionLifecycle.ResolveRepeatSameNotesAsync(
                                     _repeatSameSnapshot!, _session, db);
                             }
+                            await EnsureMainThreadAsync();
 
                             if (notesToRestore.Count < PracticeSessionLifecycle.MinNotesAfterMasteryFilter)
                             {
@@ -4344,6 +4502,7 @@ namespace musicmate.Pages
                     {
                         await _audio.EnsurePermissionAsync();
                     }
+                    await EnsureMainThreadAsync();
                     ct.ThrowIfCancellationRequested();
                     if (!_isRunning)
                     {
@@ -4366,6 +4525,11 @@ namespace musicmate.Pages
                     DebugLog.WriteLine(sessionLog);
                     Utils.Log(sessionLog);
                     DebugLog.WriteLine("[Start] Starting audio capture...");
+                    NoteStateChangeDiagnostics.ClearLog();
+                    Utils.Log($"[NoteStateDiag] Diagnostic log: {NoteStateChangeDiagnostics.LogFilePath}");
+                    DebugLog.WriteLine(
+                        $"[NoteStateDiag] Diagnostic log file: {NoteStateChangeDiagnostics.LogFilePath}");
+                    _session?.MarkPlaybackArmUtc();
                     // Count-in pauses capture around each click; start capture only when
                     // not using count-in, otherwise the first beforeClick will stop it.
                     bool startCountIn = WaitingCountInSettings.Enabled
@@ -4379,8 +4543,9 @@ namespace musicmate.Pages
                         }
 
                         _waitingCountInActive = true;
-                        StatusService.Instance.StatusMessage =
-                            "Count-in… play the first note when ready.";
+                        StatusService.Instance.ShowTemporaryMessage(
+                            StatusService.CountInStatusMessage,
+                            StatusService.CountInStatusDuration);
                         DebugLog.WriteLine("[Start] Count-in enabled — starting click loop");
                         // Own CTS so session-start replacement cannot kill the loop mid-measure.
                         _ = StartWaitingCountInAsync();
@@ -4396,7 +4561,7 @@ namespace musicmate.Pages
                             SetButtonStates(false);
                             return;
                         }
-                        _session?.StartListeningClock();
+                        // Conductor clock starts on first detected pitch (see OnAudioBlock).
                     }
                     DebugLog.WriteLine("[Start] Audio capture / count-in armed");
                 }
@@ -4749,6 +4914,8 @@ namespace musicmate.Pages
         }
         private async void Session_PropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
+            await EnsureMainThreadAsync();
+
             if (e.PropertyName == nameof(NoteSessionService.IsRandomMode)
                 || e.PropertyName == nameof(NoteSessionService.EffectiveScale)
                 || e.PropertyName == nameof(NoteSessionService.EffectiveScaleDisplay)
@@ -4918,6 +5085,12 @@ namespace musicmate.Pages
         }
         private void UpdateKeyPickerSelection()
         {
+            if (!MainThread.IsMainThread)
+            {
+                RunOnMainThread(UpdateKeyPickerSelection);
+                return;
+            }
+
             if (KeyPicker.ItemsSource is not string[] items) return;
             var idx = Array.IndexOf(items, _session.Key);
             EnterPickerSyncSuppress();
@@ -4954,6 +5127,12 @@ namespace musicmate.Pages
         }
         private void UpdateConcertKeyLabel()
         {
+            if (!MainThread.IsMainThread)
+            {
+                RunOnMainThread(UpdateConcertKeyLabel);
+                return;
+            }
+
             var text = $"(Concert {_session.GetConcertKey()})";
             ConcertKeyLabel.Text = text;
             if (PracticeConcertKeyLabel != null) PracticeConcertKeyLabel.Text = text;
@@ -5019,6 +5198,12 @@ namespace musicmate.Pages
         }
         private void UpdateKeyPickerVisibility()
         {
+            if (!MainThread.IsMainThread)
+            {
+                RunOnMainThread(UpdateKeyPickerVisibility);
+                return;
+            }
+
             var show = _session.Tune != "Tuner";
             if (KeyPicker != null)
             {
@@ -5910,6 +6095,12 @@ namespace musicmate.Pages
         }
         private void UpdateTunerVisibility()
         {
+            if (!MainThread.IsMainThread)
+            {
+                RunOnMainThread(UpdateTunerVisibility);
+                return;
+            }
+
             var isTuner = _session.Tune == "Tuner";
 
             if (StaffBorder != null)
@@ -6007,6 +6198,12 @@ namespace musicmate.Pages
         }
         private void UpdateScaleTunePicker()
         {
+            if (!MainThread.IsMainThread)
+            {
+                RunOnMainThread(UpdateScaleTunePicker);
+                return;
+            }
+
             if (ScaleTunePicker == null)
             {
                 UpdatePracticePlayItemLabel();

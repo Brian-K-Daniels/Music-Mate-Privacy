@@ -145,13 +145,15 @@ public static class DebugLogSettings
             || message.StartsWith("[StaffLayout]", StringComparison.Ordinal))
             return DebugLogCategory.StaffLog;
 
-        if (message.StartsWith("[ScaleKeyRandom]", StringComparison.Ordinal)
+        if (message.StartsWith("[NoteStateDiag]", StringComparison.Ordinal)
+            || message.StartsWith("[ScaleKeyRandom]", StringComparison.Ordinal)
             || message.StartsWith("[ScaleLevel]", StringComparison.Ordinal))
             return DebugLogCategory.ChildLevel;
 
         if (message.StartsWith("[MusicPage]", StringComparison.Ordinal)
             || message.StartsWith("[Start]", StringComparison.Ordinal)
             || message.StartsWith("[Audio]", StringComparison.Ordinal)
+            || message.StartsWith("[NoteRejected]", StringComparison.Ordinal)
             || message.StartsWith("[Restart]", StringComparison.Ordinal)
             || message.StartsWith("[Play]", StringComparison.Ordinal)
             || message.StartsWith("[AutoStart]", StringComparison.Ordinal)

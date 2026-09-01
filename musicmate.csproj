@@ -12,7 +12,7 @@
     <!-- Compile bindings that set Source (x:Reference / x:Static) for better runtime perf. -->
     <MauiEnableXamlCBindingWithSourceCompilation>true</MauiEnableXamlCBindingWithSourceCompilation>
     <!-- SDK only excludes the project-root obj/bin; ignore nested leftovers (e.g. Views/obj). -->
-    <DefaultItemExcludes>$(DefaultItemExcludes);**\bin\**;**\obj\**</DefaultItemExcludes>
+    <!--<DefaultItemExcludes>$(DefaultItemExcludes);**\bin\**;**\obj\**</DefaultItemExcludes> ChatGPT told me to take this out-->
 
     <!-- Display name -->
     <ApplicationTitle>Music Mate</ApplicationTitle>
@@ -61,17 +61,19 @@
 
   <PropertyGroup Condition="'$(Configuration)' == 'Debug' and '$(TargetFramework)' == 'net10.0-android'">
     <AndroidIncludeDebugSymbols>true</AndroidIncludeDebugSymbols>
+    <!-- Embed assemblies so MonoVsDbg can attach reliably (Fast Deployment sync often fails). -->
+    <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
+    <AndroidUseSharedRuntime>false</AndroidUseSharedRuntime>
+    <!--<AndroidWaitForDebugger>true</AndroidWaitForDebugger>-->
   </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <AndroidLinkMode>SdkOnly</AndroidLinkMode>
-  </PropertyGroup>
+  <!--After the app works remove <AndroidWaitForDebugger>true</AndroidWaitForDebugger>-->
+  
 
   <PropertyGroup>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</SupportedOSPlatformVersion>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'&#xD;&#xA;                          And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' and '$(TargetFramework)' == 'net10.0-android'">
     <AndroidLinkTool>r8</AndroidLinkTool>
   </PropertyGroup>
 
@@ -117,7 +119,7 @@
 
   <ItemGroup>
     <Folder Include="Data\" />
-    <Folder Include="Resources\raw\" />
+    <Folder Include="Resources\Raw\" />
   </ItemGroup>
 
   <ItemGroup>

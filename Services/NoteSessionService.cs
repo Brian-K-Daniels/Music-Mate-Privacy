@@ -2003,11 +2003,13 @@ namespace musicmate.Services
         {
             if (NotesToDraw.Count == 0)
             {
-                CurrentNoteIndex = 0;
+                AssignCurrentNoteIndex(0, "RestoreCurrentNoteIndexAfterStaffRepack empty");
                 return;
             }
 
-            CurrentNoteIndex = Math.Clamp(index, 0, NotesToDraw.Count);
+            AssignCurrentNoteIndex(
+                Math.Clamp(index, 0, NotesToDraw.Count),
+                "RestoreCurrentNoteIndexAfterStaffRepack");
         }
         public readonly HashSet<int> CorrectNoteIndices = new();
         /// <summary>
@@ -2331,11 +2333,29 @@ namespace musicmate.Services
         public void Reset()
         {
             SessionCompleted = false;
+            int fbVmBefore = FeedbackViewModels.Count;
+            int notesBefore = NotesToDraw.Count;
+            int correctBefore = CorrectNoteIndices.Count;
+            int wrongFbBefore = NoteFeedbacks.Count;
             FeedbackViewModels.Clear();
             NotesToDraw.Clear();
             CorrectNoteIndices.Clear();
             NoteFeedbacks.Clear();
-            CurrentNoteIndex = 0;
+            var resetCtx = BuildNoteStateDiagContext(0);
+            NoteStateChangeDiagnostics.GetCaller(out var method, out var file, out var line);
+            NoteStateChangeDiagnostics.LogCollectionMutation(
+                method, file, line, "FeedbackViewModels", "Clear", fbVmBefore, 0, resetCtx,
+                "Reset session");
+            NoteStateChangeDiagnostics.LogCollectionMutation(
+                method, file, line, "NotesToDraw", "Clear", notesBefore, 0, resetCtx,
+                "Reset session");
+            NoteStateChangeDiagnostics.LogCollectionMutation(
+                method, file, line, "CorrectNoteIndices", "Clear", correctBefore, 0, resetCtx,
+                "Reset session");
+            NoteStateChangeDiagnostics.LogCollectionMutation(
+                method, file, line, "NoteFeedbacks", "Clear", wrongFbBefore, 0, resetCtx,
+                "Reset session");
+            AssignCurrentNoteIndex(0, "Reset session");
             IgnoreAudioUntilUtc = DateTime.MinValue;
             _lockedPitchClassAfterAdvance = null;
             ClearNoteOnWait();
@@ -2365,6 +2385,13 @@ namespace musicmate.Services
             _wrongDebounceMs = SessionPreferences.Get(PrefWrongDebounceMsKey, DefaultDebounceMs);
             SessionElapsedMsOverride = null;
             _sessionStopwatch.Reset();
+            PlaybackArmUtc = null;
+            CountInStartUtc = null;
+            CountInEndUtc = null;
+            FirstPitchDetectedUtc = null;
+#if DEBUG
+            _firstSoundTimingDiagLogged = false;
+#endif
         }
         /// <summary>
         /// Starts the session clock. Call when the microphone is live (after tune setup).
@@ -2374,6 +2401,9 @@ namespace musicmate.Services
         {
             _sessionStopwatch.Restart();
         }
+
+        /// <summary>True once <see cref="StartListeningClock"/> has started the conductor timeline.</summary>
+        public bool IsListeningClockRunning => _sessionStopwatch.IsRunning;
         /// <summary>
         /// Enables sustain/rest earliest-start gating using <see cref="MusicBpm"/>.
         /// </summary>
@@ -2417,7 +2447,10 @@ namespace musicmate.Services
                 ? _rhythmGateMusicBpm
                 : Math.Clamp(MusicBpm, MinTempo, MaxTempo);
         private double GetConductorExpectedBeat(int noteIndex)
-            => ConductorOnsetTiming.GetAnchoredBeatPosition(NotesToDraw, noteIndex);
+        {
+            double origin = ConductorOnsetTiming.GetAnchoredBeatPosition(NotesToDraw, 0);
+            return ConductorOnsetTiming.GetAnchoredBeatPosition(NotesToDraw, noteIndex) - origin;
+        }
         private double GetConductorExpectedOnsetMs(int noteIndex)
             => ConductorOnsetTiming.ExpectedOnsetMs(
                 conductorStartMs: 0.0,
@@ -2498,7 +2531,73 @@ namespace musicmate.Services
             if (_rhythmGateUntilMs > 0 && GetSessionElapsedMs() >= _rhythmGateUntilMs)
                 _rhythmGateUntilMs = 0;
         }
-        private bool TryMarkDebouncedWrong(int idx, (int Wrong, int Cents) curFeedback, int cents)
+
+        private string? _diagLastHeardNote;
+        internal DateTime? PlaybackArmUtc { get; private set; }
+        internal DateTime? CountInStartUtc { get; private set; }
+        internal DateTime? CountInEndUtc { get; private set; }
+        internal DateTime? FirstPitchDetectedUtc { get; private set; }
+
+        public void MarkPlaybackArmUtc() => PlaybackArmUtc = DateTime.UtcNow;
+        public void MarkCountInStartUtc() => CountInStartUtc = DateTime.UtcNow;
+        public void MarkCountInEndUtc() => CountInEndUtc = DateTime.UtcNow;
+
+#if DEBUG
+        private bool _firstSoundTimingDiagLogged;
+
+        internal int GetConductorTimingBpmPublic() => GetConductorTimingBpm();
+        internal double GetSessionElapsedMsPublic() => GetSessionElapsedMs();
+        internal double GetConductorExpectedOnsetMsPublic(int noteIndex)
+            => GetConductorExpectedOnsetMs(noteIndex);
+#endif
+
+        internal NoteStateChangeDiagnostics.NoteStateDiagContext BuildNoteStateDiagContext(
+            int noteIndex,
+            string? detectedNote = null)
+        {
+            double sessionMs = GetSessionElapsedMs();
+            double? expectedMs = null;
+            double? beat = null;
+            if (noteIndex >= 0 && noteIndex < NotesToDraw.Count && IsConductorOnsetGateEnabled())
+            {
+                expectedMs = GetConductorExpectedOnsetMs(noteIndex);
+                beat = GetConductorExpectedBeat(noteIndex);
+            }
+
+            return new NoteStateChangeDiagnostics.NoteStateDiagContext(
+                CurrentNoteIndex,
+                sessionMs,
+                expectedMs,
+                beat,
+                detectedNote ?? _diagLastHeardNote,
+                NotesToDraw.Count,
+                NoteFeedbacks.Values.Count(v => v.Wrong > 0),
+                Tune ?? "-");
+        }
+
+        private void AssignCurrentNoteIndex(int value, string reason)
+        {
+#if DEBUG
+            if (CurrentNoteIndex != value)
+            {
+                NoteStateChangeDiagnostics.GetCaller(out var method, out var file, out var line);
+                int old = CurrentNoteIndex;
+                var ctx = BuildNoteStateDiagContext(old);
+                CurrentNoteIndex = value;
+                NoteStateChangeDiagnostics.LogCurrentNoteIndexChange(
+                    method, file, line, old, value, ctx, reason, _diagLastHeardNote);
+                return;
+            }
+#endif
+            CurrentNoteIndex = value;
+        }
+
+        private bool TryMarkDebouncedWrong(
+            int idx,
+            (int Wrong, int Cents) curFeedback,
+            int cents,
+            string reason,
+            string? heardNote = null)
         {
             var nowTrailing = DateTime.UtcNow;
             if (_lastWrongTimePerIndex.TryGetValue(idx, out var lastTrailing)
@@ -2506,9 +2605,25 @@ namespace musicmate.Services
                 return false;
 
             _lastWrongTimePerIndex[idx] = nowTrailing;
+            int wrongBefore = curFeedback.Wrong;
             var updated = (Wrong: curFeedback.Wrong + 1, Cents: cents);
             NoteFeedbacks[idx] = updated;
             FeedbackViewModels[idx] = new FeedbackItem(idx, updated.Wrong, updated.Cents, false);
+            NoteStateChangeDiagnostics.GetCaller(out var method, out var file, out var line);
+            string expected = idx < NotesToDraw.Count ? ResolveWrittenEvaluationName(NotesToDraw[idx]) : "-";
+            NoteStateChangeDiagnostics.LogWrongFeedback(
+                method,
+                file,
+                line,
+                idx,
+                expected,
+                heardNote ?? _diagLastHeardNote,
+                wrongBefore,
+                updated.Wrong,
+                cents,
+                BuildNoteStateDiagContext(idx, heardNote ?? _diagLastHeardNote),
+                reason,
+                $"NoteFeedbacks.Count={NoteFeedbacks.Count} FeedbackViewModels.Count={FeedbackViewModels.Count}");
             return true;
         }
         private static string FormatDurationName(NoteDuration? duration)
@@ -2646,21 +2761,44 @@ namespace musicmate.Services
         /// <summary>
         /// Skips notes whose conductor windows have closed. Optional pitch context marks an
         /// expired note Late when the player hit the right pitch too late; otherwise Missed.
+        /// When <paramref name="fromDetectedPitch"/> is true, at most one expired note is
+        /// processed so a single heard pitch cannot score multiple future notes wrong.
         /// Expected onsets stay score-anchored. Returns true when <see cref="CurrentNoteIndex"/> moved.
         /// </summary>
         internal bool CatchUpExpiredConductorNotes(
             double freq = 0,
-            (bool correct, int cents)? pitchResult = null)
+            (bool correct, int cents)? pitchResult = null,
+            bool fromDetectedPitch = false)
         {
             if (!IsConductorOnsetGateEnabled() || SessionCompleted)
                 return false;
 
             bool advanced = false;
             double actualMs = GetSessionElapsedMs();
+            if (fromDetectedPitch && freq > 0 && pitchResult.HasValue)
+            {
+                NoteStateChangeDiagnostics.GetCaller(out var m, out var f, out var ln);
+                NoteStateChangeDiagnostics.LogEvent(
+                    "CatchUpWithPitch",
+                    m,
+                    f,
+                    ln,
+                    BuildNoteStateDiagContext(CurrentNoteIndex, _diagLastHeardNote),
+                    $"CatchUpWithPitch begin actualMs={actualMs:F0} startIndex={CurrentNoteIndex}");
+            }
 
             while (CurrentNoteIndex < NotesToDraw.Count)
             {
                 int idx = CurrentNoteIndex;
+
+                // After WrongPitch the cursor stays on the failed note while the clock
+                // keeps running. Silent catch-up must not mark every subsequent expired
+                // note Missed — wait for the player to recover on this note instead.
+                if (!fromDetectedPitch
+                    && NoteFeedbacks.TryGetValue(idx, out var priorFeedback)
+                    && priorFeedback.Wrong > 0)
+                    break;
+
                 var timing = GetConductorNoteTiming(idx);
                 if (!ConductorOnsetTiming.IsWindowExpired(
                         actualMs, timing.ExpectedMs, timing.LateToleranceMs))
@@ -2688,6 +2826,9 @@ namespace musicmate.Services
                     reason, pitchCorrect: latePitchMatch);
                 AdvanceAfterTimingFailure(idx);
                 advanced = true;
+
+                if (fromDetectedPitch)
+                    break;
             }
 
             return advanced;
@@ -2695,7 +2836,12 @@ namespace musicmate.Services
 
         /// <summary>Called when musical time passes without a timely response (e.g. after silence).</summary>
         public bool AdvanceTimelineForExpiredNotes()
-            => CatchUpExpiredConductorNotes();
+        {
+            if (!IsListeningClockRunning)
+                return false;
+
+            return CatchUpExpiredConductorNotes();
+        }
 
         private void RecordConductorTimingFailure(
             int idx,
@@ -2709,8 +2855,8 @@ namespace musicmate.Services
         {
             var curFeedback = NoteFeedbacks.TryGetValue(idx, out var v2) ? v2 : (Wrong: 0, Cents: 0);
             bool marked = reason == "Missed"
-                ? MarkWrongOnce(idx, curFeedback, cents)
-                : TryMarkDebouncedWrong(idx, curFeedback, cents);
+                ? MarkWrongOnce(idx, curFeedback, cents, $"Conductor:{reason}", heardNote)
+                : TryMarkDebouncedWrong(idx, curFeedback, cents, $"Conductor:{reason}", heardNote);
 
             if (!marked && reason != "Missed")
                 return;
@@ -2737,14 +2883,35 @@ namespace musicmate.Services
                 toleranceMs: timing.LateToleranceMs);
         }
 
-        private bool MarkWrongOnce(int idx, (int Wrong, int Cents) curFeedback, int cents)
+        private bool MarkWrongOnce(
+            int idx,
+            (int Wrong, int Cents) curFeedback,
+            int cents,
+            string reason,
+            string? heardNote = null)
         {
             if (curFeedback.Wrong > 0)
                 return false;
 
+            int wrongBefore = curFeedback.Wrong;
             var updated = (Wrong: curFeedback.Wrong + 1, Cents: cents);
             NoteFeedbacks[idx] = updated;
             FeedbackViewModels[idx] = new FeedbackItem(idx, updated.Wrong, updated.Cents, false);
+            NoteStateChangeDiagnostics.GetCaller(out var method, out var file, out var line);
+            string expected = idx < NotesToDraw.Count ? ResolveWrittenEvaluationName(NotesToDraw[idx]) : "-";
+            NoteStateChangeDiagnostics.LogWrongFeedback(
+                method,
+                file,
+                line,
+                idx,
+                expected,
+                heardNote ?? _diagLastHeardNote,
+                wrongBefore,
+                updated.Wrong,
+                cents,
+                BuildNoteStateDiagContext(idx, heardNote ?? _diagLastHeardNote),
+                reason,
+                $"NoteFeedbacks.Count={NoteFeedbacks.Count} FeedbackViewModels.Count={FeedbackViewModels.Count}");
             return true;
         }
 
@@ -2755,10 +2922,10 @@ namespace musicmate.Services
             IgnoreAudioUntilUtc = DateTime.UtcNow.AddMilliseconds(CooldownMs);
             _lastWrongTimePerIndex.Remove(idx);
 
-            CurrentNoteIndex = idx + 1;
+            AssignCurrentNoteIndex(idx + 1, $"AdvanceAfterTimingFailure idx={idx}");
             if (CurrentNoteIndex >= NotesToDraw.Count)
             {
-                CurrentNoteIndex = NotesToDraw.Count;
+                AssignCurrentNoteIndex(NotesToDraw.Count, "AdvanceAfterTimingFailure session complete");
                 ClearNoteOnWait();
                 _lockedPitchClassAfterAdvance = null;
                 _rhythmGateUntilMs = 0;
@@ -2959,6 +3126,156 @@ namespace musicmate.Services
                 return sorted[lo];
             return sorted[lo] + (pos - lo) * (sorted[hi] - sorted[lo]);
         }
+        public void SetLastDetectionTelemetry(float rms)
+            => _lastDetectionRms = rms;
+
+        private float _lastDetectionRms;
+
+        public void LogNoteRejectedIfPitchIdentified(
+            double freq,
+            int cents,
+            string reason,
+            NoteRejectionDiagnostics.TimingInfo? timing = null,
+            string? debounceState = null,
+            string? extra = null)
+        {
+            if (freq <= 0 || CurrentNoteIndex >= NotesToDraw.Count)
+                return;
+
+            var (pitchClassMatch, withinCentsTolerance, evalCents) = EvaluatePitchMatch(freq);
+            if (!pitchClassMatch)
+                return;
+
+            if (cents == 0 && evalCents != 0)
+                cents = evalCents;
+
+            string expected = ResolveWrittenEvaluationName(NotesToDraw[CurrentNoteIndex]);
+            var detectedMidi = (int)Math.Round(69 + 12 * Math.Log(freq / 440.0, 2));
+            var detMidiWritten = detectedMidi - GetInstrumentTransposeOffset();
+            string heard = MidiToNoteName(detMidiWritten, KeyUsesFlats(Key));
+
+            if (timing is null && IsConductorOnsetGateEnabled())
+            {
+                var conductorTiming = GetConductorNoteTiming(CurrentNoteIndex);
+                timing = BuildConductorTimingInfo(
+                    GetSessionElapsedMs(),
+                    conductorTiming.ExpectedMs,
+                    conductorTiming.EarlyToleranceMs,
+                    conductorTiming.LateToleranceMs);
+            }
+
+            string? toleranceExtra = withinCentsTolerance
+                ? extra
+                : CombineExtra(extra, $"Tolerance={Tolerance}");
+
+            NoteRejectionDiagnostics.Log(
+                expected,
+                heard,
+                cents,
+                CurrentNoteIndex,
+                reason,
+                timing,
+                _lastDetectionRms > 0 ? _lastDetectionRms : null,
+                PitchDetectionService.LastDetectionClarity > 0
+                    ? PitchDetectionService.LastDetectionClarity
+                    : null,
+                debounceState,
+                toleranceExtra);
+        }
+
+        public void LogNoteOnGateRejectionIfPitchIdentified(double freq, int cents)
+            => LogNoteRejectedIfPitchIdentified(
+                freq,
+                cents,
+                GetNoteOnRejectionReason(),
+                debounceState: GetNoteOnGateState());
+
+        public void LogAudioCooldownRejectionIfPitchIdentified(double freq, int cents)
+            => LogNoteRejectedIfPitchIdentified(
+                freq,
+                cents,
+                "AudioCooldown",
+                debounceState: GetAudioCooldownState());
+
+        private static string? CombineExtra(string? left, string right)
+            => string.IsNullOrWhiteSpace(left) ? right : $"{left} {right}";
+
+        private string GetWrongDebounceState(int idx)
+        {
+            if (!_lastWrongTimePerIndex.TryGetValue(idx, out var last))
+                return "Ready";
+
+            double elapsed = (DateTime.UtcNow - last).TotalMilliseconds;
+            if (elapsed >= _wrongDebounceMs)
+                return "Ready";
+
+            return $"DebounceNotSatisfied remaining={_wrongDebounceMs - elapsed:F0}ms";
+        }
+
+        private string GetAudioCooldownState()
+        {
+            double remaining = (IgnoreAudioUntilUtc - DateTime.UtcNow).TotalMilliseconds;
+            return remaining <= 0
+                ? "Ready"
+                : $"AudioCooldown remaining={remaining:F0}ms";
+        }
+
+        private string GetNoteOnGateState()
+        {
+            var parts = new List<string>(4);
+            if (_awaitingNoteOn)
+                parts.Add("AwaitingNoteOn");
+            if (_requirePostSilenceAttack)
+                parts.Add("AwaitingPostSilenceAttack");
+            if (_awaitingSamePitchRetrigger)
+                parts.Add("SamePitchRetrigger");
+            if (_silenceSinceUtc.HasValue)
+            {
+                parts.Add(
+                    $"SilenceMs={(DateTime.UtcNow - _silenceSinceUtc.Value).TotalMilliseconds:F0}");
+            }
+
+            return parts.Count == 0 ? "Ready" : string.Join('+', parts);
+        }
+
+        private string GetNoteOnRejectionReason()
+        {
+            if (_awaitingSamePitchRetrigger && _requirePostSilenceAttack)
+                return "AwaitingSamePitchAttack";
+            if (_awaitingSamePitchRetrigger)
+                return "AwaitingSamePitchNoteOn";
+            if (_requirePostSilenceAttack)
+                return "AwaitingPostSilenceAttack";
+            return "AwaitingNoteOn";
+        }
+
+        private NoteRejectionDiagnostics.TimingInfo BuildConductorTimingInfo(
+            double actualMs,
+            double expectedMs,
+            double earlyTolMs,
+            double lateTolMs)
+        {
+            double timingErrorMs = actualMs - expectedMs;
+            string classification;
+            if (ConductorOnsetTiming.IsTooEarly(actualMs, expectedMs, earlyTolMs))
+                classification = "TooEarly";
+            else if (actualMs > expectedMs + lateTolMs)
+                classification = "TooLate";
+            else if (ConductorOnsetTiming.IsWithinTimingWindow(
+                         actualMs, expectedMs, earlyTolMs, lateTolMs))
+                classification = "WithinWindow";
+            else
+                classification = "OutsideWindow";
+
+            return new NoteRejectionDiagnostics.TimingInfo(
+                actualMs,
+                expectedMs,
+                timingErrorMs,
+                earlyTolMs,
+                lateTolMs,
+                classification);
+        }
+
         public bool UpdateFeedbackForCurrent(double freq, (bool correct, int cents) result)
         {
 
@@ -2976,11 +3293,21 @@ namespace musicmate.Services
             // One accepted note per detection pass: honor cooldown and note-on gate here so
             // queued MainThread callbacks cannot burst-advance through a sequence.
             if (ShouldIgnoreAudio(DateTime.UtcNow))
+            {
+                LogNoteRejectedIfPitchIdentified(
+                    freq,
+                    result.cents,
+                    "AudioCooldown",
+                    debounceState: GetAudioCooldownState());
                 return false;
+            }
 
             // Block until silence / new attack (includes same-pitch post-silence onset).
             if (IsAwaitingNoteOn)
+            {
+                LogNoteOnGateRejectionIfPitchIdentified(freq, result.cents);
                 return false;
+            }
 
             string heardNote = "-";
             if (freq > 0)
@@ -2989,6 +3316,9 @@ namespace musicmate.Services
                 var detMidiWrit = midi - GetInstrumentTransposeOffset();
                 heardNote = MidiToNoteName(detMidiWrit, KeyUsesFlats(Key));
             }
+#if DEBUG
+            _diagLastHeardNote = heardNote;
+#endif
             string expectedNote = (CurrentNoteIndex < NotesToDraw.Count)
                 ? ResolveWrittenEvaluationName(NotesToDraw[CurrentNoteIndex])
                 : "-";
@@ -3004,6 +3334,19 @@ namespace musicmate.Services
                 Utils.Log($"[Feedback] Index {idx} out of bounds for FeedbackViewModels (Count={FeedbackViewModels.Count}). Session may have been reset.");
                 return false;
             }
+
+#if DEBUG
+            bool logFirstSound = !_firstSoundTimingDiagLogged;
+            int indexBeforeFirstSound = idx;
+            double elapsedAtFirstSound = GetSessionElapsedMs();
+            if (logFirstSound)
+                FirstPitchDetectedUtc = DateTime.UtcNow;
+#else
+            const bool logFirstSound = false;
+#endif
+
+            try
+            {
 
             var targetNote = NotesToDraw[idx];
             var expectedWrittenMidi = ResolveWrittenEvaluationMidi(targetNote);
@@ -3052,7 +3395,7 @@ namespace musicmate.Services
                 conductorTooEarly = ConductorOnsetTiming.IsTooEarly(
                     actualMs, conductorExpectedMs, conductorEarlyTolMs);
 
-                if (CatchUpExpiredConductorNotes(freq, result))
+                if (CatchUpExpiredConductorNotes(freq, result, fromDetectedPitch: true))
                     return true;
 
                 // Catch-up may have moved the target; refresh for the remainder of this call.
@@ -3087,8 +3430,19 @@ namespace musicmate.Services
                         conductorEarlyTolMs, conductorLateTolMs,
                         pitchAccepted: true, timingAccepted: false,
                         advanceReason: "blocked-early-conductor");
-                    if (TryMarkDebouncedWrong(idx, curFeedback, result.cents))
+                    if (TryMarkDebouncedWrong(
+                            idx, curFeedback, result.cents, "Conductor:TooEarly", heardNote))
                     {
+                        LogNoteRejectedIfPitchIdentified(
+                            freq,
+                            result.cents,
+                            "TooEarly",
+                            BuildConductorTimingInfo(
+                                actualMs,
+                                conductorExpectedMs,
+                                conductorEarlyTolMs,
+                                conductorLateTolMs),
+                            debounceState: "MarkedTimingWrong");
                         var outcome = BuildNoteOutcome(
                             targetNote, heardNote, result.cents,
                             pitchCorrect: true, timingCorrect: false, reason: reason,
@@ -3103,6 +3457,17 @@ namespace musicmate.Services
                             toleranceMs: conductorEarlyTolMs);
                         return true;
                     }
+
+                    LogNoteRejectedIfPitchIdentified(
+                        freq,
+                        result.cents,
+                        "TooEarly",
+                        BuildConductorTimingInfo(
+                            actualMs,
+                            conductorExpectedMs,
+                            conductorEarlyTolMs,
+                            conductorLateTolMs),
+                        debounceState: GetWrongDebounceState(idx));
                     return false;
                 }
 
@@ -3130,8 +3495,21 @@ namespace musicmate.Services
                 if (Mod12(expectedWrittenMidi) == detectedPcWritten)
                 {
                     string reason = inRestPhase ? "Early" : "EarlyDuringSustain";
-                    if (TryMarkDebouncedWrong(idx, curFeedback, result.cents))
+                    if (TryMarkDebouncedWrong(
+                            idx, curFeedback, result.cents, $"RhythmGate:{reason}", heardNote))
                     {
+                        LogNoteRejectedIfPitchIdentified(
+                            freq,
+                            result.cents,
+                            reason,
+                            new NoteRejectionDiagnostics.TimingInfo(
+                                actualMs,
+                                _rhythmGateUntilMs,
+                                actualMs - _rhythmGateUntilMs,
+                                null,
+                                null,
+                                inRestPhase ? "TooEarly" : "EarlyDuringSustain"),
+                            debounceState: "MarkedTimingWrong");
                         var outcome = BuildNoteOutcome(
                             targetNote, heardNote, result.cents,
                             pitchCorrect: true, timingCorrect: false, reason: reason,
@@ -3142,6 +3520,19 @@ namespace musicmate.Services
                             pitchCorrect: true, timingCorrect: false);
                         return true;
                     }
+
+                    LogNoteRejectedIfPitchIdentified(
+                        freq,
+                        result.cents,
+                        reason,
+                        new NoteRejectionDiagnostics.TimingInfo(
+                            actualMs,
+                            _rhythmGateUntilMs,
+                            actualMs - _rhythmGateUntilMs,
+                            null,
+                            null,
+                            inRestPhase ? "TooEarly" : "EarlyDuringSustain"),
+                        debounceState: GetWrongDebounceState(idx));
                     return false;
                 }
 
@@ -3153,7 +3544,8 @@ namespace musicmate.Services
             // Only match if the detected pitch class matches the current note's pitch class
             if (Mod12(expectedWrittenMidi) != detectedPcWritten)
             {
-                if (TryMarkDebouncedWrong(idx, curFeedback, result.cents))
+                if (TryMarkDebouncedWrong(
+                        idx, curFeedback, result.cents, "WrongPitch", heardNote))
                 {
                     RecordAttemptOutcome(BuildNoteOutcome(
                         targetNote, heardNote, result.cents,
@@ -3194,6 +3586,16 @@ namespace musicmate.Services
 
                 // Update feedback: update cents only on correct
                 CorrectNoteIndices.Add(idx);
+                NoteStateChangeDiagnostics.GetCaller(out var acceptMethod, out var acceptFile, out var acceptLine);
+                NoteStateChangeDiagnostics.LogCorrectAccepted(
+                    acceptMethod,
+                    acceptFile,
+                    acceptLine,
+                    idx,
+                    expectedNote,
+                    heardNote,
+                    BuildNoteStateDiagContext(idx, heardNote),
+                    "PitchAndTimingAccepted");
                 FeedbackViewModels[idx] = new FeedbackItem(idx, curFeedback.Wrong, result.cents, true);
 
                 // Lock the accepted pitch until a fresh note-on; move to next note once.
@@ -3209,10 +3611,10 @@ namespace musicmate.Services
                 _lastWrongTimePerIndex.Remove(idx);
 
                 // Move CurrentNoteIndex to the next note (in order) — at most one advance per call
-                CurrentNoteIndex = idx + 1;
+                AssignCurrentNoteIndex(idx + 1, "Accepted correct note");
                 if (CurrentNoteIndex >= NotesToDraw.Count)
                 {
-                    CurrentNoteIndex = NotesToDraw.Count; // Stay at the end
+                    AssignCurrentNoteIndex(NotesToDraw.Count, "Accepted last note — session complete");
                     ClearNoteOnWait();
                     _lockedPitchClassAfterAdvance = null;
                     _rhythmGateUntilMs = 0;
@@ -3229,7 +3631,38 @@ namespace musicmate.Services
             }
 
             // Right pitch class but outside cents tolerance: keep waiting — do not score WrongPitch.
+            LogNoteRejectedIfPitchIdentified(
+                freq,
+                result.cents,
+                "CentsOutOfTolerance",
+                debounceState: GetWrongDebounceState(idx),
+                extra: $"PitchClassMatch=true EvaluateCorrect={result.correct}");
             return false;
+            }
+            finally
+            {
+#if DEBUG
+                if (logFirstSound)
+                {
+                    _firstSoundTimingDiagLogged = true;
+                    int wrongCount = NoteFeedbacks.Values.Count(f => f.Wrong > 0);
+                    string summary =
+                        $"index {indexBeforeFirstSound}->{CurrentNoteIndex} " +
+                        $"wrongNotes={wrongCount} clockRunning={IsListeningClockRunning}";
+                    FirstSoundTimingDiagnostics.LogAnalysis(
+                        this,
+                        new FirstSoundTimingDiagnostics.TimingMarkers(
+                            PlaybackArmUtc, CountInStartUtc, CountInEndUtc, FirstPitchDetectedUtc),
+                        indexBeforeFirstSound,
+                        CurrentNoteIndex,
+                        heardNote,
+                        freq,
+                        result.cents,
+                        elapsedAtFirstSound,
+                        summary);
+                }
+#endif
+            }
         }
         private async Task<string[]> BuildRandomSequenceAsync()
         {
@@ -3905,7 +4338,7 @@ namespace musicmate.Services
             MeasureBarXPositions.Clear();
             RestXPositions.Clear();
             RestDurations.Clear();
-            CurrentNoteIndex = 0;
+            AssignCurrentNoteIndex(0, "GenerateNotesAsync");
             _lockedPitchClassAfterAdvance = null;
             ClearNoteOnWait();
             IgnoreAudioUntilUtc = DateTime.MinValue;
@@ -4133,12 +4566,10 @@ namespace musicmate.Services
         public string ResolveWrittenEvaluationName(NoteInfo note)
             => ResolveWrittenNoteName(note);
 
-        public (bool correct, int cents) Evaluate(double freq)
+        public (bool pitchClassMatch, bool withinCentsTolerance, int cents) EvaluatePitchMatch(double freq)
         {
             if (NotesToDraw.Count == 0 || CurrentNoteIndex >= NotesToDraw.Count || freq <= 0)
-            {
-                return (false, 0);
-            }
+                return (false, false, 0);
 
             var target = NotesToDraw[CurrentNoteIndex];
             var expectedWrittenMidi = ResolveWrittenEvaluationMidi(target);
@@ -4156,25 +4587,24 @@ namespace musicmate.Services
             bool enharmonicMatch = false;
             if (!correctPc)
             {
-                // Get all enharmonic MIDI numbers for the target note
                 var enharmonicMidis = GetEnharmonicMidis(expectedWrittenMidi);
-                // enharmonicMatch = enharmonicMidis.Contains(detMidiWritten);
-                enharmonicMatch = enharmonicMidis.Any(m => Mod12(m) == detPcWritten);  //  2026.03.06 1745  
+                enharmonicMatch = enharmonicMidis.Any(m => Mod12(m) == detPcWritten);
             }
-
-            // Utils.Log($"Evaluate: freq={freq:F2}, detMidi={detMidi}, detMidiWritten={detMidiWritten}, detPcWritten={detPcWritten}, targetMidi={target.Midi}, expectedPc={expectedPc}, correctPc={correctPc}, enharmonicMatch={enharmonicMatch}");
 
             // For cents, always use the concert pitch of the detected MIDI (not written MIDI)
             var nearestMidi = detMidi;
             var nearestFreq = MidiToFreq(nearestMidi);
             var cents = (int)Math.Round(1200 * Math.Log(freq / nearestFreq, 2));
             var withinTolerance = Math.Abs(cents) <= Tolerance;
-            // Utils.Log($"Evaluate: nearestMidi={nearestMidi}, nearestFreq={nearestFreq:F2}, cents={cents}, withinTolerance={withinTolerance}");
 
-            // Consider a detection correct only if pitch-class matches (or is enharmonic)
-            // AND the cents deviation is within the configured tolerance.
-            var isPitchClassMatch = (correctPc || enharmonicMatch);
-            return (isPitchClassMatch && withinTolerance, cents);
+            var isPitchClassMatch = correctPc || enharmonicMatch;
+            return (isPitchClassMatch, withinTolerance, cents);
+        }
+
+        public (bool correct, int cents) Evaluate(double freq)
+        {
+            var (pitchClassMatch, withinCentsTolerance, cents) = EvaluatePitchMatch(freq);
+            return (pitchClassMatch && withinCentsTolerance, cents);
         }
         // Returns all MIDI numbers that are enharmonic equivalents of the given MIDI (including itself)
         public static HashSet<int> GetEnharmonicMidis(int midi)

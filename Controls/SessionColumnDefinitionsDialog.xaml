@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:musicmate.ViewModels"
+             x:Class="musicmate.Controls.SessionColumnDefinitionsDialog"
+             IsVisible="{Binding IsSessionColumnDefinitionsVisible}"
+             BackgroundColor="#80000000"
+             HorizontalOptions="Fill"
+             VerticalOptions="Fill">
+
+  <ScrollView HorizontalOptions="Center"
+              VerticalOptions="Center"
+              MaximumWidthRequest="920"
+              Padding="16">
+    <Border BackgroundColor="White"
+            Stroke="#666666"
+            StrokeThickness="1"
+            Padding="20"
+            MaximumWidthRequest="880">
+      <Border.StrokeShape>
+        <RoundRectangle CornerRadius="8" />
+      </Border.StrokeShape>
+
+      <VerticalStackLayout Spacing="12">
+        <Label Text="Session Table Column Definitions"
+               FontSize="16"
+               FontAttributes="Bold"
+               TextColor="#000000"
+               HorizontalTextAlignment="Center" />
+
+        <Grid ColumnDefinitions="88,*"
+              Padding="0,0,0,4">
+          <Label Text="Heading"
+                 FontSize="11"
+                 FontAttributes="Bold"
+                 TextColor="#000000" />
+          <Label Text="Definition"
+                 Grid.Column="1"
+                 FontSize="11"
+                 FontAttributes="Bold"
+                 TextColor="#000000" />
+        </Grid>
+
+        <CollectionView ItemsSource="{Binding SessionColumnDefinitionRows}"
+                        SelectionMode="None">
+          <CollectionView.ItemTemplate>
+            <DataTemplate x:DataType="vm:SessionColumnDefinitionDisplayRow">
+              <Border Padding="8,8"
+                      Margin="0,2"
+                      BackgroundColor="Transparent"
+                      StrokeThickness="0">
+                <Border.Triggers>
+                  <DataTrigger TargetType="Border"
+                               Binding="{Binding IsHighlighted}"
+                               Value="True">
+                    <Setter Property="BackgroundColor" Value="#FFF8E1" />
+                    <Setter Property="Stroke" Value="#856404" />
+                    <Setter Property="StrokeThickness" Value="2" />
+                  </DataTrigger>
+                </Border.Triggers>
+
+                <Grid ColumnDefinitions="88,*"
+                      ColumnSpacing="10">
+                  <VerticalStackLayout Spacing="2">
+                    <Label Text="{Binding HeadingDisplay}"
+                           FontSize="11"
+                           FontAttributes="{Binding HeadingFontAttributes}"
+                           TextColor="#000000"
+                           LineBreakMode="NoWrap" />
+                    <Label Text="Selected definition"
+                           FontSize="9"
+                           FontAttributes="Bold"
+                           TextColor="#856404"
+                           IsVisible="{Binding IsHighlighted}" />
+                  </VerticalStackLayout>
+                  <Label Grid.Column="1"
+                         Text="{Binding Definition}"
+                         FontSize="11"
+                         TextColor="#000000"
+                         LineBreakMode="WordWrap"
+                         FontAttributes="{Binding HeadingFontAttributes}" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </CollectionView.ItemTemplate>
+        </CollectionView>
+
+        <Button Text="Close"
+                Command="{Binding CloseSessionColumnDefinitionsCommand}"
+                HorizontalOptions="Center"
+                MinimumWidthRequest="120"
+                MinimumHeightRequest="48"
+                Margin="0,8,0,0" />
+      </VerticalStackLayout>
+    </Border>
+  </ScrollView>
+</ContentView>

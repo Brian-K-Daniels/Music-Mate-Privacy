@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Runtime.Versioning;
 using musicmate.Drawables;
 using musicmate.Models;
 using musicmate.Utilities;
@@ -9,6 +10,8 @@ using musicmate.ViewModels;
 
 namespace musicmate.Pages
 {
+    [SupportedOSPlatform("android21.0")]
+    [SupportedOSPlatform("windows10.0.17763.0")]
     public partial class StatisticsPages : ContentPage
     {
         private readonly NoteStatisticsViewModel _viewModel;
@@ -24,17 +27,25 @@ namespace musicmate.Pages
 
         public StatisticsPages()
         {
-            InitializeComponent();
+            try
+            {
+                InitializeComponent();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[StatisticsPages] InitializeComponent failed: {ex}");
+                Utils.Log($"[StatisticsPages] InitializeComponent failed: {ex}");
+                throw;
+            }
 
-            _orientationService = ServiceHelper.GetService<IOrientationService>()!;
-
-            _noteDatabase = ServiceHelper.GetService<NoteDatabase>()!;
-            _sessionDatabase = ServiceHelper.GetService<SessionDatabase>()!;
-            _sessionResultDatabase = ServiceHelper.GetService<SessionResultDatabase>()!;
-            _session = ServiceHelper.GetService<NoteSessionService>()!;
-            _themeService = ServiceHelper.GetService<ThemeService>()!;
-            _statisticsCache = ServiceHelper.GetService<StatisticsCacheService>()!;
-            _noteMasteryService = ServiceHelper.GetService<NoteMasteryService>()!;
+            _orientationService = RequireService<IOrientationService>(nameof(IOrientationService));
+            _noteDatabase = RequireService<NoteDatabase>(nameof(NoteDatabase));
+            _sessionDatabase = RequireService<SessionDatabase>(nameof(SessionDatabase));
+            _sessionResultDatabase = RequireService<SessionResultDatabase>(nameof(SessionResultDatabase));
+            _session = RequireService<NoteSessionService>(nameof(NoteSessionService));
+            _themeService = RequireService<ThemeService>(nameof(ThemeService));
+            _statisticsCache = RequireService<StatisticsCacheService>(nameof(StatisticsCacheService));
+            _noteMasteryService = RequireService<NoteMasteryService>(nameof(NoteMasteryService));
 
             _viewModel = new NoteStatisticsViewModel(
                 _noteDatabase, _sessionDatabase, _themeService, _session,
@@ -42,6 +53,18 @@ namespace musicmate.Pages
             BindingContext = _viewModel;
             _viewModel.MasteryNotesChanged += OnMasteryNotesChanged;
             _themeService.PropertyChanged += OnThemeServicePropertyChanged;
+        }
+
+        private static T RequireService<T>(string serviceName) where T : class
+        {
+            var service = ServiceHelper.GetService<T>();
+            if (service is null)
+            {
+                throw new InvalidOperationException(
+                    $"StatisticsPages requires {serviceName} to be registered in MauiProgram.");
+            }
+
+            return service;
         }
 
         private void OnThemeServicePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -76,19 +99,29 @@ namespace musicmate.Pages
 
         protected override async void OnAppearing()
         {
-            _orientationService?.ForceLandscape();
+            _orientationService.ForceLandscape();
             base.OnAppearing();
-            // Set 9mm left margin on the outermost VerticalStackLayout
-            //var mainLayout = this.FindByName<VerticalStackLayout>("StatisticsMainLayout");
-            //if (mainLayout != null)
-            //    musicmate.Utilities.MarginUtils.SetLeftMarginMM(mainLayout, 9, 0, 0, 0);  //  2026.04.02 1726  block out
-            await NavigationBusyService.Instance.RunAsync(async () =>
+            try
             {
-                await _noteDatabase.InitializeAsync();
-                await _sessionDatabase.InitializeAsync();
-                await _sessionResultDatabase.InitializeAsync();
-                await _viewModel.LoadAsync();
-            });
+                await NavigationBusyService.Instance.RunAsync(async () =>
+                {
+                    Debug.WriteLine("[StatisticsPages] OnAppearing: initializing databases");
+                    await _noteDatabase.InitializeAsync();
+                    await _sessionDatabase.InitializeAsync();
+                    await _sessionResultDatabase.InitializeAsync();
+                    await _viewModel.LoadAsync();
+                    Debug.WriteLine("[StatisticsPages] OnAppearing: load completed");
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[StatisticsPages] OnAppearing failed: {ex}");
+                Utils.Log($"[StatisticsPages] OnAppearing failed: {ex}");
+                await DisplayAlertAsync(
+                    "My Progress",
+                    $"Could not load statistics: {ex.Message}",
+                    "OK");
+            }
         }
 
         private async void OnDeleteDataInSelectedDatabase(object sender, EventArgs e)
@@ -210,9 +243,9 @@ namespace musicmate.Pages
                 }
                 await _viewModel.LoadAsync(forceRefresh: true);
                 foreach (var stat in _viewModel.NoteStats)
-                    stat.ContrastingTextColor = _themeService!.ContrastingTextColor;
+                    stat.ContrastingTextColor = _themeService.ContrastingTextColor;
                 foreach (var stat in _viewModel.SessionStats)
-                    stat.ContrastingTextColor = _themeService!.ContrastingTextColor;
+                    stat.ContrastingTextColor = _themeService.ContrastingTextColor;
                 await DisplayAlertAsync("Success", "Database deleted. The app will recreate it on next use.", "OK");
             }
             catch (Exception ex)

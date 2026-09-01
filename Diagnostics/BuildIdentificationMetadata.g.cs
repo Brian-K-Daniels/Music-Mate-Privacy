@@ -2,6 +2,6 @@
 namespace musicmate.Diagnostics;
 internal static class BuildIdentificationMetadata
 {
-internal const string GitCommit = "7ae35b5";
-internal const string BuildTimestampUtc = "2026-08-29 01:47:45 UTC";
+internal const string GitCommit = "d63ce44";
+internal const string BuildTimestampUtc = "2026-09-01 20:10:29 UTC";
 }

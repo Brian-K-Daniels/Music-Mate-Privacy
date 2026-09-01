@@ -2,6 +2,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:vm="clr-namespace:musicmate.ViewModels"
              xmlns:services="clr-namespace:musicmate.Services"
+             xmlns:controls="clr-namespace:musicmate.Controls"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
              x:Class="musicmate.Pages.StatisticsPages"
              x:DataType="vm:NoteStatisticsViewModel"
              x:Name="StatisticsPageRoot"
@@ -228,15 +230,14 @@
       <!-- Column widths chosen to accommodate headings and data; header and data use identical definitions -->
       <ScrollView Orientation="Horizontal"
                   IsVisible="{Binding IsSessionDatabase}">
-        <VerticalStackLayout MinimumWidthRequest="1150" Spacing="0" Margin="8,0,0,0">
-          <!-- Header row -->
-          <Grid Padding="0" Margin="0" HeightRequest="28">
+        <VerticalStackLayout MinimumWidthRequest="1098" Spacing="0" Margin="8,0,0,0">
+          <!-- Header row: 48dp min height for full font metrics + touch targets (do not fix below content size) -->
+          <Grid Padding="0" Margin="0" MinimumHeightRequest="48">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="32" />   <!-- delete icon -->
               <ColumnDefinition Width="140" />  <!-- Date -->
               <ColumnDefinition Width="52" />   <!-- Level -->
-              <ColumnDefinition Width="72" />   <!-- Correct % -->
-              <ColumnDefinition Width="52" />   <!-- Pch -->
+              <ColumnDefinition Width="124" />  <!-- Correct % -->
               <ColumnDefinition Width="52" />   <!-- Tmg -->
               <ColumnDefinition Width="52" />   <!-- Ovrl -->
               <ColumnDefinition Width="30" />   <!-- P+ -->
@@ -259,172 +260,264 @@
             <Label Text="" Grid.Column="0" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                    HorizontalTextAlignment="Center" HorizontalOptions="Center" />
 
-            <Border Grid.Column="1" BackgroundColor="Transparent" Padding="4,0">
+            <Border Grid.Column="1" BackgroundColor="Transparent" Padding="4,2" VerticalOptions="Fill" HorizontalOptions="Fill">
               <Label Text="{Binding DateHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Date" />
-              </Border.GestureRecognizers>
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center"
+                     SemanticProperties.Description="Date column heading"
+                     SemanticProperties.Hint="Tap to show column definitions. Long press to sort." />
+              <Border.Behaviors>
+                <toolkit:TouchBehavior Command="{Binding ShowSessionColumnDefinitionsCommand}"
+                                       CommandParameter="Date"
+                                       LongPressCommand="{Binding SortSessionStatsCommand}"
+                                       LongPressCommandParameter="Date" />
+              </Border.Behaviors>
             </Border>
 
-            <Border Grid.Column="2" BackgroundColor="Transparent" Padding="4,0">
+            <Border Grid.Column="2" BackgroundColor="Transparent" Padding="4,2" VerticalOptions="Fill" HorizontalOptions="Fill">
               <Label Text="{Binding LevelHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Level" />
-              </Border.GestureRecognizers>
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center"
+                     SemanticProperties.Description="Level column heading"
+                     SemanticProperties.Hint="Tap to show column definitions. Long press to sort." />
+              <Border.Behaviors>
+                <toolkit:TouchBehavior Command="{Binding ShowSessionColumnDefinitionsCommand}"
+                                       CommandParameter="Level"
+                                       LongPressCommand="{Binding SortSessionStatsCommand}"
+                                       LongPressCommandParameter="Level" />
+              </Border.Behaviors>
             </Border>
 
-            <Border Grid.Column="3" BackgroundColor="Transparent" Padding="4,0">
+            <Border Grid.Column="3" BackgroundColor="Transparent" Padding="4,2" VerticalOptions="Fill" HorizontalOptions="Fill">
               <Label Text="{Binding CorrectPercentHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="CorrectPercent" />
-              </Border.GestureRecognizers>
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center"
+                     SemanticProperties.Description="Pc percent column heading"
+                     SemanticProperties.Hint="Tap to show column definitions. Long press to sort." />
+              <Border.Behaviors>
+                <toolkit:TouchBehavior Command="{Binding ShowSessionColumnDefinitionsCommand}"
+                                       CommandParameter="CorrectPercent"
+                                       LongPressCommand="{Binding SortSessionStatsCommand}"
+                                       LongPressCommandParameter="CorrectPercent" />
+              </Border.Behaviors>
             </Border>
 
-            <Border Grid.Column="4" BackgroundColor="Transparent" Padding="4,0">
-              <Label Text="{Binding PchHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Pch" />
-              </Border.GestureRecognizers>
-            </Border>
-
-            <Border Grid.Column="5" BackgroundColor="Transparent" Padding="4,0">
+            <Border Grid.Column="4" BackgroundColor="Transparent" Padding="4,2" VerticalOptions="Fill" HorizontalOptions="Fill">
               <Label Text="{Binding TmgHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Tmg" />
-              </Border.GestureRecognizers>
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center"
+                     SemanticProperties.Description="Timing accuracy column heading"
+                     SemanticProperties.Hint="Tap to show column definitions. Long press to sort." />
+              <Border.Behaviors>
+                <toolkit:TouchBehavior Command="{Binding ShowSessionColumnDefinitionsCommand}"
+                                       CommandParameter="Tmg"
+                                       LongPressCommand="{Binding SortSessionStatsCommand}"
+                                       LongPressCommandParameter="Tmg" />
+              </Border.Behaviors>
             </Border>
 
-            <Border Grid.Column="6" BackgroundColor="Transparent" Padding="4,0">
+            <Border Grid.Column="5" BackgroundColor="Transparent" Padding="4,2" VerticalOptions="Fill" HorizontalOptions="Fill">
               <Label Text="{Binding OvrlHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Ovrl" />
-              </Border.GestureRecognizers>
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center"
+                     SemanticProperties.Description="Overall accuracy column heading"
+                     SemanticProperties.Hint="Tap to show column definitions. Long press to sort." />
+              <Border.Behaviors>
+                <toolkit:TouchBehavior Command="{Binding ShowSessionColumnDefinitionsCommand}"
+                                       CommandParameter="Ovrl"
+                                       LongPressCommand="{Binding SortSessionStatsCommand}"
+                                       LongPressCommandParameter="Ovrl" />
+              </Border.Behaviors>
             </Border>
 
-            <Border Grid.Column="7" BackgroundColor="Transparent" Padding="2,0">
+            <Border Grid.Column="6" BackgroundColor="Transparent" Padding="2,2" VerticalOptions="Fill" HorizontalOptions="Fill">
               <Label Text="{Binding PitchRightHeader}" FontAttributes="Bold" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="PitchRight" />
-              </Border.GestureRecognizers>
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center"
+                     SemanticProperties.Description="Pitch correct count column heading"
+                     SemanticProperties.Hint="Tap to show column definitions. Long press to sort." />
+              <Border.Behaviors>
+                <toolkit:TouchBehavior Command="{Binding ShowSessionColumnDefinitionsCommand}"
+                                       CommandParameter="PitchRight"
+                                       LongPressCommand="{Binding SortSessionStatsCommand}"
+                                       LongPressCommandParameter="PitchRight" />
+              </Border.Behaviors>
             </Border>
 
-            <Border Grid.Column="8" BackgroundColor="Transparent" Padding="2,0">
+            <Border Grid.Column="7" BackgroundColor="Transparent" Padding="2,2" VerticalOptions="Fill" HorizontalOptions="Fill">
               <Label Text="{Binding PitchWrongHeader}" FontAttributes="Bold" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="PitchWrong" />
-              </Border.GestureRecognizers>
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center"
+                     SemanticProperties.Description="Pitch wrong count column heading"
+                     SemanticProperties.Hint="Tap to show column definitions. Long press to sort." />
+              <Border.Behaviors>
+                <toolkit:TouchBehavior Command="{Binding ShowSessionColumnDefinitionsCommand}"
+                                       CommandParameter="PitchWrong"
+                                       LongPressCommand="{Binding SortSessionStatsCommand}"
+                                       LongPressCommandParameter="PitchWrong" />
+              </Border.Behaviors>
             </Border>
 
-            <Border Grid.Column="9" BackgroundColor="Transparent" Padding="2,0">
+            <Border Grid.Column="8" BackgroundColor="Transparent" Padding="2,2" VerticalOptions="Fill" HorizontalOptions="Fill">
               <Label Text="{Binding TimingRightHeader}" FontAttributes="Bold" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="TimingRight" />
-              </Border.GestureRecognizers>
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center"
+                     SemanticProperties.Description="Timing correct count column heading"
+                     SemanticProperties.Hint="Tap to show column definitions. Long press to sort." />
+              <Border.Behaviors>
+                <toolkit:TouchBehavior Command="{Binding ShowSessionColumnDefinitionsCommand}"
+                                       CommandParameter="TimingRight"
+                                       LongPressCommand="{Binding SortSessionStatsCommand}"
+                                       LongPressCommandParameter="TimingRight" />
+              </Border.Behaviors>
             </Border>
 
-            <Border Grid.Column="10" BackgroundColor="Transparent" Padding="2,0">
+            <Border Grid.Column="9" BackgroundColor="Transparent" Padding="2,2" VerticalOptions="Fill" HorizontalOptions="Fill">
               <Label Text="{Binding TimingWrongHeader}" FontAttributes="Bold" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="TimingWrong" />
-              </Border.GestureRecognizers>
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center"
+                     SemanticProperties.Description="Timing wrong count column heading"
+                     SemanticProperties.Hint="Tap to show column definitions. Long press to sort." />
+              <Border.Behaviors>
+                <toolkit:TouchBehavior Command="{Binding ShowSessionColumnDefinitionsCommand}"
+                                       CommandParameter="TimingWrong"
+                                       LongPressCommand="{Binding SortSessionStatsCommand}"
+                                       LongPressCommandParameter="TimingWrong" />
+              </Border.Behaviors>
             </Border>
 
-            <Border Grid.Column="11" BackgroundColor="Transparent" Padding="2,0">
+            <Border Grid.Column="10" BackgroundColor="Transparent" Padding="2,2" VerticalOptions="Fill" HorizontalOptions="Fill">
               <Label Text="{Binding OverallRightHeader}" FontAttributes="Bold" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="OverallRight" />
-              </Border.GestureRecognizers>
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center"
+                     SemanticProperties.Description="Overall correct count column heading"
+                     SemanticProperties.Hint="Tap to show column definitions. Long press to sort." />
+              <Border.Behaviors>
+                <toolkit:TouchBehavior Command="{Binding ShowSessionColumnDefinitionsCommand}"
+                                       CommandParameter="OverallRight"
+                                       LongPressCommand="{Binding SortSessionStatsCommand}"
+                                       LongPressCommandParameter="OverallRight" />
+              </Border.Behaviors>
             </Border>
 
-            <Border Grid.Column="12" BackgroundColor="Transparent" Padding="2,0">
+            <Border Grid.Column="11" BackgroundColor="Transparent" Padding="2,2" VerticalOptions="Fill" HorizontalOptions="Fill">
               <Label Text="{Binding OverallWrongHeader}" FontAttributes="Bold" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="OverallWrong" />
-              </Border.GestureRecognizers>
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center"
+                     SemanticProperties.Description="Overall wrong count column heading"
+                     SemanticProperties.Hint="Tap to show column definitions. Long press to sort." />
+              <Border.Behaviors>
+                <toolkit:TouchBehavior Command="{Binding ShowSessionColumnDefinitionsCommand}"
+                                       CommandParameter="OverallWrong"
+                                       LongPressCommand="{Binding SortSessionStatsCommand}"
+                                       LongPressCommandParameter="OverallWrong" />
+              </Border.Behaviors>
             </Border>
 
-            <Border Grid.Column="13" BackgroundColor="Transparent" Padding="2,0">
+            <Border Grid.Column="12" BackgroundColor="Transparent" Padding="2,2" VerticalOptions="Fill" HorizontalOptions="Fill">
               <Label Text="{Binding RestRightHeader}" FontAttributes="Bold" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="RestRight" />
-              </Border.GestureRecognizers>
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center"
+                     SemanticProperties.Description="Rest correct count column heading"
+                     SemanticProperties.Hint="Tap to show column definitions. Long press to sort." />
+              <Border.Behaviors>
+                <toolkit:TouchBehavior Command="{Binding ShowSessionColumnDefinitionsCommand}"
+                                       CommandParameter="RestRight"
+                                       LongPressCommand="{Binding SortSessionStatsCommand}"
+                                       LongPressCommandParameter="RestRight" />
+              </Border.Behaviors>
             </Border>
 
-            <Border Grid.Column="14" BackgroundColor="Transparent" Padding="2,0">
+            <Border Grid.Column="13" BackgroundColor="Transparent" Padding="2,2" VerticalOptions="Fill" HorizontalOptions="Fill">
               <Label Text="{Binding RestWrongHeader}" FontAttributes="Bold" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="RestWrong" />
-              </Border.GestureRecognizers>
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center"
+                     SemanticProperties.Description="Rest wrong count column heading"
+                     SemanticProperties.Hint="Tap to show column definitions. Long press to sort." />
+              <Border.Behaviors>
+                <toolkit:TouchBehavior Command="{Binding ShowSessionColumnDefinitionsCommand}"
+                                       CommandParameter="RestWrong"
+                                       LongPressCommand="{Binding SortSessionStatsCommand}"
+                                       LongPressCommandParameter="RestWrong" />
+              </Border.Behaviors>
             </Border>
 
-            <Border Grid.Column="15" BackgroundColor="Transparent" Padding="4,0">
+            <Border Grid.Column="14" BackgroundColor="Transparent" Padding="4,2" VerticalOptions="Fill" HorizontalOptions="Fill">
               <Label Text="{Binding KeyHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Key" />
-              </Border.GestureRecognizers>
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center"
+                     SemanticProperties.Description="Key column heading"
+                     SemanticProperties.Hint="Tap to show column definitions. Long press to sort." />
+              <Border.Behaviors>
+                <toolkit:TouchBehavior Command="{Binding ShowSessionColumnDefinitionsCommand}"
+                                       CommandParameter="Key"
+                                       LongPressCommand="{Binding SortSessionStatsCommand}"
+                                       LongPressCommandParameter="Key" />
+              </Border.Behaviors>
             </Border>
 
-            <Border Grid.Column="16" BackgroundColor="Transparent" Padding="4,0">
+            <Border Grid.Column="15" BackgroundColor="Transparent" Padding="4,2" VerticalOptions="Fill" HorizontalOptions="Fill">
               <Label Text="{Binding WhatHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="What" />
-              </Border.GestureRecognizers>
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center"
+                     SemanticProperties.Description="What to play column heading"
+                     SemanticProperties.Hint="Tap to show column definitions. Long press to sort." />
+              <Border.Behaviors>
+                <toolkit:TouchBehavior Command="{Binding ShowSessionColumnDefinitionsCommand}"
+                                       CommandParameter="What"
+                                       LongPressCommand="{Binding SortSessionStatsCommand}"
+                                       LongPressCommandParameter="What" />
+              </Border.Behaviors>
             </Border>
 
-            <Border Grid.Column="17" BackgroundColor="Transparent" Padding="2,0">
+            <Border Grid.Column="16" BackgroundColor="Transparent" Padding="2,2" VerticalOptions="Fill" HorizontalOptions="Fill">
               <Label Text="{Binding RandHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Rand" />
-              </Border.GestureRecognizers>
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center"
+                     SemanticProperties.Description="Random mode column heading"
+                     SemanticProperties.Hint="Tap to show column definitions. Long press to sort." />
+              <Border.Behaviors>
+                <toolkit:TouchBehavior Command="{Binding ShowSessionColumnDefinitionsCommand}"
+                                       CommandParameter="Rand"
+                                       LongPressCommand="{Binding SortSessionStatsCommand}"
+                                       LongPressCommandParameter="Rand" />
+              </Border.Behaviors>
             </Border>
 
-            <Border Grid.Column="18" BackgroundColor="Transparent" Padding="2,0">
+            <Border Grid.Column="17" BackgroundColor="Transparent" Padding="2,2" VerticalOptions="Fill" HorizontalOptions="Fill">
               <Label Text="{Binding AccPctHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="AccPct" />
-              </Border.GestureRecognizers>
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center"
+                     SemanticProperties.Description="Accidental percent column heading"
+                     SemanticProperties.Hint="Tap to show column definitions. Long press to sort." />
+              <Border.Behaviors>
+                <toolkit:TouchBehavior Command="{Binding ShowSessionColumnDefinitionsCommand}"
+                                       CommandParameter="AccPct"
+                                       LongPressCommand="{Binding SortSessionStatsCommand}"
+                                       LongPressCommandParameter="AccPct" />
+              </Border.Behaviors>
             </Border>
 
-            <Border Grid.Column="19" BackgroundColor="Transparent" Padding="4,0">
+            <Border Grid.Column="18" BackgroundColor="Transparent" Padding="4,2" VerticalOptions="Fill" HorizontalOptions="Fill">
               <Label Text="{Binding HiHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Hi" />
-              </Border.GestureRecognizers>
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center"
+                     SemanticProperties.Description="Highest note column heading"
+                     SemanticProperties.Hint="Tap to show column definitions. Long press to sort." />
+              <Border.Behaviors>
+                <toolkit:TouchBehavior Command="{Binding ShowSessionColumnDefinitionsCommand}"
+                                       CommandParameter="Hi"
+                                       LongPressCommand="{Binding SortSessionStatsCommand}"
+                                       LongPressCommandParameter="Hi" />
+              </Border.Behaviors>
             </Border>
 
-            <Border Grid.Column="20" BackgroundColor="Transparent" Padding="4,0">
+            <Border Grid.Column="19" BackgroundColor="Transparent" Padding="4,2" VerticalOptions="Fill" HorizontalOptions="Fill">
               <Label Text="{Binding LoHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Lo" />
-              </Border.GestureRecognizers>
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center"
+                     SemanticProperties.Description="Lowest note column heading"
+                     SemanticProperties.Hint="Tap to show column definitions. Long press to sort." />
+              <Border.Behaviors>
+                <toolkit:TouchBehavior Command="{Binding ShowSessionColumnDefinitionsCommand}"
+                                       CommandParameter="Lo"
+                                       LongPressCommand="{Binding SortSessionStatsCommand}"
+                                       LongPressCommandParameter="Lo" />
+              </Border.Behaviors>
             </Border>
 
-            <Border Grid.Column="21" BackgroundColor="Transparent" Padding="4,0">
+            <Border Grid.Column="20" BackgroundColor="Transparent" Padding="4,2" VerticalOptions="Fill" HorizontalOptions="Fill">
               <Label Text="{Binding InstrumentHeader}" FontAttributes="Bold" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
-                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center" />
-              <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding SortSessionStatsCommand}" CommandParameter="Instrument" />
-              </Border.GestureRecognizers>
+                     LineBreakMode="NoWrap" HorizontalTextAlignment="Center" HorizontalOptions="Center" VerticalOptions="Center"
+                     SemanticProperties.Description="Instrument column heading"
+                     SemanticProperties.Hint="Tap to show column definitions. Long press to sort." />
+              <Border.Behaviors>
+                <toolkit:TouchBehavior Command="{Binding ShowSessionColumnDefinitionsCommand}"
+                                       CommandParameter="Instrument"
+                                       LongPressCommand="{Binding SortSessionStatsCommand}"
+                                       LongPressCommandParameter="Instrument" />
+              </Border.Behaviors>
             </Border>
           </Grid>
 
@@ -439,8 +532,7 @@
                       <ColumnDefinition Width="32" />
                       <ColumnDefinition Width="140" />
                       <ColumnDefinition Width="52" />
-                      <ColumnDefinition Width="72" />
-                      <ColumnDefinition Width="52" />
+                      <ColumnDefinition Width="124" />
                       <ColumnDefinition Width="52" />
                       <ColumnDefinition Width="52" />
                       <ColumnDefinition Width="30" />
@@ -468,41 +560,39 @@
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
                     <Label Text="{Binding Pc, StringFormat='{0:F1}'}" Grid.Column="3" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Pch, StringFormat='{0:F1}'}" Grid.Column="4" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
+                    <Label Text="{Binding Tmg, StringFormat='{0:F1}'}" Grid.Column="4" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Tmg, StringFormat='{0:F1}'}" Grid.Column="5" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
+                    <Label Text="{Binding Ovrl, StringFormat='{0:F1}'}" Grid.Column="5" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Ovrl, StringFormat='{0:F1}'}" Grid.Column="6" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
+                    <Label Text="{Binding PitchRightCount}" Grid.Column="6" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding PitchRightCount}" Grid.Column="7" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
+                    <Label Text="{Binding PitchWrongCount}" Grid.Column="7" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding PitchWrongCount}" Grid.Column="8" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
+                    <Label Text="{Binding TimingRightCount}" Grid.Column="8" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding TimingRightCount}" Grid.Column="9" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
+                    <Label Text="{Binding TimingWrongCount}" Grid.Column="9" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding TimingWrongCount}" Grid.Column="10" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
+                    <Label Text="{Binding OverallRightCount}" Grid.Column="10" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding OverallRightCount}" Grid.Column="11" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
+                    <Label Text="{Binding OverallWrongCount}" Grid.Column="11" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding OverallWrongCount}" Grid.Column="12" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
+                    <Label Text="{Binding RestRightCount}" Grid.Column="12" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding RestRightCount}" Grid.Column="13" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
+                    <Label Text="{Binding RestWrongCount}" Grid.Column="13" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding RestWrongCount}" Grid.Column="14" FontSize="9" TextColor="{DynamicResource ThemeContrastingText}"
+                    <Label Text="{Binding Key}" Grid.Column="14" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Key}" Grid.Column="15" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
-                           Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding What}" Grid.Column="16" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
+                    <Label Text="{Binding What}" Grid.Column="15" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            LineBreakMode="TailTruncation" Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding RandDisplay}" Grid.Column="17" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
+                    <Label Text="{Binding RandDisplay}" Grid.Column="16" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding AccPct}" Grid.Column="18" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
+                    <Label Text="{Binding AccPct}" Grid.Column="17" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Hi}" Grid.Column="19" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
+                    <Label Text="{Binding Hi}" Grid.Column="18" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Lo}" Grid.Column="20" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
+                    <Label Text="{Binding Lo}" Grid.Column="19" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
-                    <Label Text="{Binding Instrument}" Grid.Column="21" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
+                    <Label Text="{Binding Instrument}" Grid.Column="20" FontSize="10" TextColor="{DynamicResource ThemeContrastingText}"
                            LineBreakMode="TailTruncation" Padding="2,0,0,0" HorizontalTextAlignment="Center" HorizontalOptions="Center" />
                   </Grid>
                 </DataTemplate>
@@ -629,5 +719,8 @@
                FontAttributes="Bold" />
       </VerticalStackLayout>
     </Grid>
+
+    <controls:SessionColumnDefinitionsDialog Grid.RowSpan="2"
+                                           ZIndex="10" />
   </Grid>
 </ContentPage>

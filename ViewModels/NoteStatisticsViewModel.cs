@@ -30,6 +30,7 @@ namespace musicmate.ViewModels
 
         public ObservableCollection<NoteStat> NoteStats { get; } = new();
         public ObservableCollection<SessionStat> SessionStats { get; } = new();
+        public ObservableCollection<SessionColumnDefinitionDisplayRow> SessionColumnDefinitionRows { get; } = new();
         public ObservableCollection<NoteMasteryItemViewModel> MasteryNotes { get; } = new();
 
         // Sorting state for Note Stats
@@ -40,9 +41,14 @@ namespace musicmate.ViewModels
         private string _sessionCurrentSortColumn = "";
         private bool _sessionIsAscending = true;
 
+        private bool _isSessionColumnDefinitionsVisible;
+        private string? _sessionColumnDefinitionsHighlightKey;
+
         // Commands
         public ICommand SortNoteStatsCommand { get; }
         public ICommand SortSessionStatsCommand { get; }
+        public ICommand ShowSessionColumnDefinitionsCommand { get; }
+        public ICommand CloseSessionColumnDefinitionsCommand { get; }
         public ICommand RefreshCommand { get; }
         public ICommand SelectMasteryNoteCommand { get; }
         public ICommand PracticeThisNoteCommand { get; }
@@ -104,6 +110,8 @@ namespace musicmate.ViewModels
 
             SortNoteStatsCommand = new Command<string>(SortNoteStatsByColumn);
             SortSessionStatsCommand = new Command<string>(SortSessionStatsByColumn);
+            ShowSessionColumnDefinitionsCommand = new Command<string>(ShowSessionColumnDefinitions);
+            CloseSessionColumnDefinitionsCommand = new Command(CloseSessionColumnDefinitions);
             RefreshCommand = new Command(() => _ = LoadAsync(forceRefresh: true));
             SelectMasteryNoteCommand = new Command<NoteMasteryItemViewModel>(SelectMasteryNote);
             PracticeThisNoteCommand = new Command(async () => await NavigatePracticeAsync(practiceThisNote: true));
@@ -558,7 +566,6 @@ namespace musicmate.ViewModels
         public string DateSortIndicator => _sessionCurrentSortColumn == "Date" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string LevelSortIndicator => _sessionCurrentSortColumn == "Level" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string CorrectPercentSortIndicator => _sessionCurrentSortColumn == "CorrectPercent" ? (_sessionIsAscending ? "▲" : "▼") : "";
-        public string PchSortIndicator => _sessionCurrentSortColumn == "Pch" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string TmgSortIndicator => _sessionCurrentSortColumn == "Tmg" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string OvrlSortIndicator => _sessionCurrentSortColumn == "Ovrl" ? (_sessionIsAscending ? "▲" : "▼") : "";
         public string PitchRightSortIndicator => _sessionCurrentSortColumn == "PitchRight" ? (_sessionIsAscending ? "▲" : "▼") : "";
@@ -584,7 +591,6 @@ namespace musicmate.ViewModels
         public string DateHeader => "Date " + DateSortIndicator;
         public string LevelHeader => "Level " + LevelSortIndicator;
         public string CorrectPercentHeader => "Pc% " + CorrectPercentSortIndicator;
-        public string PchHeader => "Pch " + PchSortIndicator;
         public string TmgHeader => "Tmg " + TmgSortIndicator;
         public string OvrlHeader => "Ovrl " + OvrlSortIndicator;
         public string PitchRightHeader => "P+ " + PitchRightSortIndicator;
@@ -679,6 +685,55 @@ namespace musicmate.ViewModels
             OnPropertyChanged(nameof(MasteredHeader));
         }
 
+        public bool IsSessionColumnDefinitionsVisible
+        {
+            get => _isSessionColumnDefinitionsVisible;
+            private set
+            {
+                if (_isSessionColumnDefinitionsVisible == value)
+                    return;
+
+                _isSessionColumnDefinitionsVisible = value;
+                OnPropertyChanged(nameof(IsSessionColumnDefinitionsVisible));
+            }
+        }
+
+        public string? SessionColumnDefinitionsHighlightKey
+        {
+            get => _sessionColumnDefinitionsHighlightKey;
+            private set
+            {
+                if (_sessionColumnDefinitionsHighlightKey == value)
+                    return;
+
+                _sessionColumnDefinitionsHighlightKey = value;
+                OnPropertyChanged(nameof(SessionColumnDefinitionsHighlightKey));
+            }
+        }
+
+        private void ShowSessionColumnDefinitions(string columnKey)
+        {
+            if (SessionTableColumnDefinitions.GetByColumnKey(columnKey) is null)
+                return;
+
+            SessionColumnDefinitionsHighlightKey = columnKey;
+            SessionColumnDefinitionRows.Clear();
+            foreach (var definition in SessionTableColumnDefinitions.All)
+            {
+                SessionColumnDefinitionRows.Add(
+                    new SessionColumnDefinitionDisplayRow(
+                        definition,
+                        string.Equals(definition.ColumnKey, columnKey, StringComparison.Ordinal)));
+            }
+
+            IsSessionColumnDefinitionsVisible = true;
+        }
+
+        private void CloseSessionColumnDefinitions()
+        {
+            IsSessionColumnDefinitionsVisible = false;
+        }
+
         private void SortSessionStatsByColumn(string columnName)
         {
             // Toggle sort direction if same column, otherwise default to ascending
@@ -701,9 +756,6 @@ namespace musicmate.ViewModels
                 "CorrectPercent" => _sessionIsAscending
                     ? SessionStats.OrderBy(s => s.Pc)
                     : SessionStats.OrderByDescending(s => s.Pc),
-                "Pch" => _sessionIsAscending
-                    ? SessionStats.OrderBy(s => s.Pch)
-                    : SessionStats.OrderByDescending(s => s.Pch),
                 "Tmg" => _sessionIsAscending
                     ? SessionStats.OrderBy(s => s.Tmg)
                     : SessionStats.OrderByDescending(s => s.Tmg),
@@ -775,7 +827,6 @@ namespace musicmate.ViewModels
             OnPropertyChanged(nameof(DateSortIndicator));
             OnPropertyChanged(nameof(LevelSortIndicator));
             OnPropertyChanged(nameof(CorrectPercentSortIndicator));
-            OnPropertyChanged(nameof(PchSortIndicator));
             OnPropertyChanged(nameof(TmgSortIndicator));
             OnPropertyChanged(nameof(OvrlSortIndicator));
             OnPropertyChanged(nameof(PitchRightSortIndicator));
@@ -799,7 +850,6 @@ namespace musicmate.ViewModels
             OnPropertyChanged(nameof(DateHeader));
             OnPropertyChanged(nameof(LevelHeader));
             OnPropertyChanged(nameof(CorrectPercentHeader));
-            OnPropertyChanged(nameof(PchHeader));
             OnPropertyChanged(nameof(TmgHeader));
             OnPropertyChanged(nameof(OvrlHeader));
             OnPropertyChanged(nameof(PitchRightHeader));
