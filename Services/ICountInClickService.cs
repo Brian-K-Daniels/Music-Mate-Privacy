@@ -1,8 +1,7 @@
 namespace musicmate.Services
 {
     /// <summary>
-    /// Short metronome clicks for waiting count-in. Prefer a path that stays audible
-    /// while the microphone is open (ToneGenerator on Android).
+    /// Short metronome clicks for waiting count-in and the Tuner metronome.
     /// </summary>
     public interface ICountInClickService
     {
@@ -11,7 +10,8 @@ namespace musicmate.Services
             int durationMs,
             float volume,
             double frequencyHz,
-            CancellationToken ct);
+            CancellationToken ct,
+            MetronomeClickScheduleInfo? schedule = null);
 
         void Stop();
     }

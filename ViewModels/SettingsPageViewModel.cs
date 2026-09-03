@@ -610,7 +610,8 @@ namespace musicmate.ViewModels
         }
 
         private string _noteNameDisplay = Preferences.Get("musicmate.NoteNameDisplay", "Current only");
-        private bool _showConductorCues = Preferences.Get("musicmate.ShowConductorCues", false);
+        private bool _showConductorCues = Preferences.Get(
+            "musicmate.ShowConductorCues", NoteSessionService.DefaultShowConductorCues);
         private bool _showSignaturesOnBothStaffs =
             Preferences.Get("musicmate.ShowSignaturesOnBothStaffs", true);
         public string NoteNameDisplay
@@ -669,6 +670,7 @@ namespace musicmate.ViewModels
                 if (WaitingCountInSettings.Enabled == value) return;
                 WaitingCountInSettings.Enabled = value;
                 OnPropertyChanged(nameof(CountInEnabled));
+                NotifyFactoryDefaultsMayHaveChanged();
             }
         }
 
@@ -681,6 +683,7 @@ namespace musicmate.ViewModels
                 if (Math.Abs(WaitingCountInSettings.AccentedVolume - clamped) < 0.0005f) return;
                 WaitingCountInSettings.AccentedVolume = clamped;
                 OnPropertyChanged(nameof(CountInAccentedVolume));
+                NotifyFactoryDefaultsMayHaveChanged();
             }
         }
 
@@ -693,6 +696,7 @@ namespace musicmate.ViewModels
                 if (Math.Abs(WaitingCountInSettings.UnaccentedVolume - clamped) < 0.0005f) return;
                 WaitingCountInSettings.UnaccentedVolume = clamped;
                 OnPropertyChanged(nameof(CountInUnaccentedVolume));
+                NotifyFactoryDefaultsMayHaveChanged();
             }
         }
 
@@ -705,6 +709,7 @@ namespace musicmate.ViewModels
                 if (Math.Abs(WaitingCountInSettings.AccentedPitchHz - clamped) < 0.5) return;
                 WaitingCountInSettings.AccentedPitchHz = clamped;
                 OnPropertyChanged(nameof(CountInAccentedPitchHz));
+                NotifyFactoryDefaultsMayHaveChanged();
             }
         }
 
@@ -717,6 +722,7 @@ namespace musicmate.ViewModels
                 if (Math.Abs(WaitingCountInSettings.UnaccentedPitchHz - clamped) < 0.5) return;
                 WaitingCountInSettings.UnaccentedPitchHz = clamped;
                 OnPropertyChanged(nameof(CountInUnaccentedPitchHz));
+                NotifyFactoryDefaultsMayHaveChanged();
             }
         }
 
@@ -729,6 +735,7 @@ namespace musicmate.ViewModels
                 if (WaitingCountInSettings.BeatDurationPercent == clamped) return;
                 WaitingCountInSettings.BeatDurationPercent = clamped;
                 OnPropertyChanged(nameof(CountInBeatDurationPercent));
+                NotifyFactoryDefaultsMayHaveChanged();
             }
         }
 

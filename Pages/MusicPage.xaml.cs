@@ -3940,11 +3940,11 @@ namespace musicmate.Pages
                         return;
                     }
 
-                    if (!_session.IsListeningClockRunning)
-                        _session.StartListeningClock();
+                    var result = _session.Evaluate(freq);
+                    if (!_session.TryArmListeningClockOnFirstCorrectPitch(result.correct))
+                        return;
 
                     // Only accept the note as correct if it matches the expected note (including octave) at the current index
-                    var result = _session.Evaluate(freq);
                     if (_session.UpdateFeedbackForCurrent(freq, result))
                     {
                         if (result.correct)
@@ -3992,7 +3992,7 @@ namespace musicmate.Pages
                     $"durPct={WaitingCountInSettings.BeatDurationPercent}");
 
                 // Mic stays open for the whole count-in so Mary can be heard.
-                // Clicks use ToneGenerator on Android (audible with mic open) — no per-beat mic thrashing.
+                // Clicks use the shared sine playback service (audible with mic open on Android).
                 try { _audio.StopCapture(); } catch { }
                 await Task.Delay(80, ct).ConfigureAwait(false);
 
@@ -4561,7 +4561,7 @@ namespace musicmate.Pages
                             SetButtonStates(false);
                             return;
                         }
-                        // Conductor clock starts on first detected pitch (see OnAudioBlock).
+                        // Conductor clock starts on first correct note (see OnAudioBlock / TryArmListeningClockOnFirstCorrectPitch).
                     }
                     DebugLog.WriteLine("[Start] Audio capture / count-in armed");
                 }
@@ -5796,6 +5796,36 @@ namespace musicmate.Pages
             });
         }
 
+        /// <summary>
+        /// Stops Tuner capture without clearing listening intent (<see cref="_isRunning"/>).
+        /// Shared by metronome pause and <see cref="StopTunerListeningAsync"/>.
+        /// </summary>
+        private void StopTunerMicrophoneCaptureCore(bool clearDetection)
+        {
+            try { _audio.StopCapture(); } catch { }
+            ResetPitchCapture();
+            _lastProcess = DateTime.MinValue;
+            if (clearDetection)
+            {
+                _session.ClearTunerDetection();
+                _lastLoggedTunerHeardNote = null;
+            }
+        }
+
+        /// <summary>
+        /// Halts Tuner pitch detection while the metronome runs; listening resumes on Stop.
+        /// </summary>
+        private void PauseTunerListeningForMetronome()
+        {
+            if (!_isRunning)
+                return;
+
+            DebugLog.WriteLine("[TunerMetronome] pausing microphone for metronome");
+            StopTunerMicrophoneCaptureCore(clearDetection: true);
+            UpdateTunerStaffDisplay();
+            RefreshTunerPickerDisplayLabel();
+        }
+
         private async Task ToggleReferenceToneAsync()
         {
             if (_session.Tune != "Tuner")
@@ -5825,6 +5855,9 @@ namespace musicmate.Pages
             _referenceToneCts = new CancellationTokenSource();
             var ct = _referenceToneCts.Token;
 
+            // Stop mic before any metronome clicks or UI that could show stale detections.
+            PauseTunerListeningForMetronome();
+
             _isReferenceTonePlaying = true;
             UpdateReferencePlayButtonUi();
             UpdateTunerModeChrome();
@@ -5833,7 +5866,6 @@ namespace musicmate.Pages
 
             try
             {
-                // Keep the mic open so Note Heard continues while the metronome clicks.
                 int beats = WaitingCountInLogic.GetBeatsPerMeasure(_session.GetDisplayTimeSignature());
                 int tempo = Math.Clamp(
                     _tunerTempoBpm,
@@ -5934,9 +5966,7 @@ namespace musicmate.Pages
             {
                 DebugLog.WriteLine("[Tuner] resume microphone after reference tone");
                 await _audio.EnsurePermissionAsync();
-                try { _audio.StopCapture(); } catch { }
-                ResetPitchCapture();
-                _lastProcess = DateTime.MinValue;
+                StopTunerMicrophoneCaptureCore(clearDetection: false);
                 if (!_audio.TryStartCapture(OnAudioBlock, out var resumeErr))
                 {
                     DebugLog.WriteLine($"[Tuner] resume mic failed: {resumeErr}");
@@ -6618,11 +6648,12 @@ namespace musicmate.Pages
                     return;
                 }
 
-                // Red "Listen" while the Tuner metronome plays — stop it and listen.
+                // Red "Listen" while the Tuner metronome plays — stop metronome and resume listening.
                 if (_isReferenceTonePlaying)
                 {
-                    await StopReferenceToneAsync(resumeListening: false);
-                    await EnsureTunerListeningAsync();
+                    await StopReferenceToneAsync(resumeListening: _isRunning);
+                    if (!_isRunning)
+                        await EnsureTunerListeningAsync();
                     UpdateTunerModeChrome();
                     return;
                 }
@@ -6696,12 +6727,10 @@ namespace musicmate.Pages
             _sessionStartCts?.Cancel();
             try
             {
-                try { _audio.StopCapture(); } catch { }
+                StopTunerMicrophoneCaptureCore(clearDetection: true);
                 if (_isReferenceTonePlaying)
                     await StopReferenceToneAsync(resumeListening: false);
 
-                _session.ClearTunerDetection();
-                _lastLoggedTunerHeardNote = null;
                 SetButtonStates(false);
                 StatusService.Instance.StatusMessage =
                     "Stopped — pick a note to play, or tap GO to listen.";

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using musicmate.Models;
 using musicmate.Services;
 
@@ -118,6 +119,13 @@ public class WaitingCountInSettingsTests : IDisposable
     public void Dispose() => SessionPreferences.TestStore = null;
 
     [Fact]
+    public void FactoryDefault_EnabledIsOn()
+    {
+        Assert.True(WaitingCountInSettings.DefaultEnabled);
+        Assert.True(WaitingCountInSettings.Enabled);
+    }
+
+    [Fact]
     public void Defaults_AreRestoredAfterFactoryReset()
     {
         WaitingCountInSettings.Enabled = true;
@@ -175,6 +183,52 @@ public class WaitingCountInSettingsTests : IDisposable
     [InlineData(20, 20)]
     public void ClampDurationPercent(int input, int expected)
         => Assert.Equal(expected, WaitingCountInSettings.ClampDurationPercent(input));
+
+    [Fact]
+    public void ResolveClickPlayback_IncludesReleaseTail()
+    {
+        double msPerBeat = WaitingCountInLogic.MsPerBeat(30);
+        double playbackMs = WaitingCountInLogic.ResolveClickPlaybackMs(20, msPerBeat);
+        Assert.Equal(480.0, playbackMs, 0);
+    }
+
+    [Theory]
+    [InlineData(0, 2000, 2000, false)]
+    [InlineData(1500, 2000, 2000, false)]
+    [InlineData(2900, 2000, 2000, false)]
+    [InlineData(3000, 2000, 2000, true)]
+    [InlineData(3500, 2000, 2000, true)]
+    public void IsTooLateToSound_DetectsMissedGridSlot(
+        double nowMs,
+        double intendedMs,
+        double msPerBeat,
+        bool expected)
+        => Assert.Equal(
+            expected,
+            WaitingCountInLogic.IsTooLateToSound(nowMs, intendedMs, msPerBeat));
+
+    [Theory]
+    [InlineData(0, 1000, 0)]
+    [InlineData(3, 1000, 3000)]
+    [InlineData(5, 500, 2500)]
+    public void GetAbsoluteBeatStartMs_UsesStableGrid(long beatIndex, double msPerBeat, double expected)
+        => Assert.Equal(expected, WaitingCountInLogic.GetAbsoluteBeatStartMs(beatIndex, msPerBeat));
+
+    [Theory]
+    [InlineData(0, 4, 1, 1)]
+    [InlineData(3, 4, 1, 4)]
+    [InlineData(4, 4, 2, 1)]
+    [InlineData(7, 4, 2, 4)]
+    public void GetMeasureBeatNumbers_AreOneBased(
+        long beatIndex,
+        int beatsPerMeasure,
+        int expectedMeasure,
+        int expectedBeat)
+    {
+        var (measure, beat) = WaitingCountInLogic.GetMeasureBeatNumbers(beatIndex, beatsPerMeasure);
+        Assert.Equal(expectedMeasure, measure);
+        Assert.Equal(expectedBeat, beat);
+    }
 }
 
 [Collection("SessionPreferences")]
@@ -222,19 +276,229 @@ public class WaitingCountInPlayerTests : IDisposable
         Assert.True(_clicks.PlayCount >= 1);
     }
 
+    [Theory]
+    [InlineData(30)]
+    [InlineData(60)]
+    [InlineData(120)]
+    public async Task BeatSpacing_FollowsAbsoluteGrid(int tempoBpm)
+    {
+        var clicks = new InstantCountInClickService();
+        var player = new WaitingCountInPlayer(clicks);
+        using var cts = new CancellationTokenSource();
+        double msPerBeat = WaitingCountInLogic.MsPerBeat(tempoBpm);
+        const int beatsPerMeasure = 4;
+        const int measureCount = 3;
+        int beatCount = beatsPerMeasure * measureCount;
+
+        var run = player.RunAsync(tempoBpm, beatsPerMeasure, 0.4f, 0.2f, 1760, 880, 20, cts.Token);
+        await Task.Delay((int)Math.Round(msPerBeat * beatCount + msPerBeat * 0.5), cts.Token);
+        player.Stop();
+        await run;
+
+        Assert.InRange(clicks.AllPlayTimesMs.Count, beatCount - 1, beatCount + 1);
+
+        double maxError = 0;
+        double prevError = 0;
+        for (int i = 0; i < clicks.AllPlayTimesMs.Count; i++)
+        {
+            double intended = i * msPerBeat;
+            double actual = clicks.AllPlayTimesMs[i];
+            double error = Math.Abs(actual - intended);
+            maxError = Math.Max(maxError, error);
+
+            // Timing error must not accumulate beat-to-beat.
+            if (i > 0)
+                Assert.True(error <= prevError + 35,
+                    $"Beat {i} error grew from {prevError:F1}ms to {error:F1}ms at {tempoBpm} BPM");
+
+            prevError = error;
+            Assert.InRange(error, 0, 35);
+        }
+
+        for (int i = 1; i < clicks.AllPlayTimesMs.Count; i++)
+        {
+            double gap = clicks.AllPlayTimesMs[i] - clicks.AllPlayTimesMs[i - 1];
+            Assert.InRange(gap, msPerBeat - 35, msPerBeat + 35);
+        }
+    }
+
+    [Fact]
+    public async Task StopAndRestart_ResetsGridWithoutDuplicateLoops()
+    {
+        var clicks = new InstantCountInClickService();
+        var player = new WaitingCountInPlayer(clicks);
+        using var cts = new CancellationTokenSource();
+
+        var first = player.RunAsync(120, 4, 0.4f, 0.2f, 1760, 880, 20, cts.Token);
+        await Task.Delay(250);
+        player.Stop();
+        await first;
+
+        int afterFirstStop = clicks.PlayCount;
+        clicks.Clear();
+
+        var second = player.RunAsync(120, 4, 0.4f, 0.2f, 1760, 880, 20, cts.Token);
+        await Task.Delay(600);
+        player.Stop();
+        await second;
+
+        Assert.True(afterFirstStop >= 1);
+        Assert.InRange(clicks.AllPlayTimesMs.Count, 2, 4);
+        Assert.InRange(clicks.AllPlayTimesMs[0], 0, 25);
+        if (clicks.AllPlayTimesMs.Count >= 2)
+        {
+            double gap = clicks.AllPlayTimesMs[1] - clicks.AllPlayTimesMs[0];
+            Assert.InRange(gap, 500 - 35, 500 + 35);
+        }
+    }
+
+    [Theory]
+    [InlineData(120)]
+    [InlineData(130)]
+    [InlineData(150)]
+    [InlineData(180)]
+    [InlineData(200)]
+    public async Task HighTempos_BeatSpacing_StaysEven(int tempoBpm)
+    {
+        var clicks = new InstantCountInClickService();
+        var player = new WaitingCountInPlayer(clicks);
+        using var cts = new CancellationTokenSource();
+        double msPerBeat = WaitingCountInLogic.MsPerBeat(tempoBpm);
+        const int beatsPerMeasure = 4;
+        const int measureCount = 3;
+        int beatCount = beatsPerMeasure * measureCount;
+        int toleranceMs = tempoBpm >= 150 ? 20 : 25;
+
+        var run = player.RunAsync(tempoBpm, beatsPerMeasure, 0.4f, 0.2f, 1760, 880, 20, cts.Token);
+        await Task.Delay((int)Math.Round(msPerBeat * beatCount + msPerBeat * 0.5), cts.Token);
+        player.Stop();
+        await run;
+
+        Assert.InRange(clicks.AllPlayTimesMs.Count, beatCount - 1, beatCount + 1);
+
+        double maxError = 0;
+        for (int i = 0; i < clicks.AllPlayTimesMs.Count; i++)
+        {
+            double intended = i * msPerBeat;
+            double error = Math.Abs(clicks.AllPlayTimesMs[i] - intended);
+            maxError = Math.Max(maxError, error);
+            Assert.InRange(error, 0, toleranceMs);
+        }
+
+        for (int i = 1; i < clicks.AllPlayTimesMs.Count; i++)
+        {
+            double gap = clicks.AllPlayTimesMs[i] - clicks.AllPlayTimesMs[i - 1];
+            Assert.InRange(gap, msPerBeat - toleranceMs, msPerBeat + toleranceMs);
+        }
+    }
+
+    [Theory]
+    [InlineData(120)]
+    [InlineData(130)]
+    [InlineData(150)]
+    [InlineData(180)]
+    [InlineData(200)]
+    public async Task HighTempos_DownbeatsAreNotDoublePulsed(int tempoBpm)
+    {
+        var player = new WaitingCountInPlayer(_clicks);
+        using var cts = new CancellationTokenSource();
+        double msPerBeat = WaitingCountInLogic.MsPerBeat(tempoBpm);
+        int clickPlaybackMs = (int)Math.Round(
+            WaitingCountInLogic.ResolveClickPlaybackMs(20, msPerBeat));
+
+        var run = player.RunAsync(tempoBpm, 4, 0.4f, 0.2f, 1760, 880, 20, cts.Token);
+
+        await Task.Delay((int)Math.Round(msPerBeat * 8.5), cts.Token);
+        player.Stop();
+        await run;
+
+        var accented = _clicks.AccentedPlayTimesMs;
+        Assert.True(accented.Count >= 2, $"Expected at least two downbeats at {tempoBpm} BPM");
+
+        for (int i = 1; i < accented.Count; i++)
+        {
+            double gap = accented[i] - accented[i - 1];
+            Assert.InRange(gap, msPerBeat * 3.5, msPerBeat * 4.5);
+        }
+
+        foreach (double downbeatMs in accented)
+        {
+            int nearby = _clicks.AllPlayTimesMs.Count(
+                t => Math.Abs(t - downbeatMs) > 1 && Math.Abs(t - downbeatMs) < clickPlaybackMs);
+            Assert.Equal(0, nearby);
+        }
+    }
+
+    private sealed class InstantCountInClickService : ICountInClickService
+    {
+        public int StopCount;
+        public int PlayCount;
+        public List<double> AllPlayTimesMs { get; } = new();
+        public List<double> AccentedPlayTimesMs { get; } = new();
+        private readonly Stopwatch _clock = Stopwatch.StartNew();
+
+        public void Clear()
+        {
+            lock (AllPlayTimesMs)
+            {
+                AllPlayTimesMs.Clear();
+                AccentedPlayTimesMs.Clear();
+            }
+
+            PlayCount = 0;
+            _clock.Restart();
+        }
+
+        public Task PlayClickAsync(
+            bool accented,
+            int durationMs,
+            float volume,
+            double frequencyHz,
+            CancellationToken ct,
+            MetronomeClickScheduleInfo? schedule = null)
+        {
+            _ = schedule;
+            Interlocked.Increment(ref PlayCount);
+            double atMs = _clock.Elapsed.TotalMilliseconds;
+            lock (AllPlayTimesMs)
+            {
+                AllPlayTimesMs.Add(atMs);
+                if (accented)
+                    AccentedPlayTimesMs.Add(atMs);
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public void Stop() => Interlocked.Increment(ref StopCount);
+    }
+
     private sealed class FakeCountInClickService : ICountInClickService
     {
         public int StopCount;
         public int PlayCount;
+        public List<double> AllPlayTimesMs { get; } = new();
+        public List<double> AccentedPlayTimesMs { get; } = new();
+        private readonly Stopwatch _clock = Stopwatch.StartNew();
 
         public async Task PlayClickAsync(
             bool accented,
             int durationMs,
             float volume,
             double frequencyHz,
-            CancellationToken ct)
+            CancellationToken ct,
+            MetronomeClickScheduleInfo? schedule = null)
         {
+            _ = schedule;
             Interlocked.Increment(ref PlayCount);
+            double atMs = _clock.Elapsed.TotalMilliseconds;
+            lock (AllPlayTimesMs)
+            {
+                AllPlayTimesMs.Add(atMs);
+                if (accented)
+                    AccentedPlayTimesMs.Add(atMs);
+            }
+
             await Task.Delay(Math.Max(1, durationMs), ct);
         }
 

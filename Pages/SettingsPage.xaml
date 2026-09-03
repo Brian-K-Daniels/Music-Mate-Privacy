@@ -124,7 +124,7 @@
             <RoundRectangle CornerRadius="10"/>
           </Border.StrokeShape>
           <VerticalStackLayout Spacing="8">
-            <Label Text="Waiting Count-In" Style="{StaticResource SettingsPanelTitle}" />
+            <Label Text="Waiting Count-In (and Metronome)" Style="{StaticResource SettingsPanelTitle}" />
             <Grid ColumnDefinitions="200,*,60" ColumnSpacing="4" VerticalOptions="Center">
               <Label Grid.Column="0" Text="Count-in enabled" />
               <Switch Grid.Column="1" IsToggled="{Binding CountInEnabled, Mode=TwoWay}"

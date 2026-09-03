@@ -161,4 +161,55 @@ public class AreFactoryDefaultsAppliedTests : IDisposable
 
         Assert.False(_reset.AreFactoryDefaultsApplied);
     }
+
+    [Fact]
+    public void FactoryReset_SetsConductorCuesOn()
+    {
+        _session.ShowConductorCues = false;
+        _reset.ResetToFactoryDefaults();
+
+        Assert.True(_session.ShowConductorCues);
+        Assert.True(_reset.AreFactoryDefaultsApplied);
+    }
+
+    [Fact]
+    public void FactoryReset_SetsWaitingCountInOn()
+    {
+        WaitingCountInSettings.Enabled = false;
+        _reset.ResetToFactoryDefaults();
+
+        Assert.True(WaitingCountInSettings.Enabled);
+        Assert.True(_reset.AreFactoryDefaultsApplied);
+    }
+
+    [Fact]
+    public void FreshSession_DefaultsConductorCuesAndCountInOn()
+    {
+        var session = new NoteSessionService();
+
+        Assert.True(session.ShowConductorCues);
+        Assert.True(WaitingCountInSettings.Enabled);
+    }
+
+    [Fact]
+    public void ChangingConductorCuesOff_MakesAreFactoryDefaultsAppliedFalse()
+    {
+        Assert.True(_reset.AreFactoryDefaultsApplied);
+
+        _session.ShowConductorCues = false;
+        _reset.EvaluateAreFactoryDefaultsApplied();
+
+        Assert.False(_reset.AreFactoryDefaultsApplied);
+    }
+
+    [Fact]
+    public void ChangingCountInOff_MakesAreFactoryDefaultsAppliedFalse()
+    {
+        Assert.True(_reset.AreFactoryDefaultsApplied);
+
+        WaitingCountInSettings.Enabled = false;
+        _reset.NotifySettingsChanged();
+
+        Assert.False(_reset.AreFactoryDefaultsApplied);
+    }
 }

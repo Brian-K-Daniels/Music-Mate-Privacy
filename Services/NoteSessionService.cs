@@ -121,12 +121,14 @@ namespace musicmate.Services
         private const string PrefNoteNameDisplayKey = "musicmate.NoteNameDisplay";
         private const string PrefShowConductorCuesKey = "musicmate.ShowConductorCues";
         private const string PrefShowSignaturesOnBothStaffsKey = "musicmate.ShowSignaturesOnBothStaffs";
+        /// <summary>Factory default for Settings → Conductor Cues.</summary>
+        public const bool DefaultShowConductorCues = true;
         private string _meterTimeSignature = SessionPreferences.Get(PrefMeterTimeSignatureKey, "4/4");
         private string _smallestRhythmNote = SessionPreferences.Get(PrefSmallestRhythmNoteKey, "Quarter");
         private string _rhythmMode = SessionPreferences.Get(PrefRhythmModeKey, "Simple");
         private string _syncopationSetting = SessionPreferences.Get(PrefSyncopationSettingKey, "None");
         private string _noteNameDisplay = SessionPreferences.Get(PrefNoteNameDisplayKey, "Current only");
-        private bool _showConductorCues = SessionPreferences.Get(PrefShowConductorCuesKey, false);
+        private bool _showConductorCues = SessionPreferences.Get(PrefShowConductorCuesKey, DefaultShowConductorCues);
         private bool _showSignaturesOnBothStaffs =
             SessionPreferences.Get(PrefShowSignaturesOnBothStaffsKey, true);
 
@@ -2402,6 +2404,48 @@ namespace musicmate.Services
             _sessionStopwatch.Restart();
         }
 
+        /// <summary>
+        /// Arms the conductor timeline on the first correct note at index 0.
+        /// Wrong or spurious pitches before that moment must not start the clock.
+        /// Returns false when note evaluation should be skipped for this detection.
+        /// </summary>
+        public bool TryArmListeningClockOnFirstCorrectPitch(bool pitchCorrect)
+        {
+            if (IsListeningClockRunning)
+                return true;
+
+            if (CurrentNoteIndex != 0)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[Timing] Rejected pitch — clock not armed at note index {CurrentNoteIndex}");
+                return false;
+            }
+
+            if (!pitchCorrect)
+            {
+                NoteStateChangeDiagnostics.GetCaller(out var method, out var file, out var line);
+                NoteStateChangeDiagnostics.LogEvent(
+                    "PreArmPitchRejected",
+                    method,
+                    file,
+                    line,
+                    BuildNoteStateDiagContext(0),
+                    "Wrong pitch before conductor clock armed — timing origin unchanged");
+                return false;
+            }
+
+            StartListeningClock();
+            NoteStateChangeDiagnostics.GetCaller(out var m, out var f, out var ln);
+            NoteStateChangeDiagnostics.LogEvent(
+                "ListeningClockArmed",
+                m,
+                f,
+                ln,
+                BuildNoteStateDiagContext(0),
+                "Conductor clock armed on first correct note (t=0)");
+            return true;
+        }
+
         /// <summary>True once <see cref="StartListeningClock"/> has started the conductor timeline.</summary>
         public bool IsListeningClockRunning => _sessionStopwatch.IsRunning;
         /// <summary>
@@ -2532,7 +2576,9 @@ namespace musicmate.Services
                 _rhythmGateUntilMs = 0;
         }
 
+#if DEBUG
         private string? _diagLastHeardNote;
+#endif
         internal DateTime? PlaybackArmUtc { get; private set; }
         internal DateTime? CountInStartUtc { get; private set; }
         internal DateTime? CountInEndUtc { get; private set; }
@@ -2569,7 +2615,11 @@ namespace musicmate.Services
                 sessionMs,
                 expectedMs,
                 beat,
+#if DEBUG
                 detectedNote ?? _diagLastHeardNote,
+#else
+                detectedNote,
+#endif
                 NotesToDraw.Count,
                 NoteFeedbacks.Values.Count(v => v.Wrong > 0),
                 Tune ?? "-");
@@ -2617,11 +2667,11 @@ namespace musicmate.Services
                 line,
                 idx,
                 expected,
-                heardNote ?? _diagLastHeardNote,
+                heardNote,
                 wrongBefore,
                 updated.Wrong,
                 cents,
-                BuildNoteStateDiagContext(idx, heardNote ?? _diagLastHeardNote),
+                BuildNoteStateDiagContext(idx, heardNote),
                 reason,
                 $"NoteFeedbacks.Count={NoteFeedbacks.Count} FeedbackViewModels.Count={FeedbackViewModels.Count}");
             return true;
@@ -2770,7 +2820,9 @@ namespace musicmate.Services
             (bool correct, int cents)? pitchResult = null,
             bool fromDetectedPitch = false)
         {
-            if (!IsConductorOnsetGateEnabled() || SessionCompleted)
+            if (!IsListeningClockRunning
+                || !IsConductorOnsetGateEnabled()
+                || SessionCompleted)
                 return false;
 
             bool advanced = false;
@@ -2783,7 +2835,7 @@ namespace musicmate.Services
                     m,
                     f,
                     ln,
-                    BuildNoteStateDiagContext(CurrentNoteIndex, _diagLastHeardNote),
+                    BuildNoteStateDiagContext(CurrentNoteIndex),
                     $"CatchUpWithPitch begin actualMs={actualMs:F0} startIndex={CurrentNoteIndex}");
             }
 
@@ -2905,11 +2957,11 @@ namespace musicmate.Services
                 line,
                 idx,
                 expected,
-                heardNote ?? _diagLastHeardNote,
+                heardNote,
                 wrongBefore,
                 updated.Wrong,
                 cents,
-                BuildNoteStateDiagContext(idx, heardNote ?? _diagLastHeardNote),
+                BuildNoteStateDiagContext(idx, heardNote),
                 reason,
                 $"NoteFeedbacks.Count={NoteFeedbacks.Count} FeedbackViewModels.Count={FeedbackViewModels.Count}");
             return true;
@@ -3341,8 +3393,6 @@ namespace musicmate.Services
             double elapsedAtFirstSound = GetSessionElapsedMs();
             if (logFirstSound)
                 FirstPitchDetectedUtc = DateTime.UtcNow;
-#else
-            const bool logFirstSound = false;
 #endif
 
             try

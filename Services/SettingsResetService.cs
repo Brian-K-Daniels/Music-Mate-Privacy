@@ -335,7 +335,7 @@ namespace musicmate.Services
             _session.MasteredMethod = MasteryPreferenceDefaults.MasteredMethod;
             _session.StreakCrit = MasteryPreferenceDefaults.StreakCrit;
             _session.UseNoteMasteryForGeneration = MasteryPreferenceDefaults.UseNoteMasteryForGeneration;
-            _session.ShowConductorCues = false;
+            _session.ShowConductorCues = NoteSessionService.DefaultShowConductorCues;
             _session.ShowSignaturesOnBothStaffs = true;
             _session.NoteNameDisplay = "Current only";
             _session.MeterTimeSignature = "4/4";
@@ -480,7 +480,7 @@ namespace musicmate.Services
                 RhythmMode = "Simple",
                 SyncopationSetting = "None",
                 NoteNameDisplay = "Current only",
-                ShowConductorCues = false,
+                ShowConductorCues = NoteSessionService.DefaultShowConductorCues,
                 ShowSignaturesOnBothStaffs = true,
                 AboutFontSize = AboutFontSizes.Default,
                 CollectNoteStats = SettingsPageViewModel.DefaultCollectNote,
@@ -539,7 +539,22 @@ namespace musicmate.Services
         }
 
         private bool MatchesFactoryDefaults(AppSettingsSnapshot current)
-            => current.EqualsSnapshot(BuildFactoryDefaultsSnapshot());
+            => current.EqualsSnapshot(BuildFactoryDefaultsSnapshot())
+               && MatchesWaitingCountInFactoryDefaults();
+
+        private static bool MatchesWaitingCountInFactoryDefaults()
+            => WaitingCountInSettings.Enabled == WaitingCountInSettings.DefaultEnabled
+               && NearlyEqual(WaitingCountInSettings.AccentedVolume, WaitingCountInSettings.DefaultAccentedVolume)
+               && NearlyEqual(WaitingCountInSettings.UnaccentedVolume, WaitingCountInSettings.DefaultUnaccentedVolume)
+               && NearlyEqual(WaitingCountInSettings.AccentedPitchHz, WaitingCountInSettings.DefaultAccentedPitchHz)
+               && NearlyEqual(WaitingCountInSettings.UnaccentedPitchHz, WaitingCountInSettings.DefaultUnaccentedPitchHz)
+               && WaitingCountInSettings.BeatDurationPercent == WaitingCountInSettings.DefaultBeatDurationPercent;
+
+        private static bool NearlyEqual(float a, float b)
+            => Math.Abs(a - b) < 0.0001f;
+
+        private static bool NearlyEqual(double a, double b)
+            => Math.Abs(a - b) < 0.0001;
 
         private static string NormalizeHex(string hex)
             => (hex ?? string.Empty).Trim().ToUpperInvariant();

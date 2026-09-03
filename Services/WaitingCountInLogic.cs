@@ -36,6 +36,28 @@ namespace musicmate.Services
             return 60000.0 / bpm;
         }
 
+        /// <summary>Absolute grid time for beat index 0, 1, 2… from session start.</summary>
+        public static double GetAbsoluteBeatStartMs(long beatIndex, double msPerBeat)
+            => beatIndex * msPerBeat;
+
+        /// <summary>1-based measure and beat numbers for diagnostics.</summary>
+        public static (int MeasureNumber, int BeatNumber) GetMeasureBeatNumbers(
+            long beatIndex,
+            int beatsPerMeasure)
+        {
+            beatsPerMeasure = Math.Max(1, beatsPerMeasure);
+            int beatInMeasure = (int)(beatIndex % beatsPerMeasure);
+            int measure = (int)(beatIndex / beatsPerMeasure);
+            return (measure + 1, beatInMeasure + 1);
+        }
+
+        /// <summary>
+        /// When the scheduler is so late that sounding this beat would crowd the next grid slot,
+        /// skip playback for this slot only. The grid index still advances.
+        /// </summary>
+        public static bool IsTooLateToSound(double nowMs, double intendedMs, double msPerBeat)
+            => nowMs >= intendedMs + msPerBeat * 0.5;
+
         /// <summary>
         /// Click length = beat duration × percent / 100 (percent of the beat at the current tempo).
         /// </summary>
@@ -44,6 +66,15 @@ namespace musicmate.Services
             int pct = WaitingCountInSettings.ClampDurationPercent(beatDurationPercent);
             double beatMs = Math.Max(1.0, msPerBeat);
             return (beatMs * pct / 100.0) / 1000.0;
+        }
+
+        /// <summary>
+        /// Audible click length including playback tail (matches AudioPlaybackService release padding).
+        /// </summary>
+        public static double ResolveClickPlaybackMs(int beatDurationPercent, double msPerBeat)
+        {
+            double clickMs = ResolveClickDurationSeconds(beatDurationPercent, msPerBeat) * 1000.0;
+            return clickMs + (clickMs >= 80.0 ? 80.0 : 15.0);
         }
 
         public static ClickSpec BuildClick(

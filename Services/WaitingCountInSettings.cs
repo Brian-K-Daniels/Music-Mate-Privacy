@@ -14,7 +14,7 @@ namespace musicmate.Services
         /// <summary>Legacy ms key — cleared on schema migrate; never read as duration.</summary>
         public const string LegacyBeatDurationMsKey = "musicmate.CountIn.BeatDurationMs";
 
-        public const bool DefaultEnabled = false;
+        public const bool DefaultEnabled = true;
 
         public const float DefaultAccentedVolume = 0.70f;
         public const float DefaultUnaccentedVolume = 0.40f;

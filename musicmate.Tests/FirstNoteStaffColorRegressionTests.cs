@@ -305,6 +305,69 @@ public class FirstNoteStaffColorRegressionTests
     }
 
     [Fact]
+    public void CountInOffPath_WrongPitchBeforeFirstCorrect_DoesNotMarkFutureNotesMissed()
+    {
+        const int bpm = 60;
+        double elapsed = 5000;
+        var session = CreateDeferredClockSession([60, 62, 64, 65], bpm, () => elapsed);
+
+        Assert.False(session.IsListeningClockRunning);
+
+        var wrong = session.Evaluate(Freq(62));
+        Assert.False(session.TryArmListeningClockOnFirstCorrectPitch(wrong.correct));
+        Assert.False(session.IsListeningClockRunning);
+
+        session.NotifySilence();
+        Assert.False(session.AdvanceTimelineForExpiredNotes());
+        Assert.Equal(0, session.CurrentNoteIndex);
+        for (int i = 0; i < 4; i++)
+            AssertNoWrongFeedback(session, i);
+
+        elapsed = 10_000;
+        session.NotifySilence();
+        Assert.False(session.AdvanceTimelineForExpiredNotes());
+        Assert.Equal(0, session.CurrentNoteIndex);
+
+        Assert.True(session.TryArmListeningClockOnFirstCorrectPitch(pitchCorrect: true));
+        elapsed = 0;
+        var correct = session.Evaluate(Freq(60));
+        Assert.True(session.UpdateFeedbackForCurrent(Freq(60), correct));
+
+        Assert.Equal(1, session.CurrentNoteIndex);
+        for (int i = 1; i < 4; i++)
+            AssertNoWrongFeedback(session, i);
+    }
+
+    [Theory]
+    [InlineData(30)]
+    [InlineData(60)]
+    public void CountInOffPath_ConductorCuesOff_SpuriousPitchThenSilence_DoesNotCascadeRed(int bpm)
+    {
+        double elapsed = 8000;
+        var session = CreateDeferredClockSession([60, 62, 64, 65], bpm, () => elapsed);
+        session.ShowConductorCues = false;
+
+        Assert.False(session.TryArmListeningClockOnFirstCorrectPitch(
+            session.Evaluate(Freq(64)).correct));
+
+        for (int i = 0; i < 3; i++)
+        {
+            session.NotifySilence();
+            Assert.False(session.AdvanceTimelineForExpiredNotes());
+        }
+
+        Assert.Equal(0, session.CurrentNoteIndex);
+        for (int i = 0; i < 4; i++)
+            AssertNoWrongFeedback(session, i);
+
+        Assert.True(session.TryArmListeningClockOnFirstCorrectPitch(pitchCorrect: true));
+        elapsed = 0;
+        var first = session.Evaluate(Freq(60));
+        Assert.True(session.UpdateFeedbackForCurrent(Freq(60), first));
+        Assert.Equal(1, session.CurrentNoteIndex);
+    }
+
+    [Fact]
     public void PrematureClockAtCountInDownbeat_MarksMultipleNotesMissedBeforeFirstSound()
     {
         const int bpm = 60;

@@ -3,6 +3,8 @@ using System.Globalization;
 using System.Text;
 using musicmate.Services;
 
+#if DEBUG
+
 namespace musicmate.Diagnostics;
 
 /// <summary>
@@ -141,3 +143,4 @@ public static class FirstSoundTimingDiagnostics
         }
     }
 }
+#endif
