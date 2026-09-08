@@ -63,4 +63,37 @@ public class BalancedKeySelectionTests
             Assert.Equal(0, KeySignatureRules.GetAccidentalCount(key, "Major"));
         }
     }
+
+    [Fact]
+    public void L1_NaturalMinor_FallsBackToNaturalWhenAccidentalsEmpty()
+    {
+        for (int seed = 0; seed < 40; seed++)
+        {
+            string key = ChildLevelProgression.PickBalancedKeyForSignature(
+                "Natural Minor", level: 1, new Random(seed));
+            Assert.Equal("A", key);
+            Assert.Equal(0, KeySignatureRules.GetAccidentalCount(key, "Natural Minor"));
+        }
+    }
+
+    [Fact]
+    public void L18_NaturalMinor_UsesBothFlatAndSharpBuckets()
+    {
+        bool sawFlat = false;
+        bool sawSharp = false;
+        for (int seed = 0; seed < 80; seed++)
+        {
+            string key = ChildLevelProgression.PickBalancedKeyForSignature(
+                "Natural Minor", level: 18, new Random(seed));
+            Assert.True(KeyDifficultyRules.IsKeyAllowedAtLevel(key, "Natural Minor", 18));
+            Assert.True(KeyDifficultyRules.GetKeySignatureDifficulty(key, "Natural Minor") <= 1);
+            if (KeySignatureRules.KeySignatureUsesFlats(key, "Natural Minor"))
+                sawFlat = true;
+            else if (KeySignatureRules.GetSignedAccidentalCount(key, "Natural Minor") > 0)
+                sawSharp = true;
+        }
+
+        Assert.True(sawFlat, "Expected at least one flat-signature minor key at L18");
+        Assert.True(sawSharp, "Expected at least one sharp-signature minor key at L18");
+    }
 }

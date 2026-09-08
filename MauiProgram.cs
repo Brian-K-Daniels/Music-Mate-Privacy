@@ -84,16 +84,9 @@ namespace musicmate
 
 #if DEBUG
             Diagnostics.DebugLogSettings.LoadAll();
-            if (Diagnostics.DebugLogSettings.IsEnabled(Diagnostics.DebugLogCategory.StaffSelfTests))
-            {
-                StaffDrawable.RunKeySignatureTests();
-                StaffDrawable.RunMeasureLayoutTests();
-            }
-            if (Diagnostics.DebugLogSettings.IsEnabled(Diagnostics.DebugLogCategory.ChildLevel))
-            {
-                ChildLevelScaleSelectionTests.RunSelfChecks();
-                ScaleKeyRandomTests.RunSelfChecks();
-            }
+            // Diagnostic regression self-checks are pure CPU work. Run them off the UI
+            // thread so CreateMauiApp does not stall the first frames (Choreographer skips).
+            ScheduleDebugSelfChecks();
 #endif
 
             // Sync premium state from the store on every cold start.
@@ -115,5 +108,35 @@ namespace musicmate
             catch { }
             return app;
         }
+
+#if DEBUG
+        /// <summary>
+        /// Runs DEBUG-only staff/scale self-checks on a thread-pool worker so app startup
+        /// painting is not blocked. Failures are logged; they never throw into UI.
+        /// </summary>
+        private static void ScheduleDebugSelfChecks()
+        {
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    if (Diagnostics.DebugLogSettings.IsEnabled(Diagnostics.DebugLogCategory.StaffSelfTests))
+                    {
+                        StaffDrawable.RunKeySignatureTests();
+                        StaffDrawable.RunMeasureLayoutTests();
+                    }
+                    if (Diagnostics.DebugLogSettings.IsEnabled(Diagnostics.DebugLogCategory.ChildLevel))
+                    {
+                        ChildLevelScaleSelectionTests.RunSelfChecks();
+                        ScaleKeyRandomTests.RunSelfChecks();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DebugSelfChecks] ERROR: {ex}");
+                }
+            });
+        }
+#endif
     }
 }

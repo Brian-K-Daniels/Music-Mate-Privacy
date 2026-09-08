@@ -77,6 +77,20 @@ namespace musicmate.Services
             return clickMs + (clickMs >= 80.0 ? 80.0 : 15.0);
         }
 
+        /// <summary>
+        /// Nominal click duration plus release pad and a short device-start latency so
+        /// <see cref="NoteSessionService.SuppressCountInClickSelfSound"/> covers energy that
+        /// reaches the mic after <c>TriggerClick</c> (SoundPool / IAudioPlayer start delay).
+        /// </summary>
+        public static int ResolveClickSelfSoundDurationMs(int clickDurationMs)
+        {
+            int audible = Math.Max(0, clickDurationMs);
+            int releasePad = audible >= 80 ? 80 : 15;
+            // Keep small — long enough for typical output start, not a noticeable play delay.
+            const int deviceStartLatencyMs = 60;
+            return audible + releasePad + deviceStartLatencyMs;
+        }
+
         public static ClickSpec BuildClick(
             long absoluteBeatIndex,
             int beatsPerMeasure,
@@ -98,8 +112,50 @@ namespace musicmate.Services
 
         /// <summary>
         /// Count-in must ignore incorrect pitches. Only a correct first-note evaluation may stop it.
+        /// App-generated click self-sound must still be suppressed separately
+        /// (see <see cref="ComputeSelfSoundGuardMs"/> / IgnoreAudio during clicks).
         /// </summary>
         public static bool ShouldStopForFirstNote(bool evaluateCorrect, bool countInActive, int currentNoteIndex)
             => countInActive && currentNoteIndex == 0 && evaluateCorrect;
+
+        /// <summary>
+        /// True when a correct first-note detection may end waiting Count-In and score the note.
+        /// Self-sound suppress windows (speaker bleed / residual buffer) must not accept.
+        /// </summary>
+        public static bool ShouldAcceptFirstNoteToEndCountIn(
+            bool evaluateCorrect,
+            bool countInActive,
+            int currentNoteIndex,
+            bool withinSelfSoundSuppressWindow)
+            => ShouldStopForFirstNote(evaluateCorrect, countInActive, currentNoteIndex)
+               && !withinSelfSoundSuppressWindow;
+
+        /// <summary>
+        /// Guard after each app-produced Count-In click so residual mic / pitch-window audio
+        /// cannot satisfy the first note. Sized to one analysis window plus the half-window
+        /// hop used by <see cref="PitchWindowAccumulator.HopHalf"/>.
+        /// </summary>
+        public static int ComputeSelfSoundGuardMs(int pitchWindowSize, int sampleRate)
+        {
+            pitchWindowSize = Math.Max(1, pitchWindowSize);
+            sampleRate = Math.Max(1, sampleRate);
+            double samplesToFlush = pitchWindowSize + (pitchWindowSize / 2.0);
+            return (int)Math.Ceiling(1000.0 * samplesToFlush / sampleRate);
+        }
+
+        /// <summary>Total suppress length = audible click + residual guard.</summary>
+        public static int ComputeSelfSoundSuppressMs(int clickDurationMs, int pitchWindowSize, int sampleRate)
+            => Math.Max(0, clickDurationMs) + ComputeSelfSoundGuardMs(pitchWindowSize, sampleRate);
+
+        /// <summary>
+        /// Never cover an entire beat — leave a listening gap so a real first note
+        /// (and early-accept) can be heard between Count-In clicks.
+        /// </summary>
+        public static int CapSelfSoundSuppressMs(int suppressMs, double msPerBeat)
+        {
+            int gapMs = 80;
+            int maxSuppress = Math.Max(40, (int)Math.Floor(Math.Max(1.0, msPerBeat) - gapMs));
+            return Math.Min(Math.Max(0, suppressMs), maxSuppress);
+        }
     }
 }

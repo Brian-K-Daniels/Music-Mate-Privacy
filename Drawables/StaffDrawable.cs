@@ -923,11 +923,17 @@ namespace musicmate.Drawables
             float safeLeft, float safeRight, float layoutRightLimit,
             float upperStaffMargin, float lowerStaffMargin)
         {
-            DrawStaffLinesAndBars(canvas, ink, upperTop, upperMid, upperBot,
-                upperNoteLayouts, upperBarLayouts,
-                safeLeft, safeRight, layoutRightLimit, upperStaffMargin);
+            // Empty staves must not be engraved — otherwise a short Practice Tune that
+            // lands on only one staff still shows a second clef/time/tempo system.
+            if (PracticeTuneStaffSplit.ShouldEngraveStaff(UpperNotes.Count))
+            {
+                DrawStaffLinesAndBars(canvas, ink, upperTop, upperMid, upperBot,
+                    upperNoteLayouts, upperBarLayouts,
+                    safeLeft, safeRight, layoutRightLimit, upperStaffMargin);
+            }
 
-            if (_session.Tune != "Tuner" && !SingleStaffLayout)
+            if (_session.Tune != "Tuner" && !SingleStaffLayout
+                && PracticeTuneStaffSplit.ShouldEngraveStaff(LowerNotes.Count))
             {
                 DrawStaffLinesAndBars(canvas, ink, lowerTop, lowerMid, lowerBot,
                     lowerNoteLayouts, lowerBarLayouts,
@@ -946,11 +952,15 @@ namespace musicmate.Drawables
 
             // BPM marking stays on the upper staff only; key/time may repeat on lower.
             // Interval Sight Training (SingleStaffLayout): clef + key only — no tempo or time sig.
-            DrawStaffHeaderChrome(canvas, ink, upperTop, upperMid, upperBot,
-                drawKeyAndTimeSig: true,
-                drawBpmMarking: !SingleStaffLayout,
-                drawTimeSignature: !SingleStaffLayout);
-            if (_session.Tune != "Tuner" && !SingleStaffLayout)
+            if (PracticeTuneStaffSplit.ShouldEngraveStaff(UpperNotes.Count))
+            {
+                DrawStaffHeaderChrome(canvas, ink, upperTop, upperMid, upperBot,
+                    drawKeyAndTimeSig: true,
+                    drawBpmMarking: !SingleStaffLayout,
+                    drawTimeSignature: !SingleStaffLayout);
+            }
+            if (_session.Tune != "Tuner" && !SingleStaffLayout
+                && PracticeTuneStaffSplit.ShouldEngraveStaff(LowerNotes.Count))
             {
                 bool drawLowerSignatures = UpperNotes.Count == 0
                     || _session.ShowSignaturesOnBothStaffs;
@@ -5045,8 +5055,8 @@ namespace musicmate.Drawables
             {
                 double? highlightedBeat = GetHighlightedConductedBeatRel(
                     notes, currentIdx, beatOrigin, barBeats, conductorTs, isActive);
-                DrawConductorBeatCues(canvas, staffTop, notes, noteLayouts, barLayouts, barBeats, beatOrigin,
-                    staffLeftMargin, conductorTs, highlightedBeat ) ; //  2026.07.09 1942  conductorTs, highlightedBeat);
+                DrawConductorBeatCues(canvas, staffTop, staffMid, notes, noteLayouts, barLayouts, barBeats, beatOrigin,
+                    staffLeftMargin, conductorTs, highlightedBeat);
             }
 
             barBeats ??= Array.Empty<double>();
@@ -5243,6 +5253,7 @@ namespace musicmate.Drawables
         private void DrawConductorBeatCues(
             ICanvas                     canvas,
             float                       staffTop,
+            float                       staffMid,
             IReadOnlyList<GeneratedNote> notes,
             NoteLayout[]                noteLayouts,
             BarLayout[]                 barLayouts,
@@ -5292,7 +5303,11 @@ namespace musicmate.Drawables
                     bool isCurrent = highlightedConductedBeatRel.HasValue
                         && Math.Abs(highlightedConductedBeatRel.Value - conductedBeatRel) < 0.05;
 
-                    DrawConductorArrow(canvas, x, staffTop, isCurrent);
+                    float? highestHeadTop = TryGetHighestNoteHeadTopInBeatWindow(
+                        notes, noteLayouts, beatOrigin, conductedBeatRel, conductedBeatEndRel,
+                        staffTop, staffMid);
+
+                    DrawConductorArrow(canvas, x, staffTop, isCurrent, highestHeadTop);
                 }
             }
         }
@@ -5362,11 +5377,64 @@ namespace musicmate.Drawables
             return true;
         }
 
-        private static void DrawConductorArrow(ICanvas canvas, float x, float staffTop, bool isCurrent)
+        /// <summary>
+        /// Top of the highest pitched note head in the conducted-beat window, or null if none.
+        /// Used to raise conductor cues above ledger notes that sit above the default cue tip.
+        /// </summary>
+        private float? TryGetHighestNoteHeadTopInBeatWindow(
+            IReadOnlyList<GeneratedNote> notes,
+            NoteLayout[] noteLayouts,
+            double beatOrigin,
+            double beatStartRel,
+            double beatEndRel,
+            float staffTop,
+            float staffMid)
+        {
+            const double tolerance = 0.0001;
+            int count = Math.Min(notes.Count, noteLayouts.Length);
+            float? highestTop = null;
+
+            for (int i = 0; i < count; i++)
+            {
+                var note = notes[i];
+                if (note.IsRest)
+                    continue;
+
+                double noteBeatRel = (note.BeatPosition ?? 0.0) - beatOrigin;
+                if (noteBeatRel < beatStartRel - tolerance || noteBeatRel >= beatEndRel - tolerance)
+                    continue;
+
+                float headTop = NoteHeadTopY(note, staffTop, staffMid);
+                if (!highestTop.HasValue || headTop < highestTop.Value)
+                    highestTop = headTop;
+            }
+
+            return highestTop;
+        }
+
+        private float NoteHeadTopY(GeneratedNote note, float staffTop, float staffMid)
+        {
+            float ny = NoteY(note, staffTop, staffMid);
+            float drawR = NoteHeadDrawR(filled: true);
+            return ny - drawR * NoteHeadHeightFactor * 0.5f;
+        }
+
+        private static void DrawConductorArrow(
+            ICanvas canvas,
+            float x,
+            float staffTop,
+            bool isCurrent,
+            float? highestNoteHeadTop = null)
         {
             float wing = isCurrent ? 8.0f: 2.0f;  //  2026.07.09 1924  '5.5f : 4f;
             float height = isCurrent ? 8f : 2.25f;  //  2026.07.09 1926  5.5f;
             float tipY = staffTop - (isCurrent ? 1f : 4f);
+
+            // If the note head sits above the normal cue tip, park the tip just above the head.
+            const float clearance = 2f;
+            if (highestNoteHeadTop.HasValue && highestNoteHeadTop.Value < tipY)
+                tipY = highestNoteHeadTop.Value - clearance;
+
             float baseY = tipY - height;
 
             canvas.StrokeColor = Colors.Red;

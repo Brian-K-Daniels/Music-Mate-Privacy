@@ -43,7 +43,7 @@ namespace musicmate.Services
             double unaccentedPitchHz,
             int beatDurationPercent,
             CancellationToken externalCt,
-            Func<CancellationToken, Task>? beforeClickAsync = null,
+            Func<int, CancellationToken, Task>? beforeClickAsync = null,
             Func<CancellationToken, Task>? afterClickAsync = null,
             Func<int>? getTempoBpm = null)
         {
@@ -107,12 +107,23 @@ namespace musicmate.Services
                     if (!tooLate)
                     {
                         int durationMs = Math.Max(20, (int)Math.Round(click.DurationSeconds * 1000.0));
+                        // Suppress window covers audible length + release + device start latency;
+                        // pitch-window guard is added inside SuppressCountInClickSelfSound.
+                        int selfSoundMs = WaitingCountInLogic.ResolveClickSelfSoundDurationMs(durationMs);
                         long schedulerTick = Stopwatch.GetTimestamp();
                         var schedule = new MetronomeClickScheduleInfo(
                             beatIndex, measureNumber, beatNumber, intendedMs, actualMs, schedulerTick);
 
                         try
                         {
+                            // Arm self-sound suppress before the click reaches the speaker
+                            // so mic/pitch evaluation cannot score the first note from bleed.
+                            if (beforeClickAsync != null)
+                                await beforeClickAsync(selfSoundMs, ct).ConfigureAwait(false);
+
+                            if (ct.IsCancellationRequested || Volatile.Read(ref _generation) != gen)
+                                break;
+
                             TriggerClick(
                                 click.IsAccented,
                                 durationMs,
@@ -120,9 +131,6 @@ namespace musicmate.Services
                                 click.FrequencyHz,
                                 ct,
                                 schedule);
-
-                            if (beforeClickAsync != null)
-                                _ = beforeClickAsync(ct);
 
                             if (afterClickAsync != null
                                 && Volatile.Read(ref _generation) == gen

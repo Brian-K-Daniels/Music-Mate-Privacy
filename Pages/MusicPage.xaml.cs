@@ -135,6 +135,8 @@ namespace musicmate.Pages
         private CancellationTokenSource? _waitingCountInCts;
         private bool _waitingCountInActive;
         private int _waitingCountInGeneration;
+        /// <summary>Tracks IgnoreAudio edge for [AudioSuppress] OFF logging.</summary>
+        private bool _audioSuppressWasActive;
         private int _startListeningEpoch;
 #pragma warning restore CS0414
 
@@ -219,7 +221,7 @@ namespace musicmate.Pages
             Dispatcher.Dispatch(UpdateTitlePlayButtonPosition);
         }
         public bool IsTitlePlayButtonVisible =>
-            _session?.Tune == "Tuner" || !_isRunning || _isPlaying;
+            TunerTitleChrome.IsPlayButtonVisible(_session?.Tune, _isRunning, _isPlaying);
         public bool IsBottomPickersVisible => _session?.Tune != "Tuner";
         public bool IsBottomButtonRowVisible => _session?.Tune != "Tuner";
         public bool IsChildLevelSliderVisible => _session?.ChildLevel > 0 && _session.Tune != "Tuner";
@@ -484,16 +486,7 @@ namespace musicmate.Pages
                         && !PlayModePickerOptions.IsTunerMode(_session))
                         ScheduleStaffLayoutSettleRefresh();
                 };
-                if (TitleStartStopButton != null)
-                {
-                    TitleStartStopButton.SizeChanged += (_, _) => UpdateTitlePlayButtonPosition();
-                    TitleStartStopButton.HandlerChanged += (_, _) => UpdateTitlePlayButtonPosition();
-                }
-                if (TitleMarqueeGrid != null)
-                {
-                    TitleMarqueeGrid.SizeChanged += (_, _) => UpdateTitlePlayButtonPosition();
-                    TitleMarqueeGrid.HandlerChanged += (_, _) => UpdateTitlePlayButtonPosition();
-                }
+                StaffOverlayGrid.SizeChanged += (_, _) => UpdateTitlePlayButtonPosition();
                 StaffBorder.SizeChanged += (_, _) => UpdateTitlePlayButtonPosition();
                 SizeChanged += (_, _) => UpdateTitlePlayButtonPosition();
                 SetPlayButtonPlaying(false);
@@ -1532,10 +1525,11 @@ namespace musicmate.Pages
                         foreach (var mn in testTune.Measures[m].Notes)
                             splitBeat += mn.Duration.ToBeatValue();
 
-                    upperFlat = allNotes.Where(n => (n.BeatPosition ?? 0) < splitBeat).ToList();
-                    lowerFlat = ShiftStaffBeatPositions(
-                        allNotes.Where(n => (n.BeatPosition ?? 0) >= splitBeat).ToList(),
-                        splitBeat);
+                    (upperFlat, lowerFlat) = PracticeTuneStaffSplit.PartitionByMeasureHalf(
+                        allNotes,
+                        testTune.Measures.Count,
+                        splitBeat,
+                        ShiftStaffBeatPositions);
                     double measureBeats = testTune.TimeSignature.TotalBeats;
                     upperBarBeats = ComputeStaffBarBeats(upperFlat, measureBeats, existingUpper);
                     lowerBarBeats = ComputeStaffBarBeats(lowerFlat, measureBeats, existingLower);
@@ -1555,6 +1549,8 @@ namespace musicmate.Pages
                 {
                     ClearStaffPagePack();
                     // Split tune measures between upper and lower staff.
+                    // Short (1-measure) saved tunes must stay on the upper staff only —
+                    // the old half-split left upper empty and engraved duplicate chrome.
                     var allNotes = BuildNotesFromTune(_session.CurrentTune);
                     var allMeasures = _session.CurrentTune.Measures.Count;
                     int splitAt = allMeasures / 2;
@@ -1565,10 +1561,11 @@ namespace musicmate.Pages
                         foreach (var mn in _session.CurrentTune.Measures[m].Notes)
                             splitBeat += mn.Duration.ToBeatValue();
 
-                    upperFlat = allNotes.Where(n => (n.BeatPosition ?? 0) < splitBeat).ToList();
-                    lowerFlat = ShiftStaffBeatPositions(
-                        allNotes.Where(n => (n.BeatPosition ?? 0) >= splitBeat).ToList(),
-                        splitBeat);
+                    (upperFlat, lowerFlat) = PracticeTuneStaffSplit.PartitionByMeasureHalf(
+                        allNotes,
+                        allMeasures,
+                        splitBeat,
+                        ShiftStaffBeatPositions);
                     double measureBeats = _session.CurrentTune.TimeSignature.TotalBeats;
                     upperBarBeats = ComputeStaffBarBeats(upperFlat, measureBeats, existingUpper);
                     lowerBarBeats = ComputeStaffBarBeats(lowerFlat, measureBeats, existingLower);
@@ -2220,36 +2217,49 @@ namespace musicmate.Pages
                 DebugLog.WriteLine($"[ApplyTunerHeight] ERROR: {ex}");
             }
         }
-        private const double TitlePlayButtonSizeMm = 6;
+        /// <summary>
+        /// Compact Play/Stop pill height (mm). Short enough to sit in the above-staff
+        /// breathing room without covering tempo / clef / key; still tappable when paired
+        /// with a wider text-fitted width.
+        /// </summary>
+        private const double TitlePlayButtonHeightMm = 4.0;
+        private const double TitlePlayButtonMinWidthMm = 7.0;
+        private const double TitlePlayButtonPadH = 6;
+        private const double TitlePlayButtonPadV = 2;
         private void UpdateTitlePlayButtonPosition()
         {
-            if (TitlePlayButton == null || TitleStartStopButton == null || TitleMarqueeGrid == null
-                || !TitlePlayButton.IsVisible)
+            if (TitlePlayButton == null || !TitlePlayButton.IsVisible)
                 return;
 
-            var overlayParent = MainPageRootGrid;
-            if (overlayParent.Width <= 0 || TitleStartStopButton.Width <= 0)
-                return;
+            double height = MarginUtils.MmToDips(TitlePlayButtonHeightMm);
+            double minWidth = MarginUtils.MmToDips(TitlePlayButtonMinWidthMm);
+            string text = _titlePlayLabelText;
 
-            var goBounds = TryGetScreenBounds(TitleStartStopButton);
-            var marqueeBounds = TryGetScreenBounds(TitleMarqueeGrid);
-            var parentBounds = TryGetScreenBounds(overlayParent);
-            if (!goBounds.HasValue || !marqueeBounds.HasValue || !parentBounds.HasValue)
-                return;
+            // Fit font to the short height first, then widen for the label.
+            const double inset = 2;
+            double innerH = Math.Max(1, height - TitlePlayButtonPadV * 2 - inset);
+            double fontSize = GetTitleFittedFontSize(text, minWidth * 2, innerH);
+            double textWidth = MeasureTitleUiTextWidth(text, fontSize);
+            double width = Math.Max(minWidth, textWidth + TitlePlayButtonPadH * 2 + inset);
 
-            var go = goBounds.Value;
-            var marquee = marqueeBounds.Value;
-            var parent = parentBounds.Value;
+            TitlePlayButton.WidthRequest = width;
+            TitlePlayButton.HeightRequest = height;
+            TitlePlayButton.MinimumWidthRequest = width;
+            TitlePlayButton.MinimumHeightRequest = height;
+            // Keep tucked into the graphics corner; layout Margin in XAML handles insets.
+            TitlePlayButton.Margin = new Thickness(2, 2, 0, 0);
+            UpdateTitlePlayButtonFontSize(fontSize, width, height);
+        }
 
-            double playSize = MarginUtils.MmToDips(TitlePlayButtonSizeMm);
-            TitlePlayButton.WidthRequest = playSize;
-            TitlePlayButton.HeightRequest = playSize;
-            UpdateTitlePlayButtonFontSize();
+        private static double MeasureTitleUiTextWidth(string text, double fontSize)
+        {
+            if (string.IsNullOrEmpty(text) || fontSize <= 0)
+                return 0;
 
-            // Top edge just below the status marquee so Play cannot overlap GO.
-            double top = Math.Max(0, marquee.Bottom - parent.Top) + 4;
-            double left = go.Center.X - parent.Left - playSize * 0.5;
-            TitlePlayButton.Margin = new Thickness(Math.Max(0, left), top, 0, 0);
+            using var font = new SKFont();
+            ConfigureTitleUiBoldFont(font, (float)fontSize);
+            font.MeasureText(text, out var bounds);
+            return bounds.Width + 2; // embolden / MAUI slack
         }
         /// <summary>
         /// Screen bounds in MAUI logical units. TitleView lives outside the page content tree,
@@ -2334,7 +2344,7 @@ namespace musicmate.Pages
             if (isEnabled.HasValue)
                 TitlePlayButton.IsEnabled = isEnabled.Value;
 
-            UpdateTitlePlayButtonFontSize();
+            UpdateTitlePlayButtonPosition();
         }
         private async Task StopListeningForPlaybackAsync()
         {
@@ -2365,7 +2375,6 @@ namespace musicmate.Pages
         private const string TitleGoLabelText = "GO";
         private const string TitlePlayLabelText = "Play";
         private const string TitleStopLabelText = "Stop";
-        private const string TitleListenLabelText = "Listen";
         private string _titlePlayLabelText = TitlePlayLabelText;
         private static SKTypeface? _v3UiRegularTypeface;
         /// <summary>OpenSansRegular base face; MAUI applies synthetic bold via FontAttributes.Bold.</summary>
@@ -2430,7 +2439,7 @@ namespace musicmate.Pages
             double inner = circleDiameter - inset * 2;
             return GetTitleFittedFontSize(TitleGoLabelText, inner, inner);
         }
-        /// <summary>Largest bold "Stop"/"Listen" font size that fits inside the red title button.</summary>
+        /// <summary>Largest bold "Stop" font size that fits inside the red title button.</summary>
         private static double GetTitleStopFontSize(double width, double height, string labelText)
         {
             if (width <= 0 || height <= 0)
@@ -2442,36 +2451,26 @@ namespace musicmate.Pages
         private static double GetTitleStopFontSize(double width, double height)
             => GetTitleStopFontSize(width, height, TitleStopLabelText);
         private void UpdateTitlePlayButtonFontSize()
+            => UpdateTitlePlayButtonPosition();
+
+        private void UpdateTitlePlayButtonFontSize(double fontSize, double width, double height)
         {
             if (TitlePlayButton == null)
                 return;
 
-            string text = _titlePlayLabelText;
-            double size = TitlePlayButton.HeightRequest > 0
-                ? TitlePlayButton.HeightRequest
-                : TitlePlayButton.Height;
-            if (size <= 0)
-                size = MarginUtils.MmToDips(TitlePlayButtonSizeMm);
-
-            // StrokeThickness=1 plus slack so glyphs stay inside the square.
-            const double inset = 3;
-            double inner = size - inset * 2;
-            if (inner <= 0)
+            if (fontSize <= 0 || width <= 0 || height <= 0)
                 return;
-
-            // Square button: largest font that fits the current label fully inside.
-            double fontSize = GetTitleFittedFontSize(text, inner, inner);
 
             TitlePlayButton.Content = new Label
             {
-                Text = text,
+                Text = _titlePlayLabelText,
                 FontSize = fontSize,
                 FontFamily = "OpenSansRegular",
                 FontAttributes = FontAttributes.Bold,
                 TextColor = Colors.Yellow,
                 InputTransparent = true,
-                WidthRequest = size,
-                HeightRequest = size,
+                WidthRequest = width,
+                HeightRequest = height,
                 HorizontalOptions = LayoutOptions.Fill,
                 VerticalOptions = LayoutOptions.Fill,
                 HorizontalTextAlignment = TextAlignment.Center,
@@ -2487,12 +2486,14 @@ namespace musicmate.Pages
             if (TitleStartStopButton == null)
                 return;
 
-            bool showListen = _session?.Tune == "Tuner" && _isReferenceTonePlaying;
-            if (showListen || isRunning)
+            // Tuner metronome has its own Start/Stop; keep the title button as green Go while it runs.
+            var titleAction = TunerTitleChrome.ResolveTitleAction(
+                _session?.Tune, isRunning, _isReferenceTonePlaying);
+            if (titleAction == TunerTitleChrome.TitleAction.Stop)
             {
                 double width = TitleStartStopSlotWidth;
                 double height = TitleControlHeight;
-                string label = showListen ? TitleListenLabelText : TitleStopLabelText;
+                string label = TitleStopLabelText;
 
                 TitleStartStopButton.WidthRequest = width;
                 TitleStartStopButton.HeightRequest = height;
@@ -3134,10 +3135,21 @@ namespace musicmate.Pages
         {
             base.OnAppearing();
 #if DEBUG
+            // Same once-per-process self-checks as MauiProgram; never block OnAppearing.
             if (Diagnostics.DebugLogSettings.IsEnabled(Diagnostics.DebugLogCategory.StaffSelfTests))
             {
-                Drawables.StaffDrawable.RunKeySignatureTests();
-                Drawables.StaffDrawable.RunMeasureLayoutTests();
+                _ = Task.Run(() =>
+                {
+                    try
+                    {
+                        Drawables.StaffDrawable.RunKeySignatureTests();
+                        Drawables.StaffDrawable.RunMeasureLayoutTests();
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugLog.WriteLine($"[DebugSelfChecks] MusicPage ERROR: {ex}");
+                    }
+                });
             }
 #endif
             bool returningToPage = !_isPageVisible;
@@ -3669,7 +3681,7 @@ namespace musicmate.Pages
         {
             if (_session.Tune == "Tuner")
             {
-                await ToggleTunerPitchAsync();
+                // Obsolete title Play is never shown in Tuner; pitch is staff/note UI only.
                 return;
             }
 
@@ -3770,6 +3782,15 @@ namespace musicmate.Pages
             // Don't accumulate audio during ignore period — ensures the first
             // detection after cooldown uses entirely fresh samples
             bool ignoreAudio = _session.ShouldIgnoreAudio(DateTime.UtcNow);
+            if (_audioSuppressWasActive && !ignoreAudio)
+            {
+                DebugLog.WriteLine("[AudioSuppress] OFF — reason: guard completed");
+                _audioSuppressWasActive = false;
+            }
+            else if (ignoreAudio)
+            {
+                _audioSuppressWasActive = true;
+            }
             _pitchWindow.EnsureWindowSize(_session.PitchWindowSize);
             var ingest = _pitchWindow.Ingest(buf, rms, _session.RmsThreshold, ignoreAudio);
 
@@ -3894,31 +3915,47 @@ namespace musicmate.Pages
                     {
                         var cooldownResult = _session.Evaluate(freq);
                         _session.LogAudioCooldownRejectionIfPitchIdentified(freq, cooldownResult.cents);
+                        DebugLog.WriteLine(
+                            $"[AudioSuppress] pitch detected but ignored — reason: IgnoreAudioUntilUtc " +
+                            $"heardHz={freq:F1} correct={cooldownResult.correct}");
                         return;
                     }
 
-                    // Waiting count-in: listen only for the correct first note.
-                    // Incorrect pitches and click bleed-through must not stop the count-in.
+                    // Waiting count-in: listen only for the correct first note between clicks.
+                    // App-generated click tones (and residual buffer audio) are suppressed via
+                    // IgnoreAudio for click duration + pitch-window guard — they must never score.
                     if (_waitingCountInActive)
                     {
                         if (_session.CurrentNoteIndex != 0 || _session.NotesToDraw.Count == 0)
                             return;
 
+                        bool suppressSelfSound = _session.ShouldIgnoreAudio(DateTime.UtcNow);
                         var countInResult = _session.Evaluate(freq);
-                        if (!WaitingCountInLogic.ShouldStopForFirstNote(
-                                countInResult.correct, countInActive: true, currentNoteIndex: 0))
+                        if (!WaitingCountInLogic.ShouldAcceptFirstNoteToEndCountIn(
+                                countInResult.correct,
+                                countInActive: true,
+                                currentNoteIndex: 0,
+                                withinSelfSoundSuppressWindow: suppressSelfSound))
                             return;
 
+                        // Stop clicks and CLEAR suppress before scoring — a residual
+                        // Suppress here would make UpdateFeedbackForCurrent reject the note
+                        // and leave the session unable to accept pitches cleanly.
                         StopWaitingCountIn();
+                        _session.ClearCountInClickSelfSoundSuppress("first note accepted — clear before score");
                         _session.StartListeningClock();
-                        ResetPitchCapture();
                         if (!_audio.IsCapturing
                             && !_audio.TryStartCapture(OnAudioBlock, out var capErr))
                         {
                             DebugLog.WriteLine($"[CountIn] capture after first note failed: {capErr}");
                         }
+                        DebugLog.WriteLine(
+                            $"[AudioSuppress] pitch evaluated — expected first note, heardHz={freq:F1}");
                         if (_session.UpdateFeedbackForCurrent(freq, countInResult))
                             SyncStaffNoteStates();
+                        // Brief residual guard only AFTER scoring, so click bleed cannot steal note 1.
+                        _session.SuppressCountInClickSelfSound(0, "residual guard after first-note accept");
+                        ResetPitchCapture();
                         return;
                     }
 
@@ -3944,6 +3981,13 @@ namespace musicmate.Pages
                     if (!_session.TryArmListeningClockOnFirstCorrectPitch(result.correct))
                         return;
 
+                    string expectedName = _session.CurrentNoteIndex < _session.NotesToDraw.Count
+                        ? _session.ResolveWrittenEvaluationName(_session.NotesToDraw[_session.CurrentNoteIndex])
+                        : "-";
+                    DebugLog.WriteLine(
+                        $"[AudioSuppress] pitch detected and evaluated — expected {expectedName}, " +
+                        $"heardHz={freq:F1} correct={result.correct}");
+
                     // Only accept the note as correct if it matches the expected note (including octave) at the current index
                     if (_session.UpdateFeedbackForCurrent(freq, result))
                     {
@@ -3968,12 +4012,23 @@ namespace musicmate.Pages
             }
         }
 
-        private async Task StartWaitingCountInAsync()
+        /// <summary>
+        /// Runs Count-In for a generation armed by the caller. Must not increment the
+        /// generation again — Stop invalidates by bumping it so this method exits.
+        /// </summary>
+        private async Task StartWaitingCountInAsync(int armedGeneration)
         {
             if (_waitingCountInPlayer == null || _session == null)
                 return;
 
-            int myGen = Interlocked.Increment(ref _waitingCountInGeneration);
+            if (!WaitingCountInArming.MayBegin(
+                    armedGeneration,
+                    Volatile.Read(ref _waitingCountInGeneration),
+                    _isRunning))
+            {
+                DebugLog.WriteLine("[CountIn] skipped — Stopped or superseded before arm");
+                return;
+            }
 
             try { _waitingCountInCts?.Cancel(); } catch { }
             try { _waitingCountInCts?.Dispose(); } catch { }
@@ -3996,8 +4051,15 @@ namespace musicmate.Pages
                 try { _audio.StopCapture(); } catch { }
                 await Task.Delay(80, ct).ConfigureAwait(false);
 
-                if (myGen != Volatile.Read(ref _waitingCountInGeneration) || ct.IsCancellationRequested)
+                if (!WaitingCountInArming.MayContinue(
+                        armedGeneration,
+                        Volatile.Read(ref _waitingCountInGeneration),
+                        _isRunning,
+                        ct.IsCancellationRequested))
+                {
+                    DebugLog.WriteLine("[CountIn] aborted after delay — Stopped or superseded");
                     return;
+                }
 
                 ResetPitchCapture();
                 if (!_audio.TryStartCapture(OnAudioBlock, out var startCapErr))
@@ -4011,15 +4073,54 @@ namespace musicmate.Pages
                     accentedPitchHz: WaitingCountInSettings.AccentedPitchHz,
                     unaccentedPitchHz: WaitingCountInSettings.UnaccentedPitchHz,
                     beatDurationPercent: WaitingCountInSettings.BeatDurationPercent,
-                    externalCt: ct);
+                    externalCt: ct,
+                    beforeClickAsync: (clickDurationMs, clickCt) =>
+                    {
+                        if (clickCt.IsCancellationRequested
+                            || armedGeneration != Volatile.Read(ref _waitingCountInGeneration)
+                            || !_waitingCountInActive)
+                        {
+                            return Task.CompletedTask;
+                        }
+
+                        double msPerBeat = WaitingCountInLogic.MsPerBeat(_session.Tempo);
+                        _session.SuppressCountInClickSelfSoundCapped(
+                            clickDurationMs,
+                            msPerBeat,
+                            "Count-In click");
+                        ResetPitchCapture();
+                        return Task.CompletedTask;
+                    });
 
                 DebugLog.WriteLine("[CountIn] loop ended");
+
+                // If Count-In was cancelled/stopped, restore evaluation immediately.
+                // Do NOT extend suppress here — that permanently blocked post-Count-In detection
+                // when combined with StopWaitingCountIn's previous residual Suppress.
+                try
+                {
+                    if (!_waitingCountInActive
+                        || armedGeneration != Volatile.Read(ref _waitingCountInGeneration))
+                    {
+                        _session?.ClearCountInClickSelfSoundSuppress("Count-In loop ended (cancelled/stopped)");
+                    }
+                    else
+                    {
+                        // Still waiting for first note after a fixed loop end: brief residual only.
+                        _session?.SuppressCountInClickSelfSound(0, "residual guard after Count-In loop");
+                        ResetPitchCapture();
+                    }
+                }
+                catch { }
 
                 // Downbeat after count-in: do not start the conductor clock here.
                 // Elapsed time must begin at the first detected pitch so notes are not
                 // marked missed while the player waits to begin playing.
-                if (_isRunning
-                    && myGen == Volatile.Read(ref _waitingCountInGeneration)
+                if (WaitingCountInArming.MayContinue(
+                        armedGeneration,
+                        Volatile.Read(ref _waitingCountInGeneration),
+                        _isRunning,
+                        cancellationRequested: false)
                     && _session != null)
                 {
                     _session.MarkCountInEndUtc();
@@ -4027,7 +4128,12 @@ namespace musicmate.Pages
                 }
 
                 // Keep mic open if still waiting for the first note.
-                if (_isRunning && _waitingCountInActive && !_audio.IsCapturing)
+                if (WaitingCountInArming.MayContinue(
+                        armedGeneration,
+                        Volatile.Read(ref _waitingCountInGeneration),
+                        _isRunning && _waitingCountInActive,
+                        cancellationRequested: false)
+                    && !_audio.IsCapturing)
                 {
                     ResetPitchCapture();
                     if (!_audio.TryStartCapture(OnAudioBlock, out var err))
@@ -4044,7 +4150,7 @@ namespace musicmate.Pages
             }
             finally
             {
-                if (myGen == Volatile.Read(ref _waitingCountInGeneration)
+                if (armedGeneration == Volatile.Read(ref _waitingCountInGeneration)
                     && _waitingCountInPlayer?.IsActive != true)
                     _waitingCountInActive = false;
             }
@@ -4052,10 +4158,29 @@ namespace musicmate.Pages
 
         private void StopWaitingCountIn()
         {
-            Interlocked.Increment(ref _waitingCountInGeneration);
+            WaitingCountInArming.Invalidate(ref _waitingCountInGeneration);
             _waitingCountInActive = false;
+            // Always restore evaluation when Count-In stops/cancels. Residual protection
+            // for an accepted first note is applied by the early-accept path AFTER scoring.
+            try
+            {
+                _session?.ClearCountInClickSelfSoundSuppress("Count-In stopped");
+                ResetPitchCapture();
+            }
+            catch { }
             try { _waitingCountInCts?.Cancel(); } catch { }
             try { _waitingCountInPlayer?.Stop(); } catch { }
+        }
+
+        /// <summary>
+        /// Cancels pending AutoStart / session-start work so Stop cannot be undone by a
+        /// delayed callback that would re-arm Count-In.
+        /// </summary>
+        private void CancelPendingListeningStarts()
+        {
+            try { _autoStartCts?.Cancel(); } catch { }
+            try { _sessionStartCts?.Cancel(); } catch { }
+            Interlocked.Increment(ref _startListeningEpoch);
         }
         /// <summary>
         /// Restarts only the audio capture stream without resetting session state,
@@ -4542,13 +4667,15 @@ namespace musicmate.Pages
                             return;
                         }
 
+                        // Arm generation before fire-and-forget so Stop cannot be raced by a late start.
+                        int countInGen = WaitingCountInArming.Arm(ref _waitingCountInGeneration);
                         _waitingCountInActive = true;
                         StatusService.Instance.ShowTemporaryMessage(
                             StatusService.CountInStatusMessage,
                             StatusService.CountInStatusDuration);
                         DebugLog.WriteLine("[Start] Count-in enabled — starting click loop");
                         // Own CTS so session-start replacement cannot kill the loop mid-measure.
-                        _ = StartWaitingCountInAsync();
+                        _ = StartWaitingCountInAsync(countInGen);
                     }
                     else
                     {
@@ -5659,6 +5786,8 @@ namespace musicmate.Pages
             }
 
             UpdateTitleStartStopButtonVisual(_isRunning);
+            // Force Play visibility refresh so Tuner never re-shows the obsolete Play control.
+            UpdatePlayButtonVisibility();
         }
 
         private void MoveReferenceNote(int semitoneDelta)
@@ -6589,6 +6718,7 @@ namespace musicmate.Pages
         // Use base BindableObject.OnPropertyChanged so XAML bindings receive change notifications
         private async Task StopListeningAndEvaluatingAsync(string statusMessage = "Stopped.")
         {
+            CancelPendingListeningStarts();
             _playCts?.Cancel();
             StopWaitingCountIn();
             _audio.StopCapture();
@@ -6648,7 +6778,7 @@ namespace musicmate.Pages
                     return;
                 }
 
-                // Red "Listen" while the Tuner metronome plays — stop metronome and resume listening.
+                // Metronome running: title stays Go; tap still stops metronome and resumes listening.
                 if (_isReferenceTonePlaying)
                 {
                     await StopReferenceToneAsync(resumeListening: _isRunning);
@@ -6675,7 +6805,7 @@ namespace musicmate.Pages
             if (plan.Action is PracticeSessionLifecycle.StopToggleAction.StopRestoreRepeatSame
                 or PracticeSessionLifecycle.StopToggleAction.StopRegenerateFresh)
             {
-                _sessionStartCts?.Cancel();
+                CancelPendingListeningStarts();
                 try
                 {
                     _playCts?.Cancel();

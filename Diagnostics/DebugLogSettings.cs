@@ -96,7 +96,8 @@ public static class DebugLogSettings
             || message.StartsWith("[LevelUpService]", StringComparison.Ordinal))
             return DebugLogCategory.LevelUp;
 
-        if (message.StartsWith("[TimingWrong]", StringComparison.Ordinal)
+        if (message.StartsWith("[PauseResume]", StringComparison.Ordinal)
+            || message.StartsWith("[TimingWrong]", StringComparison.Ordinal)
             || message.StartsWith("[RestTimingWrong]", StringComparison.Ordinal)
             || message.StartsWith("[TimingSummary]", StringComparison.Ordinal)
             || message.StartsWith("[Mastery]", StringComparison.Ordinal))
@@ -153,6 +154,8 @@ public static class DebugLogSettings
         if (message.StartsWith("[MusicPage]", StringComparison.Ordinal)
             || message.StartsWith("[Start]", StringComparison.Ordinal)
             || message.StartsWith("[Audio]", StringComparison.Ordinal)
+            || message.StartsWith("[AudioSuppress]", StringComparison.Ordinal)
+            || message.StartsWith("[CountIn]", StringComparison.Ordinal)
             || message.StartsWith("[NoteRejected]", StringComparison.Ordinal)
             || message.StartsWith("[Restart]", StringComparison.Ordinal)
             || message.StartsWith("[Play]", StringComparison.Ordinal)

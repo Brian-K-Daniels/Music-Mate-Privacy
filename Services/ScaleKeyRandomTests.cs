@@ -1,5 +1,4 @@
 #if DEBUG
-using System.Diagnostics;
 using System.Text;
 
 namespace musicmate.Services
@@ -18,7 +17,7 @@ namespace musicmate.Services
             sb.AppendLine("[ScaleKeyRandom] Self-check START");
 
             AssertRepeatOffRandomUsuallyChangesScaleOrKey(sb);
-            AssertRepeatOffNamedKeepsScaleChangesKey(sb);
+            AssertRepeatOffNamedKeepsScaleAndKey(sb);
             AssertRepeatOnPreservesScaleAndKey(sb);
             AssertLowLevelPoolsRespected(sb);
             AssertBalancedKeySignatureMixWhenBothBucketsExist(sb);
@@ -50,13 +49,17 @@ namespace musicmate.Services
             AssertTrue(anyChange, sb, "Random mode GO usually changes scale or key");
         }
 
-        private static void AssertRepeatOffNamedKeepsScaleChangesKey(StringBuilder sb)
+        private static void AssertRepeatOffNamedKeepsScaleAndKey(StringBuilder sb)
         {
+            // Named + Selected Scale intentionally keeps the user's key (What To Play choice).
+            // Only Assortment by Level / Random redraw keys from the level pool.
             var session = new NoteSessionService
             {
                 ChildLevel = 42,
                 ScaleSelectionMode = ScaleSelectionMode.Named,
                 SelectedScale = "Major",
+                Tune = "Selected Scale",
+                IsRandomMode = false,
                 Key = "C"
             };
             session.SelectedScale = "Major";
@@ -64,7 +67,7 @@ namespace musicmate.Services
 
             session.PrepareFreshScaleAndKeyForGeneration("GoButton", repeatSame: false, 99);
             AssertEqual(session.EffectiveScale, "Major", sb, "Named scale preserved");
-            AssertTrue(session.Key != "C", sb, "Named mode picks fresh key");
+            AssertEqual(session.Key, "C", sb, "Named mode keeps user key");
         }
 
         private static void AssertRepeatOnPreservesScaleAndKey(StringBuilder sb)
@@ -123,12 +126,35 @@ namespace musicmate.Services
             AssertTrue(flatCount > 50 && sharpCount > 50, sb,
                 $"L{level} Major balanced keys (~50/50): flats={flatCount}, sharps={sharpCount}");
 
-            string lowLevelKey = ChildLevelProgression.PickBalancedKeyForSignature(
-                "Natural Minor", level: 18, new Random(42));
-            AssertTrue(
-                KeySignatureRules.KeySignatureUsesFlats(lowLevelKey, "Natural Minor"),
-                sb,
-                "L18 Natural Minor falls back to flat bucket when sharp bucket empty");
+            // L1 Natural Minor: only A (0 accidentals). Sharp and flat buckets are empty,
+            // so selection falls back to the natural bucket — not to inventing flats.
+            string l1Minor = ChildLevelProgression.PickBalancedKeyForSignature(
+                "Natural Minor", level: 1, new Random(42));
+            AssertEqual(l1Minor, "A", sb,
+                "L1 Natural Minor falls back to natural when sharp/flat buckets empty");
+
+            // L18 Natural Minor: max difficulty 1 → both D (1 flat) and E (1 sharp) exist.
+            // Picks must stay within that band (empty-bucket fallback is not this case).
+            bool sawFlat = false;
+            bool sawSharp = false;
+            for (int seed = 0; seed < 80; seed++)
+            {
+                string key = ChildLevelProgression.PickBalancedKeyForSignature(
+                    "Natural Minor", level: 18, new Random(seed));
+                int difficulty = KeyDifficultyRules.GetKeySignatureDifficulty(key, "Natural Minor");
+                AssertTrue(difficulty <= 1, sb, "L18 Natural Minor respects max difficulty 1");
+                AssertTrue(
+                    KeyDifficultyRules.IsKeyAllowedAtLevel(key, "Natural Minor", 18),
+                    sb,
+                    "L18 Natural Minor pick is level-permitted");
+                if (KeySignatureRules.KeySignatureUsesFlats(key, "Natural Minor"))
+                    sawFlat = true;
+                else if (KeySignatureRules.GetSignedAccidentalCount(key, "Natural Minor") > 0)
+                    sawSharp = true;
+            }
+
+            AssertTrue(sawFlat && sawSharp, sb,
+                "L18 Natural Minor uses both flat and sharp buckets when both exist");
         }
 
         private static void AssertTrue(bool condition, StringBuilder sb, string label)

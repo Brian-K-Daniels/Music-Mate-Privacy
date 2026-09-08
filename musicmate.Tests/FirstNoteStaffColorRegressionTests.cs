@@ -116,14 +116,13 @@ public class FirstNoteStaffColorRegressionTests
         var recovery = session.Evaluate(Freq(62));
         Assert.True(session.UpdateFeedbackForCurrent(Freq(62), recovery));
         Assert.Equal(2, session.CurrentNoteIndex);
-        AssertWrongOnlyAt(session, 1);
         for (int i = 2; i < 4; i++)
             AssertNoWrongFeedback(session, i);
 
         Assert.Equal(StaffNoteState.Correct,
             StaffNoteStateResolver.Resolve(0, session.CurrentNoteIndex, true,
                 session.CorrectNoteIndices, session.NoteFeedbacks));
-        Assert.Equal(StaffNoteState.Wrong,
+        Assert.Equal(StaffNoteState.Correct,
             StaffNoteStateResolver.Resolve(1, session.CurrentNoteIndex, true,
                 session.CorrectNoteIndices, session.NoteFeedbacks));
         Assert.Equal(StaffNoteState.Current,
@@ -135,7 +134,7 @@ public class FirstNoteStaffColorRegressionTests
     }
 
     [Fact]
-    public void SilentCatchUp_StillAdvancesThroughMultipleMissedNotes()
+    public void SilentCatchUp_PausesInsteadOfMarkingFutureNotesMissed()
     {
         const int bpm = 60;
         double elapsed = 0;
@@ -145,10 +144,12 @@ public class FirstNoteStaffColorRegressionTests
         AssertAccepted(session, Freq(60), expectedIndex: 0);
 
         elapsed = 3 * ConductorOnsetTiming.MsPerBeat(bpm);
-        Assert.True(session.AdvanceTimelineForExpiredNotes());
-        Assert.Equal(3, session.CurrentNoteIndex);
-        Assert.True(session.NoteFeedbacks[1].Wrong > 0);
-        Assert.True(session.NoteFeedbacks[2].Wrong > 0);
+        Assert.False(session.AdvanceTimelineForExpiredNotes());
+        Assert.True(session.IsMusicalTimelinePaused);
+        Assert.Equal(1, session.CurrentNoteIndex);
+        AssertNoWrongFeedback(session, 1);
+        AssertNoWrongFeedback(session, 2);
+        AssertNoWrongFeedback(session, 3);
     }
 
     [Fact]
@@ -368,17 +369,18 @@ public class FirstNoteStaffColorRegressionTests
     }
 
     [Fact]
-    public void PrematureClockAtCountInDownbeat_MarksMultipleNotesMissedBeforeFirstSound()
+    public void PrematureClockAtCountInDownbeat_PausesInsteadOfMarkingFutureNotesMissed()
     {
         const int bpm = 60;
         double elapsed = 0;
         var session = CreateSession([60, 62, 64, 65, 67], bpm, () => elapsed);
 
         elapsed = 3 * ConductorOnsetTiming.MsPerBeat(bpm);
-        Assert.True(session.AdvanceTimelineForExpiredNotes());
-        Assert.Equal(3, session.CurrentNoteIndex);
-        Assert.True(session.NoteFeedbacks[1].Wrong > 0);
-        Assert.True(session.NoteFeedbacks[2].Wrong > 0);
+        Assert.False(session.AdvanceTimelineForExpiredNotes());
+        Assert.True(session.IsMusicalTimelinePaused);
+        Assert.Equal(0, session.CurrentNoteIndex);
+        for (int i = 0; i < 5; i++)
+            AssertNoWrongFeedback(session, i);
     }
 
     private static NoteSessionService CreateDeferredClockSession(

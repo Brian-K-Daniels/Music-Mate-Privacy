@@ -10,7 +10,7 @@ namespace musicmate.Services
                 Id: "concert-pitch",
                 DisplayName: "Concert Pitch",
                 InstrumentKey: "C",
-                LegacyInstrumentValue: "C, Flute Oboe Bassoon Trumpet Trombone Euphoneum Tuba Piano",
+                LegacyInstrumentValue: "C, Flute Oboe Bassoon Trumpet Trombone Euphonium Tuba Piano",
                 TransposeOffset: 0,
                 PracticalLowestNote: "G3",
                 PracticalHighestNote: "C6",

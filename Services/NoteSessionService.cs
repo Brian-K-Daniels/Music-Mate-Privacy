@@ -2163,10 +2163,16 @@ namespace musicmate.Services
         // Timing: onset-based linear regression (least-squares fit)
         private readonly Stopwatch _sessionStopwatch = new();
         /// <summary>
-        /// Test seam: when set, <see cref="GetSessionElapsedMs"/> returns this instead of the stopwatch.
-        /// Conductor expected onsets remain anchored to session start (0 on the injected clock).
+        /// Test seam: when set, <see cref="GetRawSessionElapsedMs"/> returns this instead of the stopwatch.
+        /// Expected onsets use <see cref="_conductorOriginMs"/> so pause/resume can rebase musical time.
         /// </summary>
         internal Func<double>? SessionElapsedMsOverride { get; set; }
+        /// <summary>Offset added to score-anchored onsets so resume can realign the current note to "now".</summary>
+        private double _conductorOriginMs;
+        private bool _musicalTimelinePaused;
+        private double _pausedElapsedMs;
+        private double _lastMusicalInputMs;
+        private int _pauseNoteIndex;
         private readonly List<(double OnsetMs, double ExpectedBeat)> _onsetData = new();
         private double? _timingAccuracyPercent;
         /// <summary>Detected tempo (BPM) from the user's performance this session.</summary>
@@ -2387,6 +2393,7 @@ namespace musicmate.Services
             _wrongDebounceMs = SessionPreferences.Get(PrefWrongDebounceMsKey, DefaultDebounceMs);
             SessionElapsedMsOverride = null;
             _sessionStopwatch.Reset();
+            ResetMusicalTimelineState();
             PlaybackArmUtc = null;
             CountInStartUtc = null;
             CountInEndUtc = null;
@@ -2402,6 +2409,8 @@ namespace musicmate.Services
         public void StartListeningClock()
         {
             _sessionStopwatch.Restart();
+            ResetMusicalTimelineState();
+            _lastMusicalInputMs = GetRawSessionElapsedMs();
         }
 
         /// <summary>
@@ -2448,6 +2457,144 @@ namespace musicmate.Services
 
         /// <summary>True once <see cref="StartListeningClock"/> has started the conductor timeline.</summary>
         public bool IsListeningClockRunning => _sessionStopwatch.IsRunning;
+
+        /// <summary>True when musical time is frozen because the player stopped.</summary>
+        internal bool IsMusicalTimelinePaused => _musicalTimelinePaused;
+
+        /// <summary>Score-timeline offset so the current note's expected onset can be rebased on resume.</summary>
+        internal double ConductorOriginMs => _conductorOriginMs;
+
+        /// <summary>Note index captured when pause began.</summary>
+        internal int MusicalPauseNoteIndex => _pauseNoteIndex;
+
+        internal double LastMusicalInputElapsedMs => _lastMusicalInputMs;
+
+        private void ResetMusicalTimelineState()
+        {
+            _conductorOriginMs = 0;
+            _musicalTimelinePaused = false;
+            _pausedElapsedMs = 0;
+            _lastMusicalInputMs = 0;
+            _pauseNoteIndex = 0;
+        }
+
+        private void MarkMusicalInput(double? elapsedMs = null)
+            => _lastMusicalInputMs = elapsedMs ?? GetRawSessionElapsedMs();
+
+        private bool IsCurrentNoteWindowExpired()
+        {
+            if (CurrentNoteIndex < 0 || CurrentNoteIndex >= NotesToDraw.Count)
+                return false;
+            var timing = GetConductorNoteTiming(CurrentNoteIndex);
+            return ConductorOnsetTiming.IsWindowExpired(
+                GetSessionElapsedMs(), timing.ExpectedMs, timing.LateToleranceMs);
+        }
+
+        /// <summary>
+        /// Pause after about one beat of no musical input so brief tonguing/hesitation
+        /// still uses normal late/wrong rules.
+        /// </summary>
+        private bool HasPauseWorthySilenceGap()
+        {
+            double gapMs = GetRawSessionElapsedMs() - _lastMusicalInputMs;
+            // Two beats: one-beat on-time playing still uses Late/Wrong; longer silence rebases.
+            return gapMs >= 2.0 * ConductorOnsetTiming.MsPerBeat(GetConductorTimingBpm());
+        }
+
+        private (int Measure, int Beat) GetConductorMeasureBeat(int noteIndex)
+        {
+            int beatsPerMeasure = WaitingCountInLogic.GetBeatsPerMeasure(GetDisplayTimeSignature());
+            double beatPos = GetConductorExpectedBeat(noteIndex);
+            long beatIndex = (long)Math.Round(beatPos, MidpointRounding.AwayFromZero);
+            return WaitingCountInLogic.GetMeasureBeatNumbers(beatIndex, beatsPerMeasure);
+        }
+
+        private void LogPauseResume(
+            string kind,
+            string detail,
+            int noteIndex)
+        {
+            var (measure, beat) = noteIndex >= 0 && noteIndex < NotesToDraw.Count
+                ? GetConductorMeasureBeat(noteIndex)
+                : (0, 0);
+            double expectedMs = noteIndex >= 0 && noteIndex < NotesToDraw.Count
+                ? GetConductorExpectedOnsetMs(noteIndex)
+                : 0;
+            double musicalMs = GetSessionElapsedMs();
+            double wallMs = GetRawSessionElapsedMs();
+            DebugLog.WriteLine(
+                $"[PauseResume] {kind} idx={noteIndex} measure={measure} beat={beat} " +
+                $"expectedOnset={expectedMs:F0} musicalMs={musicalMs:F0} wallMs={wallMs:F0} " +
+                $"lastInput={_lastMusicalInputMs:F0} origin={_conductorOriginMs:F0} " +
+                $"paused={_musicalTimelinePaused} {detail}");
+            NoteStateChangeDiagnostics.GetCaller(out var method, out var file, out var line);
+            NoteStateChangeDiagnostics.LogEvent(
+                kind,
+                method,
+                file,
+                line,
+                BuildNoteStateDiagContext(noteIndex),
+                detail);
+        }
+
+        private void EnterMusicalPause(string reason)
+        {
+            if (_musicalTimelinePaused || !IsListeningClockRunning || SessionCompleted)
+                return;
+            if (Tune == "Tuner")
+                return;
+
+            _pausedElapsedMs = GetRawSessionElapsedMs();
+            _musicalTimelinePaused = true;
+            _pauseNoteIndex = CurrentNoteIndex;
+            LogPauseResume(
+                "MusicalPauseEntered",
+                $"reason={reason} freezeIdx={_pauseNoteIndex} freezeMs={_pausedElapsedMs:F0}",
+                CurrentNoteIndex);
+        }
+
+        /// <summary>
+        /// Re-anchors expected onsets so the current note is due at resume time.
+        /// Conductor beat/measure follow the current note — they are not reset to beat 1.
+        /// </summary>
+        private void RebaseConductorToCurrentNote(string reason)
+        {
+            int idx = CurrentNoteIndex;
+            if (idx < 0 || idx >= NotesToDraw.Count)
+                return;
+
+            _musicalTimelinePaused = false;
+            _rhythmGateUntilMs = 0;
+            double now = GetRawSessionElapsedMs();
+            double beat = GetConductorExpectedBeat(idx);
+            double msPerBeat = ConductorOnsetTiming.MsPerBeat(GetConductorTimingBpm());
+            _conductorOriginMs = now - beat * msPerBeat;
+            var (measure, beatNum) = GetConductorMeasureBeat(idx);
+            LogPauseResume(
+                "MusicalResumeRebased",
+                $"reason={reason} resumeIdx={idx} conductorMeasure={measure} conductorBeat={beatNum} " +
+                $"newOrigin={_conductorOriginMs:F0} newExpected={GetConductorExpectedOnsetMs(idx):F0}",
+                idx);
+        }
+
+        /// <returns>True when the timeline was paused or implicitly paused and is now rebased.</returns>
+        internal bool TryResumeMusicalTimelineFromPlayerInput(string reason)
+        {
+            if (!IsListeningClockRunning || SessionCompleted || Tune == "Tuner")
+                return false;
+
+            bool paused = _musicalTimelinePaused;
+            bool implicitPause = !paused
+                && CurrentNoteIndex < NotesToDraw.Count
+                && HasPauseWorthySilenceGap()
+                && IsCurrentNoteWindowExpired();
+
+            if (!paused && !implicitPause)
+                return false;
+
+            RebaseConductorToCurrentNote(paused ? $"{reason}-paused" : $"{reason}-silence-gap");
+            return true;
+        }
         /// <summary>
         /// Enables sustain/rest earliest-start gating using <see cref="MusicBpm"/>.
         /// </summary>
@@ -2474,8 +2621,11 @@ namespace musicmate.Services
                 }
             }
         }
-        private double GetSessionElapsedMs()
+        private double GetRawSessionElapsedMs()
             => SessionElapsedMsOverride?.Invoke() ?? _sessionStopwatch.Elapsed.TotalMilliseconds;
+
+        private double GetSessionElapsedMs()
+            => _musicalTimelinePaused ? _pausedElapsedMs : GetRawSessionElapsedMs();
         private double BeatToGateMs(double beats)
             => beats * 60000.0 / _rhythmGateMusicBpm;
         /// <summary>
@@ -2497,7 +2647,7 @@ namespace musicmate.Services
         }
         private double GetConductorExpectedOnsetMs(int noteIndex)
             => ConductorOnsetTiming.ExpectedOnsetMs(
-                conductorStartMs: 0.0,
+                conductorStartMs: _conductorOriginMs,
                 beatPosition: GetConductorExpectedBeat(noteIndex),
                 bpm: GetConductorTimingBpm());
         private void LogConductorTimingDecision(
@@ -2522,7 +2672,7 @@ namespace musicmate.Services
             {
                 Bpm = bpm,
                 SecondsPerBeat = ConductorOnsetTiming.SecondsPerBeat(bpm),
-                ConductorStartMs = 0.0,
+                ConductorStartMs = _conductorOriginMs,
                 NoteIndex = noteIndex,
                 BeatPosition = expectedBeat,
                 ExpectedOnsetMs = expectedMs,
@@ -2593,8 +2743,13 @@ namespace musicmate.Services
 
         internal int GetConductorTimingBpmPublic() => GetConductorTimingBpm();
         internal double GetSessionElapsedMsPublic() => GetSessionElapsedMs();
+        internal double GetRawSessionElapsedMsPublic() => GetRawSessionElapsedMs();
         internal double GetConductorExpectedOnsetMsPublic(int noteIndex)
             => GetConductorExpectedOnsetMs(noteIndex);
+        internal double GetConductorExpectedBeatPublic(int noteIndex)
+            => GetConductorExpectedBeat(noteIndex);
+        internal (int Measure, int Beat) GetConductorMeasureBeatPublic(int noteIndex)
+            => GetConductorMeasureBeat(noteIndex);
 #endif
 
         internal NoteStateChangeDiagnostics.NoteStateDiagContext BuildNoteStateDiagContext(
@@ -2800,7 +2955,7 @@ namespace musicmate.Services
         {
             int bpm = GetConductorTimingBpm();
             double beat = GetConductorExpectedBeat(noteIndex);
-            double expectedMs = ConductorOnsetTiming.ExpectedOnsetMs(0.0, beat, bpm);
+            double expectedMs = ConductorOnsetTiming.ExpectedOnsetMs(_conductorOriginMs, beat, bpm);
             return new ConductorNoteTiming(
                 beat,
                 expectedMs,
@@ -2809,11 +2964,10 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// Skips notes whose conductor windows have closed. Optional pitch context marks an
-        /// expired note Late when the player hit the right pitch too late; otherwise Missed.
-        /// When <paramref name="fromDetectedPitch"/> is true, at most one expired note is
-        /// processed so a single heard pitch cannot score multiple future notes wrong.
-        /// Expected onsets stay score-anchored. Returns true when <see cref="CurrentNoteIndex"/> moved.
+        /// Silent path: freeze musical time at the current expected note instead of marking
+        /// a chain of future notes Missed. Pitch path: at most one expired note when the
+        /// player is still actively playing; a pause/resume gap rebases instead of scoring Late.
+        /// Returns true when <see cref="CurrentNoteIndex"/> moved.
         /// </summary>
         internal bool CatchUpExpiredConductorNotes(
             double freq = 0,
@@ -2825,9 +2979,25 @@ namespace musicmate.Services
                 || SessionCompleted)
                 return false;
 
+            // While paused, keep listening for the expected note — do not Late/Miss
+            // against the frozen clock. Re-anchor happens on the correct pitch in UpdateFeedback.
+            if (_musicalTimelinePaused)
+                return false;
+
+            if (!fromDetectedPitch)
+            {
+
+                if (CurrentNoteIndex < NotesToDraw.Count && IsCurrentNoteWindowExpired())
+                {
+                    EnterMusicalPause("silent-window-expired");
+                }
+
+                return false;
+            }
+
             bool advanced = false;
             double actualMs = GetSessionElapsedMs();
-            if (fromDetectedPitch && freq > 0 && pitchResult.HasValue)
+            if (freq > 0 && pitchResult.HasValue)
             {
                 NoteStateChangeDiagnostics.GetCaller(out var m, out var f, out var ln);
                 NoteStateChangeDiagnostics.LogEvent(
@@ -2839,48 +3009,38 @@ namespace musicmate.Services
                     $"CatchUpWithPitch begin actualMs={actualMs:F0} startIndex={CurrentNoteIndex}");
             }
 
-            while (CurrentNoteIndex < NotesToDraw.Count)
+            // One expired note only — a single heard pitch must not score a sequence wrong.
+            if (CurrentNoteIndex < NotesToDraw.Count)
             {
                 int idx = CurrentNoteIndex;
-
-                // After WrongPitch the cursor stays on the failed note while the clock
-                // keeps running. Silent catch-up must not mark every subsequent expired
-                // note Missed — wait for the player to recover on this note instead.
-                if (!fromDetectedPitch
-                    && NoteFeedbacks.TryGetValue(idx, out var priorFeedback)
-                    && priorFeedback.Wrong > 0)
-                    break;
-
                 var timing = GetConductorNoteTiming(idx);
-                if (!ConductorOnsetTiming.IsWindowExpired(
+                if (ConductorOnsetTiming.IsWindowExpired(
                         actualMs, timing.ExpectedMs, timing.LateToleranceMs))
-                    break;
-
-                var targetNote = NotesToDraw[idx];
-                var expectedWrittenMidi = ResolveWrittenEvaluationMidi(targetNote);
-                string heardNote = "-";
-                int cents = 0;
-                bool latePitchMatch = false;
-
-                if (freq > 0 && pitchResult.HasValue)
                 {
-                    var detectedMidi = (int)Math.Round(69 + 12 * Math.Log(freq / 440.0, 2));
-                    var detMidiWritten = detectedMidi - GetInstrumentTransposeOffset();
-                    heardNote = MidiToNoteName(detMidiWritten, KeyUsesFlats(Key));
-                    cents = pitchResult.Value.cents;
-                    latePitchMatch = pitchResult.Value.correct
-                        && Mod12(expectedWrittenMidi) == Mod12(detMidiWritten);
+                    var targetNote = NotesToDraw[idx];
+                    var expectedWrittenMidi = ResolveWrittenEvaluationMidi(targetNote);
+                    string heardNote = "-";
+                    int cents = 0;
+                    bool latePitchMatch = false;
+
+                    if (freq > 0 && pitchResult.HasValue)
+                    {
+                        var detectedMidi = (int)Math.Round(69 + 12 * Math.Log(freq / 440.0, 2));
+                        var detMidiWritten = detectedMidi - GetInstrumentTransposeOffset();
+                        heardNote = MidiToNoteName(detMidiWritten, KeyUsesFlats(Key));
+                        cents = pitchResult.Value.cents;
+                        latePitchMatch = pitchResult.Value.correct
+                            && Mod12(expectedWrittenMidi) == Mod12(detMidiWritten);
+                    }
+
+                    string reason = latePitchMatch ? "Late" : "Missed";
+                    RecordConductorTimingFailure(
+                        idx, targetNote, heardNote, cents, timing, actualMs,
+                        reason, pitchCorrect: latePitchMatch);
+                    AdvanceAfterTimingFailure(idx);
+                    MarkMusicalInput(actualMs);
+                    advanced = true;
                 }
-
-                string reason = latePitchMatch ? "Late" : "Missed";
-                RecordConductorTimingFailure(
-                    idx, targetNote, heardNote, cents, timing, actualMs,
-                    reason, pitchCorrect: latePitchMatch);
-                AdvanceAfterTimingFailure(idx);
-                advanced = true;
-
-                if (fromDetectedPitch)
-                    break;
             }
 
             return advanced;
@@ -3428,8 +3588,26 @@ namespace musicmate.Services
             ClearRhythmGateIfExpired();
 
             var curFeedback = NoteFeedbacks.TryGetValue(idx, out var v2) ? v2 : (Wrong: 0, Cents: 0);
-            double actualMs = GetSessionElapsedMs();
             bool conductorGateEnabled = IsConductorOnsetGateEnabled();
+            bool pitchMatchesExpected = Mod12(expectedWrittenMidi) == detectedPcWritten;
+            if (conductorGateEnabled)
+            {
+                // Re-anchor only when the expected pitch is heard after a genuine pause.
+                // Wrong pitches while paused must not revive the old timeline.
+                if (pitchMatchesExpected)
+                {
+                    TryResumeMusicalTimelineFromPlayerInput("update-feedback-correct");
+                }
+                else if (!_musicalTimelinePaused
+                         && HasPauseWorthySilenceGap()
+                         && IsCurrentNoteWindowExpired())
+                {
+                    EnterMusicalPause("wrong-pitch-after-silence");
+                }
+            }
+            MarkMusicalInput();
+
+            double actualMs = GetSessionElapsedMs();
             double conductorExpectedBeat = 0;
             double conductorExpectedMs = 0;
             double conductorEarlyTolMs = 0;
@@ -3437,11 +3615,11 @@ namespace musicmate.Services
             bool conductorTooEarly = false;
             if (conductorGateEnabled)
             {
-                int bpm = GetConductorTimingBpm();
-                conductorExpectedBeat = GetConductorExpectedBeat(idx);
-                conductorExpectedMs = ConductorOnsetTiming.ExpectedOnsetMs(0.0, conductorExpectedBeat, bpm);
-                conductorEarlyTolMs = ConductorOnsetTiming.EarlyToleranceMs(bpm);
-                conductorLateTolMs = ConductorOnsetTiming.LateToleranceMs(bpm);
+                var timing = GetConductorNoteTiming(idx);
+                conductorExpectedBeat = timing.ExpectedBeat;
+                conductorExpectedMs = timing.ExpectedMs;
+                conductorEarlyTolMs = timing.EarlyToleranceMs;
+                conductorLateTolMs = timing.LateToleranceMs;
                 conductorTooEarly = ConductorOnsetTiming.IsTooEarly(
                     actualMs, conductorExpectedMs, conductorEarlyTolMs);
 
@@ -3456,11 +3634,12 @@ namespace musicmate.Services
                 targetNote = NotesToDraw[idx];
                 expectedWrittenMidi = ResolveWrittenEvaluationMidi(targetNote);
                 expectedNote = ResolveWrittenEvaluationName(targetNote);
-                conductorExpectedBeat = GetConductorExpectedBeat(idx);
-                conductorExpectedMs = ConductorOnsetTiming.ExpectedOnsetMs(
-                    0.0, conductorExpectedBeat, GetConductorTimingBpm());
-                conductorEarlyTolMs = ConductorOnsetTiming.EarlyToleranceMs(GetConductorTimingBpm());
-                conductorLateTolMs = ConductorOnsetTiming.LateToleranceMs(GetConductorTimingBpm());
+                timing = GetConductorNoteTiming(idx);
+                conductorExpectedBeat = timing.ExpectedBeat;
+                conductorExpectedMs = timing.ExpectedMs;
+                conductorEarlyTolMs = timing.EarlyToleranceMs;
+                conductorLateTolMs = timing.LateToleranceMs;
+                actualMs = GetSessionElapsedMs();
                 conductorTooEarly = ConductorOnsetTiming.IsTooEarly(
                     actualMs, conductorExpectedMs, conductorEarlyTolMs);
             }
@@ -4013,6 +4192,57 @@ namespace musicmate.Services
         {
             return utcNow < IgnoreAudioUntilUtc;
         }
+
+        /// <summary>
+        /// While waiting Count-In clicks play, extend the existing ignore window so the
+        /// app's own tones (and residual buffer audio) cannot score the first note.
+        /// Mic capture may stay open; ingest discards samples until this expires.
+        /// </summary>
+        public void SuppressCountInClickSelfSound(int clickDurationMs, string reason = "Count-In click")
+        {
+            int suppressMs = WaitingCountInLogic.ComputeSelfSoundSuppressMs(
+                clickDurationMs, PitchWindowSize, SampleRate);
+            var until = DateTime.UtcNow.AddMilliseconds(suppressMs);
+            if (until > IgnoreAudioUntilUtc)
+            {
+                IgnoreAudioUntilUtc = until;
+                musicmate.Diagnostics.DebugLog.WriteLine(
+                    $"[AudioSuppress] ON — reason: {reason} ms={suppressMs} untilUtc={until:O}");
+            }
+        }
+
+        /// <summary>
+        /// Cap suppress to a fraction of the beat so evaluation can resume between clicks.
+        /// </summary>
+        public void SuppressCountInClickSelfSoundCapped(
+            int clickDurationMs,
+            double msPerBeat,
+            string reason = "Count-In click")
+        {
+            int raw = WaitingCountInLogic.ComputeSelfSoundSuppressMs(
+                clickDurationMs, PitchWindowSize, SampleRate);
+            int suppressMs = WaitingCountInLogic.CapSelfSoundSuppressMs(raw, msPerBeat);
+            var until = DateTime.UtcNow.AddMilliseconds(suppressMs);
+            if (until > IgnoreAudioUntilUtc)
+            {
+                IgnoreAudioUntilUtc = until;
+                musicmate.Diagnostics.DebugLog.WriteLine(
+                    $"[AudioSuppress] ON — reason: {reason} ms={suppressMs} (raw={raw}) untilUtc={until:O}");
+            }
+        }
+
+        /// <summary>
+        /// End Count-In / residual ignore so normal pitch evaluation resumes immediately.
+        /// Required when Count-In is cancelled, stopped, or a first note was just accepted.
+        /// </summary>
+        public void ClearCountInClickSelfSoundSuppress(string reason = "Count-In ended")
+        {
+            if (IgnoreAudioUntilUtc == DateTime.MinValue)
+                return;
+            IgnoreAudioUntilUtc = DateTime.MinValue;
+            musicmate.Diagnostics.DebugLog.WriteLine(
+                $"[AudioSuppress] OFF — reason: {reason}");
+        }
         private void BeginAwaitingNoteOn()
         {
             _requirePostSilenceAttack = false;
@@ -4136,6 +4366,7 @@ namespace musicmate.Services
                 _awaitingSamePitchRetrigger = false;
                 _samePitchSilenceFromPitchStop = false;
                 _samePitchAwaitStartedUtc = null;
+                MaybeEnterMusicalPauseAfterSilence("note-attack-after-silence");
                 return;
             }
 
@@ -4147,6 +4378,22 @@ namespace musicmate.Services
 
             if (_awaitingNoteOn)
                 ClearNoteOnWait();
+
+            // Pitch is unknown here — freeze after a genuine pause; re-anchor only when
+            // UpdateFeedback accepts the correct expected note.
+            MaybeEnterMusicalPauseAfterSilence("note-attack");
+        }
+
+        private void MaybeEnterMusicalPauseAfterSilence(string reason)
+        {
+            if (_musicalTimelinePaused
+                || !IsListeningClockRunning
+                || SessionCompleted
+                || Tune == "Tuner")
+                return;
+
+            if (HasPauseWorthySilenceGap() && IsCurrentNoteWindowExpired())
+                EnterMusicalPause(reason);
         }
         /// <summary>
         /// Tracks loudness while awaiting a note-on. Volume below <see cref="RmsThreshold"/>

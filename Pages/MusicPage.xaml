@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:services="clr-namespace:musicmate.Services"
@@ -316,7 +316,8 @@
 
           <!-- Staff area: practice staff or Tuner panels -->
         <VerticalStackLayout x:Name="StaffAreaStack" Spacing="0" HorizontalOptions="Fill" VerticalOptions="Fill">
-          <Grid HorizontalOptions="Fill"
+          <Grid x:Name="StaffOverlayGrid"
+                HorizontalOptions="Fill"
                 VerticalOptions="Fill">
               <Border x:Name="StaffBorder"
                       Stroke="MediumPurple"
@@ -332,6 +333,26 @@
                               BackgroundColor="{Binding PanelBackgroundColor}"
                               HorizontalOptions="Fill"
                               Margin="0" />
+              </Border>
+
+              <!-- Compact Play/Stop (Music/Sight only; never visible in Tuner): top-left of staff; sized in code -->
+              <Border x:Name="TitlePlayButton"
+                      BackgroundColor="#2E8B57"
+                      Stroke="#1F5C3A"
+                      StrokeThickness="1"
+                      Padding="0"
+                      InputTransparent="False"
+                      HorizontalOptions="Start"
+                      VerticalOptions="Start"
+                      Margin="2,2,0,0"
+                      ZIndex="10"
+                      IsVisible="{Binding Source={x:Reference musicPage}, Path=IsTitlePlayButtonVisible, x:DataType=pages:MusicPage}">
+                <Border.StrokeShape>
+                  <RoundRectangle CornerRadius="3" />
+                </Border.StrokeShape>
+                <Border.GestureRecognizers>
+                  <TapGestureRecognizer Tapped="OnPlayEvaluateClicked" />
+                </Border.GestureRecognizers>
               </Border>
 
               <!-- Tuner mode: narrower staff | wider Metronome controls -->
@@ -783,25 +804,6 @@
 
       </VerticalStackLayout>
     </ScrollView>
-
-    <!-- Play overlay under marquee start/stop; label content sized in code -->
-    <Border x:Name="TitlePlayButton"
-            BackgroundColor="#2E8B57"
-            Stroke="#1F5C3A"
-            StrokeThickness="1"
-            Padding="0"
-            InputTransparent="False"
-            HorizontalOptions="Start"
-            VerticalOptions="Start"
-            ZIndex="10"
-            IsVisible="{Binding Source={x:Reference musicPage}, Path=IsTitlePlayButtonVisible, x:DataType=pages:MusicPage}">
-      <Border.StrokeShape>
-        <RoundRectangle CornerRadius="2" />
-      </Border.StrokeShape>
-      <Border.GestureRecognizers>
-        <TapGestureRecognizer Tapped="OnPlayEvaluateClicked" />
-      </Border.GestureRecognizers>
-    </Border>
 
     <!-- Color picker dialog overlay (full-page, above everything) -->
     <controls:ColorPickerDialog x:Name="ColorPickerDialog"

@@ -516,7 +516,7 @@ public class ConductorTimingTests : IDisposable
     }
 
     [Fact]
-    public void SilentMiss_AutoAdvancesWithoutPitch()
+    public void SilentMiss_PausesAtCurrentNoteWithoutAdvancing()
     {
         const int bpm = 60;
         double elapsed = 0;
@@ -528,64 +528,63 @@ public class ConductorTimingTests : IDisposable
         AssertAccepted(session, Freq(60), expectedIndex: 0);
 
         elapsed = msPerBeat + lateTol + 200;
-        Assert.True(session.AdvanceTimelineForExpiredNotes());
-        Assert.Equal(2, session.CurrentNoteIndex);
-        Assert.True(session.NoteFeedbacks[1].Wrong > 0);
-        Assert.DoesNotContain(1, session.CorrectNoteIndices);
+        Assert.False(session.AdvanceTimelineForExpiredNotes());
+        Assert.True(session.IsMusicalTimelinePaused);
+        Assert.Equal(1, session.CurrentNoteIndex);
+        AssertNoWrongFeedback(session, 1);
+        AssertNoWrongFeedback(session, 2);
 
-        elapsed = 2 * msPerBeat;
+        elapsed = 2 * msPerBeat + lateTol + 200;
         session.NotifySilenceFor(session.SamePitchSilenceMs);
         session.NotifyNoteAttack();
-        AssertAccepted(session, Freq(64), expectedIndex: 2);
+        AssertAccepted(session, Freq(62), expectedIndex: 1);
+        Assert.False(session.IsMusicalTimelinePaused);
+        AssertNoWrongFeedback(session, 2);
     }
 
     [Fact]
-    public void TwoMissedNotes_CatchUpToStillPlayableNote()
+    public void TwoMissedNotes_SilencePausesAtFirstUnplayedNote()
     {
         const int bpm = 60;
         double elapsed = 0;
         var session = CreateSession([60, 62, 64, 65], bpm, showConductorCues: false, () => elapsed);
         double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
-        double lateTol = ConductorOnsetTiming.LateToleranceMs(bpm);
 
         elapsed = 0;
         AssertAccepted(session, Freq(60), expectedIndex: 0);
 
-        // Past notes 1 and 2; note 3 (beat 3) window still open at 3000 ms.
         elapsed = 3 * msPerBeat;
-        Assert.True(session.AdvanceTimelineForExpiredNotes());
-        Assert.Equal(3, session.CurrentNoteIndex);
-        Assert.True(session.NoteFeedbacks[1].Wrong > 0);
-        Assert.True(session.NoteFeedbacks[2].Wrong > 0);
-        Assert.DoesNotContain(1, session.CorrectNoteIndices);
-        Assert.DoesNotContain(2, session.CorrectNoteIndices);
+        Assert.False(session.AdvanceTimelineForExpiredNotes());
+        Assert.True(session.IsMusicalTimelinePaused);
+        Assert.Equal(1, session.CurrentNoteIndex);
+        AssertNoWrongFeedback(session, 1);
+        AssertNoWrongFeedback(session, 2);
+        AssertNoWrongFeedback(session, 3);
     }
 
     [Fact]
-    public void LateNote_DoesNotShiftSubsequentScoreOnsets()
+    public void LongSilenceBeforeNextPitch_RebasesRatherThanKeepingOriginalOnsets()
     {
         const int bpm = 30;
         double elapsed = 0;
         var session = CreateSession([60, 62, 64], bpm, showConductorCues: false, () => elapsed);
         double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
-        double lateTol = ConductorOnsetTiming.LateToleranceMs(bpm);
 
         elapsed = 0;
         AssertAccepted(session, Freq(60), expectedIndex: 0);
 
-        // Miss note 1 far late — note 2 must still anchor at beat 2 (4000 ms), not performance time.
         elapsed = 5000;
-        session.UpdateFeedbackForCurrent(Freq(62), session.Evaluate(Freq(62)));
-        Assert.Equal(2, session.CurrentNoteIndex);
+        AssertAccepted(session, Freq(62), expectedIndex: 1);
+        Assert.False(session.IsMusicalTimelinePaused);
 
-        elapsed = 2 * msPerBeat;
+        elapsed = 5000 + msPerBeat;
         session.NotifySilenceFor(session.SamePitchSilenceMs);
         session.NotifyNoteAttack();
         AssertAccepted(session, Freq(64), expectedIndex: 2);
     }
 
     [Fact]
-    public void CatchUp_WithRest_SkipsMissedNotesOnScoreTimeline()
+    public void CatchUp_WithRest_SilencePausesAtNextPitchedNote()
     {
         const int bpm = 60;
         double elapsed = 0;
@@ -603,13 +602,14 @@ public class ConductorTimingTests : IDisposable
         AssertAccepted(session, Freq(60), expectedIndex: 0);
 
         elapsed = 2 * msPerBeat + lateTol + 100;
-        Assert.True(session.AdvanceTimelineForExpiredNotes());
-        Assert.Equal(2, session.CurrentNoteIndex);
-        Assert.True(session.NoteFeedbacks[1].Wrong > 0);
+        Assert.False(session.AdvanceTimelineForExpiredNotes());
+        Assert.True(session.IsMusicalTimelinePaused);
+        Assert.Equal(1, session.CurrentNoteIndex);
+        AssertNoWrongFeedback(session, 1);
     }
 
     [Fact]
-    public void FinalMissedNote_CompletesExerciseWithoutStuckState()
+    public void FinalExpiredNote_PausesInsteadOfAutoCompleting()
     {
         const int bpm = 60;
         double elapsed = 0;
@@ -621,11 +621,12 @@ public class ConductorTimingTests : IDisposable
         AssertAccepted(session, Freq(60), expectedIndex: 0);
 
         elapsed = msPerBeat + lateTol + 100;
-        Assert.True(session.AdvanceTimelineForExpiredNotes());
-        Assert.Equal(2, session.CurrentNoteIndex);
-        Assert.Equal(2, session.NotesToDraw.Count);
+        Assert.False(session.AdvanceTimelineForExpiredNotes());
+        Assert.True(session.IsMusicalTimelinePaused);
+        Assert.Equal(1, session.CurrentNoteIndex);
+        Assert.False(session.SessionCompleted);
         Assert.Single(session.CorrectNoteIndices);
-        Assert.True(session.NoteFeedbacks[1].Wrong > 0);
+        AssertNoWrongFeedback(session, 1);
     }
 
     [Fact]
@@ -855,6 +856,12 @@ public class ConductorTimingTests : IDisposable
             $"Expected note {expectedIndex} to be accepted at elapsed override");
         Assert.Contains(expectedIndex, session.CorrectNoteIndices);
         Assert.Equal(expectedIndex + 1, session.CurrentNoteIndex);
+    }
+
+    private static void AssertNoWrongFeedback(NoteSessionService session, int index)
+    {
+        if (session.NoteFeedbacks.TryGetValue(index, out var fb))
+            Assert.Equal(0, fb.Wrong);
     }
 
     private static void AssertNotAdvanced(NoteSessionService session, double freq, int expectedIndex)
