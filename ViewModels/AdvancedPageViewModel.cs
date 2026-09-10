@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.IO;
+using musicmate.LayoutDebug;
 using musicmate.Services;
 using Microsoft.Maui.Storage;
 using Microsoft.Maui.Graphics;
@@ -216,6 +217,21 @@ namespace musicmate.ViewModels
                 _session.UseNoteMasteryForGeneration = value;
                 OnPropertyChanged(nameof(UseNoteMasteryForGeneration));
                 NotifyFactoryDefaultsMayHaveChanged();
+            }
+        }
+
+        /// <summary>
+        /// DEBUG: show the Music page button that opens the Note Attempts viewer.
+        /// Always false outside DEBUG builds.
+        /// </summary>
+        public bool ShowNoteAttemptsViewerButton
+        {
+            get => NoteAttemptsViewerSettings.IsMusicPageButtonEnabled;
+            set
+            {
+                if (NoteAttemptsViewerSettings.IsMusicPageButtonEnabled == value) return;
+                NoteAttemptsViewerSettings.IsMusicPageButtonEnabled = value;
+                OnPropertyChanged(nameof(ShowNoteAttemptsViewerButton));
             }
         }
 

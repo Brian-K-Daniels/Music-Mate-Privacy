@@ -20,7 +20,7 @@ public class CountInSuppressResumeTests : IDisposable
     public void Dispose() => SessionPreferences.TestStore = null;
 
     [Fact]
-    public void MatchingPitch_DuringCountInSuppress_IsIgnored()
+    public void MatchingPitch_DuringCountInSuppress_FarFromClick_MayEndCountIn()
     {
         var session = CreateSession();
         session.StartListeningClock();
@@ -30,9 +30,14 @@ public class CountInSuppressResumeTests : IDisposable
         double freq = NoteSessionService.MidiToFreqPublic(60);
         var result = session.Evaluate(freq);
         Assert.True(result.correct);
-        Assert.False(
+        // On-beat C4 is far from E6/A6 clicks — Count-In accept gate allows it.
+        Assert.True(
             WaitingCountInLogic.ShouldAcceptFirstNoteToEndCountIn(
-                result.correct, true, 0, withinSelfSoundSuppressWindow: true));
+                result.correct, true, 0, withinSelfSoundSuppressWindow: true,
+                heardHz: freq,
+                accentedClickHz: WaitingCountInSettings.DefaultAccentedPitchHz,
+                unaccentedClickHz: WaitingCountInSettings.DefaultUnaccentedPitchHz));
+        // Session IgnoreAudio still blocks scoring until MusicPage clears suppress.
         Assert.False(session.UpdateFeedbackForCurrent(freq, result));
         Assert.Equal(0, session.CurrentNoteIndex);
     }
@@ -160,10 +165,54 @@ public class CountInSuppressResumeTests : IDisposable
     public void CapSelfSoundSuppress_LeavesListeningGapWithinBeat()
     {
         int raw = WaitingCountInLogic.ComputeSelfSoundSuppressMs(400, 4096, 44100);
-        int capped = WaitingCountInLogic.CapSelfSoundSuppressMs(raw, msPerBeat: 500);
+        int minGap = WaitingCountInLogic.ComputeSelfSoundGuardMs(4096, 44100);
+        int capped = WaitingCountInLogic.CapSelfSoundSuppressMs(raw, msPerBeat: 500, minGap);
         Assert.True(capped < 500);
-        Assert.True(capped <= 500 - 80);
-        Assert.True(capped >= 40);
+        int expectedGap = Math.Max(Math.Max(200, minGap), (int)Math.Floor(500 * 0.45));
+        Assert.True(capped <= 500 - expectedGap);
+        Assert.True((500 - capped) >= expectedGap - 1);
+    }
+
+    [Fact]
+    public void CapSelfSoundSuppress_GapAllowsPitchWindowFill()
+    {
+        // Regression: 80ms gap < ~93ms McLeod window → no WindowReady during Count-In.
+        double msPerBeat = 1000;
+        int raw = WaitingCountInLogic.ComputeSelfSoundSuppressMs(340, 4096, 44100);
+        int minGap = WaitingCountInLogic.ComputeSelfSoundGuardMs(4096, 44100);
+        int capped = WaitingCountInLogic.CapSelfSoundSuppressMs(raw, msPerBeat, minGap);
+        double windowMs = 1000.0 * 4096 / 44100;
+        Assert.True(msPerBeat - capped >= windowMs,
+            $"listening gap {msPerBeat - capped} must be >= window {windowMs:F0}ms");
+    }
+
+    [Fact]
+    public void CapSelfSoundSuppress_At100Bpm_LeavesNearlyHalfBeatOpen()
+    {
+        // Log regression: 400ms suppress of 600ms beat blocked on-beat playing.
+        double msPerBeat = 600;
+        int raw = WaitingCountInLogic.ComputeSelfSoundSuppressMs(400, 4096, 44100);
+        int minGap = WaitingCountInLogic.ComputeSelfSoundGuardMs(4096, 44100);
+        int capped = WaitingCountInLogic.CapSelfSoundSuppressMs(raw, msPerBeat, minGap);
+        Assert.True(msPerBeat - capped >= msPerBeat * 0.45 - 1);
+        Assert.True(capped <= 330, $"expected suppress <=330ms at 100 BPM, got {capped}");
+    }
+
+    [Fact]
+    public void AppCueAudioGate_NotifyInvokesSubscribers()
+    {
+        int hits = 0;
+        void Handler() => hits++;
+        AppCueAudioGate.SuspendRequested += Handler;
+        try
+        {
+            AppCueAudioGate.NotifyAppSuspended();
+            Assert.Equal(1, hits);
+        }
+        finally
+        {
+            AppCueAudioGate.SuspendRequested -= Handler;
+        }
     }
 
     [Fact]

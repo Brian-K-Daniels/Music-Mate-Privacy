@@ -290,6 +290,33 @@ namespace musicmate.Pages
         private void RefreshMidi61DiagnosticLabel() { }
 #endif
 
+#if DEBUG
+        private void RefreshNoteAttemptsDebugButtonVisibility()
+        {
+            if (NoteAttemptsDebugButton is null)
+                return;
+
+            bool show = NoteAttemptsViewerSettings.IsMusicPageButtonEnabled
+                && IsBottomButtonRowVisible;
+            NoteAttemptsDebugButton.IsVisible = show;
+        }
+
+        private async void OnNoteAttemptsDebugClicked(object? sender, EventArgs e)
+        {
+            try
+            {
+                await NavigationBusyService.GoToAsync("//NoteAttemptsDebugPage");
+            }
+            catch (Exception ex)
+            {
+                DebugLog.WriteLine($"[MusicPage] Note Attempts navigate ERROR: {ex}");
+            }
+        }
+#else
+        private void RefreshNoteAttemptsDebugButtonVisibility() { }
+
+        private void OnNoteAttemptsDebugClicked(object? sender, EventArgs e) { }
+#endif
         private void UpdateNoteEmphasisBanner()
         {
             if (!MainThread.IsMainThread)
@@ -425,6 +452,8 @@ namespace musicmate.Pages
                 _player = ServiceHelper.GetService<IAudioPlaybackService>()!;
                 var countInClicks = ServiceHelper.GetService<ICountInClickService>()!;
                 _waitingCountInPlayer = new WaitingCountInPlayer(countInClicks);
+                AppCueAudioGate.SuspendRequested -= OnAppCueAudioSuspended;
+                AppCueAudioGate.SuspendRequested += OnAppCueAudioSuspended;
                 BindingContext = _session;
                 StaffBorder.BindingContext = _theme_service;
                 StaffGraphicsView.BindingContext = _theme_service;
@@ -3167,6 +3196,7 @@ namespace musicmate.Pages
             DebugLog.WriteLine($"[DEBUG] OnAppearing: IsAutoRepeatVisible={IsAutoRepeatVisible}, Tune={_session.Tune}");
 #if DEBUG
             RefreshBuildIdentificationLabels();
+            RefreshNoteAttemptsDebugButtonVisibility();
 #endif
             IsAutoRepeatVisible = !PlayModePickerOptions.IsTunerMode(_session);
             UpdateAutoRepeatButtons();
@@ -3667,7 +3697,9 @@ namespace musicmate.Pages
             StopWaitingCountIn();
             _ = StopReferenceToneAsync(resumeListening: false);
             _ = StopTunerPitchAsync();
+            try { ServiceHelper.GetService<ICountInClickService>()?.Stop(); } catch { }
             _audio?.StopCapture();
+            _session?.ClearCountInClickSelfSoundSuppress("page disappearing");
             SetButtonStates(false);
             DeviceDisplay.Current.KeepScreenOn = false;
             if (!ShouldPreserveSessionEndMarquee())
@@ -3780,14 +3812,18 @@ namespace musicmate.Pages
             _session.ObserveLoudness(rms);
 
             // Don't accumulate audio during ignore period — ensures the first
-            // detection after cooldown uses entirely fresh samples
-            bool ignoreAudio = _session.ShouldIgnoreAudio(DateTime.UtcNow);
-            if (_audioSuppressWasActive && !ignoreAudio)
+            // detection after cooldown uses entirely fresh samples.
+            // Exception: during waiting Count-In, keep ingesting so on-beat playing
+            // (which overlaps click suppress) can still fill a detection window.
+            // Click self-sound is filtered at accept time by frequency proximity.
+            bool suppressActive = _session.ShouldIgnoreAudio(DateTime.UtcNow);
+            bool ignoreAudio = suppressActive && !_waitingCountInActive;
+            if (_audioSuppressWasActive && !suppressActive)
             {
                 DebugLog.WriteLine("[AudioSuppress] OFF — reason: guard completed");
                 _audioSuppressWasActive = false;
             }
-            else if (ignoreAudio)
+            else if (suppressActive)
             {
                 _audioSuppressWasActive = true;
             }
@@ -3848,9 +3884,12 @@ namespace musicmate.Pages
 
             lock (_processLock)
             {
-                // Check ignore period BEFORE detection/smoothing to prevent
-                // transitional audio from polluting the smoothing history
-                if (_session.ShouldIgnoreAudio(DateTime.UtcNow))
+                // Normal cooldown: skip detection so transitional audio cannot
+                // pollute smoothing. During waiting Count-In, keep detecting —
+                // click self-sound is rejected by frequency on the UI thread.
+                // (Previously this return blocked on-beat first notes for most of
+                // each beat while IgnoreAudio covered the click.)
+                if (_session.ShouldIgnoreAudio(DateTime.UtcNow) && !_waitingCountInActive)
                     return;
 
                 _lastProcess = now;
@@ -3909,34 +3948,45 @@ namespace musicmate.Pages
                     if (_isPlaying)
                         return;
 
-                    // Re-check gates on the UI thread so queued callbacks cannot
-                    // advance more than one note from a single sustained tone.
-                    if (_session.ShouldIgnoreAudio(DateTime.UtcNow))
-                    {
-                        var cooldownResult = _session.Evaluate(freq);
-                        _session.LogAudioCooldownRejectionIfPitchIdentified(freq, cooldownResult.cents);
-                        DebugLog.WriteLine(
-                            $"[AudioSuppress] pitch detected but ignored — reason: IgnoreAudioUntilUtc " +
-                            $"heardHz={freq:F1} correct={cooldownResult.correct}");
-                        return;
-                    }
-
-                    // Waiting count-in: listen only for the correct first note between clicks.
-                    // App-generated click tones (and residual buffer audio) are suppressed via
-                    // IgnoreAudio for click duration + pitch-window guard — they must never score.
+                    // Waiting count-in: accept correct first note; reject click self-sound
+                    // by frequency (and incorrect pitches). Do not require the listening
+                    // gap between clicks — players articulate on the beat.
                     if (_waitingCountInActive)
                     {
                         if (_session.CurrentNoteIndex != 0 || _session.NotesToDraw.Count == 0)
                             return;
 
-                        bool suppressSelfSound = _session.ShouldIgnoreAudio(DateTime.UtcNow);
                         var countInResult = _session.Evaluate(freq);
+                        bool nearClick = WaitingCountInLogic.IsNearCountInClickFrequency(
+                            freq,
+                            WaitingCountInSettings.AccentedPitchHz,
+                            WaitingCountInSettings.UnaccentedPitchHz);
                         if (!WaitingCountInLogic.ShouldAcceptFirstNoteToEndCountIn(
                                 countInResult.correct,
                                 countInActive: true,
                                 currentNoteIndex: 0,
-                                withinSelfSoundSuppressWindow: suppressSelfSound))
+                                withinSelfSoundSuppressWindow: false,
+                                heardHz: freq,
+                                accentedClickHz: WaitingCountInSettings.AccentedPitchHz,
+                                unaccentedClickHz: WaitingCountInSettings.UnaccentedPitchHz))
+                        {
+                            if (nearClick)
+                            {
+                                DebugLog.WriteLine(
+                                    $"[CountIn] ignored click self-sound heardHz={freq:F1} correct={countInResult.correct}");
+                            }
+                            else if (countInResult.correct)
+                            {
+                                DebugLog.WriteLine(
+                                    $"[CountIn] correct pitch not accepted heardHz={freq:F1}");
+                            }
+                            else
+                            {
+                                DebugLog.WriteLine(
+                                    $"[CountIn] waiting for first note heardHz={freq:F1} correct=False");
+                            }
                             return;
+                        }
 
                         // Stop clicks and CLEAR suppress before scoring — a residual
                         // Suppress here would make UpdateFeedbackForCurrent reject the note
@@ -3956,6 +4006,18 @@ namespace musicmate.Pages
                         // Brief residual guard only AFTER scoring, so click bleed cannot steal note 1.
                         _session.SuppressCountInClickSelfSound(0, "residual guard after first-note accept");
                         ResetPitchCapture();
+                        return;
+                    }
+
+                    // Re-check gates on the UI thread so queued callbacks cannot
+                    // advance more than one note from a single sustained tone.
+                    if (_session.ShouldIgnoreAudio(DateTime.UtcNow))
+                    {
+                        var cooldownResult = _session.Evaluate(freq);
+                        _session.LogAudioCooldownRejectionIfPitchIdentified(freq, cooldownResult.cents);
+                        DebugLog.WriteLine(
+                            $"[AudioSuppress] pitch detected but ignored — reason: IgnoreAudioUntilUtc " +
+                            $"heardHz={freq:F1} correct={cooldownResult.correct}");
                         return;
                     }
 
@@ -4076,19 +4138,11 @@ namespace musicmate.Pages
                     externalCt: ct,
                     beforeClickAsync: (clickDurationMs, clickCt) =>
                     {
-                        if (clickCt.IsCancellationRequested
-                            || armedGeneration != Volatile.Read(ref _waitingCountInGeneration)
-                            || !_waitingCountInActive)
-                        {
-                            return Task.CompletedTask;
-                        }
-
-                        double msPerBeat = WaitingCountInLogic.MsPerBeat(_session.Tempo);
-                        _session.SuppressCountInClickSelfSoundCapped(
-                            clickDurationMs,
-                            msPerBeat,
-                            "Count-In click");
-                        ResetPitchCapture();
+                        // Do not arm IgnoreAudio per click. Time-based suppress blocked
+                        // on-beat first notes (most of each beat). Click self-sound is
+                        // filtered by frequency in the Count-In accept path instead.
+                        _ = clickDurationMs;
+                        _ = clickCt;
                         return Task.CompletedTask;
                     });
 
@@ -4170,6 +4224,32 @@ namespace musicmate.Pages
             catch { }
             try { _waitingCountInCts?.Cancel(); } catch { }
             try { _waitingCountInPlayer?.Stop(); } catch { }
+        }
+
+        /// <summary>
+        /// App swipe-away / sleep / window close — stop Count-In and Tuner metronome beeps.
+        /// </summary>
+        private void OnAppCueAudioSuspended()
+        {
+            try
+            {
+                void StopLocal()
+                {
+                    StopWaitingCountIn();
+                    try { _waitingCountInPlayer?.Stop(); } catch { }
+                    try { ServiceHelper.GetService<ICountInClickService>()?.Stop(); } catch { }
+                    try { _audio?.StopCapture(); } catch { }
+                    _session?.ClearCountInClickSelfSoundSuppress("app suspended");
+                    _ = StopReferenceToneAsync(resumeListening: false);
+                    _ = StopTunerPitchAsync();
+                }
+
+                if (MainThread.IsMainThread)
+                    StopLocal();
+                else
+                    MainThread.BeginInvokeOnMainThread(StopLocal);
+            }
+            catch { }
         }
 
         /// <summary>
@@ -6274,6 +6354,7 @@ namespace musicmate.Pages
             OnPropertyChanged(nameof(IsChildLevelSliderVisible));
             OnPropertyChanged(nameof(IsBottomPickersVisible));
             OnPropertyChanged(nameof(IsBottomButtonRowVisible));
+            RefreshNoteAttemptsDebugButtonVisibility();
 
             if (isTuner)
             {

@@ -9,11 +9,24 @@ namespace musicmate.Services;
 /// </summary>
 public static class ConductorOnsetTiming
 {
-    /// <summary>Allowed earliness in quarter-note beats (one sixteenth of a quarter).</summary>
-    public const double EarlyToleranceBeats = 0.25;
+    /// <summary>
+    /// Allowed earliness as a fraction of one beat at the session tempo.
+    /// ~30% of a beat matches comfortable human timing at slow practice tempos.
+    /// </summary>
+    public const double EarlyToleranceBeats = 0.30;
 
-    /// <summary>Late scoring window in quarter-note beats.</summary>
+    /// <summary>
+    /// Late scoring window as a fraction of one beat. Kept at least as wide as early
+    /// so a slightly late correct pitch still counts as on-time; beyond this the note
+    /// is timing-wrong but the session still advances so the player can continue.
+    /// </summary>
     public const double LateToleranceBeats = 0.50;
+
+    /// <summary>Floor so very fast tempos do not shrink the window below playability.</summary>
+    public const double MinToleranceMs = 100.0;
+
+    /// <summary>Ceiling so very slow tempos do not open a multi-second accept window.</summary>
+    public const double MaxToleranceMs = 1200.0;
 
     public static double MsPerBeat(int bpm)
     {
@@ -23,9 +36,14 @@ public static class ConductorOnsetTiming
 
     public static double SecondsPerBeat(int bpm) => MsPerBeat(bpm) / 1000.0;
 
-    public static double EarlyToleranceMs(int bpm) => EarlyToleranceBeats * MsPerBeat(bpm);
+    public static double EarlyToleranceMs(int bpm)
+        => ClampToleranceMs(EarlyToleranceBeats * MsPerBeat(bpm));
 
-    public static double LateToleranceMs(int bpm) => LateToleranceBeats * MsPerBeat(bpm);
+    public static double LateToleranceMs(int bpm)
+        => ClampToleranceMs(LateToleranceBeats * MsPerBeat(bpm));
+
+    public static double ClampToleranceMs(double toleranceMs)
+        => Math.Clamp(toleranceMs, MinToleranceMs, MaxToleranceMs);
 
     /// <summary>
     /// Absolute expected onset from the conductor timeline.

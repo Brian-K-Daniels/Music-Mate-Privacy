@@ -90,7 +90,7 @@ public class ConductorTimingTests : IDisposable
         elapsed = 0;
         AssertAccepted(session, Freq(60), expectedIndex: 0);
 
-        // Note 1 expected ~1765ms; try at 200ms (far before early tolerance ~441ms).
+        // Note 1 expected ~1765ms; try at 200ms (far before early tolerance ~30% of a beat).
         elapsed = 200;
         AssertNotAdvanced(session, Freq(62), expectedIndex: 1);
         Assert.Equal(1, session.CurrentNoteIndex);
@@ -235,17 +235,19 @@ public class ConductorTimingTests : IDisposable
             new RhythmNote(64, 0.5, 0.5));
 
         double eighthMs = ConductorOnsetTiming.MsPerBeat(bpm) / 2; // 500 ms
+        double earlyTol = ConductorOnsetTiming.EarlyToleranceMs(bpm);
 
         elapsed = 0;
         AssertAccepted(session, Freq(60), expectedIndex: 0);
 
-        elapsed = 200; // clearly before beat 0.5 at 500 ms (early tolerance = 250 ms)
+        // Clearly before beat 0.5 — outside the early window (earliest ≈ 500 − earlyTol).
+        elapsed = Math.Max(1, eighthMs - earlyTol - 50);
         AssertNotAdvanced(session, Freq(62), expectedIndex: 1);
 
         elapsed = eighthMs;
         AssertAccepted(session, Freq(62), expectedIndex: 1);
 
-        elapsed = eighthMs + 200;
+        elapsed = Math.Max(eighthMs + 1, 2 * eighthMs - earlyTol - 50);
         AssertNotAdvanced(session, Freq(64), expectedIndex: 2);
 
         elapsed = 2 * eighthMs;
@@ -329,7 +331,7 @@ public class ConductorTimingTests : IDisposable
     }
 
     [Fact]
-    public void EarlyTolerance_AllowsSlightlyEarlyWithinQuarterSixteenth()
+    public void EarlyTolerance_AllowsAboutQuarterBeatEarly()
     {
         const int bpm = 60;
         double elapsed = 0;
@@ -359,6 +361,132 @@ public class ConductorTimingTests : IDisposable
 
         elapsed = msPerBeat + lateTol - 1;
         AssertAccepted(session, Freq(62), expectedIndex: 1);
+    }
+
+    [Fact]
+    public void OnTimeNote_IsAcceptedAsCorrect()
+    {
+        const int bpm = 52;
+        double elapsed = 0;
+        var session = CreateSession([60, 62], bpm, showConductorCues: false, () => elapsed);
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+        AssertNoWrongFeedback(session, 0);
+
+        elapsed = msPerBeat;
+        AssertAccepted(session, Freq(62), expectedIndex: 1);
+        AssertNoWrongFeedback(session, 1);
+    }
+
+    [Theory]
+    [InlineData(0.20)]
+    [InlineData(0.25)]
+    public void AboutTwentyToTwentyFivePercentBeatEarly_IsAccepted(double earlyFractionOfBeat)
+    {
+        const int bpm = 52;
+        double elapsed = 0;
+        var session = CreateSession([60, 62], bpm, showConductorCues: false, () => elapsed);
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+
+        elapsed = msPerBeat - earlyFractionOfBeat * msPerBeat;
+        Assert.True(
+            elapsed >= msPerBeat - ConductorOnsetTiming.EarlyToleranceMs(bpm),
+            "test offset must lie inside the configured early window");
+        AssertAccepted(session, Freq(62), expectedIndex: 1);
+        AssertNoWrongFeedback(session, 1);
+    }
+
+    [Theory]
+    [InlineData(0.20)]
+    [InlineData(0.25)]
+    public void AboutTwentyToTwentyFivePercentBeatLate_IsAccepted(double lateFractionOfBeat)
+    {
+        const int bpm = 52;
+        double elapsed = 0;
+        var session = CreateSession([60, 62], bpm, showConductorCues: false, () => elapsed);
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+
+        elapsed = msPerBeat + lateFractionOfBeat * msPerBeat;
+        Assert.True(
+            elapsed <= msPerBeat + ConductorOnsetTiming.LateToleranceMs(bpm),
+            "test offset must lie inside the configured late window");
+        AssertAccepted(session, Freq(62), expectedIndex: 1);
+        AssertNoWrongFeedback(session, 1);
+    }
+
+    [Fact]
+    public void SubstantiallyEarlierThanTolerance_IsWrongAndDoesNotAdvance()
+    {
+        const int bpm = 52;
+        double elapsed = 0;
+        var session = CreateSession([60, 62], bpm, showConductorCues: false, () => elapsed);
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+        double earlyTol = ConductorOnsetTiming.EarlyToleranceMs(bpm);
+
+        elapsed = 0;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+
+        // ~55% of a beat early — beyond the ~30% early window.
+        elapsed = msPerBeat - earlyTol - 0.25 * msPerBeat;
+        Assert.True(elapsed > 0);
+        AssertNotAdvanced(session, Freq(62), expectedIndex: 1);
+        Assert.Equal(1, session.CurrentNoteIndex);
+        Assert.DoesNotContain(1, session.CorrectNoteIndices);
+        Assert.True(session.NoteFeedbacks.TryGetValue(1, out var fb) && fb.Wrong > 0);
+    }
+
+    [Fact]
+    public void Tempo52_CMajorScale_WithOrdinaryTimingJitter_StaysCorrect()
+    {
+        const int bpm = 52;
+        double elapsed = 0;
+        var session = CreateSession(CMajorScaleMidi, bpm, showConductorCues: false, () => elapsed);
+        double msPerBeat = ConductorOnsetTiming.MsPerBeat(bpm);
+        // Ordinary human variation: alternate ~±20% of a beat around each onset.
+        double[] jitterFractions = [0, -0.20, 0.18, -0.15, 0.22, -0.10, 0.20, -0.12];
+
+        for (int i = 0; i < CMajorScaleMidi.Length; i++)
+        {
+            elapsed = i * msPerBeat + jitterFractions[i] * msPerBeat;
+            AssertAccepted(session, Freq(CMajorScaleMidi[i]), expectedIndex: i);
+            AssertNoWrongFeedback(session, i);
+            session.NotifySilence();
+        }
+
+        Assert.Equal(CMajorScaleMidi.Length, session.CorrectNoteIndices.Count);
+    }
+
+    [Fact]
+    public void Tempo52_PlayingNear120Bpm_DoesNotMarkEntireScaleGreen()
+    {
+        const int sessionBpm = 52;
+        const int playedApproxBpm = 120;
+        double elapsed = 0;
+        var session = CreateSession(CMajorScaleMidi, sessionBpm, showConductorCues: false, () => elapsed);
+        double playedMsPerBeat = ConductorOnsetTiming.MsPerBeat(playedApproxBpm);
+
+        for (int i = 0; i < CMajorScaleMidi.Length; i++)
+        {
+            elapsed = i * playedMsPerBeat;
+            var freq = Freq(CMajorScaleMidi[i]);
+            session.UpdateFeedbackForCurrent(freq, session.Evaluate(freq));
+            session.NotifySilence();
+        }
+
+        Assert.True(
+            session.CorrectNoteIndices.Count <= 2,
+            $"Rush at ~{playedApproxBpm} BPM against {sessionBpm} BPM accepted {session.CorrectNoteIndices.Count} notes");
+        Assert.True(
+            session.CurrentNoteIndex < CMajorScaleMidi.Length,
+            "Entire scale must not complete when played far ahead of the selected tempo");
     }
 
     [Fact]
@@ -656,13 +784,48 @@ public class ConductorTimingTests : IDisposable
     }
 
     [Fact]
-    public void TolerancesAt34Bpm_MatchQuarterBeatFractions()
+    public void TolerancesAt52Bpm_MatchBeatFractionsWithClamp()
+    {
+        const int bpm = 52;
+        double msPerBeat = 60000.0 / 52;
+        Assert.Equal(msPerBeat, ConductorOnsetTiming.MsPerBeat(bpm), precision: 6);
+        Assert.Equal(
+            ConductorOnsetTiming.ClampToleranceMs(
+                ConductorOnsetTiming.EarlyToleranceBeats * msPerBeat),
+            ConductorOnsetTiming.EarlyToleranceMs(bpm),
+            precision: 6);
+        Assert.Equal(
+            ConductorOnsetTiming.ClampToleranceMs(
+                ConductorOnsetTiming.LateToleranceBeats * msPerBeat),
+            ConductorOnsetTiming.LateToleranceMs(bpm),
+            precision: 6);
+        // At 52 BPM the raw beat fractions sit inside the clamp range.
+        Assert.InRange(
+            ConductorOnsetTiming.EarlyToleranceMs(bpm),
+            0.29 * msPerBeat,
+            0.31 * msPerBeat);
+        Assert.InRange(
+            ConductorOnsetTiming.LateToleranceMs(bpm),
+            0.49 * msPerBeat,
+            0.51 * msPerBeat);
+    }
+
+    [Fact]
+    public void TolerancesAt34Bpm_MatchBeatFractionsWithClamp()
     {
         const int bpm = 34;
         double msPerBeat = 60000.0 / 34;
         Assert.Equal(msPerBeat, ConductorOnsetTiming.MsPerBeat(bpm), precision: 6);
-        Assert.Equal(0.25 * msPerBeat, ConductorOnsetTiming.EarlyToleranceMs(bpm), precision: 6);
-        Assert.Equal(0.50 * msPerBeat, ConductorOnsetTiming.LateToleranceMs(bpm), precision: 6);
+        Assert.Equal(
+            ConductorOnsetTiming.ClampToleranceMs(
+                ConductorOnsetTiming.EarlyToleranceBeats * msPerBeat),
+            ConductorOnsetTiming.EarlyToleranceMs(bpm),
+            precision: 6);
+        Assert.Equal(
+            ConductorOnsetTiming.ClampToleranceMs(
+                ConductorOnsetTiming.LateToleranceBeats * msPerBeat),
+            ConductorOnsetTiming.LateToleranceMs(bpm),
+            precision: 6);
     }
 
     private readonly record struct RhythmNote(

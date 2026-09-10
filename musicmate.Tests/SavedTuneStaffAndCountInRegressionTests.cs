@@ -111,7 +111,7 @@ public class SavedTuneStaffAndCountInRegressionTests : IDisposable
     // ── Problem 2: Count-In / cue self-sound ───────────────────────────────
 
     [Fact]
-    public void MatchingPitch_DuringCountInSelfSoundWindow_DoesNotAdvance()
+    public void MatchingPitch_DuringCountInSelfSoundWindow_BlocksWhenSamePitchClassAsClick()
     {
         var session = CreateSessionFirstMidi(64); // E4 — same pitch class as default unaccented E6 click
         session.StartListeningClock();
@@ -124,7 +124,10 @@ public class SavedTuneStaffAndCountInRegressionTests : IDisposable
         Assert.True(result.correct);
         Assert.False(
             WaitingCountInLogic.ShouldAcceptFirstNoteToEndCountIn(
-                result.correct, true, 0, session.ShouldIgnoreAudio(DateTime.UtcNow)));
+                result.correct, true, 0, session.ShouldIgnoreAudio(DateTime.UtcNow),
+                heardHz: freq,
+                accentedClickHz: WaitingCountInSettings.DefaultAccentedPitchHz,
+                unaccentedClickHz: WaitingCountInSettings.DefaultUnaccentedPitchHz));
         Assert.Equal(0, session.CurrentNoteIndex);
     }
 
@@ -238,7 +241,7 @@ public class SavedTuneStaffAndCountInRegressionTests : IDisposable
     }
 
     [Fact]
-    public void ExactSamePitchAsExpected_StillBlockedWhileSuppressActive()
+    public void ExactSamePitchAsExpected_FarFromClick_MayEndCountInDuringSuppress()
     {
         var session = CreateSessionFirstMidi(60);
         session.StartListeningClock();
@@ -249,9 +252,12 @@ public class SavedTuneStaffAndCountInRegressionTests : IDisposable
         var result = session.Evaluate(freq);
         Assert.True(result.correct);
         Assert.True(session.ShouldIgnoreAudio(DateTime.UtcNow));
-        Assert.False(
+        Assert.True(
             WaitingCountInLogic.ShouldAcceptFirstNoteToEndCountIn(
-                result.correct, true, 0, session.ShouldIgnoreAudio(DateTime.UtcNow)));
+                result.correct, true, 0, session.ShouldIgnoreAudio(DateTime.UtcNow),
+                heardHz: freq,
+                accentedClickHz: WaitingCountInSettings.DefaultAccentedPitchHz,
+                unaccentedClickHz: WaitingCountInSettings.DefaultUnaccentedPitchHz));
     }
 
     // ── helpers ────────────────────────────────────────────────────────────

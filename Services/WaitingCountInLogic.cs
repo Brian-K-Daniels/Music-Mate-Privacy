@@ -119,16 +119,60 @@ namespace musicmate.Services
             => countInActive && currentNoteIndex == 0 && evaluateCorrect;
 
         /// <summary>
+        /// True when heard Hz is within <paramref name="centsTolerance"/> of a Count-In click
+        /// pitch, including octave equivalents (speaker bleed / McLeod octave errors).
+        /// </summary>
+        public static bool IsNearCountInClickFrequency(
+            double heardHz,
+            double accentedClickHz,
+            double unaccentedClickHz,
+            double centsTolerance = 100.0)
+            => IsWithinCentsIncludingOctaves(heardHz, accentedClickHz, centsTolerance)
+               || IsWithinCentsIncludingOctaves(heardHz, unaccentedClickHz, centsTolerance);
+
+        /// <summary>
+        /// Pitch-class / octave-aware cents distance to a reference frequency.
+        /// </summary>
+        public static bool IsWithinCentsIncludingOctaves(
+            double heardHz,
+            double referenceHz,
+            double centsTolerance)
+        {
+            if (heardHz <= 0 || referenceHz <= 0 || centsTolerance < 0)
+                return false;
+            double octaves = Math.Log(heardHz / referenceHz, 2.0);
+            if (double.IsNaN(octaves) || double.IsInfinity(octaves))
+                return false;
+            double centsFromNearestOctave = (octaves - Math.Round(octaves)) * 1200.0;
+            return Math.Abs(centsFromNearestOctave) <= centsTolerance;
+        }
+
+        /// <summary>
         /// True when a correct first-note detection may end waiting Count-In and score the note.
-        /// Self-sound suppress windows (speaker bleed / residual buffer) must not accept.
+        /// Click self-sound is rejected by frequency proximity (including octaves), not by a
+        /// time window — players articulate on the beat, which overlaps the click.
+        /// When frequency context is omitted, <paramref name="withinSelfSoundSuppressWindow"/>
+        /// preserves the historical safe reject during suppress.
         /// </summary>
         public static bool ShouldAcceptFirstNoteToEndCountIn(
             bool evaluateCorrect,
             bool countInActive,
             int currentNoteIndex,
-            bool withinSelfSoundSuppressWindow)
-            => ShouldStopForFirstNote(evaluateCorrect, countInActive, currentNoteIndex)
-               && !withinSelfSoundSuppressWindow;
+            bool withinSelfSoundSuppressWindow,
+            double heardHz = 0,
+            double accentedClickHz = 0,
+            double unaccentedClickHz = 0)
+        {
+            if (!ShouldStopForFirstNote(evaluateCorrect, countInActive, currentNoteIndex))
+                return false;
+            if (heardHz > 0 && (accentedClickHz > 0 || unaccentedClickHz > 0))
+            {
+                // Frequency-aware path: reject only click self-sound / octave bleed.
+                return !IsNearCountInClickFrequency(heardHz, accentedClickHz, unaccentedClickHz);
+            }
+            // No frequency context → keep historical safe reject during suppress.
+            return !withinSelfSoundSuppressWindow;
+        }
 
         /// <summary>
         /// Guard after each app-produced Count-In click so residual mic / pitch-window audio
@@ -148,13 +192,20 @@ namespace musicmate.Services
             => Math.Max(0, clickDurationMs) + ComputeSelfSoundGuardMs(pitchWindowSize, sampleRate);
 
         /// <summary>
-        /// Never cover an entire beat — leave a listening gap so a real first note
-        /// (and early-accept) can be heard between Count-In clicks.
+        /// Never cover an entire beat — leave a listening gap long enough to fill one
+        /// pitch-analysis window after IgnoreAudio ends (otherwise notes are never detected
+        /// during waiting Count-In). Also keep at least ~45% of the beat open so on-beat
+        /// playing has a usable window at moderate tempos (e.g. 100 BPM / 600ms).
         /// </summary>
-        public static int CapSelfSoundSuppressMs(int suppressMs, double msPerBeat)
+        public static int CapSelfSoundSuppressMs(int suppressMs, double msPerBeat, int minListeningGapMs = 0)
         {
-            int gapMs = 80;
-            int maxSuppress = Math.Max(40, (int)Math.Floor(Math.Max(1.0, msPerBeat) - gapMs));
+            double beat = Math.Max(1.0, msPerBeat);
+            // Default gap: ~window + half-hop at 4096/44100, or caller-provided guard.
+            int gapMs = Math.Max(200, minListeningGapMs);
+            // Prefer leaving nearly half the beat listenable when the beat is short.
+            int halfBeatGap = (int)Math.Floor(beat * 0.45);
+            gapMs = Math.Max(gapMs, halfBeatGap);
+            int maxSuppress = Math.Max(20, (int)Math.Floor(beat - gapMs));
             return Math.Min(Math.Max(0, suppressMs), maxSuppress);
         }
     }

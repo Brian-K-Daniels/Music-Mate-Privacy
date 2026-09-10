@@ -198,6 +198,31 @@
         </VerticalStackLayout>
       </Border>
 
+      <!-- DEBUG: Note Attempts viewer (hidden in Release via code-behind) -->
+      <Border x:Name="NoteAttemptsDebugSection"
+              IsVisible="False"
+              Stroke="{DynamicResource ThemePickerBorder}"
+              Padding="12"
+              Margin="0,16,0,0"
+              BackgroundColor="{DynamicResource ThemeSecondPanelBackground}">
+        <Border.StrokeShape>
+          <RoundRectangle CornerRadius="10"/>
+        </Border.StrokeShape>
+        <VerticalStackLayout Spacing="10">
+          <Label Text="Debug — Note Attempts" Style="{StaticResource AdvancedPanelTitle}"/>
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" VerticalOptions="Center">
+            <Label Grid.Column="0"
+                   Text="Show Note Attempts button on Music page"
+                   VerticalOptions="Center"
+                   LineBreakMode="WordWrap" />
+            <Switch Grid.Column="1"
+                    IsToggled="{Binding ShowNoteAttemptsViewerButton, Mode=TwoWay}"
+                    OnColor="{DynamicResource ThemeSlider}"
+                    HorizontalOptions="End" />
+          </Grid>
+        </VerticalStackLayout>
+      </Border>
+
       <!-- Storage -->
       <Border Stroke="{DynamicResource ThemePickerBorder}" Padding="12" Margin="0,16,0,0" BackgroundColor="{DynamicResource ThemeSecondPanelBackground}">
         <Border.StrokeShape>

@@ -135,6 +135,9 @@
     <Compile Remove="Pages\DebugItemsPage.xaml.cs" />
     <Compile Remove="ViewModels\DebugItemsPageViewModel.cs" />
     <MauiXaml Remove="Pages\DebugItemsPage.xaml" />
+    <Compile Remove="Pages\NoteAttemptsDebugPage.xaml.cs" />
+    <Compile Remove="ViewModels\NoteAttemptsDebugPageViewModel.cs" />
+    <MauiXaml Remove="Pages\NoteAttemptsDebugPage.xaml" />
   </ItemGroup>
 
   <ItemGroup>

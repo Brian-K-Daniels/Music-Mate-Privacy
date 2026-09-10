@@ -434,6 +434,19 @@ namespace musicmate
                 ContentTemplate = new DataTemplate(typeof(DebugItemsPage)),
             });
             Items.Add(debugItem);
+
+            var noteAttemptsItem = new FlyoutItem
+            {
+                Title = "Note Attempts",
+                Route = "NoteAttemptsDebug",
+            };
+            noteAttemptsItem.Items.Add(new ShellContent
+            {
+                Title = "Note Attempts",
+                Route = "NoteAttemptsDebugPage",
+                ContentTemplate = new DataTemplate(typeof(NoteAttemptsDebugPage)),
+            });
+            Items.Add(noteAttemptsItem);
         }
 #endif
     }

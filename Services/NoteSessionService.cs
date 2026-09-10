@@ -4221,13 +4221,14 @@ namespace musicmate.Services
         {
             int raw = WaitingCountInLogic.ComputeSelfSoundSuppressMs(
                 clickDurationMs, PitchWindowSize, SampleRate);
-            int suppressMs = WaitingCountInLogic.CapSelfSoundSuppressMs(raw, msPerBeat);
+            int minGap = WaitingCountInLogic.ComputeSelfSoundGuardMs(PitchWindowSize, SampleRate);
+            int suppressMs = WaitingCountInLogic.CapSelfSoundSuppressMs(raw, msPerBeat, minGap);
             var until = DateTime.UtcNow.AddMilliseconds(suppressMs);
             if (until > IgnoreAudioUntilUtc)
             {
                 IgnoreAudioUntilUtc = until;
                 musicmate.Diagnostics.DebugLog.WriteLine(
-                    $"[AudioSuppress] ON — reason: {reason} ms={suppressMs} (raw={raw}) untilUtc={until:O}");
+                    $"[AudioSuppress] ON — reason: {reason} ms={suppressMs} (raw={raw} gapMin={minGap}) untilUtc={until:O}");
             }
         }
 

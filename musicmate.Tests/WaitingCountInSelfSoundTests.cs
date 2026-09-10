@@ -38,8 +38,8 @@ public class WaitingCountInSelfSoundTests : IDisposable
     }
 
     [Theory]
-    [InlineData(true, true, 0, true, false)]
-    [InlineData(true, true, 0, false, true)]
+    [InlineData(true, true, 0, true, false)]   // suppress + no heardHz → treat as unsafe / reject
+    [InlineData(true, true, 0, false, true)]  // outside suppress → accept
     [InlineData(false, true, 0, false, false)]
     [InlineData(true, false, 0, false, false)]
     [InlineData(true, true, 1, false, false)]
@@ -55,7 +55,46 @@ public class WaitingCountInSelfSoundTests : IDisposable
                 evaluateCorrect, countInActive, noteIndex, suppress));
 
     [Fact]
-    public void MatchingPitch_DuringCountInSuppress_DoesNotAdvanceFirstNote()
+    public void ShouldAccept_DuringSuppress_WhenHeardFarFromClick()
+    {
+        // C4 during suppress must end Count-In — players articulate on the beat.
+        Assert.True(
+            WaitingCountInLogic.ShouldAcceptFirstNoteToEndCountIn(
+                evaluateCorrect: true,
+                countInActive: true,
+                currentNoteIndex: 0,
+                withinSelfSoundSuppressWindow: true,
+                heardHz: 261.63,
+                accentedClickHz: 1760,
+                unaccentedClickHz: 880));
+    }
+
+    [Fact]
+    public void ShouldAccept_DuringSuppress_RejectsNearClickFrequency()
+    {
+        Assert.False(
+            WaitingCountInLogic.ShouldAcceptFirstNoteToEndCountIn(
+                evaluateCorrect: true,
+                countInActive: true,
+                currentNoteIndex: 0,
+                withinSelfSoundSuppressWindow: true,
+                heardHz: 1760,
+                accentedClickHz: 1760,
+                unaccentedClickHz: 880));
+        // Octave of click also blocked
+        Assert.False(
+            WaitingCountInLogic.ShouldAcceptFirstNoteToEndCountIn(
+                evaluateCorrect: true,
+                countInActive: true,
+                currentNoteIndex: 0,
+                withinSelfSoundSuppressWindow: true,
+                heardHz: 880,
+                accentedClickHz: 1760,
+                unaccentedClickHz: 880));
+    }
+
+    [Fact]
+    public void MatchingPitch_DuringCountInSuppress_AdvancesWhenFarFromClick()
     {
         var session = CreateCMajorSession();
         session.StartListeningClock();
@@ -66,15 +105,19 @@ public class WaitingCountInSelfSoundTests : IDisposable
         var result = session.Evaluate(firstFreq);
         Assert.True(result.correct);
 
-        Assert.False(
+        Assert.True(
             WaitingCountInLogic.ShouldAcceptFirstNoteToEndCountIn(
-                result.correct, true, 0, session.ShouldIgnoreAudio(DateTime.UtcNow)));
-        Assert.Equal(0, session.CurrentNoteIndex);
-        Assert.DoesNotContain(0, session.CorrectNoteIndices);
+                result.correct,
+                true,
+                0,
+                session.ShouldIgnoreAudio(DateTime.UtcNow),
+                heardHz: firstFreq,
+                accentedClickHz: WaitingCountInSettings.DefaultAccentedPitchHz,
+                unaccentedClickHz: WaitingCountInSettings.DefaultUnaccentedPitchHz));
     }
 
     [Fact]
-    public void MatchingPitch_InResidualGuardAfterClick_DoesNotAdvance()
+    public void MatchingPitch_InResidualGuardAfterClick_AdvancesWhenFarFromClick()
     {
         var session = CreateCMajorSession();
         session.StartListeningClock();
@@ -85,10 +128,15 @@ public class WaitingCountInSelfSoundTests : IDisposable
         double freq = NoteSessionService.MidiToFreqPublic(60);
         var result = session.Evaluate(freq);
         Assert.True(result.correct);
-        Assert.False(
+        Assert.True(
             WaitingCountInLogic.ShouldAcceptFirstNoteToEndCountIn(
-                result.correct, true, 0, session.ShouldIgnoreAudio(DateTime.UtcNow)));
-        Assert.Equal(0, session.CurrentNoteIndex);
+                result.correct,
+                true,
+                0,
+                session.ShouldIgnoreAudio(DateTime.UtcNow),
+                heardHz: freq,
+                accentedClickHz: WaitingCountInSettings.DefaultAccentedPitchHz,
+                unaccentedClickHz: WaitingCountInSettings.DefaultUnaccentedPitchHz));
     }
 
     [Fact]
@@ -141,7 +189,10 @@ public class WaitingCountInSelfSoundTests : IDisposable
         Assert.True(result.correct, "Count-In Hz should evaluate as the expected first note");
         Assert.False(
             WaitingCountInLogic.ShouldAcceptFirstNoteToEndCountIn(
-                result.correct, true, 0, session.ShouldIgnoreAudio(DateTime.UtcNow)));
+                result.correct, true, 0, session.ShouldIgnoreAudio(DateTime.UtcNow),
+                heardHz: countInHz,
+                accentedClickHz: WaitingCountInSettings.DefaultAccentedPitchHz,
+                unaccentedClickHz: WaitingCountInSettings.DefaultUnaccentedPitchHz));
         Assert.Equal(0, session.CurrentNoteIndex);
         Assert.DoesNotContain(0, session.CorrectNoteIndices);
     }

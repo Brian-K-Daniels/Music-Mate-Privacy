@@ -49,6 +49,8 @@ namespace musicmate.Services
                 return "Home";
             if (Contains(s, "DebugItems"))
                 return "DebugItems";
+            if (Contains(s, "NoteAttemptsDebug"))
+                return "NoteAttemptsDebug";
             if (Contains(s, "MusicPage") || SegmentEquals(s, "Music"))
                 return "Music";
 

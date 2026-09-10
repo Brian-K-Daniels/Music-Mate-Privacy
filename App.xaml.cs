@@ -109,11 +109,20 @@ namespace musicmate
         protected override Window CreateWindow(IActivationState? activationState)
         {
             var window = new Window(new AppShell());
+            // Swipe-away / close / background: stop Count-In and metronome clicks.
+            window.Stopped += (_, _) => Services.AppCueAudioGate.NotifyAppSuspended();
+            window.Destroying += (_, _) => Services.AppCueAudioGate.NotifyAppSuspended();
             Microsoft.Maui.ApplicationModel.MainThread.BeginInvokeOnMainThread(() =>
             {
                 Services.ServiceHelper.GetService<Services.ThemeService>()?.ApplyToShellIfAvailable();
             });
             return window;
+        }
+
+        protected override void OnSleep()
+        {
+            base.OnSleep();
+            Services.AppCueAudioGate.NotifyAppSuspended();
         }
     }
 }
