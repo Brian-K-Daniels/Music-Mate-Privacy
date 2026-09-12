@@ -31,6 +31,8 @@ $Tfm = "net10.0-android"
 $DevPackage = "com.bkdaniels.musicmate.dev"
 $DebugPort = 8890
 
+. (Join-Path $PSScriptRoot "adb-device.ps1")
+
 function Write-Step([string]$Message) {
     Write-Host ""
     Write-Host "==> $Message" -ForegroundColor Cyan
@@ -63,18 +65,24 @@ function Reset-Adb {
 
     Write-Host "  Connected devices:"
     & adb devices -l
+    Write-Host "  Note: kill-server drops wireless connections; re-run adb connect host:port if needed." -ForegroundColor Yellow
     return $true
 }
 
-function Clear-DebugPortForwards {
+function Clear-DebugPortForwards([string]$DeviceSerial) {
     Write-Step "Clearing adb port forwards (including debug port $DebugPort)"
     if (-not (Get-Command adb -ErrorAction SilentlyContinue)) { return }
 
-    & adb forward --remove-all 2>$null
+    if ([string]::IsNullOrWhiteSpace($DeviceSerial)) {
+        & adb forward --remove-all 2>$null
+    }
+    else {
+        & adb -s $DeviceSerial forward --remove-all 2>$null
+    }
     # Harmless if no device; VS will recreate forwards on next F5.
 }
 
-function Uninstall-DevApp {
+function Uninstall-DevApp([string]$DeviceSerial) {
     if ($KeepApp) {
         Write-Step "Skipping DEV app uninstall (-KeepApp)"
         return
@@ -82,17 +90,21 @@ function Uninstall-DevApp {
 
     Write-Step "Uninstalling DEV app ($DevPackage)"
     if (-not (Get-Command adb -ErrorAction SilentlyContinue)) { return }
+    if ([string]::IsNullOrWhiteSpace($DeviceSerial)) {
+        Write-Host "  No device serial resolved; skip uninstall." -ForegroundColor Yellow
+        return
+    }
 
-    $installed = & adb shell pm list packages $DevPackage 2>$null
+    $installed = & adb -s $DeviceSerial shell pm list packages $DevPackage 2>$null
     if ($installed -match [regex]::Escape($DevPackage)) {
-        & adb uninstall $DevPackage
+        & adb -s $DeviceSerial uninstall $DevPackage
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "  Uninstalled."
+            Write-Host "  Uninstalled on $DeviceSerial."
         } else {
             Write-Host "  uninstall returned exit $LASTEXITCODE (device may be offline)." -ForegroundColor Yellow
         }
     } else {
-        Write-Host "  Not installed on current device (OK)."
+        Write-Host "  Not installed on $DeviceSerial (OK)."
     }
 }
 
@@ -131,8 +143,21 @@ Write-Host "Repo: $RepoRoot"
 
 Stop-StaleDebugProcesses
 $adbOk = Reset-Adb
-Clear-DebugPortForwards
-if ($adbOk) { Uninstall-DevApp }
+
+$deviceSerial = $null
+if ($adbOk) {
+    try {
+        $deviceSerial = Get-MusicMateAdbSerial
+        Write-Host "Using adb device: $deviceSerial" -ForegroundColor Cyan
+    }
+    catch {
+        Write-Host "  $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "  Continuing without a targeted device serial." -ForegroundColor Yellow
+    }
+}
+
+Clear-DebugPortForwards -DeviceSerial $deviceSerial
+if ($adbOk) { Uninstall-DevApp -DeviceSerial $deviceSerial }
 Clear-AndroidDebugArtifacts
 
 if ($Rebuild) {
@@ -143,7 +168,7 @@ Write-Host ""
 Write-Host "Recovery complete." -ForegroundColor Green
 Write-Host "Next steps:"
 Write-Host "  1. Open Visual Studio (or leave it open if already open)."
-Write-Host "  2. Confirm one Android device/emulator is selected."
+Write-Host "  2. Confirm one Android device/emulator is selected (wireless OK)."
 Write-Host "  3. Optional sanity check: Ctrl+F5 (Run Without Debugging)."
 Write-Host "  4. Then F5 once — do not double-click Start."
 if (-not $Rebuild) {

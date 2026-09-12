@@ -1,9 +1,11 @@
 using musicmate.Utilities;
+using musicmate.Diagnostics;
 #if ANDROID
 using Android;
 using Android.Media;
 using AndroidX.Core.App;
 using AndroidX.Core.Content;
+using Microsoft.Maui.ApplicationModel;
 using System.Diagnostics;
 
 namespace musicmate.Services
@@ -33,17 +35,65 @@ namespace musicmate.Services
 
         public async Task EnsurePermissionAsync()
         {
+            // Prefer MAUI's awaitable permission API so we do not race AudioRecord start
+            // against a still-open system dialog (fresh install / reinstall).
+            try
+            {
+                var status = await Permissions.CheckStatusAsync<Permissions.Microphone>()
+                    .ConfigureAwait(false);
+                if (status != PermissionStatus.Granted)
+                {
+                    status = await Permissions.RequestAsync<Permissions.Microphone>()
+                        .ConfigureAwait(false);
+                }
+
+                // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                FirstNoteAndroidReleaseLog.WriteAlways(
+                    "mic-permission",
+                    $"status={status}");
+
+                if (status == PermissionStatus.Granted)
+                    return;
+            }
+            catch (Exception ex)
+            {
+                // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                FirstNoteAndroidReleaseLog.WriteAlways(
+                    "mic-permission",
+                    $"mauiRequestFailed={ex.GetType().Name}:{ex.Message}");
+            }
+
+            // Fallback for hosts where MAUI Permissions is unavailable.
             var activity = Microsoft.Maui.ApplicationModel.Platform.CurrentActivity;
             if (activity is null)
+            {
+                // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                FirstNoteAndroidReleaseLog.WriteAlways(
+                    "mic-permission",
+                    "fallbackSkipped=noCurrentActivity");
                 return;
+            }
 
             var granted = ContextCompat.CheckSelfPermission(activity, Manifest.Permission.RecordAudio)
                 == (int)Android.Content.PM.Permission.Granted;
             if (!granted)
             {
                 ActivityCompat.RequestPermissions(activity, new[] { Manifest.Permission.RecordAudio }, 1001);
-                await Task.Delay(500).ConfigureAwait(false);
+                // Best-effort wait; MAUI path above is preferred.
+                for (int i = 0; i < 40; i++)
+                {
+                    await Task.Delay(250).ConfigureAwait(false);
+                    granted = ContextCompat.CheckSelfPermission(activity, Manifest.Permission.RecordAudio)
+                        == (int)Android.Content.PM.Permission.Granted;
+                    if (granted)
+                        break;
+                }
             }
+
+            // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+            FirstNoteAndroidReleaseLog.WriteAlways(
+                "mic-permission",
+                $"fallbackGranted={granted}");
         }
 
         public void StartCapture(Action<short[]> onBlock)
@@ -56,6 +106,22 @@ namespace musicmate.Services
         {
             error = null;
             ArgumentNullException.ThrowIfNull(onBlock);
+
+            var activity = Microsoft.Maui.ApplicationModel.Platform.CurrentActivity;
+            if (activity is not null)
+            {
+                var granted = ContextCompat.CheckSelfPermission(activity, Manifest.Permission.RecordAudio)
+                    == (int)Android.Content.PM.Permission.Granted;
+                if (!granted)
+                {
+                    error = "RECORD_AUDIO not granted";
+                    // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                    FirstNoteAndroidReleaseLog.WriteAlways(
+                        "mic-capture",
+                        "failed reason=permissionDenied");
+                    return false;
+                }
+            }
 
             lock (_gate)
             {
@@ -101,6 +167,10 @@ namespace musicmate.Services
                         Volatile.Write(ref _loopRunning, 1);
 
                         Task.Run(() => CaptureLoop(rec, localCts.Token, gen));
+                        // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                        FirstNoteAndroidReleaseLog.WriteAlways(
+                            "mic-capture",
+                            "started ok");
                         return true;
                     }
                     catch (Exception ex)
@@ -113,6 +183,10 @@ namespace musicmate.Services
 
                 error = lastEx?.Message ?? "AudioRecord failed to start.";
                 Debug.WriteLine($"[AudioCapture] StartCapture failed: {error}");
+                // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                FirstNoteAndroidReleaseLog.WriteAlways(
+                    "mic-capture",
+                    $"failed reason={error}");
                 return false;
             }
         }

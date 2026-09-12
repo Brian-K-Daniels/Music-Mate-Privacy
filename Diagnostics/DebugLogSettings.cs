@@ -62,7 +62,7 @@ public static class DebugLogSettings
         DebugLogCategory.LayoutTestTune =>
             "Fixed layout test tune selection and layout-tune log output.",
         DebugLogCategory.StaffSelfTests =>
-            "Key signature, measure layout, and startup self-test output.",
+            "Key signature / measure layout test helpers (not run at app startup).",
         DebugLogCategory.StaffLog =>
             "Verbose staff drawing, layout, and validation output from StaffLog.",
         DebugLogCategory.SessionStartProfiler =>

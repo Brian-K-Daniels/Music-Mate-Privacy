@@ -175,7 +175,8 @@ namespace musicmate.Services
 
         /// <summary>
         /// Re-packs every measure so none exceeds <see cref="TimeSignature.TotalBeats"/>.
-        /// Used on save and load so older over-full Saved Tunes display correctly.
+        /// Same-bar overflow notes are dropped (not spilled into a short bonus bar).
+        /// Used on save and load so Random→Save and legacy over-full tunes stay legal.
         /// </summary>
         public static PracticeTune NormalizeMeasureDurations(PracticeTune source)
         {
@@ -239,12 +240,16 @@ namespace musicmate.Services
 
             var tune = new PracticeTune(title, timeSignature, key);
             PackNotesIntoMeteredMeasures(tune, ordered, timeSignature.TotalBeats);
+            if (tune.Measures.Count == 0)
+                throw new ArgumentException("No notes fit the meter; cannot save an empty tune.", nameof(notes));
             return tune;
         }
 
         /// <summary>
         /// Appends notes into measures that never exceed <paramref name="beatsPerMeasure"/>.
-        /// When a MeasureIndex group (or flat stream) would overflow, starts a new measure.
+        /// Notes that would overflow the current same-<see cref="GeneratedNote.MeasureIndex"/>
+        /// bar are dropped (Random→Save stray hardening). Flat streams without a measure
+        /// index still pack into successive full bars.
         /// </summary>
         private static void PackNotesIntoMeteredMeasures(
             PracticeTune tune,
@@ -258,6 +263,9 @@ namespace musicmate.Services
             foreach (var gn in ordered)
             {
                 double dur = gn.Duration.ToBeatValue();
+                if (dur > beatsPerMeasure + 1e-9)
+                    continue; // Impossible to place in this meter.
+
                 int? mi = gn.MeasureIndex;
 
                 bool newIndexGroup = mi.HasValue
@@ -265,6 +273,15 @@ namespace musicmate.Services
                     && mi.Value != currentMeasureIndex.Value;
                 bool wouldOverflow = measure != null
                     && measureBeats + dur > beatsPerMeasure + 1e-9;
+
+                if (wouldOverflow
+                    && mi.HasValue
+                    && currentMeasureIndex.HasValue
+                    && mi.Value == currentMeasureIndex.Value)
+                {
+                    // Same notated bar: discard stray overflow instead of inventing a short bar.
+                    continue;
+                }
 
                 if (measure == null || newIndexGroup || wouldOverflow)
                 {

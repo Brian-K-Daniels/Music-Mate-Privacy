@@ -196,6 +196,11 @@ namespace musicmate.Pages
 
                         break;
 
+                    case nameof(NoteSessionService.AutoRepeat):
+                    case nameof(NoteSessionService.RepeatSameTune):
+                        UpdateRepeatButtonColors();
+                        break;
+
                     case nameof(NoteSessionService.CurrentTune):
 
                         UpdatePlayModePickersFromSession();
@@ -603,28 +608,41 @@ namespace musicmate.Pages
 
         }
         private void UpdateRepeatButtonColors()
-
         {
-
             MainThread.BeginInvokeOnMainThread(() =>
-
             {
+                bool autoRepeat = _session.AutoRepeat;
+                bool repeatSame = _session.RepeatSameTune;
+                bool repeatNewOn = autoRepeat && !repeatSame;
+                bool repeatSameOn = autoRepeat && repeatSame;
 
-                AutoRepeatNewButton.BackgroundColor = _session.AutoRepeat && !_session.RepeatSameTune
+                if (AutoRepeatNewButton is not null)
+                {
+                    AutoRepeatNewButton.BackgroundColor = repeatNewOn
+                        ? Color.FromArgb("#008000") : Color.FromArgb("#8B4513");
+                    AutoRepeatNewButton.Text = FormatRepeatToggleLabel("Repeat New", repeatNewOn);
+                }
 
-                    ? Color.FromArgb("#008000") : Color.FromArgb("#8B4513");
+                if (AutoRepeatSameButton is not null)
+                {
+                    AutoRepeatSameButton.BackgroundColor = repeatSameOn
+                        ? Color.FromArgb("#008000") : Color.FromArgb("#8B4513");
+                    AutoRepeatSameButton.Text = FormatRepeatToggleLabel("Repeat Same", repeatSameOn);
+                }
 
-                AutoRepeatSameButton.BackgroundColor = _session.AutoRepeat && _session.RepeatSameTune
-
-                    ? Color.FromArgb("#008000") : Color.FromArgb("#8B4513");
-
-                AutoRepeatScaleButton.BackgroundColor = _session.AutoRepeat
-
-                    ? Color.FromArgb("#008000") : Color.FromArgb("#8B4513");
-
+                if (AutoRepeatScaleButton is not null)
+                {
+                    AutoRepeatScaleButton.BackgroundColor = autoRepeat
+                        ? Color.FromArgb("#008000") : Color.FromArgb("#8B4513");
+                    AutoRepeatScaleButton.Text = FormatRepeatToggleLabel("Repeat", autoRepeat);
+                }
             });
-
         }
+
+        private static string FormatRepeatToggleLabel(string name, bool isOn)
+            => isOn
+                ? $"{name}: ON — Tap to Turn OFF"
+                : $"{name}: OFF — Tap to Turn ON";
         private async void OnTunesPickerChanged(object? sender, EventArgs e)
 
         {

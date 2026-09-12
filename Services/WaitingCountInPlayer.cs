@@ -9,10 +9,12 @@ namespace musicmate.Services
     /// <summary>
     /// Schedules metronome-like count-in clicks until cancelled. Single active loop at a time.
     /// Uses <see cref="ICountInClickService"/> for short sine clicks on all platforms.
+    /// Beat times come from an absolute Stopwatch grid — never chained from prior click completion.
     /// </summary>
     public sealed class WaitingCountInPlayer
     {
         private readonly ICountInClickService _clicks;
+        private readonly object _gate = new();
         private CancellationTokenSource? _cts;
         private int _generation;
         private int _activeLoops;
@@ -29,7 +31,15 @@ namespace musicmate.Services
         public void Stop()
         {
             Interlocked.Increment(ref _generation);
-            try { _cts?.Cancel(); } catch { }
+            CancellationTokenSource? toCancel;
+            lock (_gate)
+            {
+                toCancel = _cts;
+                _cts = null;
+            }
+
+            // Cancel only — RunAsync's finally disposes the linked CTS it created.
+            try { toCancel?.Cancel(); } catch { }
             try { _clicks.Stop(); } catch { }
             Volatile.Write(ref _activeLoops, 0);
         }
@@ -49,19 +59,38 @@ namespace musicmate.Services
         {
             Stop();
             int gen = Volatile.Read(ref _generation);
-            _cts = CancellationTokenSource.CreateLinkedTokenSource(externalCt);
-            var ct = _cts.Token;
+            var linked = CancellationTokenSource.CreateLinkedTokenSource(externalCt);
+            lock (_gate)
+            {
+                _cts = linked;
+            }
+
+            var ct = linked.Token;
             Interlocked.Exchange(ref _activeLoops, 1);
 
             try
             {
                 beatsPerMeasure = Math.Max(1, beatsPerMeasure);
-                var clock = Stopwatch.StartNew();
-                long beatIndex = 0;
                 int activeTempo = Math.Clamp(
                     getTempoBpm?.Invoke() ?? tempoBpm,
                     NoteSessionService.MinTempo,
                     NoteSessionService.MaxTempo);
+
+                // Preload accented + unaccented click buffers before the grid starts so
+                // SoundPool/file I/O cannot stretch the first beats.
+                WarmupClicks(
+                    activeTempo,
+                    beatDurationPercent,
+                    accentedVolume,
+                    unaccentedVolume,
+                    accentedPitchHz,
+                    unaccentedPitchHz);
+
+                if (ct.IsCancellationRequested || Volatile.Read(ref _generation) != gen)
+                    return;
+
+                var clock = Stopwatch.StartNew();
+                long beatIndex = 0;
 
                 while (!ct.IsCancellationRequested && Volatile.Read(ref _generation) == gen)
                 {
@@ -72,6 +101,13 @@ namespace musicmate.Services
                     if (tempo != activeTempo)
                     {
                         activeTempo = tempo;
+                        WarmupClicks(
+                            activeTempo,
+                            beatDurationPercent,
+                            accentedVolume,
+                            unaccentedVolume,
+                            accentedPitchHz,
+                            unaccentedPitchHz);
                         clock.Restart();
                         beatIndex = 0;
                     }
@@ -107,8 +143,6 @@ namespace musicmate.Services
                     if (!tooLate)
                     {
                         int durationMs = Math.Max(20, (int)Math.Round(click.DurationSeconds * 1000.0));
-                        // Suppress window covers audible length + release + device start latency;
-                        // pitch-window guard is added inside SuppressCountInClickSelfSound.
                         int selfSoundMs = WaitingCountInLogic.ResolveClickSelfSoundDurationMs(durationMs);
                         long schedulerTick = Stopwatch.GetTimestamp();
                         var schedule = new MetronomeClickScheduleInfo(
@@ -116,8 +150,6 @@ namespace musicmate.Services
 
                         try
                         {
-                            // Arm self-sound suppress before the click reaches the speaker
-                            // so mic/pitch evaluation cannot score the first note from bleed.
                             if (beforeClickAsync != null)
                                 await beforeClickAsync(selfSoundMs, ct).ConfigureAwait(false);
 
@@ -125,6 +157,7 @@ namespace musicmate.Services
                                 break;
 
                             TriggerClick(
+                                gen,
                                 click.IsAccented,
                                 durationMs,
                                 click.Volume,
@@ -159,12 +192,50 @@ namespace musicmate.Services
             {
                 if (Volatile.Read(ref _generation) == gen)
                     Volatile.Write(ref _activeLoops, 0);
+
+                lock (_gate)
+                {
+                    if (ReferenceEquals(_cts, linked))
+                        _cts = null;
+                }
+
+                try { linked.Dispose(); } catch { }
+            }
+        }
+
+        private void WarmupClicks(
+            int tempoBpm,
+            int beatDurationPercent,
+            float accentedVolume,
+            float unaccentedVolume,
+            double accentedPitchHz,
+            double unaccentedPitchHz)
+        {
+            try
+            {
+                double msPerBeat = WaitingCountInLogic.MsPerBeat(tempoBpm);
+                int durationMs = Math.Max(
+                    20,
+                    (int)Math.Round(
+                        WaitingCountInLogic.ResolveClickDurationSeconds(beatDurationPercent, msPerBeat)
+                        * 1000.0));
+                _clicks.Warmup(
+                    accentedPitchHz,
+                    accentedVolume,
+                    unaccentedPitchHz,
+                    unaccentedVolume,
+                    durationMs);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[CountIn] warmup failed: {ex.Message}");
             }
         }
 
         /// <summary>
         /// Wait until the monotonic clock reaches the absolute beat time.
         /// Uses coarse delay plus spin/yield finish — Task.Delay alone quantizes to ~15 ms on Windows.
+        /// Remaining time is always recomputed from the Stopwatch (never chained from prior wakeups).
         /// </summary>
         internal static async Task WaitUntilAsync(Stopwatch clock, double targetMs, CancellationToken ct)
         {
@@ -177,7 +248,9 @@ namespace musicmate.Services
 
                 if (remaining > 25.0)
                 {
-                    await Task.Delay(TimeSpan.FromMilliseconds(remaining - 15.0), ct).ConfigureAwait(false);
+                    // Re-read remaining after each delay so OS timer jitter does not accumulate.
+                    int delayMs = Math.Max(1, (int)Math.Floor(remaining - 12.0));
+                    await Task.Delay(delayMs, ct).ConfigureAwait(false);
                     continue;
                 }
 
@@ -201,9 +274,11 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// Fire the click without blocking the beat grid on click length.
+        /// Fire the click on a worker so SoundPool/file work cannot stretch the absolute grid.
+        /// Generation + token are re-checked immediately before audio starts.
         /// </summary>
         private void TriggerClick(
+            int generation,
             bool accented,
             int durationMs,
             float volume,
@@ -211,16 +286,25 @@ namespace musicmate.Services
             CancellationToken ct,
             MetronomeClickScheduleInfo schedule)
         {
-            _ = _clicks.PlayClickAsync(accented, durationMs, volume, frequencyHz, ct, schedule)
-                .ContinueWith(
-                    t =>
-                    {
-                        if (t.IsFaulted && t.Exception != null)
-                            Debug.WriteLine($"[CountIn] click failed: {t.Exception.GetBaseException().Message}");
-                    },
-                    CancellationToken.None,
-                    TaskContinuationOptions.OnlyOnFaulted,
-                    TaskScheduler.Default);
+            _ = Task.Run(async () =>
+            {
+                if (ct.IsCancellationRequested || Volatile.Read(ref _generation) != generation)
+                    return;
+
+                try
+                {
+                    await _clicks.PlayClickAsync(accented, durationMs, volume, frequencyHz, ct, schedule)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Stopped.
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[CountIn] click failed: {ex.Message}");
+                }
+            }, CancellationToken.None);
         }
     }
 }

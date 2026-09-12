@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using musicmate.Diagnostics;
 using musicmate.Services;
 using musicmate.Utilities;
 
@@ -63,6 +64,7 @@ namespace musicmate.Pages
         protected override void                 OnAppearing()
         {
             base.OnAppearing();
+            AppLifecycleLog.Write("HomePage", "OnAppearing");
             _orientation?.AllowAutorotate();
             _session.PropertyChanged -= OnSessionPropertyChanged;
             _session.PropertyChanged += OnSessionPropertyChanged;
@@ -82,6 +84,7 @@ namespace musicmate.Pages
 
         protected override void                 OnDisappearing()
         {
+            AppLifecycleLog.Write("HomePage", "OnDisappearing");
             _session.PropertyChanged -= OnSessionPropertyChanged;
             base.OnDisappearing();
         }

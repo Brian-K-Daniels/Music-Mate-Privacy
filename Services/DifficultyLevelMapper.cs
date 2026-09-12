@@ -170,6 +170,7 @@ namespace musicmate.Services
         /// <summary>
         /// Applies interval cap, measure batch size, and instrument range for a child level
         /// without re-picking key, scale, or rhythm settings.
+        /// When Settings → Music is Fixed, skips note-range updates.
         /// </summary>
         public static void ApplyLevelDerivedSettings(int level, NoteSessionService session)
         {
@@ -177,6 +178,9 @@ namespace musicmate.Services
             session.MaxMelodicIntervalSemitones = ChildLevelProgression.MaxIntervalForLevel(level);
             session.ChildMeasureBatchSize = ChildLevelProgression.MeasureBatchSizeForLevel(
                 level, ChildLevelProgression.NoteCountForLevel(level));
+            if (!session.AllowsLevelToChangeMusicSettings)
+                return;
+
             // Snap to the level's automatic range unless the user customized limits —
             // expanding a stale narrow range left the first WhatToPlay→Music paint
             // with too few scale notes (one tonic only → no two-octave walk).
@@ -204,10 +208,15 @@ namespace musicmate.Services
 
             session.MaxMelodicIntervalSemitones = settings.MaxMelodicIntervalSemitones;
             session.ChildMeasureBatchSize = settings.MeasureBatchSize;
-            // Reset to the level's automatic range unless the user customized note limits.
-            session.ApplyAutomaticInstrumentRange(fullReset: !session.NoteRangeCustomized);
 
-            if (applyPracticeSettings)
+            bool allowMusic = session.AllowsLevelToChangeMusicSettings;
+            if (allowMusic)
+            {
+                // Reset to the level's automatic range unless the user customized note limits.
+                session.ApplyAutomaticInstrumentRange(fullReset: !session.NoteRangeCustomized);
+            }
+
+            if (applyPracticeSettings && allowMusic)
             {
                 session.AccidentalPercent = settings.AccidentalPercent;
                 session.SmallestRhythmNote = settings.SmallestRhythmNote;
@@ -217,7 +226,7 @@ namespace musicmate.Services
                 session.PracticeRestChancePercent = settings.RestChancePercent;
             }
 
-            if (applyKeyAndScale && applyPracticeSettings)
+            if (applyKeyAndScale && applyPracticeSettings && allowMusic)
                 session.ClearChildPracticeSettingsCustomization();
         }
 

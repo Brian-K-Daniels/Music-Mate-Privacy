@@ -80,6 +80,7 @@
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-android'">
     <LinkDescription Include="Platforms\Android\Linker.xml" />
+    <ProguardConfiguration Include="Platforms\Android\proguard.cfg" />
   </ItemGroup>
 
   <ItemGroup>

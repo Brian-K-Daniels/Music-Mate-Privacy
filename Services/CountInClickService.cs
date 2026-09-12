@@ -18,6 +18,7 @@ namespace musicmate.Services
         private readonly IAudioManager _audioManager;
         private readonly object _gate = new();
         private readonly Dictionary<ClickCacheKey, CachedClickSound> _cache = new();
+        private int _playEpoch;
 
 #if ANDROID
         private SoundPool? _soundPool;
@@ -29,6 +30,24 @@ namespace musicmate.Services
             _audioManager = audioManager;
         }
 
+        public void Warmup(
+            double accentedPitchHz,
+            float accentedVolume,
+            double unaccentedPitchHz,
+            float unaccentedVolume,
+            int durationMs)
+        {
+            int dur = Math.Clamp(durationMs, 20, 2000);
+            PrepareCached(
+                WaitingCountInSettings.ClampPitchHz(accentedPitchHz),
+                WaitingCountInSettings.ClampVolume(accentedVolume),
+                dur);
+            PrepareCached(
+                WaitingCountInSettings.ClampPitchHz(unaccentedPitchHz),
+                WaitingCountInSettings.ClampVolume(unaccentedVolume),
+                dur);
+        }
+
         public Task PlayClickAsync(
             bool accented,
             int durationMs,
@@ -37,7 +56,10 @@ namespace musicmate.Services
             CancellationToken ct,
             MetronomeClickScheduleInfo? schedule = null)
         {
-            _ = ct;
+            if (ct.IsCancellationRequested)
+                return Task.CompletedTask;
+
+            int epochAtStart = Volatile.Read(ref _playEpoch);
             long triggerTick = Stopwatch.GetTimestamp();
 
             double hz = WaitingCountInSettings.ClampPitchHz(frequencyHz);
@@ -47,10 +69,13 @@ namespace musicmate.Services
 
             try
             {
+                if (!MayPlay(epochAtStart, ct))
+                    return Task.CompletedTask;
+
 #if ANDROID
-                PlayAndroidCached(key, hz, vol, dur);
+                PlayAndroidCached(key, hz, vol, dur, epochAtStart, ct);
 #else
-                PlayWindowsCached(key, hz, vol, dur);
+                PlayWindowsCached(key, hz, vol, dur, epochAtStart, ct);
 #endif
             }
             catch (Exception ex)
@@ -78,6 +103,7 @@ namespace musicmate.Services
 
         public void Stop()
         {
+            Interlocked.Increment(ref _playEpoch);
             lock (_gate)
             {
 #if ANDROID
@@ -85,11 +111,27 @@ namespace musicmate.Services
 #endif
                 foreach (var cached in _cache.Values)
                     cached.DisposePlayer();
-                _cache.Clear();
+                // Keep PCM/WAV buffers so the next Count-In does not re-decode from scratch.
             }
         }
 
-        private CachedClickSound GetOrCreateCached(ClickCacheKey key, double hz, float volume, int durationMs)
+        private void PrepareCached(double hz, float volume, int durationMs)
+        {
+            var key = ClickCacheKey.From(hz, volume, durationMs);
+            lock (_gate)
+            {
+                _ = GetOrCreateCached_NoLock(key, hz, volume, durationMs);
+#if ANDROID
+                _ = GetOrLoadSoundId_NoLock(key, _cache[key].Pcm);
+#endif
+            }
+        }
+
+        private bool MayPlay(int epochAtStart, CancellationToken ct)
+            => !ct.IsCancellationRequested
+               && Volatile.Read(ref _playEpoch) == epochAtStart;
+
+        private CachedClickSound GetOrCreateCached_NoLock(ClickCacheKey key, double hz, float volume, int durationMs)
         {
             if (_cache.TryGetValue(key, out var existing))
                 return existing;
@@ -103,15 +145,33 @@ namespace musicmate.Services
         }
 
 #if ANDROID
-        private void PlayAndroidCached(ClickCacheKey key, double hz, float volume, int durationMs)
+        private void PlayAndroidCached(
+            ClickCacheKey key,
+            double hz,
+            float volume,
+            int durationMs,
+            int epochAtStart,
+            CancellationToken ct)
         {
-            var cached = GetOrCreateCached(key, hz, volume, durationMs);
-            int soundId = GetOrLoadSoundId(key, cached.Pcm);
-            if (soundId == 0 || _soundPool == null)
+            int soundId;
+            SoundPool? pool;
+            lock (_gate)
+            {
+                if (!MayPlay(epochAtStart, ct))
+                    return;
+
+                var cached = GetOrCreateCached_NoLock(key, hz, volume, durationMs);
+                soundId = GetOrLoadSoundId_NoLock(key, cached.Pcm);
+                pool = _soundPool;
+            }
+
+            if (soundId == 0 || pool == null)
+                return;
+            if (!MayPlay(epochAtStart, ct))
                 return;
 
             // Non-blocking — suitable for 150+ BPM metronome clicks.
-            _soundPool.Play(soundId, volume, volume, 1, 0, 1f);
+            pool.Play(soundId, volume, volume, 1, 0, 1f);
         }
 
         private void EnsureSoundPool_NoLock()
@@ -131,29 +191,22 @@ namespace musicmate.Services
             _soundPool = poolBuilder.Build();
         }
 
-        private int GetOrLoadSoundId(ClickCacheKey key, short[] pcm)
+        private int GetOrLoadSoundId_NoLock(ClickCacheKey key, short[] pcm)
         {
             if (_soundIds.TryGetValue(key, out int existing) && existing != 0)
                 return existing;
 
-            lock (_gate)
-            {
-                if (_soundIds.TryGetValue(key, out existing) && existing != 0)
-                    return existing;
-
-                EnsureSoundPool_NoLock();
-                byte[] wav = BuildWavBytes(pcm);
-                string cacheDir = Path.Combine(FileSystem.CacheDirectory, "metronome_clicks");
-                Directory.CreateDirectory(cacheDir);
-                string path = Path.Combine(cacheDir, $"{key.HzMilli}_{key.VolumeMilli}_{key.DurationMs}.wav");
-                if (!File.Exists(path))
-                    File.WriteAllBytes(path, wav);
-                // SoundPool.Load expects a path or FileDescriptor — not a byte[].
-                int soundId = _soundPool!.Load(path, 1);
-                if (soundId != 0)
-                    _soundIds[key] = soundId;
-                return soundId;
-            }
+            EnsureSoundPool_NoLock();
+            byte[] wav = BuildWavBytes(pcm);
+            string cacheDir = Path.Combine(FileSystem.CacheDirectory, "metronome_clicks");
+            Directory.CreateDirectory(cacheDir);
+            string path = Path.Combine(cacheDir, $"{key.HzMilli}_{key.VolumeMilli}_{key.DurationMs}.wav");
+            if (!File.Exists(path))
+                File.WriteAllBytes(path, wav);
+            int soundId = _soundPool!.Load(path, 1);
+            if (soundId != 0)
+                _soundIds[key] = soundId;
+            return soundId;
         }
 
         private void ReleaseSoundPool_NoLock()
@@ -166,13 +219,25 @@ namespace musicmate.Services
             _soundPool = null;
         }
 #else
-        private void PlayWindowsCached(ClickCacheKey key, double hz, float volume, int durationMs)
+        private void PlayWindowsCached(
+            ClickCacheKey key,
+            double hz,
+            float volume,
+            int durationMs,
+            int epochAtStart,
+            CancellationToken ct)
         {
-            var cached = GetOrCreateCached(key, hz, volume, durationMs);
             lock (_gate)
             {
+                if (!MayPlay(epochAtStart, ct))
+                    return;
+
+                var cached = GetOrCreateCached_NoLock(key, hz, volume, durationMs);
                 cached.WavStream.Position = 0;
                 cached.DisposePlayer();
+                if (!MayPlay(epochAtStart, ct))
+                    return;
+
                 cached.Player = _audioManager.CreatePlayer(cached.WavStream);
                 if (cached.Player == null)
                     return;

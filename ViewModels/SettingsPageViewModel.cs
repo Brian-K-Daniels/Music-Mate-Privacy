@@ -501,6 +501,11 @@ namespace musicmate.ViewModels
         public List<string> SmallestRhythmNoteOptions { get; } = new() { "Quarter", "Eighth", "Sixteenth" };
         public List<string> RhythmModeOptions { get; } = new() { "Simple", "Mixed" };
         public List<string> SyncopationSettingOptions { get; } = new() { "None", "Simple", "Full" };
+        public List<string> MusicSettingsLevelPolicyOptions { get; } = new()
+        {
+            NoteSessionService.MusicSettingsLevelPolicyFixed,
+            NoteSessionService.MusicSettingsLevelPolicyMayBeChangedByLevel,
+        };
         public List<string> NoteNameDisplayOptions { get; } = new() { "Current only", "All notes", "Off" };
 
         public List<double> AboutFontSizeOptions { get; } = AboutFontSizes.CreateList();
@@ -614,6 +619,9 @@ namespace musicmate.ViewModels
             "musicmate.ShowConductorCues", NoteSessionService.DefaultShowConductorCues);
         private bool _showSignaturesOnBothStaffs =
             Preferences.Get("musicmate.ShowSignaturesOnBothStaffs", true);
+        private string _musicSettingsLevelPolicy = Preferences.Get(
+            "musicmate.MusicSettingsLevelPolicy",
+            NoteSessionService.DefaultMusicSettingsLevelPolicy);
         public string NoteNameDisplay
         {
             get => _session?.NoteNameDisplay ?? _noteNameDisplay;
@@ -756,6 +764,28 @@ namespace musicmate.ViewModels
                     Preferences.Set("musicmate.ShowSignaturesOnBothStaffs", value);
                     OnPropertyChanged(nameof(ShowSignaturesOnBothStaffs));
                 }
+            }
+        }
+
+        public string MusicSettingsLevelPolicy
+        {
+            get => _session?.MusicSettingsLevelPolicy ?? _musicSettingsLevelPolicy;
+            set
+            {
+                if (string.IsNullOrWhiteSpace(value)) return;
+                if ((_session?.MusicSettingsLevelPolicy ?? _musicSettingsLevelPolicy) == value) return;
+                if (_session != null)
+                {
+                    _session.MusicSettingsLevelPolicy = value;
+                    OnPropertyChanged(nameof(MusicSettingsLevelPolicy));
+                }
+                else
+                {
+                    _musicSettingsLevelPolicy = value;
+                    Preferences.Set("musicmate.MusicSettingsLevelPolicy", value);
+                    OnPropertyChanged(nameof(MusicSettingsLevelPolicy));
+                }
+                NotifyFactoryDefaultsMayHaveChanged();
             }
         }
 

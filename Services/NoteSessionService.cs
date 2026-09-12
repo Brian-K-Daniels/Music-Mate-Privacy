@@ -121,8 +121,15 @@ namespace musicmate.Services
         private const string PrefNoteNameDisplayKey = "musicmate.NoteNameDisplay";
         private const string PrefShowConductorCuesKey = "musicmate.ShowConductorCues";
         private const string PrefShowSignaturesOnBothStaffsKey = "musicmate.ShowSignaturesOnBothStaffs";
+        private const string PrefMusicSettingsLevelPolicyKey = "musicmate.MusicSettingsLevelPolicy";
         /// <summary>Factory default for Settings → Conductor Cues.</summary>
         public const bool DefaultShowConductorCues = true;
+        /// <summary>Settings → Music: Level must not change other Music settings.</summary>
+        public const string MusicSettingsLevelPolicyFixed = "Fixed";
+        /// <summary>Settings → Music: Level may adjust other Music settings (factory default).</summary>
+        public const string MusicSettingsLevelPolicyMayBeChangedByLevel = "May be changed by Level";
+        /// <summary>Factory default for <see cref="MusicSettingsLevelPolicy"/>.</summary>
+        public const string DefaultMusicSettingsLevelPolicy = MusicSettingsLevelPolicyMayBeChangedByLevel;
         private string _meterTimeSignature = SessionPreferences.Get(PrefMeterTimeSignatureKey, "4/4");
         private string _smallestRhythmNote = SessionPreferences.Get(PrefSmallestRhythmNoteKey, "Quarter");
         private string _rhythmMode = SessionPreferences.Get(PrefRhythmModeKey, "Simple");
@@ -131,6 +138,8 @@ namespace musicmate.Services
         private bool _showConductorCues = SessionPreferences.Get(PrefShowConductorCuesKey, DefaultShowConductorCues);
         private bool _showSignaturesOnBothStaffs =
             SessionPreferences.Get(PrefShowSignaturesOnBothStaffsKey, true);
+        private string _musicSettingsLevelPolicy = NormalizeMusicSettingsLevelPolicy(
+            SessionPreferences.Get(PrefMusicSettingsLevelPolicyKey, DefaultMusicSettingsLevelPolicy));
 
         /// <summary>
         /// Time signature for rhythm generation.
@@ -196,6 +205,38 @@ namespace musicmate.Services
                 OnPropertyChanged(nameof(RhythmMode));
             }
         }
+        /// <summary>
+        /// Settings → Music policy for whether Level changes may rewrite other Music settings.
+        /// Values: <see cref="MusicSettingsLevelPolicyFixed"/> or
+        /// <see cref="MusicSettingsLevelPolicyMayBeChangedByLevel"/>. Never changed by Level apply.
+        /// </summary>
+        public string MusicSettingsLevelPolicy
+        {
+            get => _musicSettingsLevelPolicy;
+            set
+            {
+                var normalized = NormalizeMusicSettingsLevelPolicy(value);
+                if (_musicSettingsLevelPolicy == normalized) return;
+                _musicSettingsLevelPolicy = normalized;
+                SessionPreferences.Set(PrefMusicSettingsLevelPolicyKey, normalized);
+                OnPropertyChanged(nameof(MusicSettingsLevelPolicy));
+                OnPropertyChanged(nameof(AllowsLevelToChangeMusicSettings));
+            }
+        }
+        /// <summary>
+        /// True when Level changes may update Settings → Music fields (Accidental %, range,
+        /// rhythm mode, smallest note, syncopation). False when policy is Fixed.
+        /// </summary>
+        public bool AllowsLevelToChangeMusicSettings
+            => !string.Equals(
+                _musicSettingsLevelPolicy,
+                MusicSettingsLevelPolicyFixed,
+                StringComparison.OrdinalIgnoreCase);
+
+        private static string NormalizeMusicSettingsLevelPolicy(string? value)
+            => string.Equals(value, MusicSettingsLevelPolicyFixed, StringComparison.OrdinalIgnoreCase)
+                ? MusicSettingsLevelPolicyFixed
+                : MusicSettingsLevelPolicyMayBeChangedByLevel;
         /// <summary>
         /// Syncopation level for rhythm generation.
         /// "None" = on-beat sequential fill; "Simple" = mild off-beat accents;
@@ -681,8 +722,53 @@ namespace musicmate.Services
         }      
         public void RecordAttemptOutcome(in NoteAttemptOutcome outcome)
         {
-            _sessionAttemptOutcomes.Add(outcome);
+            var toStore = outcome;
+            if (!outcome.IsRest
+                && outcome.NoteIndex >= 0
+                && outcome.OverallCorrect
+                && string.IsNullOrEmpty(outcome.WrongReason))
+            {
+                toStore = SupersedeEarlyOutcomesForAcceptedNote(outcome);
+            }
 
+            _sessionAttemptOutcomes.Add(toStore);
+            ApplySessionNoteStatsForOutcome(toStore);
+        }
+
+        /// <summary>
+        /// Removes Early / EarlyDuringSustain rows for <paramref name="accepting"/>.NoteIndex
+        /// and undoes their session aggregates so final accept is the sole attempt for that slot.
+        /// Sets <see cref="NoteAttemptOutcome.HadEarlyCandidate"/> — meaning a prior early
+        /// candidate existed, not that the accepted TimingErrorMs is negative.
+        /// </summary>
+        private NoteAttemptOutcome SupersedeEarlyOutcomesForAcceptedNote(in NoteAttemptOutcome accepting)
+        {
+            bool hadEarlyCandidate = accepting.HadEarlyCandidate;
+            for (int i = _sessionAttemptOutcomes.Count - 1; i >= 0; i--)
+            {
+                var prior = _sessionAttemptOutcomes[i];
+                if (prior.NoteIndex != accepting.NoteIndex)
+                    continue;
+                if (prior.WrongReason is not ("Early" or "EarlyDuringSustain"))
+                    continue;
+
+                hadEarlyCandidate = true;
+                UndoSessionNoteStatsForOutcome(prior);
+                _sessionAttemptOutcomes.RemoveAt(i);
+            }
+
+            if (!hadEarlyCandidate)
+                return accepting;
+
+            return accepting with
+            {
+                HadEarlyCandidate = true,
+                WrongReason = NoteAttemptTimingDiagnostics.HadEarlyCandidateReason,
+            };
+        }
+
+        private void ApplySessionNoteStatsForOutcome(in NoteAttemptOutcome outcome)
+        {
             if (outcome.IsRest)
             {
                 if (outcome.OverallCorrect)
@@ -735,6 +821,40 @@ namespace musicmate.Services
                     _lastRandomWrongUtc[writtenName] = now;
                 }
             }
+
+            _sessionNoteStats[writtenName] = agg;
+        }
+
+        private void UndoSessionNoteStatsForOutcome(in NoteAttemptOutcome outcome)
+        {
+            if (outcome.IsRest)
+            {
+                if (outcome.OverallCorrect)
+                    _sessionRestCorrect = Math.Max(0, _sessionRestCorrect - 1);
+                else
+                    _sessionRestWrong = Math.Max(0, _sessionRestWrong - 1);
+                return;
+            }
+
+            var writtenName = outcome.ExpectedWrittenNoteName;
+            if (string.IsNullOrEmpty(writtenName)
+                || !_sessionNoteStats.TryGetValue(writtenName, out var agg))
+                return;
+
+            if (outcome.PitchCorrect)
+                agg.PitchCorrect = Math.Max(0, agg.PitchCorrect - 1);
+            else
+                agg.PitchWrong = Math.Max(0, agg.PitchWrong - 1);
+
+            if (outcome.TimingCorrect == true)
+                agg.TimingCorrect = Math.Max(0, agg.TimingCorrect - 1);
+            else if (outcome.TimingCorrect == false)
+                agg.TimingWrong = Math.Max(0, agg.TimingWrong - 1);
+
+            if (outcome.OverallCorrect)
+                agg.OverallCorrect = Math.Max(0, agg.OverallCorrect - 1);
+            else
+                agg.OverallWrong = Math.Max(0, agg.OverallWrong - 1);
 
             _sessionNoteStats[writtenName] = agg;
         }
@@ -1251,7 +1371,9 @@ namespace musicmate.Services
                 var clamped = Math.Clamp(value, 0, 100);
                 if (_childLevel == clamped) return;
                 _childLevel = clamped;
-                ApplyAutomaticInstrumentRange(fullReset: false);
+                // Settings → Music "Fixed" freezes note range across Level changes.
+                if (AllowsLevelToChangeMusicSettings)
+                    ApplyAutomaticInstrumentRange(fullReset: false);
                 OnPropertyChanged(nameof(ChildLevel));
                 NotifyMasterySettingsChanged();
             }
@@ -2554,6 +2676,19 @@ namespace musicmate.Services
         }
 
         /// <summary>
+        /// Sets <see cref="_conductorOriginMs"/> so note <paramref name="noteIndex"/>'s
+        /// expected onset equals <paramref name="actualMs"/> (this attack is on-time).
+        /// </summary>
+        private void RebaseConductorOriginToOnset(int noteIndex, double actualMs)
+        {
+            double beat = GetConductorExpectedBeat(noteIndex);
+            double msPerBeat = ConductorOnsetTiming.MsPerBeat(GetConductorTimingBpm());
+            _conductorOriginMs = actualMs - beat * msPerBeat;
+            _musicalTimelinePaused = false;
+            _rhythmGateUntilMs = 0;
+        }
+
+        /// <summary>
         /// Re-anchors expected onsets so the current note is due at resume time.
         /// Conductor beat/measure follow the current note — they are not reset to beat 1.
         /// </summary>
@@ -2566,9 +2701,7 @@ namespace musicmate.Services
             _musicalTimelinePaused = false;
             _rhythmGateUntilMs = 0;
             double now = GetRawSessionElapsedMs();
-            double beat = GetConductorExpectedBeat(idx);
-            double msPerBeat = ConductorOnsetTiming.MsPerBeat(GetConductorTimingBpm());
-            _conductorOriginMs = now - beat * msPerBeat;
+            RebaseConductorOriginToOnset(idx, now);
             var (measure, beatNum) = GetConductorMeasureBeat(idx);
             LogPauseResume(
                 "MusicalResumeRebased",
@@ -2740,7 +2873,10 @@ namespace musicmate.Services
 
 #if DEBUG
         private bool _firstSoundTimingDiagLogged;
+#endif
 
+        // Test / diagnostic accessors — available in Release so musicmate.Tests can build
+        // against either configuration (methods remain internal).
         internal int GetConductorTimingBpmPublic() => GetConductorTimingBpm();
         internal double GetSessionElapsedMsPublic() => GetSessionElapsedMs();
         internal double GetRawSessionElapsedMsPublic() => GetRawSessionElapsedMs();
@@ -2750,7 +2886,6 @@ namespace musicmate.Services
             => GetConductorExpectedBeat(noteIndex);
         internal (int Measure, int Beat) GetConductorMeasureBeatPublic(int noteIndex)
             => GetConductorMeasureBeat(noteIndex);
-#endif
 
         internal NoteStateChangeDiagnostics.NoteStateDiagContext BuildNoteStateDiagContext(
             int noteIndex,
@@ -2842,6 +2977,7 @@ namespace musicmate.Services
             return NoteDuration.Sixteenth.ToString();
         }
         private NoteAttemptOutcome BuildNoteOutcome(
+            int noteIndex,
             NoteInfo targetNote,
             string heardNote,
             int cents,
@@ -2855,6 +2991,7 @@ namespace musicmate.Services
         {
             return new NoteAttemptOutcome
             {
+                NoteIndex = noteIndex,
                 ExpectedWrittenNoteName = targetNote.Name,
                 ActualDetectedNoteName = heardNote is "-" or "" ? null : heardNote,
                 IsRest = targetNote.IsRest,
@@ -2891,6 +3028,7 @@ namespace musicmate.Services
 
             RecordAttemptOutcome(new NoteAttemptOutcome
             {
+                NoteIndex = -1,
                 IsRest = true,
                 ExpectedWrittenNoteName = "REST",
                 ExpectedDuration = BeatsToDurationLabel(restBeats),
@@ -3034,6 +3172,22 @@ namespace musicmate.Services
                     }
 
                     string reason = latePitchMatch ? "Late" : "Missed";
+
+                    // First note defines the conductor origin. Never score it as catch-up Late —
+                    // rebase so this attack is on-time and let UpdateFeedback accept normally.
+                    if (idx == 0 && latePitchMatch)
+                    {
+                        RebaseConductorOriginToOnset(idx, actualMs);
+                        LogConductorTimingDecision(
+                            idx, targetNote, heardNote,
+                            detectedMidi: 0, actualMs,
+                            GetConductorExpectedOnsetMs(idx), GetConductorExpectedBeat(idx),
+                            timing.EarlyToleranceMs, timing.LateToleranceMs,
+                            pitchAccepted: true, timingAccepted: true,
+                            advanceReason: "rebased-first-note-origin");
+                        return false;
+                    }
+
                     RecordConductorTimingFailure(
                         idx, targetNote, heardNote, cents, timing, actualMs,
                         reason, pitchCorrect: latePitchMatch);
@@ -3082,7 +3236,7 @@ namespace musicmate.Services
                 advanceReason: reason == "Late" ? "advanced-late-conductor" : "advanced-missed-conductor");
 
             var outcome = BuildNoteOutcome(
-                targetNote, heardNote, cents,
+                idx, targetNote, heardNote, cents,
                 pitchCorrect: pitchCorrect, timingCorrect: false, reason: reason,
                 actualMs: actualMs, expectedStartMs: timing.ExpectedMs,
                 timingErrorMs: actualMs - timing.ExpectedMs,
@@ -3343,6 +3497,103 @@ namespace musicmate.Services
 
         private float _lastDetectionRms;
 
+        /// <summary>
+        /// Temporary Release Android logcat line for first-note accept/reject diagnosis.
+        /// No-op after the first note is accepted, or when not on note index 0.
+        /// </summary>
+        public void LogFirstNoteAndroidReleaseDiagnostic(
+            string stage,
+            double freq,
+            (bool correct, int cents)? evaluateResult = null,
+            bool? pitchPassed = null,
+            bool? timingPassed = null,
+            bool accepted = false,
+            string? rejectReason = null,
+            double? timingDeltaMs = null,
+            string? earlyLate = null,
+            string? countInOrConductorState = null,
+            string? extra = null)
+        {
+            if (CurrentNoteIndex != 0 || !FirstNoteAndroidReleaseLog.StillWaitingForFirstAccept)
+                return;
+
+            string? expectedWritten = null;
+            int? expectedMidi = null;
+            double? expectedHz = null;
+            string? heard = null;
+            int? cents = evaluateResult?.cents;
+
+            if (NotesToDraw.Count > 0)
+            {
+                var target = NotesToDraw[0];
+                expectedWritten = ResolveWrittenEvaluationName(target);
+                expectedMidi = ResolveWrittenEvaluationMidi(target);
+                expectedHz = MidiToFreq(expectedMidi.Value + GetInstrumentTransposeOffset());
+            }
+
+            if (freq > 0)
+            {
+                var detectedMidi = (int)Math.Round(69 + 12 * Math.Log(freq / 440.0, 2));
+                var detMidiWritten = detectedMidi - GetInstrumentTransposeOffset();
+                heard = MidiToNoteName(detMidiWritten, KeyUsesFlats(Key));
+
+                if (!cents.HasValue)
+                {
+                    var nearestFreq = MidiToFreq(detectedMidi);
+                    cents = (int)Math.Round(1200 * Math.Log(freq / nearestFreq, 2));
+                }
+
+                if (!pitchPassed.HasValue && evaluateResult.HasValue)
+                    pitchPassed = evaluateResult.Value.correct;
+                else if (!pitchPassed.HasValue && expectedMidi.HasValue)
+                {
+                    var (pcMatch, withinTol, evalCents) = EvaluatePitchMatch(freq);
+                    pitchPassed = pcMatch && withinTol;
+                    cents = evalCents;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(countInOrConductorState))
+            {
+                var cueParts = new List<string>(3);
+                if (IsListeningClockRunning)
+                    cueParts.Add("clockRunning");
+                else
+                    cueParts.Add("clockNotArmed");
+                if (IsConductorOnsetGateEnabled())
+                    cueParts.Add("conductorOn");
+                if (IsAwaitingNoteOn)
+                    cueParts.Add(GetNoteOnGateState());
+                if (ShouldIgnoreAudio(DateTime.UtcNow))
+                    cueParts.Add(GetAudioCooldownState());
+                countInOrConductorState = string.Join('+', cueParts);
+            }
+
+            // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+            FirstNoteAndroidReleaseLog.Log(
+                stage: stage,
+                isFirstNote: true,
+                expectedWritten: expectedWritten,
+                expectedMidi: expectedMidi,
+                heardNote: heard,
+                heardHz: freq > 0 ? freq : null,
+                expectedHz: expectedHz,
+                pitchErrorCents: cents,
+                rms: _lastDetectionRms > 0 ? _lastDetectionRms : null,
+                confidence: PitchDetectionService.LastDetectionClarity > 0
+                    ? PitchDetectionService.LastDetectionClarity
+                    : null,
+                timingDeltaMs: timingDeltaMs,
+                earlyLate: earlyLate,
+                pitchPassed: pitchPassed,
+                timingPassed: timingPassed,
+                accepted: accepted,
+                rejectReason: rejectReason,
+                tempoBpm: Tempo,
+                countInOrConductorState: countInOrConductorState,
+                extra: extra);
+        }
+
         public void LogNoteRejectedIfPitchIdentified(
             double freq,
             int cents,
@@ -3511,6 +3762,14 @@ namespace musicmate.Services
                     result.cents,
                     "AudioCooldown",
                     debounceState: GetAudioCooldownState());
+                // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                LogFirstNoteAndroidReleaseDiagnostic(
+                    "grade-audioCooldown",
+                    freq,
+                    result,
+                    pitchPassed: result.correct,
+                    accepted: false,
+                    rejectReason: "AudioCooldown");
                 return false;
             }
 
@@ -3518,6 +3777,14 @@ namespace musicmate.Services
             if (IsAwaitingNoteOn)
             {
                 LogNoteOnGateRejectionIfPitchIdentified(freq, result.cents);
+                // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                LogFirstNoteAndroidReleaseDiagnostic(
+                    "grade-awaitingNoteOn",
+                    freq,
+                    result,
+                    pitchPassed: result.correct,
+                    accepted: false,
+                    rejectReason: GetNoteOnRejectionReason());
                 return false;
             }
 
@@ -3673,7 +3940,7 @@ namespace musicmate.Services
                                 conductorLateTolMs),
                             debounceState: "MarkedTimingWrong");
                         var outcome = BuildNoteOutcome(
-                            targetNote, heardNote, result.cents,
+                            idx, targetNote, heardNote, result.cents,
                             pitchCorrect: true, timingCorrect: false, reason: reason,
                             actualMs: actualMs, expectedStartMs: conductorExpectedMs,
                             timingErrorMs: actualMs - conductorExpectedMs,
@@ -3684,6 +3951,17 @@ namespace musicmate.Services
                             pitchCorrect: true, timingCorrect: false,
                             expectedMsOverride: conductorExpectedMs,
                             toleranceMs: conductorEarlyTolMs);
+                        // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                        LogFirstNoteAndroidReleaseDiagnostic(
+                            "grade-tooEarly",
+                            freq,
+                            result,
+                            pitchPassed: true,
+                            timingPassed: false,
+                            accepted: false,
+                            rejectReason: "TooEarly",
+                            timingDeltaMs: actualMs - conductorExpectedMs,
+                            earlyLate: "early");
                         return true;
                     }
 
@@ -3697,6 +3975,18 @@ namespace musicmate.Services
                             conductorEarlyTolMs,
                             conductorLateTolMs),
                         debounceState: GetWrongDebounceState(idx));
+                    // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                    LogFirstNoteAndroidReleaseDiagnostic(
+                        "grade-tooEarly-debounce",
+                        freq,
+                        result,
+                        pitchPassed: true,
+                        timingPassed: false,
+                        accepted: false,
+                        rejectReason: "TooEarly",
+                        timingDeltaMs: actualMs - conductorExpectedMs,
+                        earlyLate: "early",
+                        extra: GetWrongDebounceState(idx));
                     return false;
                 }
 
@@ -3706,6 +3996,17 @@ namespace musicmate.Services
                     conductorEarlyTolMs, conductorLateTolMs,
                     pitchAccepted: false, timingAccepted: false,
                     advanceReason: "blocked-early-wrong-pitch-ignored");
+                // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                LogFirstNoteAndroidReleaseDiagnostic(
+                    "grade-tooEarly-wrongPitchIgnored",
+                    freq,
+                    result,
+                    pitchPassed: false,
+                    timingPassed: false,
+                    accepted: false,
+                    rejectReason: "TooEarlyWrongPitchIgnored",
+                    timingDeltaMs: actualMs - conductorExpectedMs,
+                    earlyLate: "early");
                 return false;
             }
 
@@ -3740,13 +4041,24 @@ namespace musicmate.Services
                                 inRestPhase ? "TooEarly" : "EarlyDuringSustain"),
                             debounceState: "MarkedTimingWrong");
                         var outcome = BuildNoteOutcome(
-                            targetNote, heardNote, result.cents,
+                            idx, targetNote, heardNote, result.cents,
                             pitchCorrect: true, timingCorrect: false, reason: reason,
                             actualMs: actualMs, expectedStartMs: _rhythmGateUntilMs,
                             timingErrorMs: actualMs - _rhythmGateUntilMs);
                         RecordAttemptOutcome(outcome);
                         TryEnqueueTimingWrong(targetNote, heardNote, actualMs, reason,
                             pitchCorrect: true, timingCorrect: false);
+                        // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                        LogFirstNoteAndroidReleaseDiagnostic(
+                            "grade-rhythmGate",
+                            freq,
+                            result,
+                            pitchPassed: true,
+                            timingPassed: false,
+                            accepted: false,
+                            rejectReason: reason,
+                            timingDeltaMs: actualMs - _rhythmGateUntilMs,
+                            earlyLate: "early");
                         return true;
                     }
 
@@ -3762,6 +4074,18 @@ namespace musicmate.Services
                             null,
                             inRestPhase ? "TooEarly" : "EarlyDuringSustain"),
                         debounceState: GetWrongDebounceState(idx));
+                    // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                    LogFirstNoteAndroidReleaseDiagnostic(
+                        "grade-rhythmGate-debounce",
+                        freq,
+                        result,
+                        pitchPassed: true,
+                        timingPassed: false,
+                        accepted: false,
+                        rejectReason: reason,
+                        timingDeltaMs: actualMs - _rhythmGateUntilMs,
+                        earlyLate: "early",
+                        extra: GetWrongDebounceState(idx));
                     return false;
                 }
 
@@ -3777,11 +4101,33 @@ namespace musicmate.Services
                         idx, curFeedback, result.cents, "WrongPitch", heardNote))
                 {
                     RecordAttemptOutcome(BuildNoteOutcome(
-                        targetNote, heardNote, result.cents,
+                        idx, targetNote, heardNote, result.cents,
                         pitchCorrect: false, timingCorrect: true, reason: "WrongPitch",
                         actualMs: actualMs));
+                    // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                    LogFirstNoteAndroidReleaseDiagnostic(
+                        "grade-wrongPitch",
+                        freq,
+                        result,
+                        pitchPassed: false,
+                        timingPassed: true,
+                        accepted: false,
+                        rejectReason: "WrongPitch",
+                        timingDeltaMs: conductorGateEnabled ? actualMs - conductorExpectedMs : null,
+                        earlyLate: conductorGateEnabled
+                            ? (actualMs < conductorExpectedMs ? "early" : "late")
+                            : null);
                     return true;
                 }
+                // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                LogFirstNoteAndroidReleaseDiagnostic(
+                    "grade-wrongPitch-debounce",
+                    freq,
+                    result,
+                    pitchPassed: false,
+                    accepted: false,
+                    rejectReason: "WrongPitch",
+                    extra: GetWrongDebounceState(idx));
                 return false;
             }
             if (result.correct)
@@ -3794,7 +4140,7 @@ namespace musicmate.Services
                 RecordOnsetIfNeeded(idx);
 
                 RecordAttemptOutcome(BuildNoteOutcome(
-                    targetNote, heardNote, result.cents,
+                    idx, targetNote, heardNote, result.cents,
                     pitchCorrect: true, timingCorrect: timingOk, reason: string.Empty,
                     actualMs: actualMs,
                     expectedStartMs: conductorGateEnabled
@@ -3839,6 +4185,22 @@ namespace musicmate.Services
                 // Clear wrong-debounce for this index on correct
                 _lastWrongTimePerIndex.Remove(idx);
 
+                // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                LogFirstNoteAndroidReleaseDiagnostic(
+                    "grade-accepted",
+                    freq,
+                    result,
+                    pitchPassed: true,
+                    timingPassed: timingOk,
+                    accepted: true,
+                    rejectReason: null,
+                    timingDeltaMs: conductorGateEnabled ? actualMs - conductorExpectedMs : null,
+                    earlyLate: !conductorGateEnabled
+                        ? null
+                        : actualMs < conductorExpectedMs
+                            ? "early"
+                            : actualMs > conductorExpectedMs ? "late" : "onTime");
+
                 // Move CurrentNoteIndex to the next note (in order) — at most one advance per call
                 AssignCurrentNoteIndex(idx + 1, "Accepted correct note");
                 if (CurrentNoteIndex >= NotesToDraw.Count)
@@ -3866,6 +4228,19 @@ namespace musicmate.Services
                 "CentsOutOfTolerance",
                 debounceState: GetWrongDebounceState(idx),
                 extra: $"PitchClassMatch=true EvaluateCorrect={result.correct}");
+            // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+            LogFirstNoteAndroidReleaseDiagnostic(
+                "grade-centsOutOfTolerance",
+                freq,
+                result,
+                pitchPassed: false,
+                accepted: false,
+                rejectReason: "CentsOutOfTolerance",
+                timingDeltaMs: conductorGateEnabled ? actualMs - conductorExpectedMs : null,
+                earlyLate: conductorGateEnabled
+                    ? (actualMs < conductorExpectedMs ? "early" : "late")
+                    : null,
+                extra: GetWrongDebounceState(idx));
             return false;
             }
             finally

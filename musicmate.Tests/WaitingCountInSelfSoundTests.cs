@@ -94,6 +94,40 @@ public class WaitingCountInSelfSoundTests : IDisposable
     }
 
     [Fact]
+    public void ShouldAccept_PlayerE4_WhenUnaccentedClickIsE6_TwoOctavesAway()
+    {
+        // Regression: default unaccented click E6 (1318.5 Hz) must not reject concert E4
+        // (~329.6 Hz) as "ClickSelfSound" — that false positive blocked Bb-clarinet written F#4.
+        const double playerE4 = 327.7;
+        Assert.False(
+            WaitingCountInLogic.IsNearCountInClickFrequency(
+                playerE4,
+                WaitingCountInSettings.DefaultAccentedPitchHz,
+                WaitingCountInSettings.DefaultUnaccentedPitchHz));
+        Assert.True(
+            WaitingCountInLogic.ShouldAcceptFirstNoteToEndCountIn(
+                evaluateCorrect: true,
+                countInActive: true,
+                currentNoteIndex: 0,
+                withinSelfSoundSuppressWindow: true,
+                heardHz: playerE4,
+                accentedClickHz: WaitingCountInSettings.DefaultAccentedPitchHz,
+                unaccentedClickHz: WaitingCountInSettings.DefaultUnaccentedPitchHz));
+    }
+
+    [Fact]
+    public void IsNearCountInClick_StillRejectsOneOctaveMcLeodError()
+    {
+        // E5 is one octave below default unaccented E6 — still treat as click bleed / octave error.
+        double e5 = WaitingCountInSettings.DefaultUnaccentedPitchHz / 2.0;
+        Assert.True(
+            WaitingCountInLogic.IsNearCountInClickFrequency(
+                e5,
+                WaitingCountInSettings.DefaultAccentedPitchHz,
+                WaitingCountInSettings.DefaultUnaccentedPitchHz));
+    }
+
+    [Fact]
     public void MatchingPitch_DuringCountInSuppress_AdvancesWhenFarFromClick()
     {
         var session = CreateCMajorSession();

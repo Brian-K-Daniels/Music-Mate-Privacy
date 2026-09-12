@@ -120,30 +120,37 @@ namespace musicmate.Services
 
         /// <summary>
         /// True when heard Hz is within <paramref name="centsTolerance"/> of a Count-In click
-        /// pitch, including octave equivalents (speaker bleed / McLeod octave errors).
+        /// pitch, or within one octave of that pitch (McLeod octave errors on the click itself).
+        /// Distant octaves are not treated as click bleed — e.g. player E4 must not be rejected
+        /// because the unaccented click is E6.
         /// </summary>
         public static bool IsNearCountInClickFrequency(
             double heardHz,
             double accentedClickHz,
             double unaccentedClickHz,
             double centsTolerance = 100.0)
-            => IsWithinCentsIncludingOctaves(heardHz, accentedClickHz, centsTolerance)
-               || IsWithinCentsIncludingOctaves(heardHz, unaccentedClickHz, centsTolerance);
+            => IsWithinCentsIncludingOctaves(heardHz, accentedClickHz, centsTolerance, maxOctaveDistance: 1)
+               || IsWithinCentsIncludingOctaves(heardHz, unaccentedClickHz, centsTolerance, maxOctaveDistance: 1);
 
         /// <summary>
-        /// Pitch-class / octave-aware cents distance to a reference frequency.
+        /// Cents distance to a reference frequency, allowing up to
+        /// <paramref name="maxOctaveDistance"/> octave equivalents (0 = exact register only).
         /// </summary>
         public static bool IsWithinCentsIncludingOctaves(
             double heardHz,
             double referenceHz,
-            double centsTolerance)
+            double centsTolerance,
+            int maxOctaveDistance = 1)
         {
-            if (heardHz <= 0 || referenceHz <= 0 || centsTolerance < 0)
+            if (heardHz <= 0 || referenceHz <= 0 || centsTolerance < 0 || maxOctaveDistance < 0)
                 return false;
             double octaves = Math.Log(heardHz / referenceHz, 2.0);
             if (double.IsNaN(octaves) || double.IsInfinity(octaves))
                 return false;
-            double centsFromNearestOctave = (octaves - Math.Round(octaves)) * 1200.0;
+            double nearestOctave = Math.Round(octaves);
+            if (Math.Abs(nearestOctave) > maxOctaveDistance)
+                return false;
+            double centsFromNearestOctave = (octaves - nearestOctave) * 1200.0;
             return Math.Abs(centsFromNearestOctave) <= centsTolerance;
         }
 

@@ -530,6 +530,52 @@ public class ConductorTimingTests : IDisposable
         session.NotifySilence();
         elapsed = msPerBeat;
         AssertAccepted(session, Freq(62), expectedIndex: 1);
+
+        // Early row is superseded — one final attempt with hadEarlyCandidate detail.
+        var forNote1 = session.GetSessionAttemptOutcomes()
+            .Where(o => o.NoteIndex == 1)
+            .ToList();
+        Assert.Single(forNote1);
+        Assert.True(forNote1[0].OverallCorrect);
+        Assert.True(forNote1[0].HadEarlyCandidate);
+        Assert.Equal(NoteAttemptTimingDiagnostics.HadEarlyCandidateReason, forNote1[0].WrongReason);
+        Assert.DoesNotContain(
+            session.GetSessionAttemptOutcomes(),
+            o => o.NoteIndex == 1 && o.WrongReason == "Early");
+        // Accepted onset classification follows TimingErrorMs, not HadEarlyCandidate.
+        Assert.Equal(
+            NoteAttemptTimingDiagnostics.ClassifyAcceptedOnset(forNote1[0].TimingErrorMs),
+            forNote1[0].TimingErrorMs < 0 ? "early"
+                : forNote1[0].TimingErrorMs > 0 ? "late" : "onTime");
+    }
+
+    [Fact]
+    public void FirstNote_LateCatchUp_RebasesOriginAndAcceptsOnTime()
+    {
+        const int bpm = 60;
+        double elapsed = 0;
+        var session = CreateSession([60, 62], bpm, showConductorCues: false, () => elapsed);
+        double lateTol = ConductorOnsetTiming.LateToleranceMs(bpm);
+
+        // Clock already running; first matching pitch arrives after the late window.
+        elapsed = lateTol + 50;
+        AssertAccepted(session, Freq(60), expectedIndex: 0);
+
+        var note0 = session.GetSessionAttemptOutcomes()
+            .Where(o => o.NoteIndex == 0)
+            .ToList();
+        Assert.Single(note0);
+        Assert.True(note0[0].OverallCorrect);
+        Assert.True(note0[0].PitchCorrect);
+        Assert.NotEqual("Late", note0[0].WrongReason);
+        Assert.True(
+            note0[0].TimingCorrect == true
+            || Math.Abs(note0[0].TimingErrorMs ?? 999) < 1.0,
+            "First-note origin rebase should yield on-time timing");
+
+        // Next note still due one beat after the rebased first onset.
+        elapsed = lateTol + 50 + ConductorOnsetTiming.MsPerBeat(bpm);
+        AssertAccepted(session, Freq(62), expectedIndex: 1);
     }
 
     [Fact]

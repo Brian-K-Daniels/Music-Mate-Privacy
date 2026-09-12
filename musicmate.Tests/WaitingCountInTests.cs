@@ -433,6 +433,7 @@ public class WaitingCountInPlayerTests : IDisposable
     {
         public int StopCount;
         public int PlayCount;
+        public int WarmupCount;
         public List<double> AllPlayTimesMs { get; } = new();
         public List<double> AccentedPlayTimesMs { get; } = new();
         private readonly Stopwatch _clock = Stopwatch.StartNew();
@@ -449,6 +450,17 @@ public class WaitingCountInPlayerTests : IDisposable
             _clock.Restart();
         }
 
+        public void Warmup(
+            double accentedPitchHz,
+            float accentedVolume,
+            double unaccentedPitchHz,
+            float unaccentedVolume,
+            int durationMs)
+        {
+            _ = (accentedPitchHz, accentedVolume, unaccentedPitchHz, unaccentedVolume, durationMs);
+            Interlocked.Increment(ref WarmupCount);
+        }
+
         public Task PlayClickAsync(
             bool accented,
             int durationMs,
@@ -458,6 +470,8 @@ public class WaitingCountInPlayerTests : IDisposable
             MetronomeClickScheduleInfo? schedule = null)
         {
             _ = schedule;
+            if (ct.IsCancellationRequested)
+                return Task.CompletedTask;
             Interlocked.Increment(ref PlayCount);
             double atMs = _clock.Elapsed.TotalMilliseconds;
             lock (AllPlayTimesMs)
@@ -481,6 +495,16 @@ public class WaitingCountInPlayerTests : IDisposable
         public List<double> AccentedPlayTimesMs { get; } = new();
         private readonly Stopwatch _clock = Stopwatch.StartNew();
 
+        public void Warmup(
+            double accentedPitchHz,
+            float accentedVolume,
+            double unaccentedPitchHz,
+            float unaccentedVolume,
+            int durationMs)
+        {
+            _ = (accentedPitchHz, accentedVolume, unaccentedPitchHz, unaccentedVolume, durationMs);
+        }
+
         public async Task PlayClickAsync(
             bool accented,
             int durationMs,
@@ -490,6 +514,8 @@ public class WaitingCountInPlayerTests : IDisposable
             MetronomeClickScheduleInfo? schedule = null)
         {
             _ = schedule;
+            if (ct.IsCancellationRequested)
+                return;
             Interlocked.Increment(ref PlayCount);
             double atMs = _clock.Elapsed.TotalMilliseconds;
             lock (AllPlayTimesMs)

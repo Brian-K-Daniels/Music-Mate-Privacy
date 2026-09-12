@@ -1,6 +1,7 @@
 using Application = Microsoft.Maui.Controls.Application;
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Storage;
+using musicmate.Diagnostics;
 using musicmate.Services;
 #if WINDOWS
 using Microsoft.Maui.Platform;
@@ -17,6 +18,7 @@ namespace musicmate
     {
         public App()
         {
+            AppLifecycleLog.Write("App", "Ctor");
             InitializeComponent();
 
             Services.PrefSchemaMigration.ApplyIfNeeded();
@@ -108,10 +110,19 @@ namespace musicmate
 
         protected override Window CreateWindow(IActivationState? activationState)
         {
+            AppLifecycleLog.Write("App", "CreateWindow");
             var window = new Window(new AppShell());
             // Swipe-away / close / background: stop Count-In and metronome clicks.
-            window.Stopped += (_, _) => Services.AppCueAudioGate.NotifyAppSuspended();
-            window.Destroying += (_, _) => Services.AppCueAudioGate.NotifyAppSuspended();
+            window.Stopped += (_, _) =>
+            {
+                AppLifecycleLog.Write("App", "Window.Stopped");
+                Services.AppCueAudioGate.NotifyAppSuspended();
+            };
+            window.Destroying += (_, _) =>
+            {
+                AppLifecycleLog.Write("App", "Window.Destroying");
+                Services.AppCueAudioGate.NotifyAppSuspended();
+            };
             Microsoft.Maui.ApplicationModel.MainThread.BeginInvokeOnMainThread(() =>
             {
                 Services.ServiceHelper.GetService<Services.ThemeService>()?.ApplyToShellIfAvailable();
@@ -119,8 +130,21 @@ namespace musicmate
             return window;
         }
 
+        protected override void OnStart()
+        {
+            AppLifecycleLog.Write("App", "OnStart");
+            base.OnStart();
+        }
+
+        protected override void OnResume()
+        {
+            AppLifecycleLog.Write("App", "OnResume");
+            base.OnResume();
+        }
+
         protected override void OnSleep()
         {
+            AppLifecycleLog.Write("App", "OnSleep");
             base.OnSleep();
             Services.AppCueAudioGate.NotifyAppSuspended();
         }

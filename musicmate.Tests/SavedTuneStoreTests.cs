@@ -101,10 +101,10 @@ public class SavedTuneStoreTests : IDisposable
     }
 
     [Fact]
-    public void FromGeneratedNotes_SplitsOverlappingStaffMeasureIndexes()
+    public void FromGeneratedNotes_DropsOverlappingStaffSameMeasureIndexOverflow()
     {
         // Dual-staff Random used MeasureIndex 0 on both staves; naive GroupBy merged
-        // two full bars into one 8-beat measure.
+        // two full bars into one 8-beat measure. Same-index overflow is dropped.
         var notes = new List<GeneratedNote>
         {
             new() { MidiNumber = 76, SpelledName = "E5", Duration = NoteDuration.Whole, MeasureIndex = 0, BeatPosition = 0 },
@@ -112,17 +112,16 @@ public class SavedTuneStoreTests : IDisposable
         };
 
         var tune = SavedTuneStore.FromGeneratedNotes("Saved Tune 1", notes, TimeSignature.FourFour, "C");
-        Assert.Equal(2, tune.Measures.Count);
-        Assert.All(tune.Measures, m =>
-        {
-            Assert.Single(m.Notes);
-            Assert.Equal(4.0, m.BeatsUsed, 3);
-        });
+        Assert.Single(tune.Measures);
+        Assert.Single(tune.Measures[0].Notes);
+        Assert.Equal("E5", tune.Measures[0].Notes[0].SpelledName);
+        Assert.Equal(4.0, tune.Measures[0].BeatsUsed, 3);
     }
 
     [Fact]
-    public void FromGeneratedNotes_SplitsOverfullMeasureIndexGroup()
+    public void FromGeneratedNotes_DropsOverfullSameMeasureIndexStrays()
     {
+        // Q + H + E + Q = 4.5 in one MeasureIndex — keep prefix that fits, drop overflow.
         var notes = new List<GeneratedNote>
         {
             new() { MidiNumber = 60, SpelledName = "C4", Duration = NoteDuration.Quarter, MeasureIndex = 0, BeatPosition = 0 },
@@ -132,15 +131,71 @@ public class SavedTuneStoreTests : IDisposable
         };
 
         var tune = SavedTuneStore.FromGeneratedNotes("Saved Tune 1", notes, TimeSignature.FourFour, "C");
+        Assert.Single(tune.Measures);
         Assert.All(tune.Measures, m =>
             Assert.True(
                 m.BeatsUsed <= m.BeatsAvailable + 1e-9,
                 $"Overfull measure: {m.BeatsUsed}/{m.BeatsAvailable}"));
-        Assert.Equal(4.5, tune.Measures.Sum(m => m.BeatsUsed), 3);
+        Assert.Equal(3.5, tune.Measures.Sum(m => m.BeatsUsed), 3);
+        Assert.DoesNotContain(tune.Measures[0].Notes, n => n.SpelledName == "F4");
     }
 
     [Fact]
-    public void NormalizeMeasureDurations_AndLoad_SplitLegacyOverfullBars()
+    public void FromGeneratedNotes_DropsStraySixteenthOverflowLikeSavedTuneBug()
+    {
+        // Reproduces Q+Q+Q+Sixteenth+E+E (= 4.25): keep notes that fit, drop the rest.
+        var notes = new List<GeneratedNote>
+        {
+            new() { MidiNumber = 69, SpelledName = "A4", Duration = NoteDuration.Quarter, MeasureIndex = 1, BeatPosition = 4 },
+            new() { MidiNumber = 67, SpelledName = "G4", Duration = NoteDuration.Quarter, MeasureIndex = 1, BeatPosition = 5 },
+            new() { MidiNumber = 69, SpelledName = "A4", Duration = NoteDuration.Quarter, MeasureIndex = 1, BeatPosition = 6 },
+            new() { MidiNumber = 69, SpelledName = "A4", Duration = NoteDuration.Sixteenth, MeasureIndex = 1, BeatPosition = 7 },
+            new() { MidiNumber = 67, SpelledName = "G4", Duration = NoteDuration.Eighth, MeasureIndex = 1, BeatPosition = 7.25 },
+            new() { MidiNumber = 69, SpelledName = "A4", Duration = NoteDuration.Eighth, MeasureIndex = 1, BeatPosition = 7.75 },
+        };
+
+        var tune = SavedTuneStore.FromGeneratedNotes("Saved Tune 3", notes, TimeSignature.FourFour, "C");
+        Assert.Single(tune.Measures);
+        Assert.True(tune.Measures[0].BeatsUsed <= 4.0 + 1e-9);
+        Assert.Equal(3.75, tune.Measures[0].BeatsUsed, 3);
+        Assert.Equal(5, tune.Measures[0].Notes.Count);
+    }
+
+    [Fact]
+    public void FromGeneratedNotes_NullMeasureIndex_StillPacksIntoSuccessiveBars()
+    {
+        var notes = Enumerable.Range(0, 8)
+            .Select(i => new GeneratedNote
+            {
+                MidiNumber = 60 + i,
+                SpelledName = "C4",
+                Duration = NoteDuration.Quarter,
+                BeatPosition = i,
+            })
+            .ToList();
+
+        var tune = SavedTuneStore.FromGeneratedNotes("Saved Tune 1", notes, TimeSignature.FourFour, "C");
+        Assert.Equal(2, tune.Measures.Count);
+        Assert.All(tune.Measures, m => Assert.Equal(4.0, m.BeatsUsed, 3));
+    }
+
+    [Fact]
+    public void FromGeneratedNotes_MultiBarDistinctIndexes_KeepsAllFittingNotes()
+    {
+        var notes = new List<GeneratedNote>
+        {
+            new() { MidiNumber = 60, SpelledName = "C4", Duration = NoteDuration.Whole, MeasureIndex = 0, BeatPosition = 0 },
+            new() { MidiNumber = 62, SpelledName = "D4", Duration = NoteDuration.Whole, MeasureIndex = 1, BeatPosition = 4 },
+        };
+
+        var tune = SavedTuneStore.FromGeneratedNotes("Saved Tune 1", notes, TimeSignature.FourFour, "C");
+        Assert.Equal(2, tune.Measures.Count);
+        Assert.Equal("C4", tune.Measures[0].Notes[0].SpelledName);
+        Assert.Equal("D4", tune.Measures[1].Notes[0].SpelledName);
+    }
+
+    [Fact]
+    public void NormalizeMeasureDurations_AndLoad_DropLegacyOverfullBars()
     {
         var broken = new PracticeTune("Saved Tune 9", TimeSignature.FourFour, "C");
         var m = broken.AppendMeasure();
@@ -150,16 +205,17 @@ public class SavedTuneStoreTests : IDisposable
         m.AddNote(new MusicNote(65, "F4", NoteDuration.Quarter)); // 4.5
 
         var normalized = SavedTuneStore.NormalizeMeasureDurations(broken);
-        Assert.True(normalized.Measures.Count >= 2);
+        Assert.Single(normalized.Measures);
+        Assert.Equal(3.5, normalized.Measures[0].BeatsUsed, 3);
         Assert.All(normalized.Measures, x =>
             Assert.True(x.BeatsUsed <= x.BeatsAvailable + 1e-9));
 
-        // Persist the broken shape via raw DTO path is hard; Save normalizes first.
         _store.Save(broken);
         var loaded = _store.GetByTitle("Saved Tune 9");
         Assert.NotNull(loaded);
         Assert.All(loaded!.Measures, x =>
             Assert.True(x.BeatsUsed <= x.BeatsAvailable + 1e-9));
+        Assert.Equal(3.5, loaded.Measures.Sum(x => x.BeatsUsed), 3);
     }
 
     private static PracticeTune BuildSimpleTune(string title)

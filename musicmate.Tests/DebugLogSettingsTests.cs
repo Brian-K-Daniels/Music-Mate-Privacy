@@ -1,5 +1,4 @@
 using musicmate.Diagnostics;
-using musicmate.Diagnostics;
 
 namespace musicmate.Tests;
 

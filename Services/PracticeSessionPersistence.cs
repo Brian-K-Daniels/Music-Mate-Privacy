@@ -151,6 +151,16 @@ namespace musicmate.Services
             if (session.ChildLevel <= 0)
                 return new SaveOutcome { Skipped = false };
 
+            // Central gate: saved tunes keep SessionStat / note-attempt stats, but must not
+            // write SessionResult (level-up progress) or call CheckAndApplyLevelUpAsync.
+            if (!LevelUpService.CountsTowardLevelAdvancement(session))
+            {
+                Utils.Log(
+                    "[LevelUpDebug] Saved tune session — SessionStat recorded; " +
+                    "skipping SessionResult and level-up evaluation");
+                return new SaveOutcome { Skipped = false, SkipReason = "saved-tune" };
+            }
+
             var (_, _, apc) = session.GetSessionCorrectWrongTotals();
             await SaveSessionResultAsync(session, sessionResultDb, apc);
 

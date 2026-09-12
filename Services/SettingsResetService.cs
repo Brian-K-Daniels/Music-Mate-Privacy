@@ -337,6 +337,7 @@ namespace musicmate.Services
             _session.UseNoteMasteryForGeneration = MasteryPreferenceDefaults.UseNoteMasteryForGeneration;
             _session.ShowConductorCues = NoteSessionService.DefaultShowConductorCues;
             _session.ShowSignaturesOnBothStaffs = true;
+            _session.MusicSettingsLevelPolicy = NoteSessionService.DefaultMusicSettingsLevelPolicy;
             _session.NoteNameDisplay = "Current only";
             _session.MeterTimeSignature = "4/4";
             _session.SmallestRhythmNote = "Quarter";
@@ -422,6 +423,7 @@ namespace musicmate.Services
                 NoteNameDisplay = _session.NoteNameDisplay,
                 ShowConductorCues = _session.ShowConductorCues,
                 ShowSignaturesOnBothStaffs = _session.ShowSignaturesOnBothStaffs,
+                MusicSettingsLevelPolicy = _session.MusicSettingsLevelPolicy,
                 AboutFontSize = SessionPreferences.Get(
                     AboutPageViewModel.FontSizePreferenceKey, AboutFontSizes.Default),
                 CollectNoteStats = SessionPreferences.Get(CollectNoteStatsKey, true),
@@ -482,6 +484,7 @@ namespace musicmate.Services
                 NoteNameDisplay = "Current only",
                 ShowConductorCues = NoteSessionService.DefaultShowConductorCues,
                 ShowSignaturesOnBothStaffs = true,
+                MusicSettingsLevelPolicy = NoteSessionService.DefaultMusicSettingsLevelPolicy,
                 AboutFontSize = AboutFontSizes.Default,
                 CollectNoteStats = SettingsPageViewModel.DefaultCollectNote,
                 CollectSessionStats = SettingsPageViewModel.DefaultCollectSession,
@@ -593,6 +596,7 @@ namespace musicmate.Services
             _session.NoteNameDisplay = snapshot.NoteNameDisplay;
             _session.ShowConductorCues = snapshot.ShowConductorCues;
             _session.ShowSignaturesOnBothStaffs = snapshot.ShowSignaturesOnBothStaffs;
+            _session.MusicSettingsLevelPolicy = snapshot.MusicSettingsLevelPolicy;
 
             SessionPreferences.Set(CollectNoteStatsKey, snapshot.CollectNoteStats);
             SessionPreferences.Set(CollectSessionStatsKey, snapshot.CollectSessionStats);
@@ -651,6 +655,8 @@ namespace musicmate.Services
             public string NoteNameDisplay { get; init; } = "Current only";
             public bool ShowConductorCues { get; init; }
             public bool ShowSignaturesOnBothStaffs { get; init; } = true;
+            public string MusicSettingsLevelPolicy { get; init; } =
+                NoteSessionService.DefaultMusicSettingsLevelPolicy;
             public double AboutFontSize { get; init; } = 12;
             public bool CollectNoteStats { get; init; } = true;
             public bool CollectSessionStats { get; init; } = true;
@@ -703,6 +709,7 @@ namespace musicmate.Services
                     && StringEq(NoteNameDisplay, other.NoteNameDisplay)
                     && ShowConductorCues == other.ShowConductorCues
                     && ShowSignaturesOnBothStaffs == other.ShowSignaturesOnBothStaffs
+                    && StringEq(MusicSettingsLevelPolicy, other.MusicSettingsLevelPolicy)
                     && NearlyEqual(AboutFontSize, other.AboutFontSize)
                     && CollectNoteStats == other.CollectNoteStats
                     && CollectSessionStats == other.CollectSessionStats

@@ -15,6 +15,7 @@
     <type fullname="musicmate.ViewModels.AboutPageViewModel" preserve="all" />
     <type fullname="musicmate.Platforms.Android.GooglePlayStoreService" preserve="all" />
     <type fullname="musicmate.Services.LocalStoreService" preserve="all" />
+    <type fullname="musicmate.Diagnostics.FirstNoteAndroidReleaseLog" preserve="all" />
   </assembly>
 
   <!-- Preserve Google Play Billing types used via reflection/JNI -->

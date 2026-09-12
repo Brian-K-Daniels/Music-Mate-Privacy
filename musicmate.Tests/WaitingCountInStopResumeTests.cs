@@ -231,6 +231,18 @@ public class WaitingCountInStopPreventsRestartTests : IDisposable
     {
         public int PlayCount { get; private set; }
         public int StopCount { get; private set; }
+        public int WarmupCount { get; private set; }
+
+        public void Warmup(
+            double accentedPitchHz,
+            float accentedVolume,
+            double unaccentedPitchHz,
+            float unaccentedVolume,
+            int durationMs)
+        {
+            _ = (accentedPitchHz, accentedVolume, unaccentedPitchHz, unaccentedVolume, durationMs);
+            WarmupCount++;
+        }
 
         public Task PlayClickAsync(
             bool accented,
@@ -241,6 +253,8 @@ public class WaitingCountInStopPreventsRestartTests : IDisposable
             MetronomeClickScheduleInfo? schedule = null)
         {
             _ = (accented, durationMs, volume, frequencyHz, schedule);
+            if (ct.IsCancellationRequested)
+                return Task.CompletedTask;
             PlayCount++;
             return Task.CompletedTask;
         }

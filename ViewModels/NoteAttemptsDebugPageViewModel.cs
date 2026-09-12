@@ -1,67 +1,10 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Globalization;
-using System.Text;
 using System.Windows.Input;
 using musicmate.Models;
 using musicmate.Services;
 
 namespace musicmate.ViewModels;
-
-public sealed class NoteAttemptRowViewModel
-{
-    public NoteAttemptRowViewModel(NoteAttempt attempt)
-    {
-        AttemptId = attempt.AttemptId;
-        Header = $"#{attempt.AttemptId}  {attempt.DateTime:u}  sess={Truncate(attempt.SessionId, 8)}";
-        Detail = BuildDetail(attempt);
-        IsWrong = !attempt.OverallCorrect;
-    }
-
-    public int AttemptId { get; }
-    public string Header { get; }
-    public string Detail { get; }
-    public bool IsWrong { get; }
-
-    private static string BuildDetail(NoteAttempt a)
-    {
-        var sb = new StringBuilder();
-        sb.Append(a.IsRest ? "REST" : a.ExpectedWrittenNoteName);
-        if (!string.IsNullOrEmpty(a.ExpectedDuration))
-            sb.Append(' ').Append(a.ExpectedDuration);
-        sb.Append(" → ").Append(string.IsNullOrEmpty(a.ActualDetectedNoteName) ? "-" : a.ActualDetectedNoteName);
-        sb.Append(" | P=").Append(a.PitchCorrect ? "ok" : "no");
-        sb.Append(" T=").Append(a.TimingCorrect switch
-        {
-            true => "ok",
-            false => "no",
-            null => "-",
-        });
-        sb.Append(" O=").Append(a.OverallCorrect ? "ok" : "no");
-        if (!a.OverallCorrect && !string.IsNullOrEmpty(a.WrongReason))
-            sb.Append(" | ").Append(a.WrongReason);
-        if (a.PitchErrorCents != 0)
-            sb.Append(" | ").Append(a.PitchErrorCents).Append('¢');
-        if (a.TimingErrorMs.HasValue)
-            sb.Append(" | Δ").Append(a.TimingErrorMs.Value.ToString("F0", CultureInfo.InvariantCulture)).Append("ms");
-        if (a.ExpectedStartMs.HasValue || a.ActualDetectedMs.HasValue)
-        {
-            sb.Append(" | t=");
-            sb.Append(a.ExpectedStartMs?.ToString("F0", CultureInfo.InvariantCulture) ?? "-");
-            sb.Append('/');
-            sb.Append(a.ActualDetectedMs?.ToString("F0", CultureInfo.InvariantCulture) ?? "-");
-        }
-
-        return sb.ToString();
-    }
-
-    private static string Truncate(string? s, int max)
-    {
-        if (string.IsNullOrEmpty(s))
-            return "-";
-        return s.Length <= max ? s : s[..max];
-    }
-}
 
 public sealed class NoteAttemptsDebugPageViewModel : INotifyPropertyChanged
 {
@@ -157,7 +100,15 @@ public sealed class NoteAttemptsDebugPageViewModel : INotifyPropertyChanged
         {
             await _db.InitializeAsync();
             var all = await _db.GetAllAsync() ?? new List<NoteAttempt>();
-            var ordered = all.OrderByDescending(a => a.AttemptId).ToList();
+            // Newest session first; within a session, conductor time order (t=expected/…).
+            var ordered = all
+                .GroupBy(a => a.SessionId ?? string.Empty)
+                .OrderByDescending(g => g.Max(a => a.AttemptId))
+                .SelectMany(g => g
+                    .OrderBy(a => a.ExpectedStartMs ?? a.ActualDetectedMs ?? double.MaxValue)
+                    .ThenBy(a => a.ActualDetectedMs ?? double.MaxValue)
+                    .ThenBy(a => a.AttemptId))
+                .ToList();
 
             Rows.Clear();
             foreach (var attempt in ordered)
@@ -165,18 +116,28 @@ public sealed class NoteAttemptsDebugPageViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(HasNoRows));
 
             int wrong = ordered.Count(a => !a.OverallCorrect);
-            StatusText = $"{ordered.Count} attempt(s), {wrong} wrong";
+            int hadEarlyCandidate = ordered.Count(a =>
+                NoteAttemptTimingDiagnostics.IsHadEarlyCandidateReason(a.WrongReason));
+            StatusText = hadEarlyCandidate > 0
+                ? $"{ordered.Count} attempt(s), {wrong} wrong, {hadEarlyCandidate} hadEarlyCandidate"
+                : $"{ordered.Count} attempt(s), {wrong} wrong";
 
             var hist = ordered
-                .Where(a => !a.OverallCorrect)
-                .GroupBy(a => string.IsNullOrWhiteSpace(a.WrongReason) ? "(no reason)" : a.WrongReason)
+                .Where(a => !a.OverallCorrect
+                    || NoteAttemptTimingDiagnostics.IsHadEarlyCandidateReason(a.WrongReason))
+                .GroupBy(a =>
+                {
+                    if (NoteAttemptTimingDiagnostics.IsHadEarlyCandidateReason(a.WrongReason))
+                        return NoteAttemptTimingDiagnostics.HadEarlyCandidateReason;
+                    return string.IsNullOrWhiteSpace(a.WrongReason) ? "(no reason)" : a.WrongReason;
+                })
                 .OrderByDescending(g => g.Count())
                 .ThenBy(g => g.Key, StringComparer.Ordinal)
                 .Select(g => $"{g.Key}: {g.Count()}");
 
             HistogramText = hist.Any()
-                ? "Wrong reasons — " + string.Join(" · ", hist)
-                : "Wrong reasons — none";
+                ? "Reasons — " + string.Join(" · ", hist)
+                : "Reasons — none";
         }
         catch (Exception ex)
         {
@@ -206,7 +167,7 @@ public sealed class NoteAttemptsDebugPageViewModel : INotifyPropertyChanged
             Rows.Clear();
             OnPropertyChanged(nameof(HasNoRows));
             StatusText = "0 attempt(s), 0 wrong";
-            HistogramText = "Wrong reasons — none";
+            HistogramText = "Reasons — none";
         }
         catch (Exception ex)
         {

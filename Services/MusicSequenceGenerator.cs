@@ -590,8 +590,11 @@ namespace musicmate.Services
                     var slot = rhythm[i];
                     if (slot.IsRest)
                     {
-                        measure.AddNote(GeneratedNote.Rest(slot.Duration, absoluteMi,
-                            globalBeatCursor + localCursor));
+                        var rest = GeneratedNote.Rest(slot.Duration, absoluteMi,
+                            globalBeatCursor + localCursor);
+                        if (measure.WouldExceed(rest))
+                            break;
+                        measure.AddNote(rest);
                         localCursor += slot.Duration.ToBeatValue();
                         continue;
                     }
@@ -625,6 +628,8 @@ namespace musicmate.Services
 
                     var note = BuildNote(pitch, slot.Duration, absoluteMi,
                         globalBeatCursor + localCursor, globalNoteIndex, prevPitch);
+                    if (measure.WouldExceed(note))
+                        break;
                     measure.AddNote(note);
                     pitchedMidis.Add(pitch);
                     prevPitch = pitch;
@@ -810,11 +815,14 @@ namespace musicmate.Services
             List<List<RhythmSlot>> motifA, List<List<RhythmSlot>> motifB)
         {
             measureInPhrase = Math.Clamp(measureInPhrase, 0, 1);
-            return role switch
+            // Clone so NormalizeRhythmMeasure in FillPhraseFromRhythm cannot mutate the
+            // shared motif templates used by later A′ / B / A-return phrases.
+            var source = role switch
             {
                 PhraseRole.B => motifB[measureInPhrase],
                 _ => motifA[measureInPhrase],
             };
+            return new List<RhythmSlot>(source);
         }
 
         private List<List<RhythmSlot>> BuildTwoMeasureMotif(

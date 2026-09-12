@@ -210,6 +210,13 @@
           </Border.StrokeShape>
           <VerticalStackLayout Spacing="8">
             <Label Text="Music" Style="{StaticResource SettingsPanelTitle}" />
+            <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="Music settings" />
+              <Picker Grid.Column="1"
+                      ItemsSource="{Binding MusicSettingsLevelPolicyOptions}"
+                      SelectedItem="{Binding MusicSettingsLevelPolicy, Mode=TwoWay}"
+                      Style="{StaticResource SettingsPickerStyle}" />
+            </Grid>
             <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center">
               <Label Grid.Column="0" Text="Accidental %" />
               <Slider Grid.Column="1" Minimum="0" Maximum="100"

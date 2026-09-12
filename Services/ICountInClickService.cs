@@ -5,6 +5,17 @@ namespace musicmate.Services
     /// </summary>
     public interface ICountInClickService
     {
+        /// <summary>
+        /// Prebuild/load click buffers so the first scheduled beats are not delayed by I/O.
+        /// Safe to call repeatedly; must not block the beat scheduler during playback.
+        /// </summary>
+        void Warmup(
+            double accentedPitchHz,
+            float accentedVolume,
+            double unaccentedPitchHz,
+            float unaccentedVolume,
+            int durationMs);
+
         Task PlayClickAsync(
             bool accented,
             int durationMs,
@@ -13,6 +24,7 @@ namespace musicmate.Services
             CancellationToken ct,
             MetronomeClickScheduleInfo? schedule = null);
 
+        /// <summary>Silence immediately and invalidate any in-flight play requests.</summary>
         void Stop();
     }
 }

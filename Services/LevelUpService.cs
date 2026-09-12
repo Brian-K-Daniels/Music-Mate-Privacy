@@ -156,6 +156,38 @@ namespace musicmate.Services
         // ── Entry point ────────────────────────────────────────────────────────
 
         /// <summary>
+        /// True when a completed session may contribute to Level advancement
+        /// (SessionResult row + <see cref="CheckAndApplyLevelUpAsync"/>).
+        /// User-saved tunes are excluded; built-in library tunes and generated exercises count.
+        /// </summary>
+        public static bool CountsTowardLevelAdvancement(NoteSessionService session)
+        {
+            ArgumentNullException.ThrowIfNull(session);
+            return !IsSavedTuneSession(session);
+        }
+
+        /// <summary>
+        /// True when the active exercise is a user-saved Practice Tune
+        /// (title contains <see cref="SavedTuneStore.TitlePrefix"/>).
+        /// </summary>
+        public static bool IsSavedTuneSession(NoteSessionService session)
+        {
+            ArgumentNullException.ThrowIfNull(session);
+
+            if (SavedTuneStore.IsSavedTuneTitle(session.CurrentTune?.Title))
+                return true;
+
+            if (string.Equals(session.Tune, "Practice Tune", StringComparison.Ordinal)
+                && SavedTuneStore.IsSavedTuneTitle(
+                    Preferences.Default.Get<string?>("SelectedTune", null)))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Checks whether the child should advance a level after the session
         /// whose result has just been saved.
         ///

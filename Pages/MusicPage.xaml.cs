@@ -3163,24 +3163,6 @@ namespace musicmate.Pages
         private async Task OnAppearingCoreAsync()
         {
             base.OnAppearing();
-#if DEBUG
-            // Same once-per-process self-checks as MauiProgram; never block OnAppearing.
-            if (Diagnostics.DebugLogSettings.IsEnabled(Diagnostics.DebugLogCategory.StaffSelfTests))
-            {
-                _ = Task.Run(() =>
-                {
-                    try
-                    {
-                        Drawables.StaffDrawable.RunKeySignatureTests();
-                        Drawables.StaffDrawable.RunMeasureLayoutTests();
-                    }
-                    catch (Exception ex)
-                    {
-                        DebugLog.WriteLine($"[DebugSelfChecks] MusicPage ERROR: {ex}");
-                    }
-                });
-            }
-#endif
             bool returningToPage = !_isPageVisible;
             // Keep PropertyChanged-driven regenerate off until level-derived settings are ready.
             _allowStaffLayoutSettle = false;
@@ -3833,6 +3815,26 @@ namespace musicmate.Pages
             if (ingest.Kind == PitchWindowIngestKind.IgnoredQuiet
                 || ingest.Kind == PitchWindowIngestKind.DiscardedIgnorePeriod)
             {
+                if (_session.CurrentNoteIndex == 0
+                    && _session.Tune != "Tuner"
+                    && !_session.SessionCompleted
+                    && FirstNoteAndroidReleaseLog.StillWaitingForFirstAccept)
+                {
+                    // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                    _session.LogFirstNoteAndroidReleaseDiagnostic(
+                        stage: ingest.Kind == PitchWindowIngestKind.IgnoredQuiet
+                            ? "preEval-quiet"
+                            : "preEval-discardedIgnorePeriod",
+                        freq: 0,
+                        accepted: false,
+                        rejectReason: ingest.Kind == PitchWindowIngestKind.IgnoredQuiet
+                            ? "NotDetected-RmsBelowThreshold"
+                            : "NotDetected-AudioIgnorePeriod",
+                        countInOrConductorState: _waitingCountInActive
+                            ? "waitingCountIn"
+                            : null,
+                        extra: $"rms={rms:F4} threshold={_session.RmsThreshold:F4}");
+                }
                 return;
             }
 
@@ -3904,6 +3906,21 @@ namespace musicmate.Pages
                     // Count that as silence toward unlocking a repeated same pitch.
                     if (_session.IsAwaitingNoteOn)
                         _session.NotifyPitchStopped();
+                    if (_session.CurrentNoteIndex == 0
+                        && _session.Tune != "Tuner"
+                        && !_session.SessionCompleted
+                        && FirstNoteAndroidReleaseLog.StillWaitingForFirstAccept)
+                    {
+                        // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                        _session.LogFirstNoteAndroidReleaseDiagnostic(
+                            stage: "preEval-freqZero",
+                            freq: 0,
+                            accepted: false,
+                            rejectReason: "NotDetected-PitchDetectorReturnedZero",
+                            countInOrConductorState: _waitingCountInActive
+                                ? "waitingCountIn"
+                                : null);
+                    }
                     return;
                 }
 
@@ -3985,6 +4002,22 @@ namespace musicmate.Pages
                                 DebugLog.WriteLine(
                                     $"[CountIn] waiting for first note heardHz={freq:F1} correct=False");
                             }
+
+                            // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                            string reason = nearClick
+                                ? "CountIn-ClickSelfSound"
+                                : countInResult.correct
+                                    ? "CountIn-CorrectPitchNotAccepted"
+                                    : "CountIn-WrongPitch";
+                            _session.LogFirstNoteAndroidReleaseDiagnostic(
+                                stage: "countIn-reject",
+                                freq: freq,
+                                evaluateResult: countInResult,
+                                pitchPassed: countInResult.correct,
+                                timingPassed: null,
+                                accepted: false,
+                                rejectReason: reason,
+                                countInOrConductorState: "waitingCountIn");
                             return;
                         }
 
@@ -4018,6 +4051,14 @@ namespace musicmate.Pages
                         DebugLog.WriteLine(
                             $"[AudioSuppress] pitch detected but ignored — reason: IgnoreAudioUntilUtc " +
                             $"heardHz={freq:F1} correct={cooldownResult.correct}");
+                        // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                        _session.LogFirstNoteAndroidReleaseDiagnostic(
+                            stage: "preEval-audioCooldown",
+                            freq: freq,
+                            evaluateResult: cooldownResult,
+                            pitchPassed: cooldownResult.correct,
+                            accepted: false,
+                            rejectReason: "AudioCooldown");
                         return;
                     }
 
@@ -4025,6 +4066,15 @@ namespace musicmate.Pages
                     {
                         var pendingResult = _session.Evaluate(freq);
                         _session.LogNoteOnGateRejectionIfPitchIdentified(freq, pendingResult.cents);
+
+                        // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                        _session.LogFirstNoteAndroidReleaseDiagnostic(
+                            stage: "preEval-awaitingNoteOn",
+                            freq: freq,
+                            evaluateResult: pendingResult,
+                            pitchPassed: pendingResult.correct,
+                            accepted: false,
+                            rejectReason: "AwaitingNoteOn");
 
                         // Keep the status bar honest during same-pitch repeats (E-E-E): the
                         // previous note already matched; we are waiting for re-articulation.
@@ -4041,7 +4091,20 @@ namespace musicmate.Pages
 
                     var result = _session.Evaluate(freq);
                     if (!_session.TryArmListeningClockOnFirstCorrectPitch(result.correct))
+                    {
+                        // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                        _session.LogFirstNoteAndroidReleaseDiagnostic(
+                            stage: "preEval-clockNotArmed",
+                            freq: freq,
+                            evaluateResult: result,
+                            pitchPassed: result.correct,
+                            timingPassed: null,
+                            accepted: false,
+                            rejectReason: result.correct
+                                ? "ClockNotArmed"
+                                : "WrongPitchBeforeClockArmed");
                         return;
+                    }
 
                     string expectedName = _session.CurrentNoteIndex < _session.NotesToDraw.Count
                         ? _session.ResolveWrittenEvaluationName(_session.NotesToDraw[_session.CurrentNoteIndex])
@@ -4125,7 +4188,13 @@ namespace musicmate.Pages
 
                 ResetPitchCapture();
                 if (!_audio.TryStartCapture(OnAudioBlock, out var startCapErr))
+                {
                     DebugLog.WriteLine($"[CountIn] initial capture failed: {startCapErr}");
+                    // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                    FirstNoteAndroidReleaseLog.WriteAlways(
+                        "countIn-capture",
+                        $"initialFailed err={startCapErr}");
+                }
 
                 await _waitingCountInPlayer.RunAsync(
                     tempoBpm: _session.Tempo,
@@ -4577,6 +4646,12 @@ namespace musicmate.Pages
 
                 DebugLog.WriteLine($"[Start] Starting listening, playBack={playBack}, forceNewNotes={forceNewNotes}, reuseDisplayed={reuseDisplayed}");
                 SetButtonStates(true, keepPlayEnabled: playBack);
+                // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                FirstNoteAndroidReleaseLog.ResetForNewSession();
+                FirstNoteAndroidReleaseLog.WriteAlways(
+                    "session-armed",
+                    $"playBack={playBack} forceNew={forceNewNotes} reuse={reuseDisplayed} " +
+                    $"tune={_session.Tune} notes={_session.NotesToDraw?.Count ?? 0} tempo={_session.Tempo}");
 
                 if (!reuseDisplayed)
                 {
@@ -4747,6 +4822,10 @@ namespace musicmate.Pages
                             return;
                         }
 
+                        // Always cancel any prior Count-In before arming a fresh one
+                        // (including reuseDisplayed restarts that skip SessionReset).
+                        StopWaitingCountIn();
+
                         // Arm generation before fire-and-forget so Stop cannot be raced by a late start.
                         int countInGen = WaitingCountInArming.Arm(ref _waitingCountInGeneration);
                         _waitingCountInActive = true;
@@ -4763,6 +4842,10 @@ namespace musicmate.Pages
                         if (!_audio.TryStartCapture(OnAudioBlock, out var capErr))
                         {
                             DebugLog.WriteLine($"[Start] capture failed: {capErr}");
+                            // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                            FirstNoteAndroidReleaseLog.WriteAlways(
+                                "session-capture",
+                                $"failed err={capErr}");
                             StatusService.Instance.StatusMessage =
                                 "Microphone unavailable — tap ● to retry.";
                             SetButtonStates(false);

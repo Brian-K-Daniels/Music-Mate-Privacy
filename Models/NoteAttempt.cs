@@ -100,7 +100,12 @@ namespace musicmate.Models
         [Column("OvrOk")]
         public bool OverallCorrect { get; set; }
 
-        /// <summary>WrongReason when OverallCorrect is false, e.g. Early, WrongPitch, SoundDuringRest.</summary>
+        /// <summary>
+        /// Failure / detail reason. Examples: Early, WrongPitch, SoundDuringRest,
+        /// <see cref="NoteAttemptTimingDiagnostics.HadEarlyCandidateReason"/> when an early
+        /// candidate was superseded by a later accept (OverallCorrect stays true; accepted
+        /// earliness/lateness is TimingErrorMs, not this flag).
+        /// </summary>
         [Column("WngRs")]
         public string WrongReason { get; set; } = string.Empty;
 
