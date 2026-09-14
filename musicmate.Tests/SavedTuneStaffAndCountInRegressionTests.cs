@@ -1,3 +1,4 @@
+using musicmate.Drawables;
 using musicmate.Models;
 using musicmate.Services;
 
@@ -106,6 +107,112 @@ public class SavedTuneStaffAndCountInRegressionTests : IDisposable
         Assert.Equal(2, upper.Count);
         Assert.Empty(lower);
         Assert.Equal(1, PracticeTuneStaffSplit.CountEngravedStaffSystems(upper.Count, lower.Count));
+    }
+
+    [Fact]
+    public void OneMeasure_PartitionForDisplay_StaysUpperOnly()
+    {
+        var notes = BuildOneMeasureTuneNotes();
+        var bars = new List<double>();
+        var drawable = new StaffDrawable(CreateSessionFirstMidi(60), new ThemeService(), safeArea: null);
+        var split = PracticeTuneStaffSplit.PartitionForDisplay(
+            drawable, notes, bars, measureCount: 1, canvasWidth: 400f, canvasHeight: 480f);
+
+        Assert.Equal(notes.Count, split.UpperNotes.Count);
+        Assert.Empty(split.LowerNotes);
+        Assert.Equal(0, split.UnplacedMeasureCount);
+        Assert.Equal(notes.Count, split.UpperNotes.Count + split.LowerNotes.Count);
+    }
+
+    [Fact]
+    public void LongDenseTune_PartitionForDisplay_KeepsAllNotes_AndPrefersFillingUpper()
+    {
+        var page = BuildDenseEightMeasurePage();
+        var bars = Enumerable.Range(1, 7).Select(i => i * 4.0).ToList();
+        var session = new NoteSessionService
+        {
+            Instrument = "Concert Pitch",
+            Key = "F#",
+            SelectedScale = "Major",
+            MeterTimeSignature = "4/4",
+            ChildLevel = 40,
+            ShowSignaturesOnBothStaffs = true,
+            Tune = "Practice Tune",
+        };
+        var drawable = new StaffDrawable(session, new ThemeService(), safeArea: null);
+
+        // Blind half-split would put 4+4 regardless of width.
+        var halfUpper = page.Where(n => (n.MeasureIndex ?? 0) < 4).ToList();
+        var halfLower = page.Where(n => (n.MeasureIndex ?? 0) >= 4).ToList();
+        Assert.Equal(4, halfUpper.Select(n => n.MeasureIndex ?? 0).Distinct().Count());
+        Assert.Equal(4, halfLower.Select(n => n.MeasureIndex ?? 0).Distinct().Count());
+
+        var split = PracticeTuneStaffSplit.PartitionForDisplay(
+            drawable, page, bars, measureCount: 8, canvasWidth: 520f, canvasHeight: 480f);
+
+        Assert.Equal(0, split.UnplacedMeasureCount);
+        Assert.Equal(page.Count, split.UpperNotes.Count + split.LowerNotes.Count);
+        Assert.True(split.UpperNotes.Count > 0);
+        Assert.True(split.LowerNotes.Count > 0);
+
+        // Width-aware fill-upper-first should place at least as many measures on upper
+        // as a blind half-split would (4), when the canvas can hold them — otherwise
+        // upper still receives a greedy full-width pack before lower.
+        var widthOnly = drawable.SplitMeasuresAcrossStaves(
+            page, bars, 520f, 480f, StaffDrawable.StaffMeasureSplitMode.FillUpperFirst);
+        Assert.True(widthOnly.UpperMeasureCount >= widthOnly.LowerMeasureCount,
+            $"Before keep-all append, upper should be filled first " +
+            $"(got {widthOnly.UpperMeasureCount}+{widthOnly.LowerMeasureCount}+u{widthOnly.UnplacedMeasureCount})");
+
+        // Order preserved across the wrap.
+        var placed = split.UpperNotes.Concat(split.LowerNotes).ToList();
+        for (int i = 0; i < page.Count; i++)
+            Assert.Equal(page[i].SpelledName, placed[i].SpelledName);
+    }
+
+    [Fact]
+    public void KeepAllNotesVisible_MovesUnplacedOntoLower()
+    {
+        var split = new StaffDrawable.StaffMeasureSplitResult
+        {
+            UpperMeasureCount = 2,
+            LowerMeasureCount = 1,
+            UnplacedMeasureCount = 1,
+            TotalMeasureCount = 4,
+        };
+        split.UpperNotes.Add(NoteAt(60, 0, 0));
+        split.LowerNotes.Add(NoteAt(62, 0, 1));
+        split.UnplacedNotes.Add(NoteAt(64, 0, 2));
+
+        var kept = PracticeTuneStaffSplit.KeepAllNotesVisible(split);
+        Assert.Equal(0, kept.UnplacedMeasureCount);
+        Assert.Empty(kept.UnplacedNotes);
+        Assert.Equal(2, kept.LowerNotes.Count);
+        Assert.Equal(2, kept.LowerMeasureCount);
+    }
+
+    private static List<GeneratedNote> BuildDenseEightMeasurePage()
+    {
+        var gen = new MusicSequenceGenerator
+        {
+            Key = "F#",
+            Scale = "Major",
+            LowestNote = "A3",
+            HighestNote = "E5",
+            TimeSignature = TimeSignature.FourFour,
+            MeasureCount = 8,
+            RhythmVarietyPercent = 55,
+            SmallestDuration = NoteDuration.Eighth,
+            RestChancePercent = 10,
+            AccidentalPercent = 40,
+            SyncopationLevel = SyncopationLevel.None,
+            MaxMelodicIntervalSemitones = 5,
+            UseScaleOrder = false,
+            UseMotifPhrases = true,
+            ChildLevel = 40,
+            RandomSeed = 2,
+        };
+        return MusicSequenceGenerator.Flatten(gen.GenerateSequence());
     }
 
     // ── Problem 2: Count-In / cue self-sound ───────────────────────────────

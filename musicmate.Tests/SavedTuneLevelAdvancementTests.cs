@@ -22,8 +22,6 @@ public class SavedTuneLevelAdvancementTests : IDisposable
     private readonly SessionDatabase _sessionDb;
     private readonly SessionResultDatabase _resultDb;
     private readonly NoteAttemptDatabase _attemptDb;
-    private readonly long _savedCountSinceTicks;
-    private readonly int _savedChildLevel;
 
     public SavedTuneLevelAdvancementTests()
     {
@@ -36,11 +34,8 @@ public class SavedTuneLevelAdvancementTests : IDisposable
         SessionPreferences.Set("LevelUp.MinTimingPct", 1.0);
         SessionPreferences.Set("LevelUp.MinOverallPct", 1.0);
         SessionPreferences.Set("LevelUp.MinNotes", 1);
-        Preferences.Default.Set("LevelUp.MinOverallAccuracyFloor", 1.0);
-
-        _savedCountSinceTicks = Preferences.Default.Get("LevelUp.CountSinceUtc", 0L);
-        _savedChildLevel = Preferences.Default.Get("ChildPractice.Level", 1);
-        Preferences.Default.Set("ChildPractice.Level", 1);
+        SessionPreferences.Set("LevelUp.MinOverallAccuracyFloor", 1.0);
+        SessionPreferences.Set("ChildPractice.Level", 1);
         LevelUpService.MarkCountSinceNow();
 
         _sessionDbPath = Path.Combine(Path.GetTempPath(), $"mm_saved_lvl_sess_{Guid.NewGuid():N}.db3");
@@ -49,14 +44,14 @@ public class SavedTuneLevelAdvancementTests : IDisposable
         _sessionDb = new SessionDatabase(_sessionDbPath);
         _resultDb = new SessionResultDatabase(_resultDbPath);
         _attemptDb = new NoteAttemptDatabase(_attemptDbPath);
+        _sessionDb.InitializeAsync().GetAwaiter().GetResult();
+        _resultDb.InitializeAsync().GetAwaiter().GetResult();
+        _attemptDb.InitializeAsync().GetAwaiter().GetResult();
     }
 
     public void Dispose()
     {
         SessionPreferences.TestStore = null;
-        Preferences.Default.Set("LevelUp.CountSinceUtc", _savedCountSinceTicks);
-        Preferences.Default.Set("ChildPractice.Level", _savedChildLevel);
-        Preferences.Default.Remove("LevelUp.MinOverallAccuracyFloor");
         try { if (File.Exists(_sessionDbPath)) File.Delete(_sessionDbPath); } catch { }
         try { if (File.Exists(_resultDbPath)) File.Delete(_resultDbPath); } catch { }
         try { if (File.Exists(_attemptDbPath)) File.Delete(_attemptDbPath); } catch { }
@@ -72,7 +67,6 @@ public class SavedTuneLevelAdvancementTests : IDisposable
 
         var generated = CreateCompletedSession(childLevel: 5);
         generated.Tune = "Selected Scale";
-        generated.CurrentTune = null;
         Assert.True(LevelUpService.CountsTowardLevelAdvancement(generated));
         Assert.False(LevelUpService.IsSavedTuneSession(generated));
 
@@ -93,7 +87,7 @@ public class SavedTuneLevelAdvancementTests : IDisposable
 
         Assert.Null(outcome.NewChildLevel);
         Assert.Equal(1, session.ChildLevel);
-        Assert.Equal(1, Preferences.Default.Get("ChildPractice.Level", 0));
+        Assert.Equal(1, SessionPreferences.Get("ChildPractice.Level", 0));
         Assert.Empty(await _resultDb.GetAllAsync());
     }
 
@@ -115,7 +109,7 @@ public class SavedTuneLevelAdvancementTests : IDisposable
 
         Assert.Empty(await _resultDb.GetAllAsync());
         Assert.Equal(5, (await _sessionDb.GetAllAsync()).Count);
-        Assert.Equal(1, Preferences.Default.Get("ChildPractice.Level", 0));
+        Assert.Equal(1, SessionPreferences.Get("ChildPractice.Level", 0));
     }
 
     [Fact]
@@ -123,7 +117,6 @@ public class SavedTuneLevelAdvancementTests : IDisposable
     {
         var session = CreateCompletedSession(childLevel: 1);
         session.Tune = "Selected Scale";
-        session.CurrentTune = null;
         MarkAllNotesCorrect(session);
 
         var outcome = await PracticeSessionPersistence.SaveSessionStatAsync(
@@ -131,7 +124,7 @@ public class SavedTuneLevelAdvancementTests : IDisposable
 
         Assert.Equal(2, outcome.NewChildLevel);
         Assert.Equal(2, session.ChildLevel);
-        Assert.Equal(2, Preferences.Default.Get("ChildPractice.Level", 0));
+        Assert.Equal(2, SessionPreferences.Get("ChildPractice.Level", 0));
         Assert.Single(await _resultDb.GetAllAsync());
     }
 
@@ -155,7 +148,6 @@ public class SavedTuneLevelAdvancementTests : IDisposable
         Assert.Equal(3, stats[0].Level);
 
         // Note-attempt history is independent of level-up; still writable after a saved-tune save.
-        await _attemptDb.InitializeAsync();
         await _attemptDb.SaveAttemptAsync(new NoteAttempt
         {
             SessionId = "saved-tune-session",
@@ -179,34 +171,7 @@ public class SavedTuneLevelAdvancementTests : IDisposable
     {
         var tune = new PracticeTune(title, TimeSignature.FourFour, "C");
         var measure = tune.AppendMeasure();
-        measure.AddNote(new MusicNote
-        {
-            MidiNumber = 60,
-            SpelledName = "C4",
-            Duration = NoteDuration.Quarter,
-            BeatPosition = 0,
-        });
-        measure.AddNote(new MusicNote
-        {
-            MidiNumber = 62,
-            SpelledName = "D4",
-            Duration = NoteDuration.Quarter,
-            BeatPosition = 1,
-        });
-        measure.AddNote(new MusicNote
-        {
-            MidiNumber = 64,
-            SpelledName = "E4",
-            Duration = NoteDuration.Quarter,
-            BeatPosition = 2,
-        });
-        measure.AddNote(new MusicNote
-        {
-            MidiNumber = 65,
-            SpelledName = "F4",
-            Duration = NoteDuration.Quarter,
-            BeatPosition = 3,
-        });
+        measure.AddNote(new MusicNote(60, "C4", NoteDuration.Whole));
         return tune;
     }
 

@@ -41,8 +41,8 @@ namespace musicmate
 
         private async void InitializePremiumStatus()
         {
-#if !DEBUG
-            // Release: clear backup-/DEBUG-restored local flags, then start non-premium.
+#if !DEBUG && !LOCAL_RELEASE
+            // Play Release: clear backup-/DEBUG-restored local flags, then start non-premium.
             // A successful Play purchase query may then grant or keep false; a failed
             // query must not be treated as proof of non-ownership (leave false + retry later).
             ClearLocalPremiumCache();
@@ -56,7 +56,7 @@ namespace musicmate
                 {
                     await storeService.InitializeAsync();
                     var purchased = await storeService.IsPurchasedAsync(PremiumProduct.Id);
-#if !DEBUG
+#if !DEBUG && !LOCAL_RELEASE
                     // null = billing query failed/disconnected — do not change entitlement.
                     if (purchased is true)
                         Services.StatusService.Instance.IsPremiumUser = true;
@@ -69,8 +69,8 @@ namespace musicmate
                 }
                 catch
                 {
-#if DEBUG
-                    // Debug: restore persisted state so testers don't lose premium on restart.
+#if DEBUG || LOCAL_RELEASE
+                    // Stub builds: restore persisted state so testers don't lose premium on restart.
                     var val = Preferences.Get(PremiumProduct.PreferenceKey, false);
                     Services.StatusService.Instance.IsPremiumUser = val;
 #else
@@ -81,7 +81,7 @@ namespace musicmate
             }
             else
             {
-#if DEBUG
+#if DEBUG || LOCAL_RELEASE
                 var val = Preferences.Get(PremiumProduct.PreferenceKey, false);
                 Services.StatusService.Instance.IsPremiumUser = val;
 #else
@@ -90,7 +90,7 @@ namespace musicmate
             }
         }
 
-#if !DEBUG
+#if !DEBUG && !LOCAL_RELEASE
         private static void ForceNonPremium()
         {
             ClearLocalPremiumCache();
@@ -98,9 +98,7 @@ namespace musicmate
             if (StatusService.Instance.IsPremiumUser)
                 StatusService.Instance.IsPremiumUser = false;
         }
-#endif
 
-#if !DEBUG
         private static void ClearLocalPremiumCache()
         {
             try { Preferences.Remove(PremiumProduct.PreferenceKey); } catch { }

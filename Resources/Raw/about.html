@@ -425,8 +425,9 @@
     and progress toward the next level:</p>
 <ul>
 <li><strong>ssns</strong> — qualifying sessions so far / sessions needed to level up</li>
-<li><strong>Pch</strong> — pitch accuracy</li>
-<li><strong>Ovrl</strong> — overall accuracy</li>
+<li><strong>Pch</strong> — pitch completion (notes you finished correctly ÷ notes in the exercise;
+    early tries and timing gates do not lower this number)</li>
+<li><strong>Ovrl</strong> — overall accuracy (average of pitch completion and timing when timing applies)</li>
 <li><strong>Tmg</strong> — timing accuracy</li>
 <li><strong>Det</strong> — detected tempo (BPM)</li>
 </ul>
@@ -477,16 +478,23 @@
 </ul>
 <p>When you tap <strong>▶ Start</strong> on Home, Music Mate applies level-based settings 
     (keys, rhythms, note range, and more) and begins a fresh window for counting level-up sessions.</p>
-<p>Automatic level-up uses rules from <strong>Settings Advanced</strong> 
+<p>Automatic level-up uses rules from <strong>Settings Advanced</strong>
     (sessions required, pitch accuracy, timing, overall accuracy, and minimum notes per session).
     Qualifying sessions are counted per instrument.
+    The pitch score used for level-up is based on whether each attempt’s <em>pitch</em> was right or wrong —
+    not on how many timing or gate retries you needed before a note turned green.
+    (My Progress <strong>Pc%</strong> is friendlier: it shows how much of the exercise you completed correctly.)
     The level number you see is shared for the app. Levels do not go down by themselves.</p>
+<p><strong>Saved tunes</strong> can still be graded and saved in My Progress,
+    but completing a saved tune does not count toward automatic level-up.</p>
 
 <h2>How Practice Works</h2>
 <p>Play or sing each yellow note in order.
     When Music Mate accepts the correct pitch, that note turns green and the next note becomes current.</p>
 <p>Wrong pitches turn that note red. You can try again or continue when you are ready.
-    Playing too early can count as a timing mistake and mark a note red without advancing.</p>
+    Playing too early can count as a timing mistake and mark a note red without advancing.
+    Those early tries may show in Note Attempts history; they do not lower the session
+    <strong>Pc%</strong> completion score on My Progress.</p>
 <p>From about <strong>Level 21</strong> upward, timing matters more for your overall score and
     for whether a note counts as mastered. Below that, pitch accuracy is the main focus.</p>
 <p>In Settings, <strong>Listening starts when music appears</strong> can begin listening for you when
@@ -496,7 +504,10 @@
 
 <h2>Mastery of Notes</h2>
 <p>Mastery helps you see which notes are solid and which still need practice.
-    You can omit mastered notes from random music since you do not need to practice them anymore.</p>
+    You can omit mastered notes from random music since you do not need to practice them anymore. 
+    See Settings / Advanced / Note mastery. With the switch ON (which is the factory default) it will
+    not use mastered notes in random music. With the switch OFF all notes, mastered or not will be eligible for
+    use in random music.</p>
 
 <h3>How a note becomes mastered</h3>
 <p>In Settings under <strong>Mastery of notes</strong>, choose a method:</p>
@@ -550,8 +561,10 @@
     Tap a note for details and practice shortcuts (see Mastery above). 
     Mastery is a view built from your note stats, not a separate clearable store.</li>
 <li><strong>Session</strong> — one row per practice session, including Level, accuracy scores, Key,
-    Instrument, and <strong>What</strong> (a short label for what you practiced, such as 
+    Instrument, and <strong>What</strong> (a short label for what you practiced, such as
     Random or Assortment by Level).
+    <strong>Pc%</strong> is pitch completion (notes finished correctly ÷ notes in the exercise).
+    <strong>P+</strong> / <strong>P−</strong> count attempts where pitch was right or wrong.
     Clearing Session also sets to zero the number of successful sessions towards the next automatic level up
     (your level will never automatically go down).</li>
 </ul>
@@ -633,7 +646,9 @@
     Whatever you set the total will always be 100%..</p>
 <p><strong>Level Advancement Criteria</strong> control how many good sessions and
     what accuracy you need to move up (sessions required, pitch / timing / overall accuracy,
-    minimum notes per session).</p>
+    minimum notes per session).
+    The pitch threshold uses each attempt’s pitch right/wrong result
+    (not the friendlier My Progress <strong>Pc%</strong> completion score).</p>
 <p><strong>Advanced Audio &amp; Pitch Settings</strong> 
     (Pitch Tolerance, RMS Threshold, Cooldown, Pitch Offset) help teachers fine-tune detection. 
     Most users can leave these alone.</p>

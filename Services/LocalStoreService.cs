@@ -4,8 +4,10 @@ using musicmate.Services;
 
 namespace musicmate.Services
 {
-    // A simple local "store" used for initial development/testing.
-    // Later replace with a real Google Play implementation.
+    /// <summary>
+    /// Local stub store for Debug and LocalRelease (not Google Play Billing).
+    /// Play Release uses <c>GooglePlayStoreService</c> instead.
+    /// </summary>
     public class LocalStoreService : IStoreService
     {
         public Task InitializeAsync()
@@ -24,6 +26,7 @@ namespace musicmate.Services
         {
             // Simulate a successful one-time purchase and persist locally
             Preferences.Set(PremiumProduct.PreferenceKey, true);
+            StatusService.Instance.IsPremiumUser = true;
             return Task.FromResult(true);
         }
 
@@ -31,6 +34,7 @@ namespace musicmate.Services
         {
             // Local stub has no real store to verify against, so clear the local flag
             Preferences.Set(PremiumProduct.PreferenceKey, false);
+            StatusService.Instance.IsPremiumUser = false;
             return Task.FromResult(false);
         }
 

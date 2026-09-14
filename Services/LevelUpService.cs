@@ -3,7 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.Maui.Storage;
 using musicmate.Models;
 
 namespace musicmate.Services
@@ -37,11 +36,11 @@ namespace musicmate.Services
     ///
     ///  Rule 6  All qualifying sessions must meet every accuracy threshold.
     ///          The most recent <see cref="SessionCount"/> qualifying rows are
-    ///          examined.  Every row must satisfy:
+    ///          examined.  Every row must satisfy rolling averages for:
     ///            PitchAccuracyPercent   >= <see cref="MinPitchAccuracyPercent"/>
+    ///              (from wrong-pitch attempt outcomes — not retry-weighted UI Pc%)
     ///            OverallAccuracyPercent >= <see cref="MinOverallAccuracyPercent"/>
-    ///          Timing accuracy is checked only when AverageTimingMs > 0
-    ///          (per-note timing not yet fully implemented — see Rule 7).
+    ///          Timing accuracy is checked when present.
     ///
     ///  Rule 7  Missing timing data is not treated as a timing failure.
     ///          When AverageTimingMs == 0 the timing threshold is skipped for
@@ -92,14 +91,14 @@ namespace musicmate.Services
         {
             get
             {
-                long ticks = Preferences.Default.Get(PrefCountSinceUtcKey, 0L);
+                long ticks = SessionPreferences.Get(PrefCountSinceUtcKey, 0L);
                 return ticks > 0 ? new DateTime(ticks, DateTimeKind.Utc) : DateTime.MinValue;
             }
         }
 
         /// <summary>Resets the ssns window (Child Practice start, level-up, or child-results clear).</summary>
         public static void MarkCountSinceNow()
-            => Preferences.Default.Set(PrefCountSinceUtcKey, DateTime.UtcNow.Ticks);
+            => SessionPreferences.Set(PrefCountSinceUtcKey, DateTime.UtcNow.Ticks);
 
         // ── Threshold constants ────────────────────────────────────────────────
         // Adjust here to change level-up sensitivity; nowhere else.
@@ -151,7 +150,7 @@ namespace musicmate.Services
         /// Default = 60.
         /// </summary>
         public static double MinOverallAccuracyFloor
-            => Preferences.Default.Get("LevelUp.MinOverallAccuracyFloor", DefaultMinOverallAccuracyFloor);
+            => SessionPreferences.Get("LevelUp.MinOverallAccuracyFloor", DefaultMinOverallAccuracyFloor);
 
         // ── Entry point ────────────────────────────────────────────────────────
 
@@ -179,7 +178,7 @@ namespace musicmate.Services
 
             if (string.Equals(session.Tune, "Practice Tune", StringComparison.Ordinal)
                 && SavedTuneStore.IsSavedTuneTitle(
-                    Preferences.Default.Get<string?>("SelectedTune", null)))
+                    SessionPreferences.Get("SelectedTune", string.Empty)))
             {
                 return true;
             }
@@ -272,7 +271,7 @@ namespace musicmate.Services
 
                 // All criteria met — advance the level.
                 int newLevel = Math.Min(currentLevel + 1, 100);  // Rule 8: cap at 100
-                Preferences.Default.Set(PrefLevelKey, newLevel); // persist immediately
+                SessionPreferences.Set(PrefLevelKey, newLevel); // persist immediately
                 MarkCountSinceNow();
                 Utilities.Utils.Log($"[LevelUp] Level {currentLevel} → {newLevel} " +
                                     $"(instrument={instrument}, sessions checked={SessionCount})");

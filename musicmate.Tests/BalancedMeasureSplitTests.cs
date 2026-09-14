@@ -11,11 +11,14 @@ public class BalancedMeasureSplitTests
 {
     private const float Usable = 700f;
 
+    // PackConsecutiveMeasureWidths allows usable/MinimumSafeHorizontalScale (≈823 at Usable=700).
+
     [Fact]
     public void ChooseSplit_FivePlusThree_BecomesFourPlusFour_WhenBothPlaceEight()
     {
         // Greedy max-upper packs 5 then 3; balanced prefers 4+4 (same 8 placed).
-        float[] mins = { 120, 120, 120, 120, 120, 120, 120, 120 };
+        // 5×150=750 ≤ safeSpan; 6×150=900 > safeSpan.
+        float[] mins = { 150, 150, 150, 150, 150, 150, 150, 150 };
         Assert.Equal(5, StaffDrawable.PackConsecutiveMeasureWidths(mins, Usable, 0));
         Assert.Equal(3, StaffDrawable.PackConsecutiveMeasureWidths(mins, Usable, 5));
 
@@ -44,7 +47,9 @@ public class BalancedMeasureSplitTests
     public void ChooseSplit_TwoPlusFour_CandidateLosesToThreePlusThree_WhenBothPlaceSix()
     {
         // Among same placed=6 cuts, |2−4| loses to |3−3| (greedy max-upper here is 4+2).
-        float[] mins = { 120, 120, 120, 180, 180, 180, 400, 400 };
+        // 120×3+200=560; +200=760; +200=960 > safeSpan → packs 5 from 0? Use heavier tail.
+        // 160×3+200=680; +200=880 > span → packs 4. From 4: 200×2+450×0 = need 2 only.
+        float[] mins = { 160, 160, 160, 200, 200, 200, 450, 450 };
         const float usable = 700f;
         Assert.Equal(4, StaffDrawable.PackConsecutiveMeasureWidths(mins, usable, 0));
         Assert.Equal(2, StaffDrawable.PackConsecutiveMeasureWidths(mins, usable, 4)); // greedy 4+2
@@ -61,7 +66,9 @@ public class BalancedMeasureSplitTests
     public void ChooseSplit_DenseFourPlusThree_PreferredOverThreePlusThree_BecauseMoreMusic()
     {
         // 4+3 places 7; 3+3 places only 6 — must keep 4+3.
-        float[] mins = { 150, 150, 150, 150, 200, 200, 200, 400 };
+        // 180×4=720; +220=940 > span → packs 4. From 4: 220×3=660 ≤ span.
+        // From 3: 180+220×3=840 > span → packs 3 only → 3+3 places 6 < 7.
+        float[] mins = { 180, 180, 180, 180, 220, 220, 220, 400 };
         Assert.Equal(4, StaffDrawable.PackConsecutiveMeasureWidths(mins, Usable, 0));
         Assert.Equal(3, StaffDrawable.PackConsecutiveMeasureWidths(mins, Usable, 4));
         Assert.Equal(3, StaffDrawable.PackConsecutiveMeasureWidths(mins, Usable, 3));
@@ -105,8 +112,9 @@ public class BalancedMeasureSplitTests
         // Upper can take 3; lower takes 1. Can upper take only 2? Then lower PackFrom(2):
         // if mins[2]+mins[3] > usable, lower packs 1 only → 2+1 places 3 < 4. So 3+1 wins.
         // Genuine short-lower: 3+1 places all four; cut u=2 only places 3
-        // because measures 3+4 cannot share the lower (200+550 > usable).
-        float[] mins = { 200, 200, 200, 550 };
+        // because measures 3+4 cannot share the lower under MaxSafePackableLocalWidth
+        // (usable/0.85 ≈ 823). 200+650 = 850 exceeds that span.
+        float[] mins = { 200, 200, 200, 650 };
         Assert.Equal(3, StaffDrawable.PackConsecutiveMeasureWidths(mins, Usable, 0));
         Assert.Equal(1, StaffDrawable.PackConsecutiveMeasureWidths(mins, Usable, 3));
         Assert.Equal(1, StaffDrawable.PackConsecutiveMeasureWidths(mins, Usable, 2));
@@ -115,6 +123,69 @@ public class BalancedMeasureSplitTests
         Assert.Equal(3, u);
         Assert.Equal(1, l);
         Assert.Equal(4, u + l);
+    }
+
+    [Fact]
+    public void ChooseGreedyUpperFirst_FillsUpperBeforeLower()
+    {
+        // Balanced would prefer 4+4; greedy takes 5 on upper then 3 on lower.
+        float[] mins = { 150, 150, 150, 150, 150, 150, 150, 150 };
+        Assert.Equal(5, StaffDrawable.PackConsecutiveMeasureWidths(mins, Usable, 0));
+        Assert.Equal(3, StaffDrawable.PackConsecutiveMeasureWidths(mins, Usable, 5));
+
+        var (u, l) = StaffDrawable.ChooseGreedyUpperFirstSplit(mins, Usable, Usable);
+        Assert.Equal(5, u);
+        Assert.Equal(3, l);
+
+        var (bu, bl) = StaffDrawable.ChooseBalancedMeasureSplit(mins, Usable, Usable);
+        Assert.Equal(4, bu);
+        Assert.Equal(4, bl);
+    }
+
+    [Fact]
+    public void SplitMeasuresAcrossStaves_FillUpperFirst_UsesGreedyCut()
+    {
+        var gen = new MusicSequenceGenerator
+        {
+            Key = "C",
+            Scale = "Major",
+            LowestNote = "A2",
+            HighestNote = "C6",
+            TimeSignature = TimeSignature.FourFour,
+            MeasureCount = 8,
+            RhythmVarietyPercent = 0,
+            SmallestDuration = NoteDuration.Quarter,
+            RestChancePercent = 0,
+            AccidentalPercent = 0,
+            SyncopationLevel = SyncopationLevel.None,
+            MaxMelodicIntervalSemitones = 5,
+            UseScaleOrder = true,
+            UseMotifPhrases = false,
+            ChildLevel = 28,
+            RandomSeed = 11,
+        };
+        var page = MusicSequenceGenerator.Flatten(gen.GenerateSequence());
+        var bars = Enumerable.Range(1, 7).Select(i => i * 4.0).ToList();
+        var session = new NoteSessionService
+        {
+            Key = "C",
+            SelectedScale = "Major",
+            MeterTimeSignature = "4/4",
+            ChildLevel = 28,
+            ShowSignaturesOnBothStaffs = true,
+        };
+        var drawable = new StaffDrawable(session, new ThemeService(), safeArea: null);
+
+        var balanced = drawable.SplitMeasuresAcrossStaves(
+            page, bars, 835f, 480f, StaffDrawable.StaffMeasureSplitMode.Balanced);
+        var greedy = drawable.SplitMeasuresAcrossStaves(
+            page, bars, 835f, 480f, StaffDrawable.StaffMeasureSplitMode.FillUpperFirst);
+
+        Assert.Equal(0, balanced.UnplacedMeasureCount);
+        Assert.Equal(0, greedy.UnplacedMeasureCount);
+        Assert.Equal(8, balanced.UpperMeasureCount + balanced.LowerMeasureCount);
+        Assert.Equal(8, greedy.UpperMeasureCount + greedy.LowerMeasureCount);
+        Assert.True(greedy.UpperMeasureCount >= balanced.UpperMeasureCount);
     }
 
     [Fact]
@@ -152,12 +223,12 @@ public class BalancedMeasureSplitTests
         var drawable = new StaffDrawable(session, new ThemeService(), safeArea: null);
         var split = drawable.SplitMeasuresAcrossStaves(page, bars, 835f, 480f);
 
-        // Sls cap 18 (was 12) widens engraved min-widths; 8 quarters no longer fit at 835.
-        // Balanced cut still maximizes placed music then equalizes staves (3+3, not 4+2).
-        Assert.Equal(2, split.UnplacedMeasureCount);
-        Assert.Equal(6, split.UpperMeasureCount + split.LowerMeasureCount);
-        Assert.Equal(3, split.UpperMeasureCount);
-        Assert.Equal(3, split.LowerMeasureCount);
+        // Pack sizes notation from a provisional two-staff split (same Sls/head scale as draw).
+        // All eight quarter-note measures fit at 835; balanced cut equalizes staves (4+4).
+        Assert.Equal(0, split.UnplacedMeasureCount);
+        Assert.Equal(8, split.UpperMeasureCount + split.LowerMeasureCount);
+        Assert.Equal(4, split.UpperMeasureCount);
+        Assert.Equal(4, split.LowerMeasureCount);
         Assert.Equal(
             page.Count,
             split.UpperNotes.Count + split.LowerNotes.Count + split.UnplacedNotes.Count);

@@ -129,11 +129,11 @@ namespace musicmate.ViewModels
         public bool NotIsPremium => !_isPremium;
 
         /// <summary>
-        /// True only in DEBUG builds when the user currently has premium — shows the
-        /// "Remove Premium (debug)" reset button. Always false in Release.
+        /// True in Debug / LocalRelease when the user currently has premium — shows the
+        /// "Remove Premium (debug)" reset button. Always false in Play Release.
         /// </summary>
         public bool IsDebugRestoreVisible =>
-#if DEBUG
+#if DEBUG || LOCAL_RELEASE
             _isPremium;
 #else
             false;
@@ -164,11 +164,11 @@ namespace musicmate.ViewModels
             }
             else
             {
-#if DEBUG
-                // Debug-only stub when no store is registered.
+#if DEBUG || LOCAL_RELEASE
+                // Stub builds: grant when no store is registered.
                 MainThread.BeginInvokeOnMainThread(() => IsPremium = true);
 #else
-                // Release: never grant premium without a store confirmation.
+                // Play Release: never grant premium without a store confirmation.
                 System.Diagnostics.Debug.WriteLine("BuyPremiumAsync: no store service — leaving non-premium.");
 #endif
             }
@@ -177,13 +177,13 @@ namespace musicmate.ViewModels
         private async Task RestorePurchasesAsync()
         {
             System.Diagnostics.Debug.WriteLine($"RestorePurchasesAsync called. StoreService={_storeService?.GetType().Name}");
-#if DEBUG
-            // In Debug: this button is a reset tool — unconditionally remove premium.
+#if DEBUG || LOCAL_RELEASE
+            // Stub builds: this button is a reset tool — unconditionally remove premium.
             if (_storeService != null)
                 await _storeService.RestorePurchasesAsync();   // resets the local stub flag
             MainThread.BeginInvokeOnMainThread(() => IsPremium = false);
 #else
-            // In Release: genuine restore from the store (should never be reached — button is hidden).
+            // Play Release: genuine restore from the store (should never be reached — button is hidden).
             if (_storeService != null)
             {
                 var ok = await _storeService.RestorePurchasesAsync();

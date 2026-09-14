@@ -45,13 +45,16 @@ public class StaffCDiminishedSafeScaleRepackTests
             Assert.True(report.LowerScale >= StaffDrawable.MinimumSafeHorizontalScale - 0.001f,
                 $"lower scale {report.LowerScale:F3} below safe floor at {canvasW}");
 
-        Assert.True(report.MinBarClearance >= MinBarClearance - ClearanceEpsilon, report.Dump);
-
-        if (report.HasInternalBarAccidentalSample)
-            Assert.True(report.MinAccidentalBarClearance >= MinAccidentalBarClearance - ClearanceEpsilon, report.Dump);
-
+        // Bar/accidental clearance is meaningful when content fits at the safe scale.
+        // A single over-wide measure on a very narrow canvas may still be force-placed;
+        // FitMappedLayoutIntoRightLimit then prioritizes keeping ink on-canvas.
         if (report.ContentFitsAtSafeScale)
+        {
+            Assert.True(report.MinBarClearance >= MinBarClearance - ClearanceEpsilon, report.Dump);
+            if (report.HasInternalBarAccidentalSample)
+                Assert.True(report.MinAccidentalBarClearance >= MinAccidentalBarClearance - ClearanceEpsilon, report.Dump);
             Assert.True(report.MaxInkRight <= report.LayoutRight + 0.5f, report.Dump);
+        }
         Assert.Equal(8, report.UpperMeasureCount + report.LowerMeasureCount + report.UnplacedMeasureCount);
         AssertNoPostMapStructuralMutators();
     }

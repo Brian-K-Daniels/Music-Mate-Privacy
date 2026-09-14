@@ -125,6 +125,44 @@ namespace musicmate.Services
             => _db.DeleteAllAsync<NoteAttempt>();
 
         /// <summary>
+        /// Deletes every attempt row belonging to <paramref name="sessionId"/>.
+        /// Returns the number of rows removed. Empty/null ids are a no-op.
+        /// </summary>
+        public async Task<int> DeleteBySessionIdAsync(string sessionId)
+        {
+            if (string.IsNullOrWhiteSpace(sessionId))
+                return 0;
+
+            return await _db.Table<NoteAttempt>()
+                .DeleteAsync(a => a.SessionId == sessionId);
+        }
+
+        /// <summary>
+        /// Deletes every attempt row whose <see cref="NoteAttempt.SessionId"/> is not
+        /// <paramref name="keepSessionId"/>. Returns the number of rows removed.
+        /// Empty/null keep ids are a no-op (does not wipe the table).
+        /// </summary>
+        public async Task<int> DeleteExceptSessionIdAsync(string keepSessionId)
+        {
+            if (string.IsNullOrWhiteSpace(keepSessionId))
+                return 0;
+
+            return await _db.Table<NoteAttempt>()
+                .DeleteAsync(a => a.SessionId != keepSessionId);
+        }
+
+        public Task<List<NoteAttempt>> GetBySessionIdAsync(string sessionId)
+        {
+            if (string.IsNullOrWhiteSpace(sessionId))
+                return Task.FromResult(new List<NoteAttempt>());
+
+            return _db.Table<NoteAttempt>()
+                .Where(a => a.SessionId == sessionId)
+                .OrderBy(a => a.AttemptId)
+                .ToListAsync();
+        }
+
+        /// <summary>
         /// Deletes the oldest rows until the DB file is under <paramref name="maxBytes"/>.
         /// Uses the same strategy as NoteDatabase.PruneToSizeLimitAsync.
         /// </summary>

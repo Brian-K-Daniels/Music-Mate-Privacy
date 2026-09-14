@@ -14,10 +14,10 @@
     <!-- SDK only excludes the project-root obj/bin; ignore nested leftovers (e.g. Views/obj). -->
     <!--<DefaultItemExcludes>$(DefaultItemExcludes);**\bin\**;**\obj\**</DefaultItemExcludes> ChatGPT told me to take this out-->
 
-    <!-- Display name -->
+    <!-- Display name / id: Release = Play Closed Testing; Debug / LocalRelease are side-by-side. -->
     <ApplicationTitle>Music Mate</ApplicationTitle>
-    <!-- App Identifier -->
     <ApplicationId>com.bkdaniels.musicmate</ApplicationId>
+    <Configurations>Debug;Release;LocalRelease</Configurations>
 
     <!-- Versions -->
     <ApplicationDisplayVersion>1.25</ApplicationDisplayVersion>
@@ -34,17 +34,37 @@
   <!-- Import signing passwords from signing.props (excluded from source control) -->
   <Import Project="signing.props" Condition="Exists('signing.props')" />
 
-  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-android' and '$(Configuration)' == 'Release'">
+  <!-- Optimized Android packaging shared by Play Release and local LocalRelease. -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-android' and ('$(Configuration)' == 'Release' or '$(Configuration)' == 'LocalRelease')">
     <AndroidKeyStore>true</AndroidKeyStore>
     <AndroidSigningKeyStore>musicmate.keystore</AndroidSigningKeyStore>
     <AndroidSigningKeyAlias>musicmatekey</AndroidSigningKeyAlias>
-    <AndroidPackageFormat>aab</AndroidPackageFormat>
-    <!-- Required for Archive / Play Store: disable Fast Deployment & shared runtime. -->
+    <!-- Required for Archive / device install: disable Fast Deployment & shared runtime. -->
     <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
     <AndroidUseSharedRuntime>false</AndroidUseSharedRuntime>
     <AndroidLinkMode>SdkOnly</AndroidLinkMode>
+    <AndroidLinkTool>r8</AndroidLinkTool>
     <DebugSymbols>false</DebugSymbols>
     <AndroidIncludeDebugSymbols>false</AndroidIncludeDebugSymbols>
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+
+  <!-- Play / Closed Testing: AAB upload package. -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-android' and '$(Configuration)' == 'Release'">
+    <AndroidPackageFormat>aab</AndroidPackageFormat>
+  </PropertyGroup>
+
+  <!-- LocalRelease: Release-like build that installs beside Closed Testing (separate app data). -->
+  <PropertyGroup Condition="'$(Configuration)' == 'LocalRelease'">
+    <ApplicationTitle>Music Mate Local</ApplicationTitle>
+    <ApplicationId>com.bkdaniels.musicmate.local</ApplicationId>
+    <DebugType>none</DebugType>
+    <!-- Local stub billing (not Play); see MauiProgram IStoreService registration. -->
+    <DefineConstants>$(DefineConstants);LOCAL_RELEASE</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-android' and '$(Configuration)' == 'LocalRelease'">
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-android'">
@@ -72,10 +92,6 @@
 
   <PropertyGroup>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</SupportedOSPlatformVersion>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)' == 'Release' and '$(TargetFramework)' == 'net10.0-android'">
-    <AndroidLinkTool>r8</AndroidLinkTool>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-android'">
@@ -136,9 +152,6 @@
     <Compile Remove="Pages\DebugItemsPage.xaml.cs" />
     <Compile Remove="ViewModels\DebugItemsPageViewModel.cs" />
     <MauiXaml Remove="Pages\DebugItemsPage.xaml" />
-    <Compile Remove="Pages\NoteAttemptsDebugPage.xaml.cs" />
-    <Compile Remove="ViewModels\NoteAttemptsDebugPageViewModel.cs" />
-    <MauiXaml Remove="Pages\NoteAttemptsDebugPage.xaml" />
   </ItemGroup>
 
   <ItemGroup>

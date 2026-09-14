@@ -92,9 +92,9 @@ public class PremiumPopup : Popup
                 new RowDefinition { Height = new GridLength(52) }, // row 5 – Buy Premium
                 new RowDefinition { Height = GridLength.Star    }, // row 6 – gap
                 new RowDefinition { Height = new GridLength(52) }, // row 7 – Decline
-#if DEBUG
-                new RowDefinition { Height = GridLength.Star    }, // row 8 – gap (debug only)
-                new RowDefinition { Height = new GridLength(44) }, // row 9 – Restore (debug only)
+#if DEBUG || LOCAL_RELEASE
+                new RowDefinition { Height = GridLength.Star    }, // row 8 – gap (stub only)
+                new RowDefinition { Height = new GridLength(44) }, // row 9 – Restore (stub only)
 #endif
                 new RowDefinition { Height = GridLength.Star    }, // bottom gap
             }
@@ -105,8 +105,8 @@ public class PremiumPopup : Popup
         grid.Add(buyButton, column: 0, row: 5);
         grid.Add(declineButton, column: 0, row: 7);
 
-#if DEBUG
-        // DEBUG ONLY – "Restore Purchases" resets the local premium flag so you
+#if DEBUG || LOCAL_RELEASE
+        // Stub builds – "Restore Purchases" resets the local premium flag so you
         // can test the flow repeatedly without uninstalling.
         var restoreButton = new Button
         {
@@ -135,7 +135,7 @@ public class PremiumPopup : Popup
             StrokeShape = new RoundRectangle { CornerRadius = new CornerRadius(10) },
             Padding = new Thickness(20, 14),
             WidthRequest = popupW,
-#if DEBUG
+#if DEBUG || LOCAL_RELEASE
             HeightRequest = debugPopupH,
 #else
             HeightRequest   = popupH,
@@ -165,7 +165,7 @@ public class PremiumPopup : Popup
         await SafeCloseAsync();
     }
 
-#if DEBUG
+#if DEBUG || LOCAL_RELEASE
     private async void OnRestoreClicked(object? sender, EventArgs e)
     {
         if (_storeService != null)

@@ -561,10 +561,14 @@ namespace musicmate.Services
         private const string PrefMasteredMethodKey = "musicmate.MasteredMethod";
         private const string PrefStreakCritKey = "musicmate.StreakCrit";
         private const string PrefUseNoteMasteryForGenerationKey = "musicmate.UseNoteMasteryForGeneration";
+        public const string PrefClearNoteAttemptsAfterSessionKey = "musicmate.ClearNoteAttemptsAfterSession";
+        public const bool DefaultClearNoteAttemptsAfterSession = false;
         private string _masteredMethod = SessionPreferences.Get(PrefMasteredMethodKey, MasteryPreferenceDefaults.MasteredMethod);
         private int _streakCrit = SessionPreferences.Get(PrefStreakCritKey, MasteryPreferenceDefaults.StreakCrit);
         private bool _useNoteMasteryForGeneration = SessionPreferences.Get(
             PrefUseNoteMasteryForGenerationKey, MasteryPreferenceDefaults.UseNoteMasteryForGeneration);
+        private bool _clearNoteAttemptsAfterSession = SessionPreferences.Get(
+            PrefClearNoteAttemptsAfterSessionKey, DefaultClearNoteAttemptsAfterSession);
 
         /// <summary>
         /// When true (factory default), Random / Repeat-Same generation may omit mastered
@@ -580,6 +584,23 @@ namespace musicmate.Services
                 _useNoteMasteryForGeneration = value;
                 SessionPreferences.Set(PrefUseNoteMasteryForGenerationKey, value);
                 OnPropertyChanged(nameof(UseNoteMasteryForGeneration));
+            }
+        }
+
+        /// <summary>
+        /// When true, after each completed Music session Note Attempts from earlier
+        /// sessions are deleted so only the most recently completed session remains.
+        /// Factory default is off (all session history retained).
+        /// </summary>
+        public bool ClearNoteAttemptsAfterSession
+        {
+            get => _clearNoteAttemptsAfterSession;
+            set
+            {
+                if (_clearNoteAttemptsAfterSession == value) return;
+                _clearNoteAttemptsAfterSession = value;
+                SessionPreferences.Set(PrefClearNoteAttemptsAfterSessionKey, value);
+                OnPropertyChanged(nameof(ClearNoteAttemptsAfterSession));
             }
         }
 
@@ -952,19 +973,37 @@ namespace musicmate.Services
             double sumCorrects = CorrectNoteIndices.Count;
             double sumWrongs = NoteFeedbacks.Values.Sum(v => v.Wrong);
             double total = sumCorrects + sumWrongs;
-            double rpc = total > 0 ? 100 * sumCorrects / total : 0; // Raw Percent Correct
-            double apc;                                                 // Adjusted Percent Correct
-            //double pcc = 40;                                          // Percent Correct Correction // ADJUST AS NECESSARY
-            //if (rpc >= pcc)
-            //{
-            //    apc = 100;
-            //}
-            //else
-            //{
-            //   apc = 100.0 * rpc / pcc;
-            //}  //  2026.03.20 1853  
-            apc = rpc;
-            return (sumCorrects, sumWrongs, apc);
+            // Retry-weighted percent: correct notes ÷ (correct notes + wrong-try counters).
+            // Prefer GetSessionCompletionPercent / GetSessionLevelUpPitchAccuracyPercent for UI / Level-up.
+            double rpc = total > 0 ? 100 * sumCorrects / total : 0;
+            return (sumCorrects, sumWrongs, rpc);
+        }
+
+        /// <summary>
+        /// User-facing pitch completion: notes eventually accepted ÷ non-rest notes in the exercise.
+        /// Retries and timing-gate false starts do not lower this score.
+        /// </summary>
+        public double GetSessionCompletionPercent()
+        {
+            int totalNotes = NotesToDraw.Count(n => !n.IsRest);
+            if (totalNotes <= 0)
+                return 0;
+            int correct = CorrectNoteIndices.Count;
+            return 100.0 * Math.Clamp(correct, 0, totalNotes) / totalNotes;
+        }
+
+        /// <summary>
+        /// Level-up pitch accuracy from recorded attempt outcomes: pitch-right ÷ (pitch-right + pitch-wrong).
+        /// Timing-only rejects with correct pitch do not count as pitch-wrong.
+        /// Falls back to <see cref="GetSessionCompletionPercent"/> when no pitch outcomes exist.
+        /// </summary>
+        public double GetSessionLevelUpPitchAccuracyPercent()
+        {
+            var (pitchRight, pitchWrong, _, _, _, _, _, _) = GetSessionSummaryCounts();
+            int decided = pitchRight + pitchWrong;
+            if (decided <= 0)
+                return GetSessionCompletionPercent();
+            return 100.0 * pitchRight / decided;
         }
 
         private static AccidentalPreference GetPreferenceForScale(string key, string scale)
@@ -1666,9 +1705,7 @@ namespace musicmate.Services
         /// </summary>
         public (string Key, string Scale) GetNotationKeyAndScale()
         {
-            if (Tune == "Practice Tune"
-                && CurrentTune != null
-                && !string.IsNullOrWhiteSpace(CurrentTune.Key))
+            if (Tune == "Practice Tune" && CurrentTune != null)
                 return ResolvePracticeTuneNotation(CurrentTune);
             if (Tune == "Arpeggio")
             {
@@ -5780,17 +5817,17 @@ namespace musicmate.Services
         {
             ArgumentNullException.ThrowIfNull(tune);
 
-            if (!string.IsNullOrWhiteSpace(tune.Key))
-            {
-                if (Tune != "Practice Tune")
-                    _keyBeforePracticeTune = Key;
-                if (Key != tune.Key)
-                    Key = tune.Key;
+            // Always apply the tune's authored notation key (or C when legacy JSON omitted key).
+            // Do not leave the Music-page key in place — that would silently override the tune.
+            var (notationKey, _) = ResolvePracticeTuneNotation(tune);
+            if (Tune != "Practice Tune")
+                _keyBeforePracticeTune = Key;
+            if (Key != notationKey)
+                Key = notationKey;
 #if DEBUG
-                DebugLog.WriteLine(
-                    $"[PickerTest] PracticeTune/{tune.Title}: written Key={tune.Key} Concert={GetConcertKey()}");
+            DebugLog.WriteLine(
+                $"[PickerTest] PracticeTune/{tune.Title}: written Key={notationKey} Concert={GetConcertKey()}");
 #endif
-            }
 
             CurrentTune = tune;
             IsRandomMode = false;

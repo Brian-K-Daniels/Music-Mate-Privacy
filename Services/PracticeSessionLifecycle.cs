@@ -221,8 +221,11 @@ namespace musicmate.Services
 
         public static CompletionSummaryStats CaptureCompletionSummary(NoteSessionService session)
         {
-            var (correct, wrong, apc) = session.GetSessionCorrectWrongTotals();
-            return new CompletionSummaryStats(correct, wrong, apc, session.GetDetectedBpm());
+            int correct = session.CorrectNoteIndices.Count;
+            int totalNotes = session.NotesToDraw.Count(n => !n.IsRest);
+            int remaining = Math.Max(0, totalNotes - correct);
+            double completionPc = session.GetSessionCompletionPercent();
+            return new CompletionSummaryStats(correct, remaining, completionPc, session.GetDetectedBpm());
         }
 
         public static string FormatSessionResultBanner(
@@ -236,6 +239,7 @@ namespace musicmate.Services
             var levelUpText = newChildLevel.HasValue
                 ? $"  🎉 Great job! You advanced to Level {newChildLevel.Value}!"
                 : string.Empty;
+            // stats.Wrong here means notes not yet/never completed (not retry counters).
             return $"✓ {stats.AccuracyPercent:F0}% correct  ({(int)stats.Correct}/{total}){bpmText}{levelUpText}";
         }
 

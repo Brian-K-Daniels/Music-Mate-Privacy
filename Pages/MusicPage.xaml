@@ -733,7 +733,7 @@
                     Clicked="OnDeleteSavedTuneClicked" />
           </Grid>
 
-          <!-- DEBUG: Note Attempts viewer (visibility set in code-behind) -->
+          <!-- Note Attempts viewer (visibility set in code-behind) -->
           <Button x:Name="NoteAttemptsDebugButton"
                   Text="Note Attempts"
                   Style="{StaticResource CompactBrownButton}"

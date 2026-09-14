@@ -23,7 +23,7 @@ namespace musicmate.Services
 
         private StatusService()
         {
-#if DEBUG
+#if DEBUG || LOCAL_RELEASE
             _isPremiumUser = SessionPreferences.Get(PremiumProduct.PreferenceKey, false);
 #else
             _isPremiumUser = false;

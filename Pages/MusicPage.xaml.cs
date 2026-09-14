@@ -290,7 +290,6 @@ namespace musicmate.Pages
         private void RefreshMidi61DiagnosticLabel() { }
 #endif
 
-#if DEBUG
         private void RefreshNoteAttemptsDebugButtonVisibility()
         {
             if (NoteAttemptsDebugButton is null)
@@ -312,11 +311,6 @@ namespace musicmate.Pages
                 DebugLog.WriteLine($"[MusicPage] Note Attempts navigate ERROR: {ex}");
             }
         }
-#else
-        private void RefreshNoteAttemptsDebugButtonVisibility() { }
-
-        private void OnNoteAttemptsDebugClicked(object? sender, EventArgs e) { }
-#endif
         private void UpdateNoteEmphasisBanner()
         {
             if (!MainThread.IsMainThread)
@@ -587,9 +581,14 @@ namespace musicmate.Pages
 
                         // Rolling per-note attempt history runs unconditionally,
                         // independent of the CollectNoteStats preference.
-                        // Save session summary before attempt rows are cleared.
+                        // Persist session summary + this session's attempts first; optional
+                        // cleanup then removes older sessions only (never the one just saved).
                         int? newChildLevel = await SaveSessionStatAsync();
                         await SaveNoteAttemptsForSessionAsync(levelBeforeSave);
+                        await NoteAttemptSessionCleanup.RetainOnlyCompletedSessionIfEnabledAsync(
+                            _noteAttemptDb,
+                            _currentSessionId,
+                            _session.ClearNoteAttemptsAfterSession);
 
                         if (_completionFromPlayback)
                         {
@@ -1280,12 +1279,11 @@ namespace musicmate.Pages
         /// </summary>
         private static List<GeneratedNote> BuildNotesFromTune(PracticeTune tune, string? key = null, string? scale = null)
         {
+            // Saved / practice tunes always use their authored key (or C when missing).
+            // Ignore optional key/scale overrides so the Music-page key cannot rewrite the tune.
+            _ = key;
+            _ = scale;
             var (noteKey, noteScale) = NoteSessionService.ResolvePracticeTuneNotation(tune);
-            if (string.IsNullOrWhiteSpace(tune.Key))
-            {
-                noteKey = key ?? noteKey;
-                noteScale = scale ?? noteScale;
-            }
 
             var result = new List<GeneratedNote>();
             double measureBeats = tune.TimeSignature.TotalBeats;
@@ -1543,29 +1541,42 @@ namespace musicmate.Pages
 
                 if (LayoutTestTune.IsEnabled)
                 {
-                    ClearStaffPagePack();
                     var testTune = LayoutTestTune.Create();
                     LayoutTestTune.LogContents(testTune);
 
                     var allNotes = BuildNotesFromTune(testTune, _session.Key, _session.SelectedScale);
-                    int splitAt = testTune.Measures.Count / 2;
-                    double splitBeat = 0.0;
-                    for (int m = 0; m < splitAt && m < testTune.Measures.Count; m++)
-                        foreach (var mn in testTune.Measures[m].Notes)
-                            splitBeat += mn.Duration.ToBeatValue();
-
-                    (upperFlat, lowerFlat) = PracticeTuneStaffSplit.PartitionByMeasureHalf(
-                        allNotes,
-                        testTune.Measures.Count,
-                        splitBeat,
-                        ShiftStaffBeatPositions);
                     double measureBeats = testTune.TimeSignature.TotalBeats;
+                    if (measureBeats <= 0)
+                        measureBeats = 4;
+                    var pageBars = ComputeStaffBarBeats(allNotes, measureBeats, new HashSet<double>());
+                    var (canvasWidth, canvasHeight, isProvisional) = ResolveStaffCanvasSize();
+
+                    StoreStaffPagePack(
+                        allNotes, pageBars, measureBeats,
+                        isTwoOctaveScaleCut: false,
+                        canvasWidth, canvasHeight, isProvisional,
+                        splitMode: StaffDrawable.StaffMeasureSplitMode.FillUpperFirst,
+                        keepAllNotesVisible: true);
+
+                    var split = PracticeTuneStaffSplit.PartitionForDisplay(
+                        _staffDrawable!,
+                        allNotes,
+                        pageBars,
+                        testTune.Measures.Count,
+                        canvasWidth,
+                        canvasHeight);
+                    upperFlat = split.UpperNotes;
+                    lowerFlat = split.LowerNotes;
+
+                    double lowerBeatShift = lowerFlat.Count > 0 ? (lowerFlat[0].BeatPosition ?? 0.0) : 0.0;
+                    lowerFlat = ShiftStaffBeatPositions(lowerFlat, lowerBeatShift);
+
                     upperBarBeats = ComputeStaffBarBeats(upperFlat, measureBeats, existingUpper);
                     lowerBarBeats = ComputeStaffBarBeats(lowerFlat, measureBeats, existingLower);
 
-                    _seqNextMeasureIndex = testTune.Measures.Count;
-                    _seqNextBeatOffset = allNotes.Sum(n => n.BeatDuration);
-                    _seqNextGlobalNoteIndex = allNotes.Count(n => !n.IsRest);
+                    _seqNextMeasureIndex = split.UpperMeasureCount + split.LowerMeasureCount;
+                    _seqNextBeatOffset = upperFlat.Sum(n => n.BeatDuration) + lowerFlat.Sum(n => n.BeatDuration);
+                    _seqNextGlobalNoteIndex = upperFlat.Count(n => !n.IsRest) + lowerFlat.Count(n => !n.IsRest);
                     _lowerMeasureIndex = _seqNextMeasureIndex;
                     _lowerBeatOffset = _seqNextBeatOffset;
                     _lowerGlobalNoteIndex = _seqNextGlobalNoteIndex;
@@ -1576,37 +1587,55 @@ namespace musicmate.Pages
                 }
                 else if (_session.Tune == "Practice Tune" && _session.CurrentTune != null)
                 {
-                    ClearStaffPagePack();
-                    // Split tune measures between upper and lower staff.
-                    // Short (1-measure) saved tunes must stay on the upper staff only —
-                    // the old half-split left upper empty and engraved duplicate chrome.
+                    // Width-aware wrap (fill upper first). Short tunes stay upper-only.
+                    // KeepAllNotesVisible so a saved tune is never truncated off the page.
                     var allNotes = BuildNotesFromTune(_session.CurrentTune);
                     var allMeasures = _session.CurrentTune.Measures.Count;
-                    int splitAt = allMeasures / 2;
-
-                    // Gather beat threshold for split.
-                    double splitBeat = 0.0;
-                    for (int m = 0; m < splitAt && m < _session.CurrentTune.Measures.Count; m++)
-                        foreach (var mn in _session.CurrentTune.Measures[m].Notes)
-                            splitBeat += mn.Duration.ToBeatValue();
-
-                    (upperFlat, lowerFlat) = PracticeTuneStaffSplit.PartitionByMeasureHalf(
-                        allNotes,
-                        allMeasures,
-                        splitBeat,
-                        ShiftStaffBeatPositions);
                     double measureBeats = _session.CurrentTune.TimeSignature.TotalBeats;
+                    if (measureBeats <= 0)
+                        measureBeats = 4;
+                    var pageBars = ComputeStaffBarBeats(allNotes, measureBeats, new HashSet<double>());
+                    var (canvasWidth, canvasHeight, isProvisional) = ResolveStaffCanvasSize();
+
+                    StoreStaffPagePack(
+                        allNotes, pageBars, measureBeats,
+                        isTwoOctaveScaleCut: false,
+                        canvasWidth, canvasHeight, isProvisional,
+                        splitMode: StaffDrawable.StaffMeasureSplitMode.FillUpperFirst,
+                        keepAllNotesVisible: true);
+
+                    var split = PracticeTuneStaffSplit.PartitionForDisplay(
+                        _staffDrawable!,
+                        allNotes,
+                        pageBars,
+                        allMeasures,
+                        canvasWidth,
+                        canvasHeight);
+                    upperFlat = split.UpperNotes;
+                    lowerFlat = split.LowerNotes;
+
+                    double lowerBeatShift = lowerFlat.Count > 0 ? (lowerFlat[0].BeatPosition ?? 0.0) : 0.0;
+                    lowerFlat = ShiftStaffBeatPositions(lowerFlat, lowerBeatShift);
+
                     upperBarBeats = ComputeStaffBarBeats(upperFlat, measureBeats, existingUpper);
                     lowerBarBeats = ComputeStaffBarBeats(lowerFlat, measureBeats, existingLower);
 
-                    _seqNextMeasureIndex = allMeasures;
-                    _seqNextBeatOffset = allNotes.Sum(n => n.BeatDuration);
-                    _seqNextGlobalNoteIndex = allNotes.Count(n => !n.IsRest);
+                    _seqNextMeasureIndex = split.UpperMeasureCount + split.LowerMeasureCount;
+                    _seqNextBeatOffset = upperFlat.Sum(n => n.BeatDuration) + lowerFlat.Sum(n => n.BeatDuration);
+                    _seqNextGlobalNoteIndex = upperFlat.Count(n => !n.IsRest) + lowerFlat.Count(n => !n.IsRest);
 
                     _lowerMeasureIndex = _seqNextMeasureIndex;
                     _lowerBeatOffset = _seqNextBeatOffset;
                     _lowerGlobalNoteIndex = _seqNextGlobalNoteIndex;
                     if (_staffDrawable != null) _staffDrawable.UpperHasEndBar = false;
+
+#if DEBUG
+                    DebugLog.WriteLine(
+                        $"[Staff PracticeTune] packed upper={split.UpperMeasureCount} " +
+                        $"lower={split.LowerMeasureCount} unplaced={split.UnplacedMeasureCount} " +
+                        $"provisional={isProvisional} width={canvasWidth:F0} " +
+                        $"Upper: {upperFlat.Count} notes, Lower: {lowerFlat.Count} notes");
+#endif
                 }
                 else if (_session.Tune == "Arpeggio")
                 {
@@ -3380,7 +3409,9 @@ namespace musicmate.Pages
             bool isTwoOctaveScaleCut,
             float canvasWidth,
             float canvasHeight,
-            bool isProvisional)
+            bool isProvisional,
+            StaffDrawable.StaffMeasureSplitMode splitMode = StaffDrawable.StaffMeasureSplitMode.Balanced,
+            bool keepAllNotesVisible = false)
         {
             _staffPagePack = new StaffPagePackState
             {
@@ -3388,6 +3419,8 @@ namespace musicmate.Pages
                 PageBarBeats = pageBars,
                 MeasureBeats = measureBeats,
                 IsTwoOctaveScaleCut = isTwoOctaveScaleCut,
+                SplitMode = splitMode,
+                KeepAllNotesVisible = keepAllNotesVisible,
                 IsProvisional = isProvisional,
                 PackedCanvasWidth = canvasWidth,
                 PackedCanvasHeight = canvasHeight,
@@ -3404,7 +3437,7 @@ namespace musicmate.Pages
         }
 
         /// <summary>
-        /// Re-runs <see cref="StaffDrawable.SplitMeasuresAcrossStaves"/> on the cached page
+        /// Re-runs <see cref="StaffDrawable.SplitMeasuresAcrossStaves(List{GeneratedNote}, IReadOnlyList{double}, float, float, StaffDrawable.StaffMeasureSplitMode)"/> on the cached page
         /// at <paramref name="canvasWidth"/>. Does not call the sequence generator.
         /// </summary>
         private async Task<bool> RepackStaffPageAtWidthAsync(
@@ -3443,7 +3476,10 @@ namespace musicmate.Pages
                 double lowerBeats = lowerFlat.Sum(n => n.BeatDuration);
                 int upperPitches = upperFlat.Count(n => !n.IsRest);
                 int lowerPitches = lowerFlat.Count(n => !n.IsRest);
-                _seqNextMeasureIndex = placedMeasures;
+                // Saved/practice tunes keep every note on a staff; cursor covers the full page.
+                _seqNextMeasureIndex = state.KeepAllNotesVisible
+                    ? split.TotalMeasureCount
+                    : placedMeasures;
                 _seqNextBeatOffset = upperBeats + lowerBeats;
                 _seqNextGlobalNoteIndex = upperPitches + lowerPitches;
                 _lowerMeasureIndex = _seqNextMeasureIndex;

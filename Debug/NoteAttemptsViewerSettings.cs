@@ -3,8 +3,8 @@ using Microsoft.Maui.Storage;
 namespace musicmate.LayoutDebug;
 
 /// <summary>
-/// DEBUG preference: show the Music page button that opens the Note Attempts viewer.
-/// Always false in Release builds.
+/// Preference: show the Music page button that opens the Note Attempts viewer.
+/// Defaults to on so the nav button is available in Release and Debug.
 /// </summary>
 public static class NoteAttemptsViewerSettings
 {
@@ -12,12 +12,7 @@ public static class NoteAttemptsViewerSettings
 
     public static bool IsMusicPageButtonEnabled
     {
-        get =>
-#if DEBUG
-            Preferences.Default.Get(PreferenceKey, false);
-#else
-            false;
-#endif
+        get => Preferences.Default.Get(PreferenceKey, true);
         set => Preferences.Default.Set(PreferenceKey, value);
     }
 }

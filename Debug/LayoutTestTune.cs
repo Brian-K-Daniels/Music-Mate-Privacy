@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using musicmate.Models;
-using Microsoft.Maui.Storage;
 
 namespace musicmate.LayoutDebug
 {
@@ -17,13 +16,13 @@ namespace musicmate.LayoutDebug
         public static bool IsEnabled =>
 #if DEBUG
             Diagnostics.DebugLogSettings.IsEnabled(Diagnostics.DebugLogCategory.LayoutTestTune)
-            && Preferences.Default.Get(PreferenceKey, false);
+            && musicmate.Services.SessionPreferences.Get(PreferenceKey, false);
 #else
             false;
 #endif
 
         public static void SetEnabled(bool enabled) =>
-            Preferences.Default.Set(PreferenceKey, enabled);
+            musicmate.Services.SessionPreferences.Set(PreferenceKey, enabled);
 
         /// <summary>
         /// Eight 4/4 measures (4 upper + 4 lower when split at midpoint).

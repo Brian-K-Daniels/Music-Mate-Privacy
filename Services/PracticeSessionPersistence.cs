@@ -1,4 +1,3 @@
-using Microsoft.Maui.Storage;
 using musicmate.LayoutDebug;
 using musicmate.Models;
 using musicmate.Utilities;
@@ -17,16 +16,16 @@ namespace musicmate.Services
 
         public static SessionStat BuildSessionStat(NoteSessionService session)
         {
-            var (correct, wrong, apc) = session.GetSessionCorrectWrongTotals();
-            var total = correct + wrong;
-            var pc = total > 0 ? (double)correct * 100.0 / total : 0.0;
+            var (correct, wrongRetries, retryWeightedPc) = session.GetSessionCorrectWrongTotals();
+            double completionPc = session.GetSessionCompletionPercent();
             var detectedBpm = session.GetDetectedBpm();
             var hi = session.NotesToDraw.OrderByDescending(n => n.Midi).FirstOrDefault();
             var lo = session.NotesToDraw.OrderBy(n => n.Midi).FirstOrDefault();
             double? timingAccuracyPercent = session.GetTimingAccuracyPercent();
+            // My Progress headline: completion-friendly pitch % (retries do not punish Pc%).
             double overallAccuracy = timingAccuracyPercent.HasValue
-                ? (apc + timingAccuracyPercent.Value) / 2.0
-                : apc;
+                ? (completionPc + timingAccuracyPercent.Value) / 2.0
+                : completionPc;
 
             var (pitchRight, pitchWrong, timingRight, timingWrong,
                  overallRight, overallWrong, restRight, restWrong) = session.GetSessionSummaryCounts();
@@ -40,17 +39,17 @@ namespace musicmate.Services
                 What = PlayModePickerOptions.BuildSessionWhatLabel(
                     session,
                     LayoutTestTune.IsEnabled,
-                    Preferences.Default.Get<string?>("SelectedTune", null)),
+                    SessionPreferences.Get("SelectedTune", string.Empty)),
                 Rand = session.IsRandomMode,
                 AccPct = session.AccidentalPercent,
                 Hi = hi?.Name ?? "",
                 Lo = lo?.Name ?? "",
-                Pc = apc,
-                PcRaw = pc,
+                Pc = completionPc,
+                PcRaw = retryWeightedPc,
                 Tp = detectedBpm ?? 0,
                 Ts = 0,
                 Level = session.ChildLevel,
-                Pch = apc,
+                Pch = completionPc,
                 Tmg = timingAccuracyPercent ?? 0.0,
                 Ovrl = overallAccuracy,
                 PitchRightCount = pitchRight,
@@ -67,7 +66,9 @@ namespace musicmate.Services
         public static SessionResult BuildSessionResult(NoteSessionService session, double pitchAccuracyPercent)
         {
             var totalNotes = session.NotesToDraw.Count(n => !n.IsRest);
-            var (correctCount, wrongCount, _) = session.GetSessionCorrectWrongTotals();
+            var (correctCount, _, _) = session.GetSessionCorrectWrongTotals();
+            var (pitchRight, pitchWrong, timingRight, timingWrong,
+                 overallRight, overallWrong, restRight, restWrong) = session.GetSessionSummaryCounts();
 
             double avgCents = 0;
             var correctIndices = session.CorrectNoteIndices;
@@ -88,9 +89,6 @@ namespace musicmate.Services
                 ? (pitchAccuracyPercent + timingAccuracyPercent.Value) / 2.0
                 : pitchAccuracyPercent;
 
-            var (pitchRight, pitchWrong, timingRight, timingWrong,
-                 overallRight, overallWrong, restRight, restWrong) = session.GetSessionSummaryCounts();
-
             return new SessionResult
             {
                 DateTime = DateTime.UtcNow,
@@ -98,7 +96,8 @@ namespace musicmate.Services
                 Level = session.ChildLevel,
                 TotalNotes = totalNotes,
                 CorrectPitchCount = (int)correctCount,
-                WrongPitchCount = (int)wrongCount,
+                // Actual wrong-pitch attempt outcomes (not timing-gate retry counters).
+                WrongPitchCount = pitchWrong,
                 PitchAccuracyPercent = pitchAccuracyPercent,
                 AveragePitchErrorCents = avgCents,
                 TimingAccuracyPercent = timingAccuracyPercent,
@@ -161,8 +160,9 @@ namespace musicmate.Services
                 return new SaveOutcome { Skipped = false, SkipReason = "saved-tune" };
             }
 
-            var (_, _, apc) = session.GetSessionCorrectWrongTotals();
-            await SaveSessionResultAsync(session, sessionResultDb, apc);
+            // Level-up uses attempt-based pitch accuracy (wrong pitch only), not retry-weighted Pc%.
+            double levelUpPitchPct = session.GetSessionLevelUpPitchAccuracyPercent();
+            await SaveSessionResultAsync(session, sessionResultDb, levelUpPitchPct);
 
             if (sessionResultDb == null)
             {

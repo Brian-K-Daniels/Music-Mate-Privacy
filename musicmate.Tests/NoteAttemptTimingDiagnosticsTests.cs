@@ -29,7 +29,7 @@ public class NoteAttemptTimingDiagnosticsTests
         => Assert.Equal(expected, NoteAttemptTimingDiagnostics.IsHadEarlyCandidateReason(reason));
 
     [Fact]
-    public void DisplayDetail_Plus3MsWithHadEarlyCandidate_ShowsLateOnsetNotWasEarly()
+    public void DisplayDetail_Plus3MsWithHadEarlyCandidate_ShowsOnTimeWhenTimingOk()
     {
         var attempt = new NoteAttempt
         {
@@ -53,18 +53,21 @@ public class NoteAttemptTimingDiagnosticsTests
 
         Assert.Contains("hadEarlyCandidate", detail, StringComparison.Ordinal);
         Assert.DoesNotContain("wasEarly", detail, StringComparison.Ordinal);
-        Assert.Contains("onset=late", detail, StringComparison.Ordinal);
+        Assert.Contains("onset=onTime", detail, StringComparison.Ordinal);
         Assert.Contains("Δ3ms", detail, StringComparison.Ordinal);
         Assert.Contains("t=11706/11709", detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("onset=late", detail, StringComparison.Ordinal);
         Assert.DoesNotContain("onset=early", detail, StringComparison.Ordinal);
     }
 
     [Theory]
-    [InlineData(-137.0, "onset=early", "Δ-137ms")]
-    [InlineData(0.0, "onset=onTime", "Δ0ms")]
-    [InlineData(3.0, "onset=late", "Δ3ms")]
-    public void DisplayDetail_AcceptedOnsetMatchesDeltaSign(
-        double deltaMs, string onsetToken, string deltaToken)
+    [InlineData(-137.0, true, "onset=onTime", "Δ-137ms")]
+    [InlineData(0.0, true, "onset=onTime", "Δ0ms")]
+    [InlineData(3.0, true, "onset=onTime", "Δ3ms")]
+    [InlineData(-137.0, false, "onset=early", "Δ-137ms")]
+    [InlineData(3.0, false, "onset=late", "Δ3ms")]
+    public void DisplayDetail_OnsetUsesTimingOkForOnTime(
+        double deltaMs, bool timingCorrect, string onsetToken, string deltaToken)
     {
         var attempt = new NoteAttempt
         {
@@ -73,9 +76,9 @@ public class NoteAttemptTimingDiagnosticsTests
             WrittenNoteName = "D4",
             ActualDetectedNoteName = "D4",
             PitchCorrect = true,
-            TimingCorrect = true,
-            OverallCorrect = true,
-            WrongReason = string.Empty,
+            TimingCorrect = timingCorrect,
+            OverallCorrect = timingCorrect,
+            WrongReason = timingCorrect ? string.Empty : (deltaMs < 0 ? "Early" : "Late"),
             TimingErrorMs = deltaMs,
             ExpectedStartMs = 600,
             ActualDetectedMs = 600 + deltaMs,
@@ -84,7 +87,6 @@ public class NoteAttemptTimingDiagnosticsTests
         var detail = new NoteAttemptRowViewModel(attempt).Detail;
         Assert.Contains(onsetToken, detail, StringComparison.Ordinal);
         Assert.Contains(deltaToken, detail, StringComparison.Ordinal);
-        Assert.DoesNotContain("hadEarlyCandidate", detail, StringComparison.Ordinal);
     }
 
     [Fact]

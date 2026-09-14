@@ -14,7 +14,8 @@ namespace musicmate.Platforms.Android
     /// </summary>
     public class GooglePlayStoreService : Java.Lang.Object, IStoreService, IPurchasesUpdatedListener
     {
-        private const string LogTag = "MusicMate.Billing";
+        /// <summary>logcat tag for Release billing diagnostics (adb logcat -s MusicMateBilling).</summary>
+        private const string LogTag = "MusicMateBilling";
 
         private BillingClient? _billingClient;
         private TaskCompletionSource<bool>? _purchaseTcs;
@@ -23,6 +24,7 @@ namespace musicmate.Platforms.Android
 
         public async Task InitializeAsync()
         {
+            Log($"InitializeAsync: package={PackageName()}, installerPlay={IsInstalledFromGooglePlay()}");
             _billingClient = BuildClient();
             await ConnectAsync();
             // Do not write StatusService here. App.InitializePremiumStatus clears any
@@ -44,8 +46,11 @@ namespace musicmate.Platforms.Android
 
         public async Task<bool> PurchaseAsync(string productId)
         {
+            Log($"PurchaseAsync start: requestedId={productId}, package={PackageName()}, "
+                + $"installerPlay={IsInstalledFromGooglePlay()}");
             await EnsureConnectedAsync();
             string id = NormalizeProductId(productId);
+            Log($"PurchaseAsync: product ID being queried={id}");
 
             // Already owned (common when reinstalling or USB-deploying a Release build).
             var existing = await QueryCurrentPurchasesAsync(id);
@@ -57,12 +62,20 @@ namespace musicmate.Platforms.Android
             }
 
             var products = await QueryProductDetailsAsync(new[] { id });
+            Log($"PurchaseAsync: number of products returned={products.Count}");
             if (products.Count == 0)
+            {
+                Log("PurchaseAsync: abort — no product details "
+                    + $"(package={PackageName()} must match Play Console app that owns '{id}').");
                 return false;
+            }
 
             var activity = Microsoft.Maui.ApplicationModel.Platform.CurrentActivity;
             if (activity == null)
+            {
+                Log("PurchaseAsync: abort — CurrentActivity is null.");
                 return false;
+            }
 
             _purchaseTcs = new TaskCompletionSource<bool>();
 
@@ -75,7 +88,9 @@ namespace musicmate.Platforms.Android
                 })
                 .Build();
 
-            _billingClient!.LaunchBillingFlow(activity, flowParams);
+            var launchResult = _billingClient!.LaunchBillingFlow(activity, flowParams);
+            Log($"purchase launch response code={launchResult.ResponseCode}, "
+                + $"BillingResult debugMessage={launchResult.DebugMessage ?? "(null)"}");
 
             // Wait for OnPurchasesUpdated to signal completion (timeout 5 min)
             var completed = await Task.WhenAny(_purchaseTcs.Task,
@@ -83,8 +98,12 @@ namespace musicmate.Platforms.Android
             if (completed == _purchaseTcs.Task && _purchaseTcs.Task.Result)
             {
                 ApplyPremiumEntitlement(true);
+                Log("PurchaseAsync: purchase callback succeeded — Premium granted.");
                 return true;
             }
+            Log($"PurchaseAsync: failed or timed out "
+                + $"(callbackCompleted={completed == _purchaseTcs.Task}, "
+                + $"result={(completed == _purchaseTcs.Task ? _purchaseTcs.Task.Result.ToString() : "timeout")}).");
             return false;
         }
 
@@ -123,6 +142,10 @@ namespace musicmate.Platforms.Android
         public void OnPurchasesUpdated(BillingResult billingResult, IList<Purchase>? purchases)
         {
             var code = billingResult.ResponseCode;
+            Log($"purchase callback result: responseCode={code}, "
+                + $"BillingResult debugMessage={billingResult.DebugMessage ?? "(null)"}, "
+                + $"purchaseCount={(purchases == null ? "null" : purchases.Count.ToString())}");
+
             if (code == BillingResponseCode.Ok && purchases != null)
             {
                 foreach (var purchase in purchases)
@@ -171,6 +194,12 @@ namespace musicmate.Platforms.Android
         }
 
         // ── private helpers ──────────────────────────────────────────────────
+
+        private static string PackageName()
+        {
+            try { return global::Android.App.Application.Context.PackageName ?? "(null)"; }
+            catch { return "(unavailable)"; }
+        }
 
         /// <summary>
         /// True when the APK was installed from the Play Store. Visual Studio / adb
@@ -231,7 +260,9 @@ namespace musicmate.Platforms.Android
             _billingClient!.StartConnection(new BillingStateListener(
                 result =>
                 {
-                    Log($"Billing setup finished: responseCode={result.ResponseCode}");
+                    Log($"BillingClient connection result: responseCode={result.ResponseCode}, "
+                        + $"BillingResult debugMessage={result.DebugMessage ?? "(null)"}, "
+                        + $"isReady={_billingClient?.IsReady}");
                     tcs.TrySetResult(result.ResponseCode == BillingResponseCode.Ok);
                 },
                 () =>
@@ -257,11 +288,30 @@ namespace musicmate.Platforms.Android
                 _billingClient = BuildClient();
                 await ConnectAsync();
             }
+
+            Log($"EnsureConnectedAsync: isReady={_billingClient?.IsReady}");
+        }
+
+        private Task<(BillingResult Billing, IList<ProductDetails> Products)> QueryProductDetailsWithBillingAsync(
+            QueryProductDetailsParams queryParams)
+        {
+            var tcs = new TaskCompletionSource<(BillingResult, IList<ProductDetails>)>();
+            _billingClient!.QueryProductDetails(queryParams, new ProductDetailsListener(
+                (billingResult, detailsResult) =>
+                {
+                    var list = detailsResult?.ProductDetailsList
+                        ?? (IList<ProductDetails>)new List<ProductDetails>();
+                    tcs.TrySetResult((billingResult, list));
+                }));
+            return tcs.Task;
         }
 
         private async Task<IList<ProductDetails>> QueryProductDetailsAsync(IEnumerable<string> productIds)
         {
-            var products = productIds
+            var idList = productIds.ToList();
+            Log($"product ID being queried=[{string.Join(',', idList)}], package={PackageName()}");
+
+            var products = idList
                 .Select(id => QueryProductDetailsParams.Product.NewBuilder()
                     .SetProductId(id)
                     .SetProductType(BillingClient.ProductType.Inapp)
@@ -272,9 +322,16 @@ namespace musicmate.Platforms.Android
                 .SetProductList(products)
                 .Build();
 
-            // Billing 8.x: Task-based API returns QueryProductDetailsResult.
-            var result = await _billingClient!.QueryProductDetailsAsync(queryParams);
-            return result.ProductDetailsList ?? (IList<ProductDetails>)new List<ProductDetails>();
+            // Listener API exposes BillingResult; the Task-only overload returns only product lists.
+            var (billingResult, list) = await QueryProductDetailsWithBillingAsync(queryParams);
+
+            Log($"product query response code={billingResult?.ResponseCode}, "
+                + $"BillingResult debugMessage={billingResult?.DebugMessage ?? "(null)"}, "
+                + $"number of products returned={list.Count}");
+            for (int i = 0; i < list.Count; i++)
+                Log($"  product[{i}] id={list[i].ProductId}, title={list[i].Title}");
+
+            return list;
         }
 
         /// <summary>
@@ -298,6 +355,9 @@ namespace musicmate.Platforms.Android
             var code = purchasesResult.Result?.ResponseCode ?? BillingResponseCode.Error;
             bool succeeded = code == BillingResponseCode.Ok;
             var purchases = purchasesResult.Purchases;
+
+            Log($"QueryCurrentPurchasesAsync BillingResult: responseCode={code}, "
+                + $"debugMessage={purchasesResult.Result?.DebugMessage ?? "(null)"}");
 
             var infos = new List<PremiumEntitlement.PurchaseInfo>();
             if (purchases != null)
@@ -365,7 +425,10 @@ namespace musicmate.Platforms.Android
         private void AcknowledgePurchase(Purchase purchase)
         {
             if (purchase.IsAcknowledged)
+            {
+                Log("acknowledgement result: skipped (already acknowledged)");
                 return;
+            }
 
             var ackParams = AcknowledgePurchaseParams.NewBuilder()
                 .SetPurchaseToken(purchase.PurchaseToken)
@@ -395,9 +458,22 @@ namespace musicmate.Platforms.Android
             public void OnBillingServiceDisconnected() => _onDisconnected();
         }
 
+        private class ProductDetailsListener : Java.Lang.Object, IProductDetailsResponseListener
+        {
+            private readonly Action<BillingResult, QueryProductDetailsResult?> _onResponse;
+            public ProductDetailsListener(Action<BillingResult, QueryProductDetailsResult?> onResponse)
+                => _onResponse = onResponse;
+            public void OnProductDetailsResponse(BillingResult billingResult, QueryProductDetailsResult? detailsResult)
+                => _onResponse(billingResult, detailsResult);
+        }
+
         private class AckListener : Java.Lang.Object, IAcknowledgePurchaseResponseListener
         {
-            public void OnAcknowledgePurchaseResponse(BillingResult r) { /* fire-and-forget */ }
+            public void OnAcknowledgePurchaseResponse(BillingResult r)
+            {
+                Log($"acknowledgement result: responseCode={r.ResponseCode}, "
+                    + $"BillingResult debugMessage={r.DebugMessage ?? "(null)"}");
+            }
         }
     }
 }

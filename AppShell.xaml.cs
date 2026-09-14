@@ -45,6 +45,7 @@ namespace musicmate
 #if DEBUG
                 RegisterDebugFlyoutItem();
 #endif
+                RegisterNoteAttemptsFlyoutItem();
                 EnsureFlyoutItemsVisible();
                 // All page routes are declared via Route="..." on ShellContent in AppShell.xaml,
                 // so no additional Routing.RegisterRoute calls are needed here.  The previous
@@ -434,7 +435,11 @@ namespace musicmate
                 ContentTemplate = new DataTemplate(typeof(DebugItemsPage)),
             });
             Items.Add(debugItem);
+        }
+#endif
 
+        private void RegisterNoteAttemptsFlyoutItem()
+        {
             var noteAttemptsItem = new FlyoutItem
             {
                 Title = "Note Attempts",
@@ -448,6 +453,5 @@ namespace musicmate
             });
             Items.Add(noteAttemptsItem);
         }
-#endif
     }
 }

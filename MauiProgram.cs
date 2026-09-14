@@ -62,11 +62,11 @@ namespace musicmate
 #else
             builder.Services.AddSingleton<ISafeAreaService>(sp => new FallbackSafeAreaService());
 #endif
-#if DEBUG
-            // Debug: local stub allows free "purchase" and a Restore button to reset it.
+#if DEBUG || LOCAL_RELEASE
+            // Debug / LocalRelease: local stub allows free "purchase" (and reset via Restore).
             builder.Services.AddSingleton<IStoreService, LocalStoreService>();
 #else
-            // Release: real Google Play Billing.
+            // Play Release: real Google Play Billing.
 #if ANDROID
             builder.Services.AddSingleton<IStoreService, musicmate.Platforms.Android.GooglePlayStoreService>();
 #else
@@ -88,8 +88,8 @@ namespace musicmate
 #endif
 
             // Sync premium state from the store on every cold start.
-            // In Debug this is a no-op (LocalStoreService.InitializeAsync does nothing).
-            // In Release this connects to Google Play and refreshes the persisted flag.
+            // In Debug / LocalRelease this is a no-op (LocalStoreService.InitializeAsync does nothing).
+            // In Play Release this connects to Google Play and refreshes the persisted flag.
             try
             {
                 var store = app.Services.GetService<IStoreService>();

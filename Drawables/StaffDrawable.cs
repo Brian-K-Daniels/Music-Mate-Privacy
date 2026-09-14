@@ -112,7 +112,17 @@ namespace musicmate.Drawables
         public string? NotationScaleOverride { get; set; }
 
         private string ActiveNotationKey
-            => !string.IsNullOrWhiteSpace(NotationKeyOverride) ? NotationKeyOverride! : _session.Key;
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(NotationKeyOverride))
+                    return NotationKeyOverride!;
+                // Practice / saved tunes keep their authored key even if the Music key picker changes.
+                if (_session.Tune == "Practice Tune" && _session.CurrentTune != null)
+                    return _session.GetNotationKeyAndScale().Key;
+                return _session.Key;
+            }
+        }
 
         /// <summary>
         /// Music-page Tuner reference staff only — not Ear/Singing interval reveal panels
@@ -138,6 +148,20 @@ namespace musicmate.Drawables
             public int TotalMeasureCount { get; set; }
             /// <summary>Measures that did not fit on either staff at readable engraved width.</summary>
             public int UnplacedMeasureCount { get; set; }
+        }
+
+        /// <summary>
+        /// How consecutive measures are assigned to the two Music staves.
+        /// </summary>
+        public enum StaffMeasureSplitMode
+        {
+            /// <summary>Maximize placed measures, then balance upper/lower counts.</summary>
+            Balanced = 0,
+            /// <summary>
+            /// Fill the upper staff first, then the lower — used for saved / practice tunes
+            /// so empty upper space is not left while the lower overflows.
+            /// </summary>
+            FillUpperFirst = 1,
         }
 
         // ── Fixed horizontal constants ─────────────────────────────────────────
@@ -1005,17 +1029,28 @@ namespace musicmate.Drawables
             _safeArea = safeArea;
         }
 
-        /// <summary>
-        /// Measure-based two-staff assignment: compute each measure's minimum engraved width,
-        /// pack whole measures onto the upper staff until the next will not fit at readable
-        /// spacing, then pack as many remaining measures as fit on the lower staff.
-        /// Never splits a measure. Never compresses below readable ink to force more measures.
-        /// </summary>
         public StaffMeasureSplitResult SplitMeasuresAcrossStaves(
     List<GeneratedNote> allNotes,
     IReadOnlyList<double> barBeats,
     float canvasWidth,
     float canvasHeight)
+            => SplitMeasuresAcrossStaves(
+                allNotes, barBeats, canvasWidth, canvasHeight, StaffMeasureSplitMode.Balanced);
+
+        /// <summary>
+        /// Measure-based two-staff assignment: compute each measure's minimum engraved width,
+        /// pack whole measures onto the upper staff until the next will not fit at readable
+        /// spacing, then pack as many remaining measures as fit on the lower staff.
+        /// Never splits a measure. Never compresses below readable ink to force more measures.
+        /// Width estimates use a provisional two-staff notation scale (matching draw) so the
+        /// lower staff is not over-filled from an all-on-upper size underestimate.
+        /// </summary>
+        public StaffMeasureSplitResult SplitMeasuresAcrossStaves(
+    List<GeneratedNote> allNotes,
+    IReadOnlyList<double> barBeats,
+    float canvasWidth,
+    float canvasHeight,
+    StaffMeasureSplitMode splitMode)
         {
             ArgumentNullException.ThrowIfNull(allNotes);
             ArgumentNullException.ThrowIfNull(barBeats);
@@ -1039,39 +1074,6 @@ namespace musicmate.Drawables
 
             float safeWidth =
                 Math.Max(64f, layoutRightLimit - safeLeft);
-
-            /*
-             * Do not calculate notation size from the previous UpperNotes/LowerNotes
-             * split. At this point no new split has yet been established.
-             *
-             * Use all incoming notes as the provisional upper-staff range and an
-             * empty lower staff. This makes the result deterministic for identical
-             * inputs and prevents feedback from the preceding split.
-             */
-            ComputeLayout(
-                Math.Max(canvasHeight, 120f),
-                allNotes,
-                Array.Empty<GeneratedNote>());
-
-            _headerMetrics = ComputeHeaderMetrics(safeLeft);
-            // Width estimates must use the same ink gaps as live engraving.
-            _planInkGap = UseBeginnerHorizontalLayout
-                ? (_session.ChildLevel <= 30 ? BeginnerInkGap : MinInkGap)
-                : MinInkGap;
-
-            // Packer usable width must match the draw path for each staff.
-            // When signatures appear on both staves, lower uses full LeftMargin (not clef-only).
-            float upperHeaderMargin = _headerMetrics.LeftMargin;
-            float lowerHeaderMargin = ResolveLowerStaffHeaderMargin(
-                _headerMetrics.LeftMargin,
-                _headerMetrics.ClefOnlyLeftMargin,
-                _session.ShowSignaturesOnBothStaffs);
-            float upperUsableWidth = Math.Max(
-                64f,
-                safeWidth - upperHeaderMargin - RightMargin);
-            float lowerUsableWidth = Math.Max(
-                64f,
-                safeWidth - lowerHeaderMargin - RightMargin);
 
             var notes = allNotes;
 
@@ -1102,6 +1104,10 @@ namespace musicmate.Drawables
                 .OrderBy(beat => beat)
                 .ToList();
 
+            // Segment structure does not depend on notation scale — build first so we can
+            // size NoteHeadR/Sls from a provisional two-staff split (draw uses two staves).
+            // All-on-upper provisional sizing made heads too small, packing too many measures,
+            // and left lower-staff ink past the usable right edge after draw-scale grew.
             var segments = BuildMeasureSegments(
                 notes,
                 sortedBarBeats,
@@ -1116,32 +1122,106 @@ namespace musicmate.Drawables
                 return result;
             }
 
-            var minimumWidths = new float[segments.Count];
+            float layoutHeight = Math.Max(canvasHeight, 120f);
+            int provisionalUpperMeasures = Math.Max(1, (segments.Count + 1) / 2);
+            ApplyPackNotationLayout(
+                layoutHeight, notes, segments, provisionalUpperMeasures);
 
-            for (int measureIndex = 0;
-                 measureIndex < segments.Count;
-                 measureIndex++)
+            _headerMetrics = ComputeHeaderMetrics(safeLeft);
+            // Width estimates must use the same ink gaps as live engraving.
+            _planInkGap = UseBeginnerHorizontalLayout
+                ? (_session.ChildLevel <= 30 ? BeginnerInkGap : MinInkGap)
+                : MinInkGap;
+
+            // Packer usable width must match the draw path for each staff.
+            // When signatures appear on both staves, lower uses full LeftMargin (not clef-only).
+            float upperHeaderMargin = _headerMetrics.LeftMargin;
+            float lowerHeaderMargin = ResolveLowerStaffHeaderMargin(
+                _headerMetrics.LeftMargin,
+                _headerMetrics.ClefOnlyLeftMargin,
+                _session.ShowSignaturesOnBothStaffs);
+            float upperUsableWidth = Math.Max(
+                64f,
+                safeWidth - upperHeaderMargin - RightMargin);
+            float lowerUsableWidth = Math.Max(
+                64f,
+                safeWidth - lowerHeaderMargin - RightMargin);
+
+            var minimumWidths = BuildPackMeasureMinimumWidths(notes, segments, beatOrigin);
+
+            int upperMeasureCount;
+            int lowerMeasureCount;
+            if (splitMode == StaffMeasureSplitMode.FillUpperFirst)
             {
-                // Must match PlanHorizontalLayout beginner min-width formula so packing
-                // decisions agree with the widths engraving will actually request.
-                double segBeats = segments[measureIndex].EndBeat - segments[measureIndex].StartBeat;
-                if (segBeats < 1e-9)
-                    segBeats = 1;
-                float beatLaneMin = (float)segBeats * (_layout.NoteHeadR * 2.2f + _planInkGap * 0.45f)
-                                    + BarLeftPadding * 2f;
-                float engraved = ComputeMeasureMinWidth(
-                    notes,
-                    segments[measureIndex],
-                    beatOrigin);
-                minimumWidths[measureIndex] = Math.Max(beatLaneMin, engraved);
+                (upperMeasureCount, lowerMeasureCount) = ChooseGreedyUpperFirstSplit(
+                    minimumWidths, upperUsableWidth, lowerUsableWidth);
+            }
+            else
+            {
+                // Enumerate consecutive cut points: maximize placed music, then balance.
+                // Do not force balance when it would display fewer measures.
+                (upperMeasureCount, lowerMeasureCount) = ChooseBalancedMeasureSplit(
+                    minimumWidths,
+                    upperUsableWidth,
+                    lowerUsableWidth);
             }
 
-            // Enumerate consecutive cut points: maximize placed music, then balance.
-            // Do not force balance when it would display fewer measures.
-            var (upperMeasureCount, lowerMeasureCount) = ChooseBalancedMeasureSplit(
-                minimumWidths,
-                upperUsableWidth,
-                lowerUsableWidth);
+            // Refine with the chosen cut's actual pitch ranges so min-widths match draw.
+            ApplyPackNotationLayout(layoutHeight, notes, segments, upperMeasureCount);
+            _headerMetrics = ComputeHeaderMetrics(safeLeft);
+            upperHeaderMargin = _headerMetrics.LeftMargin;
+            lowerHeaderMargin = ResolveLowerStaffHeaderMargin(
+                _headerMetrics.LeftMargin,
+                _headerMetrics.ClefOnlyLeftMargin,
+                _session.ShowSignaturesOnBothStaffs);
+            upperUsableWidth = Math.Max(64f, safeWidth - upperHeaderMargin - RightMargin);
+            lowerUsableWidth = Math.Max(64f, safeWidth - lowerHeaderMargin - RightMargin);
+            minimumWidths = BuildPackMeasureMinimumWidths(notes, segments, beatOrigin);
+
+            if (splitMode == StaffMeasureSplitMode.FillUpperFirst)
+            {
+                (upperMeasureCount, lowerMeasureCount) = ChooseGreedyUpperFirstSplit(
+                    minimumWidths, upperUsableWidth, lowerUsableWidth);
+            }
+            else
+            {
+                int refinedUpper = PackConsecutiveMeasureWidths(
+                    minimumWidths, upperUsableWidth, startMeasureIndex: 0);
+                if (refinedUpper <= 0)
+                    refinedUpper = 1;
+                refinedUpper = Math.Min(refinedUpper, upperMeasureCount);
+
+                int refinedLower = 0;
+                int remainingAfterUpper = segments.Count - refinedUpper;
+                if (remainingAfterUpper > 0)
+                {
+                    refinedLower = PackConsecutiveMeasureWidths(
+                        minimumWidths, lowerUsableWidth, startMeasureIndex: refinedUpper);
+                    if (refinedLower <= 0)
+                        refinedLower = 1;
+                    refinedLower = Math.Min(refinedLower, remainingAfterUpper);
+                }
+
+                // Prefer the refined (draw-accurate) pack when it places fewer measures — that
+                // means the first pass under-estimated ink and would have overflowed.
+                if (refinedUpper + refinedLower < upperMeasureCount + lowerMeasureCount
+                    || refinedUpper < upperMeasureCount)
+                {
+                    upperMeasureCount = refinedUpper;
+                    lowerMeasureCount = refinedLower;
+                }
+                else
+                {
+                    // Same placed count: keep balanced cut but clamp lower to what still fits.
+                    lowerMeasureCount = Math.Min(lowerMeasureCount, refinedLower);
+                    int placedCap = refinedUpper + refinedLower;
+                    if (upperMeasureCount + lowerMeasureCount > placedCap)
+                    {
+                        upperMeasureCount = refinedUpper;
+                        lowerMeasureCount = refinedLower;
+                    }
+                }
+            }
 
             int placedEnd = Math.Min(segments.Count, upperMeasureCount + lowerMeasureCount);
             lowerMeasureCount = Math.Max(0, placedEnd - upperMeasureCount);
@@ -1183,6 +1263,63 @@ namespace musicmate.Drawables
             result.UnplacedMeasureCount = Math.Max(0, segments.Count - placedEnd);
 
             return result;
+        }
+
+        /// <summary>
+        /// Sizes <see cref="_layout"/> from a provisional upper/lower measure cut so pack
+        /// min-widths use the same staff-line / notehead scale as two-staff draw.
+        /// </summary>
+        private void ApplyPackNotationLayout(
+            float layoutHeight,
+            List<GeneratedNote> notes,
+            IReadOnlyList<MeasureSegment> segments,
+            int upperMeasureCount)
+        {
+            int upperEnd = Math.Clamp(upperMeasureCount, 0, segments.Count);
+            var upper = new List<GeneratedNote>();
+            var lower = new List<GeneratedNote>();
+            for (int m = 0; m < segments.Count; m++)
+            {
+                var target = m < upperEnd ? upper : lower;
+                foreach (int noteIndex in segments[m].NoteIndices)
+                    target.Add(notes[noteIndex]);
+            }
+
+            if (upper.Count == 0 && lower.Count > 0)
+            {
+                // Degenerate: treat everything as upper for vertical metrics.
+                ComputeLayout(layoutHeight, lower, Array.Empty<GeneratedNote>());
+                return;
+            }
+
+            ComputeLayout(layoutHeight, upper, lower);
+        }
+
+        /// <summary>
+        /// Per-measure minimum widths using the current <see cref="_layout"/> / <see cref="_planInkGap"/>,
+        /// matching <see cref="PlanHorizontalLayout"/> beginner floors.
+        /// </summary>
+        private float[] BuildPackMeasureMinimumWidths(
+            List<GeneratedNote> notes,
+            IReadOnlyList<MeasureSegment> segments,
+            double beatOrigin)
+        {
+            var minimumWidths = new float[segments.Count];
+            for (int measureIndex = 0; measureIndex < segments.Count; measureIndex++)
+            {
+                double segBeats = segments[measureIndex].EndBeat - segments[measureIndex].StartBeat;
+                if (segBeats < 1e-9)
+                    segBeats = 1;
+                float beatLaneMin = (float)segBeats * (_layout.NoteHeadR * 2.2f + _planInkGap * 0.45f)
+                                    + BarLeftPadding * 2f;
+                float engraved = ComputeMeasureMinWidth(
+                    notes,
+                    segments[measureIndex],
+                    beatOrigin);
+                minimumWidths[measureIndex] = Math.Max(beatLaneMin, engraved);
+            }
+
+            return minimumWidths;
         }
 
         /// <summary>
@@ -1250,6 +1387,35 @@ namespace musicmate.Drawables
             }
 
             return (bestU, bestL);
+        }
+
+        /// <summary>
+        /// Pack as many whole measures as fit on the upper staff, then pack the remainder
+        /// onto the lower staff. Prefers filling upper space before wrapping (saved tunes).
+        /// </summary>
+        internal static (int UpperCount, int LowerCount) ChooseGreedyUpperFirstSplit(
+            IReadOnlyList<float> minimumWidths,
+            float upperUsableWidth,
+            float lowerUsableWidth)
+        {
+            int n = minimumWidths.Count;
+            if (n <= 0)
+                return (0, 0);
+
+            int u = PackConsecutiveMeasureWidths(minimumWidths, upperUsableWidth, 0);
+            if (u <= 0)
+                u = 1;
+            u = Math.Min(u, n);
+
+            int rem = n - u;
+            if (rem <= 0)
+                return (u, 0);
+
+            int l = PackConsecutiveMeasureWidths(minimumWidths, lowerUsableWidth, u);
+            if (l <= 0)
+                l = 1;
+            l = Math.Min(l, rem);
+            return (u, l);
         }
 
         /// <summary>
@@ -3519,37 +3685,44 @@ namespace musicmate.Drawables
 
             // x' = floor + (x - minX) * s  ⇒  inkRight' = floor + (x - minX)*s + trail
             // Require inkRight' <= limit for every object (trail/barExtra are not scaled).
-            float scale = 1f;
-            for (int i = 0; i < noteLayouts.Length; i++)
+            float UnconstrainedFitScale()
             {
-                float x = noteLayouts[i].X;
-                float trail = NoteInkRightForLayout(noteLayouts[i]) - x;
-                float denom = x - minX;
-                if (denom <= 0.01f)
-                    continue;
-                float allowed = limit - floorCenter - trail;
-                if (allowed <= 0f)
-                    continue;
-                scale = Math.Min(scale, allowed / denom);
+                float s = 1f;
+                for (int i = 0; i < noteLayouts.Length; i++)
+                {
+                    float x = noteLayouts[i].X;
+                    float trail = NoteInkRightForLayout(noteLayouts[i]) - x;
+                    float denom = x - minX;
+                    if (denom <= 0.01f)
+                        continue;
+                    float allowed = limit - floorCenter - trail;
+                    if (allowed <= 0f)
+                        continue;
+                    s = Math.Min(s, allowed / denom);
+                }
+
+                for (int i = 0; i < barLayouts.Length; i++)
+                {
+                    float x = barLayouts[i].X;
+                    float extra = BarLineRightEdge(barLayouts[i]) - x;
+                    float denom = x - minX;
+                    if (denom <= 0.01f)
+                        continue;
+                    float allowed = limit - floorCenter - extra;
+                    if (allowed <= 0f)
+                        continue;
+                    s = Math.Min(s, allowed / denom);
+                }
+
+                return s;
             }
 
-            for (int i = 0; i < barLayouts.Length; i++)
-            {
-                float x = barLayouts[i].X;
-                float extra = BarLineRightEdge(barLayouts[i]) - x;
-                float denom = x - minX;
-                if (denom <= 0.01f)
-                    continue;
-                float allowed = limit - floorCenter - extra;
-                if (allowed <= 0f)
-                    continue;
-                scale = Math.Min(scale, allowed / denom);
-            }
-
+            float scale = UnconstrainedFitScale();
             if (scale < 0.999f)
             {
-                scale = Math.Clamp(scale, MinimumSafeHorizontalScale, 1f);
-                ScaleLayoutOntoFloor(noteLayouts, barLayouts, minX, floorCenter, scale);
+                // Prefer readable size, but never leave ink past the drawable right edge.
+                float safeScale = Math.Clamp(scale, MinimumSafeHorizontalScale, 1f);
+                ScaleLayoutOntoFloor(noteLayouts, barLayouts, minX, floorCenter, safeScale);
             }
 
             maxRight = GetLayoutMaxRight(noteLayouts, barLayouts);
@@ -3576,6 +3749,18 @@ namespace musicmate.Drawables
                 for (int i = 0; i < barLayouts.Length; i++)
                     barLayouts[i].X += shift;
             }
+
+            maxRight = GetLayoutMaxRight(noteLayouts, barLayouts);
+            if (maxRight <= limit + 0.5f)
+                return;
+
+            // Last resort: go below the safe scale floor so packed content stays on-canvas.
+            // Packing should have avoided this by wrapping earlier; one over-wide measure may
+            // still need it rather than clipping accidentals past the staff end.
+            minX = GetLayoutMinX(noteLayouts, barLayouts);
+            float finalScale = UnconstrainedFitScale();
+            if (finalScale < 0.999f && finalScale > 0.05f)
+                ScaleLayoutOntoFloor(noteLayouts, barLayouts, minX, floorCenter, finalScale);
         }
 
         /// <summary>
@@ -6785,6 +6970,9 @@ namespace musicmate.Drawables
         {
             if (!string.IsNullOrWhiteSpace(NotationScaleOverride))
                 return NotationScaleOverride!;
+            // Practice / saved tunes always use Major key-signature rules for their authored key.
+            if (_session.Tune == "Practice Tune" && _session.CurrentTune != null)
+                return _session.GetNotationKeyAndScale().Scale;
             // Arpeggios spell notes via GetNotationKeyAndScale (Natural Minor for minor-family).
             // Forcing Major here dropped written accidentals (e.g. Ab reading as A).
             if (_session.Tune == "Arpeggio")
@@ -6796,7 +6984,8 @@ namespace musicmate.Drawables
 
         /// <summary>
         /// True when a key signature is actually engraved on the staff.
-        /// Chromatic, Tuner, Practice Tune, and omit-header modes draw no signature.
+        /// Chromatic, Tuner, and omit-header modes draw no signature.
+        /// Practice / saved tunes draw their authored key signature.
         /// Accidental-state rules must follow this flag — never the selected key alone —
         /// or flats/sharps implied by a hidden signature are wrongly suppressed.
         /// </summary>
@@ -6804,7 +6993,7 @@ namespace musicmate.Drawables
         {
             if (OmitStaffHeader)
                 return false;
-            if (_session.Tune is "Tuner" or "Practice Tune")
+            if (_session.Tune == "Tuner")
                 return false;
             // Chromatic walks start on the selected tonic but show no key signature.
             if (_session.Tune != "Arpeggio" && ActiveKeySignatureScale() == "Chromatic")

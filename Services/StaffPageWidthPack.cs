@@ -3,22 +3,30 @@ using musicmate.Models;
 
 namespace musicmate.Services;
 
-/// <summary>
-/// One generated staff page retained so width settlement can re-pack without regenerating.
-/// </summary>
-public sealed class StaffPagePackState
-{
-    public required List<GeneratedNote> PageNotes { get; init; }
-    public required List<double> PageBarBeats { get; init; }
-    public required double MeasureBeats { get; init; }
-    /// <summary>True when this page is a two-octave scale walk (peak-based staff split).</summary>
-    public bool IsTwoOctaveScaleCut { get; init; }
-    /// <summary>True when packed with <see cref="StaffPageWidthPolicy.FallbackWidthDip"/> because GraphicsView.Width was unknown.</summary>
-    public bool IsProvisional { get; set; }
-    /// <summary>Canvas width actually passed to <see cref="StaffDrawable.SplitMeasuresAcrossStaves"/>.</summary>
-    public float PackedCanvasWidth { get; set; }
-    public float PackedCanvasHeight { get; set; }
-}
+    /// <summary>
+    /// One generated staff page retained so width settlement can re-pack without regenerating.
+    /// </summary>
+    public sealed class StaffPagePackState
+    {
+        public required List<GeneratedNote> PageNotes { get; init; }
+        public required List<double> PageBarBeats { get; init; }
+        public required double MeasureBeats { get; init; }
+        /// <summary>True when this page is a two-octave scale walk (peak-based staff split).</summary>
+        public bool IsTwoOctaveScaleCut { get; init; }
+        /// <summary>Pack policy used when this page was stored (balanced vs fill-upper-first).</summary>
+        public StaffDrawable.StaffMeasureSplitMode SplitMode { get; init; }
+            = StaffDrawable.StaffMeasureSplitMode.Balanced;
+        /// <summary>
+        /// When true (saved / practice tunes), unplaced measures are appended to the lower staff
+        /// so the full tune stays visible after width repack.
+        /// </summary>
+        public bool KeepAllNotesVisible { get; init; }
+        /// <summary>True when packed with <see cref="StaffPageWidthPolicy.FallbackWidthDip"/> because GraphicsView.Width was unknown.</summary>
+        public bool IsProvisional { get; set; }
+        /// <summary>Canvas width actually passed to <see cref="StaffDrawable.SplitMeasuresAcrossStaves(List{GeneratedNote}, IReadOnlyList{double}, float, float, StaffDrawable.StaffMeasureSplitMode)"/>.</summary>
+        public float PackedCanvasWidth { get; set; }
+        public float PackedCanvasHeight { get; set; }
+    }
 
 /// <summary>
 /// Policy for provisional vs settled staff packing. Visual-only width repacks must not regenerate music.
@@ -184,7 +192,7 @@ public static class StaffPageWidthPolicy
     /// <summary>
     /// Re-splits a cached page at a new canvas width. Does not generate music.
     /// Two-octave scale pages keep the peak/turnaround note split (width-independent).
-    /// Assortment pages re-run balanced measure packing at the new width.
+    /// Assortment pages re-run measure packing at the new width using the stored split mode.
     /// </summary>
     public static StaffDrawable.StaffMeasureSplitResult SplitCachedPage(
         StaffDrawable drawable,
@@ -198,10 +206,16 @@ public static class StaffPageWidthPolicy
         if (state.IsTwoOctaveScaleCut)
             return SplitTwoOctaveScaleAtPeak(state.PageNotes);
 
-        return drawable.SplitMeasuresAcrossStaves(
+        var split = drawable.SplitMeasuresAcrossStaves(
             state.PageNotes,
             state.PageBarBeats,
             canvasWidth,
-            canvasHeight);
+            canvasHeight,
+            state.SplitMode);
+
+        if (state.KeepAllNotesVisible)
+            return PracticeTuneStaffSplit.KeepAllNotesVisible(split);
+
+        return split;
     }
 }

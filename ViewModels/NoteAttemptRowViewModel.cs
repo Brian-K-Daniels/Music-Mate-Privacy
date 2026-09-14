@@ -45,7 +45,11 @@ public sealed class NoteAttemptRowViewModel
         if (hadEarlyCandidate)
             sb.Append(" | hadEarlyCandidate");
 
-        string? onset = NoteAttemptTimingDiagnostics.ClassifyAcceptedOnset(a.TimingErrorMs);
+        // When timing was accepted (T=ok), show onTime even if the signed Δms is slightly
+        // early/late — the window pass is what the player cares about in the list.
+        string? onset = a.TimingCorrect == true
+            ? "onTime"
+            : NoteAttemptTimingDiagnostics.ClassifyAcceptedOnset(a.TimingErrorMs);
         if (onset is not null)
             sb.Append(" | onset=").Append(onset);
 

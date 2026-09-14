@@ -24,10 +24,8 @@ namespace musicmate.Pages
             _themeService = ServiceHelper.GetService<ThemeService>()!;
             _viewModel = new AdvancedPageViewModel(_themeService, _session!);
             BindingContext = _viewModel;
-#if DEBUG
             if (NoteAttemptsDebugSection is not null)
                 NoteAttemptsDebugSection.IsVisible = true;
-#endif
         }
 
         protected async override void OnAppearing()

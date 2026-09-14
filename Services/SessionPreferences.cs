@@ -52,6 +52,14 @@ namespace musicmate.Services
             catch { return defaultValue; }
         }
 
+        public static long Get(string key, long defaultValue)
+        {
+            if (TestStore != null)
+                return TestStore.TryGetValue(key, out var value) ? ConvertToLong(value, defaultValue) : defaultValue;
+            try { return Preferences.Get(key, defaultValue); }
+            catch { return defaultValue; }
+        }
+
         public static void Set(string key, string value)
         {
             if (TestStore != null) { TestStore[key] = value; return; }
@@ -77,6 +85,12 @@ namespace musicmate.Services
         }
 
         public static void Set(string key, float value)
+        {
+            if (TestStore != null) { TestStore[key] = value; return; }
+            try { Preferences.Set(key, value); } catch { }
+        }
+
+        public static void Set(string key, long value)
         {
             if (TestStore != null) { TestStore[key] = value; return; }
             try { Preferences.Set(key, value); } catch { }
@@ -114,6 +128,15 @@ namespace musicmate.Services
             double d => (float)d,
             int i => i,
             string s when float.TryParse(s, out var f) => f,
+            _ => defaultValue
+        };
+
+        private static long ConvertToLong(object? value, long defaultValue) => value switch
+        {
+            long l => l,
+            int i => i,
+            double d => (long)d,
+            string s when long.TryParse(s, out var l) => l,
             _ => defaultValue
         };
     }

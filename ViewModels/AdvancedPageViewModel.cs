@@ -15,7 +15,7 @@ namespace musicmate.ViewModels
         {
             get
             {
-                var (_, _, percent) = _session.GetSessionCorrectWrongTotals();
+                var percent = _session.GetSessionCompletionPercent();
                 return double.IsNaN(percent) ? 0.0 : percent;
             }
         }
@@ -78,6 +78,9 @@ namespace musicmate.ViewModels
                         break;
                     case nameof(NoteSessionService.UseNoteMasteryForGeneration):
                         OnPropertyChanged(nameof(UseNoteMasteryForGeneration));
+                        break;
+                    case nameof(NoteSessionService.ClearNoteAttemptsAfterSession):
+                        OnPropertyChanged(nameof(ClearNoteAttemptsAfterSession));
                         break;
                     case nameof(NoteSessionService.PcTunes):
                     case nameof(NoteSessionService.PcRandom):
@@ -221,8 +224,22 @@ namespace musicmate.ViewModels
         }
 
         /// <summary>
-        /// DEBUG: show the Music page button that opens the Note Attempts viewer.
-        /// Always false outside DEBUG builds.
+        /// When on, delete Note Attempts for a session after it finishes scoring.
+        /// </summary>
+        public bool ClearNoteAttemptsAfterSession
+        {
+            get => _session.ClearNoteAttemptsAfterSession;
+            set
+            {
+                if (_session.ClearNoteAttemptsAfterSession == value) return;
+                _session.ClearNoteAttemptsAfterSession = value;
+                OnPropertyChanged(nameof(ClearNoteAttemptsAfterSession));
+                NotifyFactoryDefaultsMayHaveChanged();
+            }
+        }
+
+        /// <summary>
+        /// Show the Music page button that opens the Note Attempts viewer.
         /// </summary>
         public bool ShowNoteAttemptsViewerButton
         {
