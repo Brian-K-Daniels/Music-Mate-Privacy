@@ -325,8 +325,7 @@ namespace musicmate.Services
 
             if (category == PlayModePickerCategory.Other
                 && selection == RandomMelodic)
-                return FormatEffectiveScaleDisplay(
-                    scaleSelectionMode, isRandomMode, key, effectiveScale, selectedScale);
+                return $"Random — {key} {effectiveScale}";
 
             if (category == PlayModePickerCategory.Scales
                 && !string.IsNullOrWhiteSpace(selection))
@@ -364,13 +363,16 @@ namespace musicmate.Services
             string key,
             string effectiveScale,
             string? selectedScale)
-            => scaleSelectionMode switch
-            {
-                ScaleSelectionMode.ByLevel => $"{key} {effectiveScale} (Assortment by Level)",
-                ScaleSelectionMode.Random => $"Random — {key} {effectiveScale}",
-                _ when isRandomMode => $"Random — {key} {effectiveScale}",
-                _ => $"{key} {selectedScale}"
-            };
+        {
+            // ByLevel wins even when composition set IsRandomMode — mode is still Assortment.
+            if (scaleSelectionMode == ScaleSelectionMode.ByLevel)
+                return $"{key} {effectiveScale} (Assortment by Level)";
+
+            if (scaleSelectionMode == ScaleSelectionMode.Random || isRandomMode)
+                return $"Random — {key} {effectiveScale}";
+
+            return $"{key} {selectedScale}";
+        }
 
         /// <summary>Abbreviated label for session statistics (What column).</summary>
         public static string AbbreviateDisplayedSelection(
@@ -525,6 +527,10 @@ namespace musicmate.Services
             {
                 session.Tune = "Selected Scale";
                 session.IsRandomMode = true;
+                session.RepeatSameTune = false;
+                // ScaleSelectionMode must be Random so Music's EffectiveScaleDisplay
+                // shows "Random — …" instead of leftover "(Assortment by Level)".
+                session.TryApplyScalePickerSelection(NoteSessionService.ScaleSelectionRandom, out _);
                 persistSelectedTune(RandomMelodic);
             }
         }

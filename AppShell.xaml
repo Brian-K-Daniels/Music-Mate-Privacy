@@ -114,6 +114,12 @@
       ContentTemplate="{DataTemplate local:AdvancedPage}" />
   </FlyoutItem>
 
+  <FlyoutItem Title="Note Attempts" Route="NoteAttemptsDebug">
+    <ShellContent
+        Title="Note Attempts"
+        Route="NoteAttemptsDebugPage"
+        ContentTemplate="{DataTemplate local:NoteAttemptsDebugPage}" />
+  </FlyoutItem>
 
   <FlyoutItem Title="Reset and Options" Route="SettingsReset">
     <ShellContent

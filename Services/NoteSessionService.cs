@@ -757,10 +757,13 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// Removes Early / EarlyDuringSustain rows for <paramref name="accepting"/>.NoteIndex
-        /// and undoes their session aggregates so final accept is the sole attempt for that slot.
-        /// Sets <see cref="NoteAttemptOutcome.HadEarlyCandidate"/> — meaning a prior early
-        /// candidate existed, not that the accepted TimingErrorMs is negative.
+        /// Removes superseded Early / EarlyDuringSustain / WrongPitch rows for the accepted
+        /// note slot and undoes their session aggregates so the final accept is the sole
+        /// attempt for that slot.
+        /// <see cref="NoteAttemptOutcome.HadEarlyCandidate"/> means a prior early candidate
+        /// existed — not that the accepted TimingErrorMs is negative.
+        /// A successful accept keeps an empty WrongReason so early/transient history is not
+        /// persisted as a failure label on an otherwise correct note.
         /// </summary>
         private NoteAttemptOutcome SupersedeEarlyOutcomesForAcceptedNote(in NoteAttemptOutcome accepting)
         {
@@ -770,21 +773,26 @@ namespace musicmate.Services
                 var prior = _sessionAttemptOutcomes[i];
                 if (prior.NoteIndex != accepting.NoteIndex)
                     continue;
-                if (prior.WrongReason is not ("Early" or "EarlyDuringSustain"))
+
+                // Early rows may have OverallCorrect=true when timing is not required for
+                // mastery (levels &lt; 21) — still supersede them by WrongReason.
+                bool isEarly = prior.WrongReason is "Early" or "EarlyDuringSustain";
+                bool isWrongPitch = prior.WrongReason == "WrongPitch";
+                if (!isEarly && !isWrongPitch)
                     continue;
 
-                hadEarlyCandidate = true;
+                if (isEarly)
+                    hadEarlyCandidate = true;
                 UndoSessionNoteStatsForOutcome(prior);
                 _sessionAttemptOutcomes.RemoveAt(i);
             }
 
-            if (!hadEarlyCandidate)
-                return accepting;
-
             return accepting with
             {
-                HadEarlyCandidate = true,
-                WrongReason = NoteAttemptTimingDiagnostics.HadEarlyCandidateReason,
+                HadEarlyCandidate = hadEarlyCandidate,
+                // Correct final accept is not a "wrong" attempt — do not persist
+                // hadEarlyCandidate as WrongReason (UI treated that as a failure label).
+                WrongReason = string.Empty,
             };
         }
 
@@ -1475,14 +1483,21 @@ namespace musicmate.Services
         public string GenerationScale => EffectiveScale;
 
         /// <summary>Label for the active scale selection.</summary>
-        public string EffectiveScaleDisplay => ScaleSelectionMode switch
+        public string EffectiveScaleDisplay
         {
-            ScaleSelectionMode.ByLevel => $"{Key} {EffectiveScale} (Assortment by Level)",
-            ScaleSelectionMode.Random when IsRandomMode => $"Random — {Key} {EffectiveScale}",
-            ScaleSelectionMode.Random => $"Random — {Key} {EffectiveScale}",
-            _ when IsRandomMode => $"Random — {Key} {EffectiveScale}",
-            _ => $"{Key} {SelectedScale}"
-        };
+            get
+            {
+                // Assortment by Level composition may briefly set IsRandomMode while the
+                // What-to-Play mode remains ByLevel — keep the Assortment label in that case.
+                if (ScaleSelectionMode == ScaleSelectionMode.ByLevel)
+                    return $"{Key} {EffectiveScale} (Assortment by Level)";
+
+                if (ScaleSelectionMode == ScaleSelectionMode.Random || IsRandomMode)
+                    return $"Random — {Key} {EffectiveScale}";
+
+                return $"{Key} {SelectedScale}";
+            }
+        }
 
         private void SetEffectiveScale(string scale)
         {
@@ -1574,7 +1589,7 @@ namespace musicmate.Services
                     if (level > 0)
                     {
                         newScale = ResolveScaleForFreshGeneration(
-                            ScaleSelectionMode.ByLevel, Tune, IsRandomMode, level, rng);
+                            ScaleSelectionMode.ByLevel, Tune, IsRandomMode, level, rng, AccidentalPercent);
                         if (!string.Equals(SelectedScale, newScale, StringComparison.Ordinal))
                             SelectedScale = newScale;
                         SetEffectiveScale(newScale);
@@ -1585,7 +1600,8 @@ namespace musicmate.Services
                 case ScaleSelectionMode.Random:
                     if (level > 0)
                     {
-                        newScale = ChildLevelProgression.PickWeightedRandomScale(level, rng);
+                        newScale = ChildLevelProgression.PickWeightedRandomScale(
+                            level, rng, accidentalPercent: AccidentalPercent);
                         SelectedScale = newScale;
                         SetEffectiveScale(newScale);
                         scaleChanged = !string.Equals(oldScale, newScale, StringComparison.Ordinal);
@@ -1664,13 +1680,14 @@ namespace musicmate.Services
             string? tuneMode,
             bool isRandomMode,
             int level,
-            Random rng)
+            Random rng,
+            int accidentalPercent = 0)
         {
             if (mode != ScaleSelectionMode.ByLevel || level <= 0)
                 return ChildLevelProgression.GetDefaultScaleForLevel(Math.Max(level, 1));
 
             if (ShouldPickFreshScaleFromLevelPool(tuneMode, isRandomMode))
-                return ChildLevelProgression.PickWeightedRandomScale(level, rng);
+                return ChildLevelProgression.PickWeightedRandomScale(level, rng, accidentalPercent);
 
             return ChildLevelProgression.GetDefaultScaleForLevel(level);
         }
@@ -1768,7 +1785,8 @@ namespace musicmate.Services
                     break;
 
                 case ScaleSelectionMode.Random:
-                    activeScale = ChildLevelProgression.PickWeightedRandomScale(level, rng ?? Random.Shared);
+                    activeScale = ChildLevelProgression.PickWeightedRandomScale(
+                        level, rng ?? Random.Shared, AccidentalPercent);
                     weightedRandom = true;
                     SelectedScale = activeScale;
                     SetEffectiveScale(activeScale);
@@ -1818,7 +1836,8 @@ namespace musicmate.Services
                 ScaleSelectionMode = ScaleSelectionMode.Random;
                 if (level > 0)
                 {
-                    var picked = ChildLevelProgression.PickWeightedRandomScale(level, Random.Shared);
+                    var picked = ChildLevelProgression.PickWeightedRandomScale(
+                        level, Random.Shared, AccidentalPercent);
                     SelectedScale = picked;
                     SetEffectiveScale(picked);
                     LogScaleLevel(level, picked, weightedRandom: true, resetReason: null);
@@ -3954,7 +3973,9 @@ namespace musicmate.Services
                 StatusService.Instance.StatusMessage =
                     $"Expected: {expectedNote}, Heard: {heardNote}, {result.cents}¢ (too early), Notes: {NotesToDraw.Count}";
 
-                if (Mod12(expectedWrittenMidi) == detectedPcWritten)
+                // Only a meaningful, in-tolerance pitch match may create an Early candidate.
+                // Pitch-class-only / weak frames must not invent early attempts.
+                if (result.correct && IsMeaningfulGradeCandidate())
                 {
                     const string reason = "Early";
                     LogConductorTimingDecision(
@@ -3963,6 +3984,25 @@ namespace musicmate.Services
                         conductorEarlyTolMs, conductorLateTolMs,
                         pitchAccepted: true, timingAccepted: false,
                         advanceReason: "blocked-early-conductor");
+                    NoteGradeDiagnostics.LogCandidate(
+                        "candidate-early",
+                        idx,
+                        expectedNote,
+                        conductorExpectedMs,
+                        actualMs,
+                        actualMs - conductorExpectedMs,
+                        freq,
+                        MidiToFreq(expectedWrittenMidi + GetInstrumentTransposeOffset()),
+                        result.cents,
+                        _lastDetectionRms,
+                        PitchDetectionService.LastDetectionClarity,
+                        passedRms: _lastDetectionRms <= 0 || _lastDetectionRms >= RmsThreshold,
+                        passedConfidence: PitchDetectionService.LastDetectionClarity <= 0
+                            || PitchDetectionService.LastDetectionClarity >= MinPitchClarityForGrade,
+                        passedPitch: true,
+                        timingClass: "early",
+                        setHadEarlyCandidate: true,
+                        detail: "Conductor:TooEarly");
                     if (TryMarkDebouncedWrong(
                             idx, curFeedback, result.cents, "Conductor:TooEarly", heardNote))
                     {
@@ -4032,16 +4072,37 @@ namespace musicmate.Services
                     conductorExpectedMs, conductorExpectedBeat,
                     conductorEarlyTolMs, conductorLateTolMs,
                     pitchAccepted: false, timingAccepted: false,
-                    advanceReason: "blocked-early-wrong-pitch-ignored");
+                    advanceReason: result.correct
+                        ? "blocked-early-weak-candidate-ignored"
+                        : "blocked-early-wrong-pitch-ignored");
+                NoteGradeDiagnostics.LogCandidate(
+                    "candidate-early-ignored",
+                    idx,
+                    expectedNote,
+                    conductorExpectedMs,
+                    actualMs,
+                    actualMs - conductorExpectedMs,
+                    freq,
+                    MidiToFreq(expectedWrittenMidi + GetInstrumentTransposeOffset()),
+                    result.cents,
+                    _lastDetectionRms,
+                    PitchDetectionService.LastDetectionClarity,
+                    passedRms: _lastDetectionRms <= 0 || _lastDetectionRms >= RmsThreshold,
+                    passedConfidence: PitchDetectionService.LastDetectionClarity <= 0
+                        || PitchDetectionService.LastDetectionClarity >= MinPitchClarityForGrade,
+                    passedPitch: result.correct,
+                    timingClass: "early",
+                    setHadEarlyCandidate: false,
+                    detail: result.correct ? "weak-or-noisy" : "TooEarlyWrongPitchIgnored");
                 // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
                 LogFirstNoteAndroidReleaseDiagnostic(
                     "grade-tooEarly-wrongPitchIgnored",
                     freq,
                     result,
-                    pitchPassed: false,
+                    pitchPassed: result.correct,
                     timingPassed: false,
                     accepted: false,
-                    rejectReason: "TooEarlyWrongPitchIgnored",
+                    rejectReason: result.correct ? "TooEarlyWeakCandidateIgnored" : "TooEarlyWrongPitchIgnored",
                     timingDeltaMs: actualMs - conductorExpectedMs,
                     earlyLate: "early");
                 return false;
@@ -4059,9 +4120,28 @@ namespace musicmate.Services
                 StatusService.Instance.StatusMessage =
                     $"Expected: {expectedNote}, Heard: {heardNote}, {result.cents}¢ (too early), Notes: {NotesToDraw.Count}";
 
-                if (Mod12(expectedWrittenMidi) == detectedPcWritten)
+                if (result.correct && IsMeaningfulGradeCandidate())
                 {
                     string reason = inRestPhase ? "Early" : "EarlyDuringSustain";
+                    NoteGradeDiagnostics.LogCandidate(
+                        "candidate-rhythmGate",
+                        idx,
+                        expectedNote,
+                        _rhythmGateUntilMs,
+                        actualMs,
+                        actualMs - _rhythmGateUntilMs,
+                        freq,
+                        MidiToFreq(expectedWrittenMidi + GetInstrumentTransposeOffset()),
+                        result.cents,
+                        _lastDetectionRms,
+                        PitchDetectionService.LastDetectionClarity,
+                        passedRms: _lastDetectionRms <= 0 || _lastDetectionRms >= RmsThreshold,
+                        passedConfidence: PitchDetectionService.LastDetectionClarity <= 0
+                            || PitchDetectionService.LastDetectionClarity >= MinPitchClarityForGrade,
+                        passedPitch: true,
+                        timingClass: "early",
+                        setHadEarlyCandidate: true,
+                        detail: reason);
                     if (TryMarkDebouncedWrong(
                             idx, curFeedback, result.cents, $"RhythmGate:{reason}", heardNote))
                     {
@@ -4134,13 +4214,59 @@ namespace musicmate.Services
             // Only match if the detected pitch class matches the current note's pitch class
             if (Mod12(expectedWrittenMidi) != detectedPcWritten)
             {
+                if (!IsMeaningfulGradeCandidate())
+                {
+                    NoteGradeDiagnostics.LogCandidate(
+                        "candidate-wrongPitch-ignored",
+                        idx,
+                        expectedNote,
+                        conductorGateEnabled ? conductorExpectedMs : null,
+                        actualMs,
+                        conductorGateEnabled ? actualMs - conductorExpectedMs : null,
+                        freq,
+                        MidiToFreq(expectedWrittenMidi + GetInstrumentTransposeOffset()),
+                        result.cents,
+                        _lastDetectionRms,
+                        PitchDetectionService.LastDetectionClarity,
+                        passedRms: _lastDetectionRms <= 0 || _lastDetectionRms >= RmsThreshold,
+                        passedConfidence: PitchDetectionService.LastDetectionClarity <= 0
+                            || PitchDetectionService.LastDetectionClarity >= MinPitchClarityForGrade,
+                        passedPitch: false,
+                        timingClass: null,
+                        setHadEarlyCandidate: false,
+                        detail: "weak-or-noisy");
+                    return false;
+                }
+
                 if (TryMarkDebouncedWrong(
                         idx, curFeedback, result.cents, "WrongPitch", heardNote))
                 {
-                    RecordAttemptOutcome(BuildNoteOutcome(
+                    NoteGradeDiagnostics.LogCandidate(
+                        "candidate-wrongPitch",
+                        idx,
+                        expectedNote,
+                        conductorGateEnabled ? conductorExpectedMs : null,
+                        actualMs,
+                        conductorGateEnabled ? actualMs - conductorExpectedMs : null,
+                        freq,
+                        MidiToFreq(expectedWrittenMidi + GetInstrumentTransposeOffset()),
+                        result.cents,
+                        _lastDetectionRms,
+                        PitchDetectionService.LastDetectionClarity,
+                        passedRms: true,
+                        passedConfidence: true,
+                        passedPitch: false,
+                        timingClass: null,
+                        setHadEarlyCandidate: false,
+                        detail: "WrongPitch");
+                    var wrongOutcome = BuildNoteOutcome(
                         idx, targetNote, heardNote, result.cents,
                         pitchCorrect: false, timingCorrect: true, reason: "WrongPitch",
-                        actualMs: actualMs));
+                        actualMs: actualMs);
+                    RecordAttemptOutcome(wrongOutcome);
+                    NoteGradeDiagnostics.LogFinal(
+                        idx, expectedNote, false, true, false, false, "WrongPitch", null,
+                        "wrong-pitch-candidate");
                     // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
                     LogFirstNoteAndroidReleaseDiagnostic(
                         "grade-wrongPitch",
@@ -4176,7 +4302,7 @@ namespace musicmate.Services
                 // Timing: record onset time and expected beat position
                 RecordOnsetIfNeeded(idx);
 
-                RecordAttemptOutcome(BuildNoteOutcome(
+                var acceptOutcome = BuildNoteOutcome(
                     idx, targetNote, heardNote, result.cents,
                     pitchCorrect: true, timingCorrect: timingOk, reason: string.Empty,
                     actualMs: actualMs,
@@ -4184,7 +4310,41 @@ namespace musicmate.Services
                         ? conductorExpectedMs
                         : (targetNote.StartBeat > 0 ? null : actualMs),
                     timingErrorMs: conductorGateEnabled ? actualMs - conductorExpectedMs : null,
-                    timingToleranceMs: conductorGateEnabled ? conductorEarlyTolMs : 0));
+                    timingToleranceMs: conductorGateEnabled ? conductorEarlyTolMs : 0);
+                RecordAttemptOutcome(acceptOutcome);
+                var stored = _sessionAttemptOutcomes.LastOrDefault(o => o.NoteIndex == idx);
+                NoteGradeDiagnostics.LogCandidate(
+                    "candidate-accept",
+                    idx,
+                    expectedNote,
+                    acceptOutcome.ExpectedStartMs,
+                    actualMs,
+                    acceptOutcome.TimingErrorMs,
+                    freq,
+                    MidiToFreq(expectedWrittenMidi + GetInstrumentTransposeOffset()),
+                    result.cents,
+                    _lastDetectionRms,
+                    PitchDetectionService.LastDetectionClarity,
+                    passedRms: true,
+                    passedConfidence: true,
+                    passedPitch: true,
+                    timingClass: acceptOutcome.TimingErrorMs is null
+                        ? null
+                        : NoteAttemptTimingDiagnostics.ClassifyAcceptedOnset(acceptOutcome.TimingErrorMs),
+                    setHadEarlyCandidate: stored.HadEarlyCandidate,
+                    detail: "selected-final");
+                NoteGradeDiagnostics.LogFinal(
+                    idx,
+                    expectedNote,
+                    stored.PitchCorrect,
+                    stored.TimingCorrect,
+                    stored.OverallCorrect,
+                    stored.HadEarlyCandidate,
+                    stored.WrongReason,
+                    stored.TimingErrorMs,
+                    stored.HadEarlyCandidate
+                        ? "accepted-after-early-superseded"
+                        : "accepted-clean");
 
                 if (conductorGateEnabled)
                 {
@@ -5100,12 +5260,17 @@ namespace musicmate.Services
                         }
                         else
                         {
-                            var adjustedMidi = ApplyKeySignatureToMidi(mn.SpelledName, mn.MidiNumber, noteKey, noteScale);
                             var rawName = mn.SpelledName.Trim();
                             char letter = char.ToUpperInvariant(rawName[0]);
                             int octave = ParseOctaveFromSpelledName(rawName);
+                            int naturalMidi = NoteNameToMidi($"{letter}{octave}");
+                            var adjustedMidi = HasExplicitAccidentalInName(rawName)
+                                ? mn.MidiNumber
+                                : ApplyKeySignatureToMidi(rawName, naturalMidi, noteKey, noteScale);
                             var displayName = ResolveWrittenNoteName(
                                 rawName, adjustedMidi, letter, octave, noteKey, noteScale);
+                            letter = char.ToUpperInvariant(displayName[0]);
+                            octave = ParseOctaveFromSpelledName(displayName);
                             var freq = MidiToFreq(adjustedMidi);
                             var noteIdx = NotesToDraw.Count;
                             NotesToDraw.Add(new NoteInfo
@@ -5276,6 +5441,27 @@ namespace musicmate.Services
         public string ResolveWrittenEvaluationName(NoteInfo note)
             => ResolveWrittenNoteName(note);
 
+        /// <summary>
+        /// Minimum McLeod NSDF clarity required before a frame may create an Early or
+        /// WrongPitch attempt. When clarity telemetry is unavailable (0), the gate is skipped
+        /// so unit tests that inject frequencies directly still work.
+        /// </summary>
+        public const float MinPitchClarityForGrade = 0.65f;
+
+        /// <summary>
+        /// True when the latest detection telemetry is strong enough to count as a real
+        /// musical candidate (not a quiet/transient/noisy frame).
+        /// </summary>
+        private bool IsMeaningfulGradeCandidate()
+        {
+            if (_lastDetectionRms > 0f && _lastDetectionRms < RmsThreshold)
+                return false;
+            float clarity = PitchDetectionService.LastDetectionClarity;
+            if (clarity > 0f && clarity < MinPitchClarityForGrade)
+                return false;
+            return true;
+        }
+
         public (bool pitchClassMatch, bool withinCentsTolerance, int cents) EvaluatePitchMatch(double freq)
         {
             if (NotesToDraw.Count == 0 || CurrentNoteIndex >= NotesToDraw.Count || freq <= 0)
@@ -5301,13 +5487,14 @@ namespace musicmate.Services
                 enharmonicMatch = enharmonicMidis.Any(m => Mod12(m) == detPcWritten);
             }
 
-            // For cents, always use the concert pitch of the detected MIDI (not written MIDI)
-            var nearestMidi = detMidi;
-            var nearestFreq = MidiToFreq(nearestMidi);
-            var cents = (int)Math.Round(1200 * Math.Log(freq / nearestFreq, 2));
+            var isPitchClassMatch = correctPc || enharmonicMatch;
+
+            // Cents vs the expected target frequency (not nearest chromatic of the detection).
+            int expectedConcertMidi = expectedWrittenMidi + GetInstrumentTransposeOffset();
+            double expectedFreq = MidiToFreq(expectedConcertMidi);
+            var cents = (int)Math.Round(1200 * Math.Log(freq / expectedFreq, 2));
             var withinTolerance = Math.Abs(cents) <= Tolerance;
 
-            var isPitchClassMatch = correctPc || enharmonicMatch;
             return (isPitchClassMatch, withinTolerance, cents);
         }
 
@@ -5445,6 +5632,28 @@ namespace musicmate.Services
             foreach (var interval in intervals)
                 pcs.Add((tonicPc + interval) % 12);
             return pcs;
+        }
+
+        /// <summary>
+        /// Pitch classes of the diatonic collection implied by the written key signature
+        /// (relative-major mapping for minor-family scales). Used when Accidental % is 0 so
+        /// Random generation does not emit mode/blues tones that need body accidentals.
+        /// </summary>
+        public static HashSet<int> GetKeySignaturePitchClasses(string key, string scale)
+        {
+            string majorKey = KeySignatureRules.MajorKeyForSignature(key, scale);
+            return GetScalePitchClasses(majorKey, "Major");
+        }
+
+        /// <summary>
+        /// True when every pitch class of <paramref name="scale"/> on <paramref name="key"/>
+        /// is covered by the displayed key signature (no discretionary body accidental).
+        /// </summary>
+        public static bool ScaleIsFullyCoveredByKeySignature(string key, string scale)
+        {
+            var scalePcs = GetScalePitchClasses(key, scale);
+            var keySigPcs = GetKeySignaturePitchClasses(key, scale);
+            return scalePcs.IsSubsetOf(keySigPcs);
         }
 
         /// <summary>Intervals for scales that are not letter-sequential 7-note spellings.</summary>
@@ -5997,8 +6206,10 @@ namespace musicmate.Services
         /// <summary>
         /// Adjusts <paramref name="midi"/> for any key-signature accidental implied by
         /// <paramref name="key"/> when the note name has no explicit accidental.
-        /// For example, "B4" in key F (one flat: B♭) returns midi - 1.
+        /// For example, "B4" in key F (one flat: B♭) with natural MIDI returns midi - 1.
         /// Notes that already carry an explicit '#' or 'b' are returned unchanged.
+        /// Already key-adjusted MIDI is left unchanged (idempotent) so callers that pass
+        /// chromatic/pool MIDI do not double-apply the signature.
         /// </summary>
         public static int ApplyKeySignatureToMidi(string noteName, int midi, string key, string scale)
         {
@@ -6007,13 +6218,23 @@ namespace musicmate.Services
             if (HasExplicitAccidentalInName(raw)) return midi;
 
             char letter = char.ToUpperInvariant(raw[0]);
+            int octave = ParseOctaveFromSpelledName(raw);
+            int naturalMidi = NoteNameToMidi($"{letter}{octave}");
             var sigAcc = GetSignatureAccidentalForLetter(letter, GetKeySignatureAccidentalCount(key, scale));
-            return sigAcc switch
+            int keySigMidi = sigAcc switch
             {
-                "#" => midi + 1,
-                "b" => midi - 1,
-                _ => midi
+                "#" => naturalMidi + 1,
+                "b" => naturalMidi - 1,
+                _ => naturalMidi
             };
+
+            if (midi == keySigMidi)
+                return midi;
+            if (midi == naturalMidi)
+                return keySigMidi;
+
+            // Chromatic / already-shifted pitch for this letter — keep sounding MIDI.
+            return midi;
         }
         /// <summary>
         /// Adds a key-signature sharp or flat to <paramref name="noteName"/> when the name
@@ -6143,6 +6364,15 @@ namespace musicmate.Services
         private static bool HasExplicitAccidentalInName(string raw)
             => raw.Contains("##") || raw.Contains("bb") || raw.Contains('#')
                || (raw.Length > 1 && raw[1] == 'b');
+
+        /// <summary>
+        /// True when <paramref name="spelledName"/> encodes a body accidental
+        /// (e.g. F#, Bb, Cbb) rather than relying on the key signature alone.
+        /// </summary>
+        public static bool HasExplicitAccidentalInSpelledName(string? spelledName)
+            => !string.IsNullOrWhiteSpace(spelledName)
+               && HasExplicitAccidentalInName(spelledName.Trim());
+
         private static string GetOctaveSuffix(string raw)
         {
             int end = raw.Length - 1;

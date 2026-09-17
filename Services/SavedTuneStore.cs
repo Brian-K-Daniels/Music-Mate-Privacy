@@ -198,7 +198,7 @@ namespace musicmate.Services
                     }
                     else
                     {
-                        flat.Add(new GeneratedNote
+                        flat.Add(WithPitchIdentity(new GeneratedNote
                         {
                             MidiNumber = note.MidiNumber,
                             SpelledName = note.SpelledName,
@@ -206,7 +206,7 @@ namespace musicmate.Services
                             IsRest = false,
                             MeasureIndex = mi,
                             BeatPosition = bp,
-                        });
+                        }));
                     }
                     local += note.Duration.ToBeatValue();
                 }
@@ -304,6 +304,48 @@ namespace musicmate.Services
                     gn.MidiNumber,
                     string.IsNullOrWhiteSpace(gn.SpelledName) ? "C4" : gn.SpelledName,
                     gn.Duration);
+
+        /// <summary>
+        /// Ensures <see cref="GeneratedNote.Letter"/> / <see cref="GeneratedNote.Octave"/>
+        /// match <see cref="GeneratedNote.SpelledName"/> so staff Y and the pitch label agree.
+        /// </summary>
+        internal static GeneratedNote WithPitchIdentity(GeneratedNote note)
+        {
+            if (note.IsRest || string.IsNullOrWhiteSpace(note.SpelledName))
+                return note;
+
+            var raw = note.SpelledName.Trim();
+            char letter = char.ToUpperInvariant(raw[0]);
+            int octave = NoteSessionService.ParseOctaveFromSpelledName(raw);
+            if (note.Letter == letter && note.Octave == octave)
+                return note;
+
+            Accidental acc = note.Accidental;
+            if (acc == Accidental.None)
+            {
+                if (raw.Contains("##")) acc = Accidental.DoubleSharp;
+                else if (raw.Contains("bb")) acc = Accidental.DoubleFlat;
+                else if (raw.Contains('#')) acc = Accidental.Sharp;
+                else if (raw.Length > 1 && raw[1] == 'b') acc = Accidental.Flat;
+            }
+
+            return new GeneratedNote
+            {
+                MidiNumber = note.MidiNumber,
+                Letter = letter,
+                Octave = octave,
+                Accidental = acc,
+                SpelledName = note.SpelledName,
+                TargetFrequency = note.TargetFrequency,
+                Duration = note.Duration,
+                IsRest = note.IsRest,
+                MeasureIndex = note.MeasureIndex,
+                BeatPosition = note.BeatPosition,
+                IsPlayedCorrectly = note.IsPlayedCorrectly,
+                CentsDeviation = note.CentsDeviation,
+                RenderX = note.RenderX,
+            };
+        }
 
         private List<SavedTuneDto> LoadUnlocked()
         {

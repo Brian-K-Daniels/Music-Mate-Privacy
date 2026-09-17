@@ -145,10 +145,10 @@ namespace musicmate.Services
         public int ScaleWalkOffset { get; set; } = 0;
 
         /// <summary>
-        /// 0–100.  Percentage of note slots that receive a chromatic accidental (sharp or flat)
-        /// that is not in the key signature.  Mirrors the v1 AccidentalPercent setting.
-        /// Only applied in random mode (<see cref="UseScaleOrder"/> = false).
-        /// 0 = no accidentals added, 100 = all slots get an accidental when possible.
+        /// 0–100. Percentage of random-mode note slots that may receive a discretionary
+        /// chromatic pitch outside the written key signature. 0 = only key-signature
+        /// diatonic pitches (no body accidentals beyond the signature). 100 = prefer
+        /// chromatics whenever pool candidates exist. Ordered scale walks ignore this.
         /// </summary>
         public int AccidentalPercent { get; set; } = 0;
 
@@ -328,6 +328,17 @@ namespace musicmate.Services
 
             // 2. Decide which durations are available and with what weights.
             var durationWeights = BuildDurationWeights();
+            bool rhythmDiag = !UseScaleOrder;
+            if (rhythmDiag)
+            {
+                RhythmGenerationDiagnostics.LogTuneHeader(
+                    configuredSmallest: SmallestDuration.ToString(),
+                    effectiveSmallest: SmallestDuration,
+                    configuredVariety: RhythmVarietyPercent,
+                    effectiveVariety: ResolveEffectiveVarietyPercent(),
+                    durationWeights: durationWeights,
+                    isRandomMode: true);
+            }
 
             // 3. Build a scale-ordered pitch queue when UseScaleOrder is set.
             //    The queue walks up the pool then back down (excluding duplicate endpoints).
@@ -481,6 +492,8 @@ namespace musicmate.Services
                         ref globalNoteIndex, ref prevPitch, pool, scaleQueue,
                         dur, isRest, isPhraseEnding && isLastNoteOfMeasure);
                 }
+
+                PadMeasureToFullBar(rng, measure, ref localCursor, globalBeatCursor, absoluteMi, durationWeights);
 
                 globalBeatCursor += TimeSignature.TotalBeats;
                 measures.Add(measure);
@@ -1124,6 +1137,27 @@ namespace musicmate.Services
                 return fullPool;
             }
 
+            // Accidental % 0: keep only pitches covered by the written key signature so Random
+            // does not emit Lydian/blues/harmonic-minor alterations that look like discretionary
+            // accidentals. Accidental % > 0 may add true chromatics below.
+            if (AccidentalPercent <= 0)
+            {
+                var keySigPcs = NoteSessionService.GetKeySignaturePitchClasses(Key, Scale);
+                fullPool = fullPool
+                    .Where(m => keySigPcs.Contains(((m % 12) + 12) % 12))
+                    .ToList();
+                if (fullPool.Count == 0)
+                {
+                    // Degenerate range — fall back to unfiltered scale tones.
+                    for (int midi = minMidi; midi <= maxMidi; midi++)
+                    {
+                        int pc = ((midi % 12) + 12) % 12;
+                        if (scalePcs.Contains(pc))
+                            fullPool.Add(midi);
+                    }
+                }
+            }
+
             if (ExcludedMidiNumbers.Count == 0 && AccidentalPercent <= 0)
                 return fullPool;
 
@@ -1198,6 +1232,29 @@ namespace musicmate.Services
         }
 
         /// <summary>
+        /// Duration weight table used by the last / current generation pass.
+        /// Exposed for diagnostics and regression tests.
+        /// </summary>
+        public IReadOnlyDictionary<NoteDuration, int> GetDurationWeights()
+            => BuildDurationWeights();
+
+        /// <summary>
+        /// Effective variety after applying the Smallest-Note floor
+        /// (<see cref="RhythmSettingsResolver.SubQuarterVarietyFloor"/>).
+        /// </summary>
+        public int ResolveEffectiveVarietyPercent()
+        {
+            int variety = RhythmVarietyPercent;
+            if (variety <= 0
+                && SmallestDuration.ToBeatValue() < NoteDuration.Quarter.ToBeatValue() - 1e-9)
+            {
+                return RhythmSettingsResolver.SubQuarterVarietyFloor;
+            }
+
+            return Math.Max(variety, 0);
+        }
+
+        /// <summary>
         /// Returns a dictionary mapping <see cref="NoteDuration"/> to a relative weight
         /// based on <see cref="RhythmVarietyPercent"/> and <see cref="SmallestDuration"/>.
         /// </summary>
@@ -1209,21 +1266,25 @@ namespace musicmate.Services
                 [NoteDuration.Quarter] = 100
             };
 
-            if (RhythmVarietyPercent > 0)
+            // Smallest Note is a permission floor: when Eighth/Sixteenth is enabled,
+            // do not leave those durations at weight 0 just because Rhythm Mode / Level
+            // resolved variety to 0 (Fixed + Simple + Eighth was silently all quarters).
+            int variety = ResolveEffectiveVarietyPercent();
+            if (variety > 0)
             {
                 // Scale secondary-duration weights linearly with variety setting.
                 // Only include durations that are >= SmallestDuration (beat-value check).
                 double smallestBeats = SmallestDuration.ToBeatValue();
 
-                int halfW = RhythmVarietyPercent / 2;          // max 50
-                int eighthW = RhythmVarietyPercent * 3 / 10;     // max 30
-                int sixteenthW = RhythmVarietyPercent / 5;          // max 20
+                int halfW = Math.Max(variety / 2, 1);              // max 50
+                int eighthW = Math.Max(variety * 3 / 10, 1);         // max 30
+                int sixteenthW = Math.Max(variety / 5, 1);          // max 20
 
-                if (halfW > 0 && NoteDuration.Half.ToBeatValue() >= smallestBeats)
+                if (NoteDuration.Half.ToBeatValue() >= smallestBeats)
                     weights[NoteDuration.Half] = halfW;
-                if (eighthW > 0 && NoteDuration.Eighth.ToBeatValue() >= smallestBeats)
+                if (NoteDuration.Eighth.ToBeatValue() >= smallestBeats)
                     weights[NoteDuration.Eighth] = eighthW;
-                if (sixteenthW > 0 && NoteDuration.Sixteenth.ToBeatValue() >= smallestBeats)
+                if (NoteDuration.Sixteenth.ToBeatValue() >= smallestBeats)
                     weights[NoteDuration.Sixteenth] = sixteenthW;
             }
 
@@ -1233,9 +1294,10 @@ namespace musicmate.Services
         /// <summary>
         /// Picks a duration that both the weights table selects AND that fits within
         /// <paramref name="beatsRemaining"/>. Falls back to the largest defined duration
-        /// that still fits. Returns false when nothing fits (never invents an overflowing value).
+        /// that still fits and respects <paramref name="smallestAllowed"/>.
+        /// Returns false when nothing fits (never invents an overflowing value).
         /// </summary>
-        private static bool TryPickFittingDuration(
+        private bool TryPickFittingDuration(
             Random rng,
             Dictionary<NoteDuration, int> weights,
             double beatsRemaining,
@@ -1243,20 +1305,21 @@ namespace musicmate.Services
             out NoteDuration duration)
         {
             duration = NoteDuration.Quarter;
-            _ = smallestAllowed; // remainder fill may use shorter values than the variety floor
+            bool rhythmDiag = !UseScaleOrder;
             if (beatsRemaining <= 1e-9)
                 return false;
 
-            // Filter to durations that fit.
+            // Filter to durations that fit and respect Smallest Note.
             var fitting = weights
-                .Where(kv => kv.Key.ToBeatValue() <= beatsRemaining + 1e-9)
+                .Where(kv =>
+                    kv.Key.ToBeatValue() <= beatsRemaining + 1e-9
+                    && RhythmSettingsResolver.IsDurationAllowed(kv.Key, smallestAllowed))
                 .ToList();
 
             if (fitting.Count == 0)
             {
-                // No weight-table duration fits. Prefer the largest legal duration that fits,
-                // including sixteenths so tiny remainders can still be filled when the
-                // weight table is too coarse. Never return a duration larger than remaining.
+                // No weight-table duration fits. Prefer the largest duration that fits and
+                // respects Smallest Note.
                 var allDurations = new[]
                 {
                     NoteDuration.Whole, NoteDuration.Half, NoteDuration.Quarter,
@@ -1264,11 +1327,57 @@ namespace musicmate.Services
                 };
                 foreach (var candidate in allDurations.OrderByDescending(d => d.ToBeatValue()))
                 {
-                    if (candidate.ToBeatValue() <= beatsRemaining + 1e-9)
+                    if (candidate.ToBeatValue() > beatsRemaining + 1e-9)
+                        continue;
+                    if (!RhythmSettingsResolver.IsDurationAllowed(candidate, smallestAllowed))
+                        continue;
+
+                    duration = candidate;
+                    if (rhythmDiag)
                     {
-                        duration = candidate;
-                        return true;
+                        RhythmGenerationDiagnostics.LogDurationSelected(
+                            duration, beatsRemaining, isRest: false, isRandomMode: true);
                     }
+
+                    return true;
+                }
+
+                // Unavoidable meter fill: remaining space is shorter than Smallest Note
+                // (e.g. 3/8 with Smallest=Quarter). Allow a shorter value only then so the
+                // bar can close; primary weighted selection still never picks it.
+                foreach (var candidate in allDurations.OrderByDescending(d => d.ToBeatValue()))
+                {
+                    if (candidate.ToBeatValue() > beatsRemaining + 1e-9)
+                        continue;
+
+                    if (rhythmDiag && candidate == NoteDuration.Eighth)
+                    {
+                        RhythmGenerationDiagnostics.LogEighthRejected(
+                            "remainder_meter_fill_exception",
+                            beatsRemaining,
+                            smallestAllowed,
+                            isRandomMode: true);
+                    }
+
+                    duration = candidate;
+                    if (rhythmDiag)
+                    {
+                        RhythmGenerationDiagnostics.LogDurationSelected(
+                            duration, beatsRemaining, isRest: false, isRandomMode: true);
+                    }
+
+                    return true;
+                }
+
+                if (rhythmDiag
+                    && NoteDuration.Eighth.ToBeatValue() <= beatsRemaining + 1e-9
+                    && !weights.ContainsKey(NoteDuration.Eighth))
+                {
+                    RhythmGenerationDiagnostics.LogEighthRejected(
+                        "not_in_allowed_set",
+                        beatsRemaining,
+                        smallestAllowed,
+                        isRandomMode: true);
                 }
 
                 return false;
@@ -1283,6 +1392,12 @@ namespace musicmate.Services
                 if (pick < acc)
                 {
                     duration = dur;
+                    if (rhythmDiag)
+                    {
+                        RhythmGenerationDiagnostics.LogDurationSelected(
+                            duration, beatsRemaining, isRest: false, isRandomMode: true);
+                    }
+
                     return true;
                 }
             }
@@ -1625,11 +1740,14 @@ namespace musicmate.Services
 
             // Parse letter, accidental, octave from the spelled name.
             char letter = char.ToUpperInvariant(spelledName[0]);
-            int octave = int.TryParse(spelledName[^1].ToString(), out var o) ? o : 4;
+            int octave = NoteSessionService.ParseOctaveFromSpelledName(spelledName);
 
             var (accidental, finalSpelledName) = NoteSessionService.ResolveAccidentalAndSpelling(
                 spelledName, midi, letter, octave, Key, Scale);
             spelledName = finalSpelledName;
+            // Keep Letter/Octave aligned with the final display spelling (staff Y uses these).
+            letter = char.ToUpperInvariant(spelledName[0]);
+            octave = NoteSessionService.ParseOctaveFromSpelledName(spelledName);
 
             int writtenMidi = midi;
             // Sounding pitch is always the chosen MIDI. Spelling/accidental describe how

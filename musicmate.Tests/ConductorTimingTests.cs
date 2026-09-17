@@ -531,14 +531,14 @@ public class ConductorTimingTests : IDisposable
         elapsed = msPerBeat;
         AssertAccepted(session, Freq(62), expectedIndex: 1);
 
-        // Early row is superseded — one final attempt with hadEarlyCandidate detail.
+        // Early row is superseded — one final correct attempt (early history is not a WrongReason).
         var forNote1 = session.GetSessionAttemptOutcomes()
             .Where(o => o.NoteIndex == 1)
             .ToList();
         Assert.Single(forNote1);
         Assert.True(forNote1[0].OverallCorrect);
         Assert.True(forNote1[0].HadEarlyCandidate);
-        Assert.Equal(NoteAttemptTimingDiagnostics.HadEarlyCandidateReason, forNote1[0].WrongReason);
+        Assert.True(string.IsNullOrEmpty(forNote1[0].WrongReason));
         Assert.DoesNotContain(
             session.GetSessionAttemptOutcomes(),
             o => o.NoteIndex == 1 && o.WrongReason == "Early");

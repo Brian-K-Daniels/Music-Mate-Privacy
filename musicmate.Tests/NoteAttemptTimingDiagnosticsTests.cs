@@ -158,7 +158,7 @@ public class NoteAttemptTimingDiagnosticsTests
         var accepted = Assert.Single(session.GetSessionAttemptOutcomes(), o => o.NoteIndex == 1);
         Assert.True(accepted.OverallCorrect);
         Assert.True(accepted.HadEarlyCandidate);
-        Assert.Equal(NoteAttemptTimingDiagnostics.HadEarlyCandidateReason, accepted.WrongReason);
+        Assert.True(string.IsNullOrEmpty(accepted.WrongReason));
         Assert.True(accepted.TimingErrorMs is > 0);
         Assert.Equal("late", NoteAttemptTimingDiagnostics.ClassifyAcceptedOnset(accepted.TimingErrorMs));
         Assert.InRange(accepted.TimingErrorMs!.Value, 2.5, 3.5);

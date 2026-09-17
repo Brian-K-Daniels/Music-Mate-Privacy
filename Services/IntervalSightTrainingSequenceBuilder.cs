@@ -53,15 +53,8 @@ namespace musicmate.Services
                 HighestNote = highestNote,
                 TimeSignature = timeSig,
                 MeasureCount = Math.Max(1, measureCount),
-                RhythmVarietyPercent = session.RhythmVarietyPercent >= 0
-                    ? session.RhythmVarietyPercent
-                    : session.RhythmMode == "Mixed" ? 60 : 0,
-                SmallestDuration = session.SmallestRhythmNote switch
-                {
-                    "Sixteenth" => NoteDuration.Sixteenth,
-                    "Eighth" => NoteDuration.Eighth,
-                    _ => NoteDuration.Quarter
-                },
+                RhythmVarietyPercent = RhythmSettingsResolver.ResolveVarietyPercent(session),
+                SmallestDuration = RhythmSettingsResolver.ParseSmallestDuration(session.SmallestRhythmNote),
                 StartMeasureIndex = 0,
                 StartBeatOffset = 0,
                 StartGlobalNoteIndex = 0,

@@ -1565,7 +1565,8 @@ namespace musicmate.Drawables
                 if (note.IsRest)
                     continue;
 
-                int steps = DiatonicStepsFromB4(note.Letter, note.Octave);
+                var (letter, octave) = ResolveStaffLetterOctave(note);
+                int steps = DiatonicStepsFromB4(letter, octave);
 
                 if (!hasU)
                 {
@@ -1585,7 +1586,8 @@ namespace musicmate.Drawables
                 if (note.IsRest)
                     continue;
 
-                int steps = DiatonicStepsFromB4(note.Letter, note.Octave);
+                var (letter, octave) = ResolveStaffLetterOctave(note);
+                int steps = DiatonicStepsFromB4(letter, octave);
 
                 if (!hasL)
                 {
@@ -6173,8 +6175,27 @@ namespace musicmate.Drawables
 
         private float NoteY(GeneratedNote note, float staffTop, float staffMid)
         {
-            int steps = DiatonicStepsFromB4(note.Letter, note.Octave);
+            var (letter, octave) = ResolveStaffLetterOctave(note);
+            int steps = DiatonicStepsFromB4(letter, octave);
             return staffMid + steps * _layout.HS;
+        }
+
+        /// <summary>
+        /// Letter/octave used for staff geometry. Prefers explicit fields; falls back to
+        /// <see cref="GeneratedNote.SpelledName"/> when Letter was never populated.
+        /// </summary>
+        internal static (char Letter, int Octave) ResolveStaffLetterOctave(GeneratedNote note)
+        {
+            char letter = note.Letter;
+            int octave = note.Octave;
+            if ((letter < 'A' || letter > 'G') && !string.IsNullOrWhiteSpace(note.SpelledName))
+            {
+                var raw = note.SpelledName.Trim();
+                letter = char.ToUpperInvariant(raw[0]);
+                octave = NoteSessionService.ParseOctaveFromSpelledName(raw);
+            }
+
+            return (letter, octave);
         }
 
         private float KeySigLineY(char letter, int octave, float staffMid)
@@ -6278,6 +6299,13 @@ namespace musicmate.Drawables
             int thisVal = noteVal + octave * 7;
             return b4Val - thisVal;
         }
+
+        /// <summary>
+        /// Diatonic staff steps below (+) / above (−) the treble middle line (B4).
+        /// Used by <see cref="NoteY"/> and by written-note display regression tests.
+        /// </summary>
+        internal static int GetDiatonicStepsFromB4(char letter, int octave)
+            => DiatonicStepsFromB4(letter, octave);
 
         // ── Drawing primitives ────────────────────────────────────────────────────
 

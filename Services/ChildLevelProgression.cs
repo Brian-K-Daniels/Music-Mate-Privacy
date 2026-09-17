@@ -209,8 +209,25 @@ namespace musicmate.Services
         }
 
         /// <summary>Weighted random scale from the level's allowed pool.</summary>
-        public static string PickWeightedRandomScale(int level, Random rng)
-            => WeightedChoice.Pick(ScalePoolForLevel(level), o => o.Weight, rng).Scale;
+        /// <param name="accidentalPercent">
+        /// When 0, only scales fully covered by their key signature are eligible so Random
+        /// does not introduce body accidentals that look like discretionary chromatics.
+        /// </param>
+        public static string PickWeightedRandomScale(int level, Random rng, int accidentalPercent = -1)
+        {
+            var pool = ScalePoolForLevel(level);
+            if (accidentalPercent == 0)
+            {
+                var clean = pool
+                    .Where(o => NoteSessionService.ScaleIsFullyCoveredByKeySignature("C", o.Scale))
+                    .ToList();
+                // Coverage is tonic-relative; "C" is a valid probe for interval shape.
+                if (clean.Count > 0)
+                    pool = clean;
+            }
+
+            return WeightedChoice.Pick(pool, o => o.Weight, rng).Scale;
+        }
 
         /// <summary>Weighted random key from the level's allowed pool.</summary>
         public static string PickWeightedRandomKey(int level, Random? rng = null)

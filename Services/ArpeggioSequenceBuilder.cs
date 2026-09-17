@@ -227,6 +227,9 @@ namespace musicmate.Services
 
             var (accidental, finalSpelledName) = NoteSessionService.ResolveAccidentalAndSpelling(
                 spelledName, midi, letter, octave, Key, Scale);
+            spelledName = finalSpelledName;
+            letter = char.ToUpperInvariant(spelledName[0]);
+            octave = NoteSessionService.ParseOctaveFromSpelledName(spelledName);
 
             return new GeneratedNote
             {
@@ -234,7 +237,7 @@ namespace musicmate.Services
                 Letter = letter,
                 Octave = octave,
                 Accidental = accidental,
-                SpelledName = finalSpelledName,
+                SpelledName = spelledName,
                 TargetFrequency = NoteSessionService.MidiToFreqPublic(midi),
                 Duration = duration,
                 IsRest = false,

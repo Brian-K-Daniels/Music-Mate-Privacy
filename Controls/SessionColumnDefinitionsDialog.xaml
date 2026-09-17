@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:vm="clr-namespace:musicmate.ViewModels"
              x:Class="musicmate.Controls.SessionColumnDefinitionsDialog"
+             x:DataType="vm:NoteStatisticsViewModel"
              IsVisible="{Binding IsSessionColumnDefinitionsVisible}"
              BackgroundColor="#80000000"
              HorizontalOptions="Fill"

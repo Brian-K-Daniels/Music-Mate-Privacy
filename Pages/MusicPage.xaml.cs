@@ -38,6 +38,23 @@ namespace musicmate.Pages
         private bool _dismissedResultBannerForFirstSound;
         private bool _isProgrammaticColorConfirm = false;
         private bool _isPageVisible = false;
+        /// <summary>
+        /// Soft-pause: listening was active when Music was obscured. Keep <see cref="_isRunning"/>
+        /// so return can resume Count-In without regenerating notes or treating hide as Stop.
+        /// </summary>
+        private bool _listeningPausedForPageHide;
+        /// <summary>
+        /// Sticky until Go: user pressed Stop (or equivalent). Prevents AutoStart / Count-In
+        /// from restarting on return after an intentional stop.
+        /// </summary>
+        private bool _userStoppedListening;
+        /// <summary>Tracks whether the Tuner UI surface is currently shown on this page.</summary>
+        private bool _tunerUiActive;
+        /// <summary>
+        /// Dedicated CTS for soft-pause Count-In resume so OnNavigatedTo AutoStart cannot
+        /// cancel it (they previously shared <see cref="_autoStartCts"/>).
+        /// </summary>
+        private CancellationTokenSource? _resumeListeningCts;
         // A new GUID is assigned each time a session starts (see StartListeningAndEvaluatingAsync).
         // It is stored with every NoteAttempt so attempts can be grouped by session.
         private string _currentSessionId = string.Empty;
@@ -814,7 +831,7 @@ namespace musicmate.Pages
         {
             try
             {
-                if (_holdResultForChildSession || _isRunning)
+                if (_holdResultForChildSession || _isRunning || _userStoppedListening || !_isPageVisible)
                     return;
 
                 var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -822,6 +839,8 @@ namespace musicmate.Pages
                        && sw.ElapsedMilliseconds < 1500)
                 {
                     ct.ThrowIfCancellationRequested();
+                    if (!_isPageVisible)
+                        return;
                     await Task.Delay(40, ct);
                 }
 
@@ -830,11 +849,16 @@ namespace musicmate.Pages
 
                 bool wantListen = _session.AutoStart || WaitingCountInSettings.Enabled;
                 if (!wantListen || _session.Tune == "Tuner"
-                    || _holdResultForChildSession || _isRunning)
+                    || _holdResultForChildSession || _isRunning
+                    || _userStoppedListening || !_isPageVisible)
                     return;
 
                 await MainThread.InvokeOnMainThreadAsync(async () =>
-                    await StartListeningAndEvaluatingAsync(scaleKeyTrigger: "AutoStart"));
+                {
+                    if (!_isPageVisible || _isRunning || _userStoppedListening)
+                        return;
+                    await StartListeningAndEvaluatingAsync(scaleKeyTrigger: "AutoStart");
+                });
             }
             catch (OperationCanceledException)
             {
@@ -843,6 +867,169 @@ namespace musicmate.Pages
             catch (Exception ex)
             {
                 DebugLog.WriteLine($"[AutoStart] ERROR: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// After Music returns from being obscured: at most one fresh Count-In arm, or
+        /// capture resume — never a duplicate of a stale background timer.
+        /// Uses a dedicated CTS so OnNavigatedTo AutoStart cannot cancel this resume.
+        /// </summary>
+        private void ScheduleResumeListeningAfterAppear()
+        {
+            try { _resumeListeningCts?.Cancel(); } catch { }
+            _resumeListeningCts = new CancellationTokenSource();
+            var cts = _resumeListeningCts;
+            _ = RunResumeListeningAfterAppearAsync(cts.Token);
+        }
+
+        private async Task RunResumeListeningAfterAppearAsync(CancellationToken ct)
+        {
+            try
+            {
+                await Task.Delay(40, ct);
+                ct.ThrowIfCancellationRequested();
+                if (!_isPageVisible || !_isRunning || _userStoppedListening)
+                    return;
+
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    if (!_isPageVisible || !_isRunning || _userStoppedListening)
+                        return;
+                    ResumeListeningAfterPageVisible();
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                // Superseded by hide / Stop / newer appear.
+            }
+            catch (Exception ex)
+            {
+                DebugLog.WriteLine($"[CountIn] resume-after-appear ERROR: {ex}");
+            }
+        }
+
+        private void ResumeListeningAfterPageVisible()
+        {
+            if (!_isPageVisible || !_isRunning || _userStoppedListening)
+                return;
+            if (PlayModePickerOptions.IsTunerMode(_session))
+                return;
+
+            // Drop any stale Count-In generation before arming exactly one fresh sequence.
+            StopWaitingCountIn();
+
+            bool restartCountIn = MusicListeningVisibility.ShouldRestartCountInOnResume(
+                WaitingCountInSettings.Enabled,
+                _session?.NotesToDraw?.Count ?? 0,
+                _session?.CurrentNoteIndex ?? 0,
+                _session?.FirstPitchDetectedUtc != null);
+
+            if (restartCountIn)
+            {
+                int countInGen = WaitingCountInArming.Arm(ref _waitingCountInGeneration);
+                _waitingCountInActive = true;
+                StatusService.Instance.ShowTemporaryMessage(
+                    StatusService.CountInStatusMessage,
+                    StatusService.CountInStatusDuration);
+                DebugLog.WriteLine("[CountIn] resume after page visible — fresh Count-In");
+                _ = StartWaitingCountInAsync(countInGen);
+                return;
+            }
+
+            if (_audio != null && !_audio.IsCapturing)
+            {
+                ResetPitchCapture();
+                if (!_audio.TryStartCapture(OnAudioBlock, out var err))
+                    DebugLog.WriteLine($"[CountIn] resume capture failed: {err}");
+            }
+        }
+
+        /// <summary>
+        /// Tuner shares this page — OnDisappearing does not run. Stop Music Count-In as soon
+        /// as the Tuner surface becomes active so no delayed beep can sound over Tuner.
+        /// </summary>
+        private void PauseMusicCountInForTunerDisplay(bool enteringTuner)
+        {
+            if (!MusicListeningVisibility.ShouldStopMusicCountInForTunerDisplay(
+                    PlayModePickerOptions.IsTunerMode(_session)))
+                return;
+
+            bool countInAlive = _waitingCountInActive
+                || _waitingCountInPlayer?.IsActive == true;
+
+            // Re-entrant UpdateTunerVisibility while already in Tuner must not tear down
+            // Tuner mic / pending EnsureTunerListening — only act when entering or a
+            // Music Count-In loop is still alive.
+            if (!enteringTuner && !countInAlive)
+                return;
+
+            if (MusicListeningVisibility.ShouldPauseMusicListeningForTuner(
+                    enteringTuner,
+                    _isRunning || countInAlive,
+                    _waitingCountInActive,
+                    _userStoppedListening))
+            {
+                _listeningPausedForPageHide = true;
+            }
+
+            if (enteringTuner)
+                CancelPendingListeningStarts();
+
+            StopWaitingCountIn();
+            try { ServiceHelper.GetService<ICountInClickService>()?.Stop(); } catch { }
+
+            if (enteringTuner)
+            {
+                try { _audio?.StopCapture(); } catch { }
+                _session?.ClearCountInClickSelfSoundSuppress("tuner displayed");
+                if (_isRunning)
+                    SetButtonStates(false);
+            }
+
+            DebugLog.WriteLine(
+                $"[CountIn] stopped for Tuner display (entering={enteringTuner} " +
+                $"paused={_listeningPausedForPageHide})");
+        }
+
+        /// <summary>
+        /// After leaving Tuner back to Music practice: at most one fresh Count-In when still
+        /// soft-paused; otherwise normal AutoStart/Count-In schedule if notes are ready.
+        /// </summary>
+        private void ResumeMusicListeningAfterLeavingTuner()
+        {
+            if (!MusicListeningVisibility.ShouldResumeMusicListeningAfterLeavingTuner(
+                    leavingTuner: true,
+                    listeningPaused: _listeningPausedForPageHide,
+                    userStoppedListening: _userStoppedListening))
+            {
+                return;
+            }
+
+            _listeningPausedForPageHide = false;
+            if (PlayModePickerOptions.IsTunerMode(_session) || !_isPageVisible)
+                return;
+
+            bool canRestartCountIn = MusicListeningVisibility.ShouldRestartCountInOnResume(
+                WaitingCountInSettings.Enabled,
+                _session?.NotesToDraw?.Count ?? 0,
+                _session?.CurrentNoteIndex ?? 0,
+                _session?.FirstPitchDetectedUtc != null);
+
+            if (canRestartCountIn)
+            {
+                SetButtonStates(true);
+                ResumeListeningAfterPageVisible();
+                return;
+            }
+
+            // Tuner clears exercise notes on entry — wait for regenerate / AutoStart rather
+            // than inventing a new listening session here.
+            if (!_userStoppedListening
+                && (_session.AutoStart || WaitingCountInSettings.Enabled)
+                && (_session?.NotesToDraw?.Count ?? 0) > 0)
+            {
+                ScheduleAutoStartOnAppear();
             }
         }
         private async Task RegenerateNotesAsync()
@@ -1111,9 +1298,10 @@ namespace musicmate.Pages
 
             int rhythmVariety = simpleSelectedScale
                 ? 0
-                : _session.RhythmVarietyPercent >= 0
-                    ? _session.RhythmVarietyPercent
-                    : _session.RhythmMode == "Mixed" ? 60 : 0;
+                : RhythmSettingsResolver.ResolveVarietyPercent(_session);
+            var smallestDuration = simpleSelectedScale
+                ? NoteDuration.Quarter
+                : RhythmSettingsResolver.ParseSmallestDuration(_session.SmallestRhythmNote);
 
             var gen = new MusicSequenceGenerator
             {
@@ -1124,14 +1312,7 @@ namespace musicmate.Pages
                 TimeSignature = timeSig,
                 MeasureCount = measureCount,
                 RhythmVarietyPercent = rhythmVariety,
-                SmallestDuration = simpleSelectedScale
-                    ? NoteDuration.Quarter
-                    : _session.SmallestRhythmNote switch
-                    {
-                        "Sixteenth" => NoteDuration.Sixteenth,
-                        "Eighth" => NoteDuration.Eighth,
-                        _ => NoteDuration.Quarter
-                    },
+                SmallestDuration = smallestDuration,
                 StartMeasureIndex = _seqNextMeasureIndex,
                 StartBeatOffset = _seqNextBeatOffset,
                 StartGlobalNoteIndex = _seqNextGlobalNoteIndex,
@@ -1154,7 +1335,13 @@ namespace musicmate.Pages
                 RandomSeed = GeneratedTuneAcceptance.MixRandomSeed(
                     _generationSeed, _session.ChildLevel, seedSalt)
             };
-            DebugLog.WriteLine($"[StaffGen] Tune={_session.Tune} Random={_session.IsRandomMode} SimpleScale={simpleSelectedScale} AccPct={_session.AccidentalPercent} EffectiveAccPct={(_session.IsRandomMode ? _session.AccidentalPercent : 0)} Activity={gen.ActivityType} Excluded={_excludedMidis.Count}");
+            DebugLog.WriteLine(
+                $"[StaffGen] Tune={_session.Tune} Random={_session.IsRandomMode} " +
+                $"SimpleScale={simpleSelectedScale} AccPct={_session.AccidentalPercent} " +
+                $"EffectiveAccPct={(_session.IsRandomMode ? _session.AccidentalPercent : 0)} " +
+                $"SmallestCfg={_session.SmallestRhythmNote} SmallestEff={smallestDuration} " +
+                $"VarietyCfg={_session.RhythmVarietyPercent}/{_session.RhythmMode} VarietyEff={rhythmVariety} " +
+                $"Activity={gen.ActivityType} Excluded={_excludedMidis.Count}");
             return gen;
         }
         private void ReportMasteryOmissionFallback(MusicSequenceGenerator gen)
@@ -1322,12 +1509,19 @@ namespace musicmate.Pages
                         else if (raw.Contains('#')) acc = Accidental.Sharp;
                         else if (raw.Length > 1 && raw[1] == 'b') acc = Accidental.Flat;
 
-                        // Apply the key signature: if the note has no explicit accidental,
-                        // adjust the MIDI number for any flat/sharp implied by the key.
-                        var adjustedMidi = NoteSessionService.ApplyKeySignatureToMidi(mn.SpelledName, mn.MidiNumber, noteKey, noteScale);
+                        // Apply key signature from the natural letter MIDI so already-flatted
+                        // pool/MIDI values are not shifted a second time.
+                        int naturalMidi = NoteSessionService.NoteNameToMidi($"{letter}{octave}");
+                        var adjustedMidi = NoteSessionService.ApplyKeySignatureToMidi(
+                            mn.SpelledName, naturalMidi, noteKey, noteScale);
+                        // Prefer authored MIDI when the name already encodes the accidental.
+                        if (NoteSessionService.HasExplicitAccidentalInSpelledName(mn.SpelledName))
+                            adjustedMidi = mn.MidiNumber;
                         var (resolvedAcc, displayName) = NoteSessionService.ResolveAccidentalAndSpelling(
                             mn.SpelledName, adjustedMidi, letter, octave, noteKey, noteScale);
                         acc = resolvedAcc;
+                        letter = char.ToUpperInvariant(displayName[0]);
+                        octave = NoteSessionService.ParseOctaveFromSpelledName(displayName);
 
                         gn = new GeneratedNote
                         {
@@ -3207,13 +3401,20 @@ namespace musicmate.Pages
             DebugLog.WriteLine($"[DEBUG] OnAppearing: IsAutoRepeatVisible={IsAutoRepeatVisible}, Tune={_session.Tune}");
 #if DEBUG
             RefreshBuildIdentificationLabels();
-            RefreshNoteAttemptsDebugButtonVisibility();
 #endif
+            // LocalRelease / Release also need this — button defaults to IsVisible=False in XAML.
+            RefreshNoteAttemptsDebugButtonVisibility();
             IsAutoRepeatVisible = !PlayModePickerOptions.IsTunerMode(_session);
             UpdateAutoRepeatButtons();
             UpdateEffectiveScaleLabel();
             UpdateNoteEmphasisBanner();
-            if (PlayModePickerOptions.IsTunerMode(_session))
+
+            // Capture soft-pause before Tuner display activation clears _isRunning.
+            bool appearAsTuner = PlayModePickerOptions.IsTunerMode(_session);
+            bool softPausedBeforeDisplay = _listeningPausedForPageHide;
+            bool wasRunningBeforeDisplay = _isRunning;
+
+            if (appearAsTuner)
                 ApplyTunerDisplayState();
             else
                 UpdateTunerVisibility();
@@ -3236,13 +3437,40 @@ namespace musicmate.Pages
             Dispatcher.Dispatch(UpdateChildLevelSliderDisplay);
             Dispatcher.Dispatch(UpdateTitlePlayButtonPosition);
 
+            bool resumeListening = MusicListeningVisibility.ShouldResumeListeningOnAppear(
+                softPausedBeforeDisplay || _listeningPausedForPageHide,
+                wasRunningBeforeDisplay || _isRunning || softPausedBeforeDisplay,
+                _userStoppedListening,
+                pageIsVisible: true);
+
+            // Soft-paused Music → appear already in Tuner: keep pause until Tuner is left;
+            // never arm Music Count-In while Tuner is the active surface.
+            if (MusicListeningVisibility.ShouldDeferResumeWhileTunerVisible(
+                    resumeListening, appearAsTuner))
+            {
+                _listeningPausedForPageHide = true;
+                if (_isRunning)
+                {
+                    StopWaitingCountIn();
+                    try { ServiceHelper.GetService<ICountInClickService>()?.Stop(); } catch { }
+                    try { _audio?.StopCapture(); } catch { }
+                    SetButtonStates(false);
+                }
+            }
+            else
+            {
+                _listeningPausedForPageHide = false;
+            }
+
             _isPageVisible = true;
 
             // Regenerate before AutoStart so random→scale changes refresh the staff.
             // When Repeat Same is on, restore the saved snapshot instead of re-randomizing key.
+            // Soft-paused return must not regenerate or advance notes.
             // Always prepare scale/key/range first so the first paint matches later ones
             // (previously AutoStart was the first path that picked a usable key/range).
-            if (!_isRunning && !ShouldPreserveSessionEndMarquee() && !_holdResultForChildSession)
+            if (!_isRunning && !resumeListening
+                && !ShouldPreserveSessionEndMarquee() && !_holdResultForChildSession)
             {
                 try
                 {
@@ -3271,14 +3499,29 @@ namespace musicmate.Pages
             _allowStaffLayoutSettle = true;
             ScheduleStaffLayoutSettleRefresh();
 
-            if (_session.AutoStart || WaitingCountInSettings.Enabled)
+            if (resumeListening
+                && !MusicListeningVisibility.ShouldDeferResumeWhileTunerVisible(
+                    resumeListening, appearAsTuner))
             {
-                if (_holdResultForChildSession)
-                {
-                    RestoreSessionEndMarqueeIfNeeded();
-                    return;
-                }
+                ScheduleResumeListeningAfterAppear();
+                return;
+            }
+
+            if (MusicListeningVisibility.ShouldScheduleAutoStartOnAppear(
+                    listeningPausedForHide: false,
+                    userStoppedListening: _userStoppedListening,
+                    autoStart: _session.AutoStart,
+                    countInEnabled: WaitingCountInSettings.Enabled,
+                    isTuner: appearAsTuner,
+                    holdResult: _holdResultForChildSession))
+            {
                 ScheduleAutoStartOnAppear();
+                return;
+            }
+
+            if (_holdResultForChildSession)
+            {
+                RestoreSessionEndMarqueeIfNeeded();
                 return;
             }
 
@@ -3666,8 +3909,19 @@ namespace musicmate.Pages
         protected override void OnNavigatedTo(NavigatedToEventArgs args)
         {
             base.OnNavigatedTo(args);
-            if ((_session.AutoStart || WaitingCountInSettings.Enabled) && !_holdResultForChildSession)
+            // Soft-paused return keeps _isRunning true and OnAppearing already scheduled
+            // ScheduleResumeListeningAfterAppear. AutoStart shares that CTS — calling it
+            // here cancels the resume (repro: Music → My Progress → Music).
+            if (MusicListeningVisibility.ShouldScheduleAutoStartOnNavigatedTo(
+                    holdResult: _holdResultForChildSession,
+                    isTuner: PlayModePickerOptions.IsTunerMode(_session),
+                    userStoppedListening: _userStoppedListening,
+                    isRunning: _isRunning,
+                    autoStart: _session.AutoStart,
+                    countInEnabled: WaitingCountInSettings.Enabled))
+            {
                 ScheduleAutoStartOnAppear();
+            }
 
             // Shell calls OnNavigatedTo after it has finished restoring scroll position,
             // so this is the correct place to snap the scroll so no note heads are hidden.
@@ -3707,10 +3961,16 @@ namespace musicmate.Pages
             base.OnDisappearing();
             _isPageVisible = false;
             _allowStaffLayoutSettle = false;
-            _autoStartCts?.Cancel();
-            _sessionStartCts?.Cancel();
+
+            _listeningPausedForPageHide = MusicListeningVisibility.ShouldPauseListeningForHide(
+                _isRunning,
+                _waitingCountInActive,
+                _userStoppedListening);
+
+            // Cancel pending AutoStart / in-flight StartListening so a delayed Arm cannot
+            // sound Count-In after Music is obscured (NoteAttempts or any other page).
+            CancelPendingListeningStarts();
             _staffLayoutSettleCts?.Cancel();
-            // Stop listening and evaluating
             _playCts?.Cancel();
             StopWaitingCountIn();
             _ = StopReferenceToneAsync(resumeListening: false);
@@ -3718,10 +3978,22 @@ namespace musicmate.Pages
             try { ServiceHelper.GetService<ICountInClickService>()?.Stop(); } catch { }
             _audio?.StopCapture();
             _session?.ClearCountInClickSelfSoundSuppress("page disappearing");
-            SetButtonStates(false);
+
+            if (_listeningPausedForPageHide)
+            {
+                // Soft-pause: keep _isRunning so return resumes Count-In without
+                // regenerating notes or treating hide as an intentional Stop.
+                if (!ShouldPreserveSessionEndMarquee())
+                    StatusService.Instance.StatusMessage = "Listening paused.";
+            }
+            else
+            {
+                SetButtonStates(false);
+                if (!ShouldPreserveSessionEndMarquee())
+                    StatusService.Instance.StatusMessage = "Stopped listening.";
+            }
+
             DeviceDisplay.Current.KeepScreenOn = false;
-            if (!ShouldPreserveSessionEndMarquee())
-                StatusService.Instance.StatusMessage = "Stopped listening.";
         }
         private async void OnNavigateWhatToPlayClicked(object? sender, EventArgs e)
         {
@@ -4185,9 +4457,11 @@ namespace musicmate.Pages
             if (!WaitingCountInArming.MayBegin(
                     armedGeneration,
                     Volatile.Read(ref _waitingCountInGeneration),
-                    _isRunning))
+                    _isRunning)
+                || !_isPageVisible
+                || PlayModePickerOptions.IsTunerMode(_session))
             {
-                DebugLog.WriteLine("[CountIn] skipped — Stopped or superseded before arm");
+                DebugLog.WriteLine("[CountIn] skipped — Stopped, obscured, Tuner, or superseded before arm");
                 return;
             }
 
@@ -4216,9 +4490,11 @@ namespace musicmate.Pages
                         armedGeneration,
                         Volatile.Read(ref _waitingCountInGeneration),
                         _isRunning,
-                        ct.IsCancellationRequested))
+                        ct.IsCancellationRequested)
+                    || !_isPageVisible
+                    || PlayModePickerOptions.IsTunerMode(_session))
                 {
-                    DebugLog.WriteLine("[CountIn] aborted after delay — Stopped or superseded");
+                    DebugLog.WriteLine("[CountIn] aborted after delay — Stopped, obscured, Tuner, or superseded");
                     return;
                 }
 
@@ -4248,6 +4524,8 @@ namespace musicmate.Pages
                         // filtered by frequency in the Count-In accept path instead.
                         _ = clickDurationMs;
                         _ = clickCt;
+                        if (!_isPageVisible || PlayModePickerOptions.IsTunerMode(_session))
+                            throw new OperationCanceledException();
                         return Task.CompletedTask;
                     });
 
@@ -4259,7 +4537,8 @@ namespace musicmate.Pages
                 try
                 {
                     if (!_waitingCountInActive
-                        || armedGeneration != Volatile.Read(ref _waitingCountInGeneration))
+                        || armedGeneration != Volatile.Read(ref _waitingCountInGeneration)
+                        || !_isPageVisible)
                     {
                         _session?.ClearCountInClickSelfSoundSuppress("Count-In loop ended (cancelled/stopped)");
                     }
@@ -4280,6 +4559,8 @@ namespace musicmate.Pages
                         Volatile.Read(ref _waitingCountInGeneration),
                         _isRunning,
                         cancellationRequested: false)
+                    && _isPageVisible
+                    && !PlayModePickerOptions.IsTunerMode(_session)
                     && _session != null)
                 {
                     _session.MarkCountInEndUtc();
@@ -4292,6 +4573,8 @@ namespace musicmate.Pages
                         Volatile.Read(ref _waitingCountInGeneration),
                         _isRunning && _waitingCountInActive,
                         cancellationRequested: false)
+                    && _isPageVisible
+                    && !PlayModePickerOptions.IsTunerMode(_session)
                     && !_audio.IsCapturing)
                 {
                     ResetPitchCapture();
@@ -4364,6 +4647,7 @@ namespace musicmate.Pages
         private void CancelPendingListeningStarts()
         {
             try { _autoStartCts?.Cancel(); } catch { }
+            try { _resumeListeningCts?.Cancel(); } catch { }
             try { _sessionStartCts?.Cancel(); } catch { }
             Interlocked.Increment(ref _startListeningEpoch);
         }
@@ -4662,6 +4946,8 @@ namespace musicmate.Pages
             _sessionStartCts = PracticeSessionLifecycle.ReplaceSessionStartCancellation(_sessionStartCts);
             var ct = _sessionStartCts.Token;
             bool launchedPlayback = false;
+            _userStoppedListening = false;
+            _listeningPausedForPageHide = false;
 
             try
             {
@@ -4852,9 +5138,11 @@ namespace musicmate.Pages
                         && (_session?.NotesToDraw?.Count ?? 0) > 0;
                     if (startCountIn)
                     {
-                        if (epoch != Volatile.Read(ref _startListeningEpoch))
+                        if (epoch != Volatile.Read(ref _startListeningEpoch)
+                            || !_isPageVisible
+                            || PlayModePickerOptions.IsTunerMode(_session))
                         {
-                            DebugLog.WriteLine("[Start] Count-in aborted — superseded start");
+                            DebugLog.WriteLine("[Start] Count-in aborted — superseded, obscured, or Tuner");
                             return;
                         }
 
@@ -6460,6 +6748,9 @@ namespace musicmate.Pages
             }
 
             var isTuner = _session.Tune == "Tuner";
+            bool enteringTuner = !_tunerUiActive && isTuner;
+            bool leavingTuner = _tunerUiActive && !isTuner;
+            _tunerUiActive = isTuner;
 
             if (StaffBorder != null)
             {
@@ -6477,6 +6768,9 @@ namespace musicmate.Pages
 
             if (isTuner)
             {
+                // Same page as Music practice — stop Music Count-In immediately (no OnDisappearing).
+                PauseMusicCountInForTunerDisplay(enteringTuner);
+
                 if (TunerBorder != null)
                     TunerBorder.IsVisible = true;
 
@@ -6522,6 +6816,9 @@ namespace musicmate.Pages
                     TunerInfoBorder.HeightRequest = -1;
                 if (MainPageMainLayout != null)
                     MainPageMainLayout.Spacing = 16;
+
+                if (leavingTuner)
+                    ResumeMusicListeningAfterLeavingTuner();
             }
         }
         private string[] BuildScaleTuneOptions()
@@ -6918,6 +7215,8 @@ namespace musicmate.Pages
         // Use base BindableObject.OnPropertyChanged so XAML bindings receive change notifications
         private async Task StopListeningAndEvaluatingAsync(string statusMessage = "Stopped.")
         {
+            _userStoppedListening = true;
+            _listeningPausedForPageHide = false;
             CancelPendingListeningStarts();
             _playCts?.Cancel();
             StopWaitingCountIn();
@@ -7005,6 +7304,8 @@ namespace musicmate.Pages
             if (plan.Action is PracticeSessionLifecycle.StopToggleAction.StopRestoreRepeatSame
                 or PracticeSessionLifecycle.StopToggleAction.StopRegenerateFresh)
             {
+                _userStoppedListening = true;
+                _listeningPausedForPageHide = false;
                 CancelPendingListeningStarts();
                 try
                 {
@@ -7039,6 +7340,8 @@ namespace musicmate.Pages
             }
             else
             {
+                _userStoppedListening = false;
+                _listeningPausedForPageHide = false;
                 _holdResultForChildSession = false;
                 _session.SessionCompleted = false;
 

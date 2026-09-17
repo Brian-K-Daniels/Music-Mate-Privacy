@@ -26,7 +26,8 @@ public readonly struct NoteAttemptOutcome
     /// True when an Early/EarlyDuringSustain candidate for this note was superseded by the
     /// finally accepted attempt. Does <em>not</em> mean the accepted Δms was early —
     /// see <see cref="NoteAttemptTimingDiagnostics.ClassifyAcceptedOnset(double)"/>.
-    /// Persisted as WrongReason <see cref="NoteAttemptTimingDiagnostics.HadEarlyCandidateReason"/>.
+    /// Successful accepts keep an empty <see cref="WrongReason"/>; this flag is in-memory /
+    /// diagnostic only and is not persisted as a failure label.
     /// </summary>
     public bool HadEarlyCandidate { get; init; }
 }

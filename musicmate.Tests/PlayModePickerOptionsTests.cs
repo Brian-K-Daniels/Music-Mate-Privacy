@@ -461,13 +461,189 @@ public class PlayModePickerOptionsTests
             Tune = "Selected Scale",
             IsRandomMode = false,
             ScaleSelectionMode = ScaleSelectionMode.ByLevel,
+            ChildLevel = 20,
         };
 
         PlayModePickerOptions.ApplyPersistedSelection(session, () => pref, value => pref = value);
 
         Assert.True(session.IsRandomMode);
+        Assert.Equal(ScaleSelectionMode.Random, session.ScaleSelectionMode);
         Assert.Equal("Selected Scale", session.Tune);
         Assert.Equal(PlayModePickerOptions.RandomMelodic, pref);
+        Assert.StartsWith("Random —", session.EffectiveScaleDisplay, StringComparison.Ordinal);
+        Assert.DoesNotContain("Assortment by Level", session.EffectiveScaleDisplay, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ApplyOtherSelection_Random_SetsScaleSelectionModeAndLabel()
+    {
+        var session = new NoteSessionService
+        {
+            ChildLevel = 24,
+            Tune = "Selected Scale",
+            IsRandomMode = false,
+            Key = "C",
+        };
+        Assert.True(session.TryApplyScalePickerSelection(
+            NoteSessionService.ScaleSelectionByLevel, out _));
+        Assert.Contains("Assortment by Level", session.EffectiveScaleDisplay, StringComparison.Ordinal);
+
+        string? persisted = null;
+        PlayModePickerOptions.ApplyOtherSelection(
+            session, PlayModePickerOptions.RandomMelodic, value => persisted = value);
+
+        Assert.True(session.IsRandomMode);
+        Assert.Equal(ScaleSelectionMode.Random, session.ScaleSelectionMode);
+        Assert.Equal(PlayModePickerOptions.RandomMelodic, persisted);
+        Assert.StartsWith("Random —", session.EffectiveScaleDisplay, StringComparison.Ordinal);
+        Assert.DoesNotContain("Assortment by Level", session.EffectiveScaleDisplay, StringComparison.Ordinal);
+
+        var (category, selection) = PlayModePickerOptions.ResolveDisplayedPicker(
+            session, layoutTestTuneEnabled: false, selectedTunePreference: persisted);
+        Assert.Equal(PlayModePickerCategory.Other, category);
+        Assert.Equal(PlayModePickerOptions.RandomMelodic, selection);
+    }
+
+    [Fact]
+    public void ApplyOtherSelection_ByLevel_ShowsAssortmentLabelNotRandom()
+    {
+        var session = new NoteSessionService
+        {
+            ChildLevel = 24,
+            Tune = "Selected Scale",
+            IsRandomMode = true,
+            Key = "G",
+        };
+        string? persisted = PlayModePickerOptions.RandomMelodic;
+        PlayModePickerOptions.ApplyOtherSelection(
+            session, PlayModePickerOptions.RandomMelodic, value => persisted = value);
+
+        PlayModePickerOptions.ApplyOtherSelection(
+            session, NoteSessionService.ScaleSelectionByLevel, value => persisted = value);
+
+        Assert.False(session.IsRandomMode);
+        Assert.Equal(ScaleSelectionMode.ByLevel, session.ScaleSelectionMode);
+        Assert.Equal(NoteSessionService.ScaleSelectionByLevel, persisted);
+        Assert.Contains("Assortment by Level", session.EffectiveScaleDisplay, StringComparison.Ordinal);
+        Assert.DoesNotContain("Random —", session.EffectiveScaleDisplay, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ApplyOtherSelection_SwitchingRandomAndByLevel_UpdatesLabelEachTime()
+    {
+        var session = new NoteSessionService { ChildLevel = 30, Key = "D" };
+        string? pref = null;
+
+        PlayModePickerOptions.ApplyOtherSelection(
+            session, PlayModePickerOptions.RandomMelodic, value => pref = value);
+        Assert.StartsWith("Random —", session.EffectiveScaleDisplay, StringComparison.Ordinal);
+
+        PlayModePickerOptions.ApplyOtherSelection(
+            session, NoteSessionService.ScaleSelectionByLevel, value => pref = value);
+        Assert.Contains("Assortment by Level", session.EffectiveScaleDisplay, StringComparison.Ordinal);
+
+        PlayModePickerOptions.ApplyOtherSelection(
+            session, PlayModePickerOptions.RandomMelodic, value => pref = value);
+        Assert.StartsWith("Random —", session.EffectiveScaleDisplay, StringComparison.Ordinal);
+        Assert.Equal(PlayModePickerOptions.RandomMelodic, pref);
+        Assert.Equal(ScaleSelectionMode.Random, session.ScaleSelectionMode);
+    }
+
+    [Fact]
+    public void RandomMode_GMajorPick_DoesNotRelabelAsAssortmentByLevel()
+    {
+        var session = new NoteSessionService
+        {
+            ChildLevel = 40,
+            Key = "C",
+        };
+        string? pref = null;
+        PlayModePickerOptions.ApplyOtherSelection(
+            session, PlayModePickerOptions.RandomMelodic, value => pref = value);
+
+        session.RestoreRepeatSameGenerationContext(
+            key: "G",
+            selectedScale: "Major",
+            effectiveScale: "Major",
+            scaleMode: ScaleSelectionMode.Random,
+            isRandomMode: true,
+            tune: "Selected Scale");
+
+        Assert.Equal(ScaleSelectionMode.Random, session.ScaleSelectionMode);
+        Assert.True(session.IsRandomMode);
+        Assert.Equal("Random — G Major", session.EffectiveScaleDisplay);
+        Assert.Equal(
+            "Random — G Major",
+            PlayModePickerOptions.ResolveExerciseStatusLabel(
+                layoutTestTuneEnabled: false,
+                tune: session.Tune ?? string.Empty,
+                scaleSelectionMode: session.ScaleSelectionMode,
+                isRandomMode: session.IsRandomMode,
+                practiceTuneTitle: null,
+                arpeggioDisplay: null,
+                key: session.Key,
+                effectiveScale: session.EffectiveScale,
+                selectedScale: session.SelectedScale,
+                selectedTunePreference: pref));
+    }
+
+    [Fact]
+    public void ApplyPersistedSelection_RoundTrip_RandomThenByLevel_SurvivesRestart()
+    {
+        string? pref = null;
+        var session = new NoteSessionService { ChildLevel = 18, Key = "F" };
+
+        PlayModePickerOptions.ApplyOtherSelection(
+            session, PlayModePickerOptions.RandomMelodic, value => pref = value);
+        Assert.Equal(ScaleSelectionMode.Random, session.ScaleSelectionMode);
+
+        // Simulate app restart: new session with prefs restored only via ApplyPersistedSelection.
+        var restarted = new NoteSessionService
+        {
+            ChildLevel = 18,
+            ScaleSelectionMode = ScaleSelectionMode.ByLevel,
+            IsRandomMode = false,
+            Key = "C",
+        };
+        PlayModePickerOptions.ApplyPersistedSelection(restarted, () => pref, value => pref = value);
+        Assert.True(restarted.IsRandomMode);
+        Assert.Equal(ScaleSelectionMode.Random, restarted.ScaleSelectionMode);
+        Assert.StartsWith("Random —", restarted.EffectiveScaleDisplay, StringComparison.Ordinal);
+
+        PlayModePickerOptions.ApplyOtherSelection(
+            restarted, NoteSessionService.ScaleSelectionByLevel, value => pref = value);
+        var restartedAgain = new NoteSessionService
+        {
+            ChildLevel = 18,
+            ScaleSelectionMode = ScaleSelectionMode.Random,
+            IsRandomMode = true,
+        };
+        PlayModePickerOptions.ApplyPersistedSelection(restartedAgain, () => pref, value => pref = value);
+        Assert.False(restartedAgain.IsRandomMode);
+        Assert.Equal(ScaleSelectionMode.ByLevel, restartedAgain.ScaleSelectionMode);
+        Assert.Contains("Assortment by Level", restartedAgain.EffectiveScaleDisplay, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AssortmentComposition_RandomExercise_KeepsAssortmentModeLabel()
+    {
+        var session = new NoteSessionService
+        {
+            ChildLevel = 20,
+            Key = "G",
+            Tune = "Selected Scale",
+            IsRandomMode = false,
+        };
+        Assert.True(session.TryApplyScalePickerSelection(
+            NoteSessionService.ScaleSelectionByLevel, out _));
+
+        // Composition Random flips IsRandomMode but must not change ScaleSelectionMode.
+        session.IsRandomMode = true;
+
+        Assert.True(session.IsRandomMode);
+        Assert.Equal(ScaleSelectionMode.ByLevel, session.ScaleSelectionMode);
+        Assert.Contains("Assortment by Level", session.EffectiveScaleDisplay, StringComparison.Ordinal);
+        Assert.DoesNotContain("Random —", session.EffectiveScaleDisplay, StringComparison.Ordinal);
     }
 
     [Fact]

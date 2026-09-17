@@ -101,10 +101,11 @@ namespace musicmate.Models
         public bool OverallCorrect { get; set; }
 
         /// <summary>
-        /// Failure / detail reason. Examples: Early, WrongPitch, SoundDuringRest,
-        /// <see cref="NoteAttemptTimingDiagnostics.HadEarlyCandidateReason"/> when an early
-        /// candidate was superseded by a later accept (OverallCorrect stays true; accepted
-        /// earliness/lateness is TimingErrorMs, not this flag).
+        /// Failure / detail reason. Examples: Early, WrongPitch, SoundDuringRest.
+        /// Successful accepts that superseded an early candidate keep this empty —
+        /// accepted earliness/lateness is <see cref="TimingErrorMs"/>, not this field.
+        /// Legacy rows may still contain
+        /// <see cref="NoteAttemptTimingDiagnostics.HadEarlyCandidateReason"/>.
         /// </summary>
         [Column("WngRs")]
         public string WrongReason { get; set; } = string.Empty;
