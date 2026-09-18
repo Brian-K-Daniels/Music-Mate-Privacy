@@ -66,9 +66,11 @@
 <li><strong>Interval Singing Training</strong> —
     sing intervals (and also imitate or identify them by ear).</li>
 <li><strong>My Progress</strong> — note stats, mastery map, session history, and level-up results.</li>
-<li><strong>Settings</strong> — tempo, colors, rhythm, count-in, mastery rules, and practice switches.</li>
-<li><strong>Settings Advanced</strong> — 
-    practice mix, level-up rules, audio tuning, and storage (for teachers and experienced users).</li>
+<li><strong>Settings</strong> — tempo, colors, rhythm, count-in, mastery rules
+    (including whether mastered notes appear in Random), and practice switches.</li>
+<li><strong>Settings Advanced</strong> —
+    practice mix, level-up rules, audio tuning, Clear Note Attempts, and storage
+    (for teachers and experienced users).</li>
 <li><strong>Reset and Options</strong> — 
     factory defaults or your own saved custom defaults (some choices erase progress).</li>
 <li><strong>Tuner</strong> — jump straight into tuner mode on the Music page (same as Other → Tuner).</li>
@@ -177,9 +179,10 @@
         fresh scale—for your level.
     </li>
     <li>
-        Be aware that Even with Accidental % = 0, some sharps, flats, or naturals may still  <!--9/1//2026-->
-        appear because they are required by the selected key or scale, such as the
-        raised 7th in a harmonic minor scale.
+        Be aware that even with Accidental % = 0, some sharps, flats, or naturals may still
+        appear because they belong to the selected key or scale — for example the
+        raised 7th in a harmonic minor scale. Those are not “extra surprise” accidentals
+        from the Accidental % setting; they are part of the music you asked for.
     </li>
 </ul>
 
@@ -399,9 +402,25 @@
     From about <strong>Level 21</strong> upward, <strong>timing</strong> also counts:
     notes played too early or too late may be marked wrong even when the pitch is right.
     At lower levels, pitch accuracy is the main focus.</p>
-<p>Choose practice speed with the <strong>BPM</strong> (tempo) slider in
-    <strong>Settings</strong>. The same tempo is used for playback, count-in clicks,
-    and conductor beat cues on the Music page. You can also change the tempo by touching the display on the Music page.</p>
+<p>Choose practice speed with the <strong>BPM</strong> (tempo) control.
+    You can change tempo in <strong>Settings</strong>, or by tapping the tempo display
+    on the <strong>Music</strong> page. The same tempo is used for playback, count-in clicks,
+    and conductor beat cues.</p>
+
+<h3>Make It Easy</h3>
+<p><strong>Make It Easy</strong> is for beginners and less confident players.
+    It makes Music Mate much more forgiving about timing.</p>
+<ul>
+<li>If you pause, Music Mate resynchronizes when you start playing again,
+    instead of running ahead on the old timing.</li>
+<li>Brief pitch or timing glitches are less likely to turn notes red.</li>
+<li>You still need to play approximately the correct notes.
+    Easy mode is not meant to accept a clearly wrong note that you hold.</li>
+</ul>
+<p>On the Music page, the button shows
+    <strong>Make It Easy — ON</strong> or <strong>Make It Easy — OFF</strong>.
+    Tap it to switch. On a new installation and after
+    <strong>Factory Defaults</strong>, Make It Easy starts <strong>ON</strong>.</p>
 
 <h3>Waiting count-in</h3>
 <p>Count-in gives you a steady beat so you know when to begin.
@@ -412,6 +431,8 @@
     Play or sing the first yellow note when you are ready.
     Wrong notes do not stop the count-in; when you play the first note correctly,
     count-in stops and normal practice continues.</p>
+<p>If you leave Music for another page (or open Tuner), count-in stops.
+    When you return to Music, you may get a fresh count-in if it is still enabled.</p>
 <p>In <strong>Settings → Waiting Count-In</strong> you can turn count-in on or off and
     adjust click volume, pitch, and duration.
     Count-in can also start listening for you even when
@@ -427,9 +448,10 @@
 <p>After each note, the status message shows the expected note name,
     the note that was heard, and how many cents sharp or flat you were.</p>
 <p>If <strong>Show Conductor Cues</strong> is on in Settings,
-    arrowheads appear above the staff on the beats.
-    The large arrowhead shows the current beat as you play.
-    Conductor cues do not appear in Tuner mode.</p>
+    arrowheads appear above the staff on the beats so you can see the pulse while you play.
+    The large arrowhead shows the current beat.
+    Conductor cues follow your practice tempo and time signature.
+    They do not appear in Tuner mode.</p>
 <p>At the end of a session the status area briefly shows your accuracy scores
     and progress toward the next level:</p>
 <ul>
@@ -505,7 +527,9 @@
     Those early tries may show in Note Attempts history; they do not lower the session
     <strong>Pc%</strong> completion score on My Progress.</p>
 <p>From about <strong>Level 21</strong> upward, timing matters more for your overall score and
-    for whether a note counts as mastered. Below that, pitch accuracy is the main focus.</p>
+    for whether a note counts as mastered. Below that, pitch accuracy is the main focus.
+    With <strong>Make It Easy — ON</strong>, timing is more forgiving at every level,
+    and a pause can resync instead of leaving later notes unfairly late.</p>
 <p>In Settings, <strong>Listening starts when music appears</strong> can begin listening for you when
     the Music page opens (not used in Tuner). 
     Even with that setting, if you still see <strong>GO</strong> after opening Music for
@@ -513,13 +537,15 @@
 
 <h2>Mastery of Notes</h2>
 <p>Mastery helps you see which notes are solid and which still need practice.
-    You can omit mastered notes from random music since you do not need to practice them anymore. 
-    See Settings / Advanced / Note mastery. With the switch ON (which is the factory default) it will
-    not use mastered notes in random music. With the switch OFF all notes, mastered or not will be eligible for
-    use in random music.</p>
+    You can leave mastered notes out of Random music so you spend more time on notes
+    that still need work.</p>
+<p>In <strong>Settings → Mastery of Notes</strong>, turn on
+    <strong>Do not use mastered notes in Random music</strong>
+    (factory default is ON). With it OFF, mastered and unmastered notes can all appear
+    in Random.</p>
 
 <h3>How a note becomes mastered</h3>
-<p>In Settings under <strong>Mastery of notes</strong>, choose a method:</p>
+<p>In Settings under <strong>Mastery of Notes</strong>, choose a method:</p>
 <ul>
 <li><strong>% Correct</strong> — enough correct attempts and a high enough percent correct.
     You can also set a minimum correct count, an omit threshold for high %, and 
@@ -530,9 +556,9 @@
 </ul>
 
 <h3>Mastery and Random</h3>
-<p>In <strong>Settings Advanced</strong>, turn on <strong>Do not use
-    mastered notes in Random music</strong> 
-    to leave mastered notes out of Random exercises so you keep working on harder notes.</p>
+<p>The same Settings switch controls whether Random omits mastered notes.
+    It used to live under Settings Advanced; it is now under
+    <strong>Settings → Mastery of Notes</strong>.</p>
 
 <h3>Mastery on My Progress</h3>
 <p>Open <strong>My Progress</strong> and choose the <strong>Mastery</strong> database. 
@@ -617,8 +643,11 @@
 
 <h3>Music</h3>
 <ul>
-<li><strong>Accidental %</strong> — how often Random adds sharps or flats 
-    (above 0 requires Premium).</li>
+<li><strong>Music settings</strong> — choose whether Level may change other Music settings
+    (factory default), or keep those Music settings Fixed when Level changes.</li>
+<li><strong>Accidental %</strong> — how often Random adds discretionary sharps or flats
+    (above 0 requires Premium). Notes that belong to the key or scale can still show
+    accidentals when Accidental % is 0.</li>
 <li><strong>Lowest note</strong> / <strong>Highest note</strong> —
     practice range (also used by Interval Ear Training;
     Interval Singing Training uses your voice range when a voice is selected,
@@ -626,44 +655,47 @@
     Choosing an instrument or voice sets a practical range first;
     you can narrow it here. Free edition is limited to about C4–F5.
     If you have purchased <strong>Premium</strong> then E2 to C8 is available.</li>
-<li><strong>Rhythm mode</strong> - simple or mixed<br />
-    <strong>Smallest note</strong> - quarter eigth or sixteenth,<br/>
-    <strong>Syncopation - None, Simple or Full</strong>, and<br/>
-    <strong>Time signature</strong> — 2/2, 2/4, 3/4, 4/4, 5/4, 3/8, 6/8, 9/8, or 12/8. <br/>
-    Time signature also sets how many count-in clicks are in each measure before you start playing or singing.</li>
+<li><strong>Rhythm mode</strong> — simple or mixed<br />
+    <strong>Smallest note</strong> — quarter, eighth, or sixteenth<br/>
+    <strong>Syncopation</strong> — None, Simple, or Full<br/>
+    <strong>Time signature</strong> — 2/2, 2/4, 3/4, 4/4, 5/4, 3/8, 6/8, 9/8, or 12/8.
+    Time signature also sets how many count-in clicks are in each measure before you start.</li>
 </ul>
 
 <h3>Action switches</h3>
 <ul>
-<li><strong>Listening starts when music appears.</strong> - ON or OFF</li>
-<li><strong>Number of latest attempts per note to keep</strong> - 0 to 1000</li>
-<li><strong>Collect session statistics</strong> - ON or OFF</li>
+<li><strong>Listening starts when music appears</strong> — ON or OFF</li>
+<li><strong>Number of latest attempts per note to keep</strong> — 0 to 1000</li>
+<li><strong>Collect session statistics</strong> — ON or OFF</li>
 </ul>
 
-<h3>Mastery of notes</h3>
-<p>See the <strong>Mastery of Notes</strong> section above for % Correct, Streak, and None.</p>
+<h3>Mastery of Notes</h3>
+<p>See the <strong>Mastery of Notes</strong> section above for % Correct, Streak, None,
+    and <strong>Do not use mastered notes in Random music</strong>.</p>
 
 <h2>Settings Advanced</h2>
 <p><strong>Practice composition %</strong> For playing Assortment by Level
     you can set the percentages of:
     <ul>
-       <li> Tunes</li>
-       <li> Random</li>
-       <li> Scales and</li>
+       <li>Tunes</li>
+       <li>Random</li>
+       <li>Scales</li>
        <li>Arpeggios</li>
     </ul>
-    Whatever you set the total will always be 100%..</p>
+    Whatever you set, the total will always be 100%.</p>
 <p><strong>Level Advancement Criteria</strong> control how many good sessions and
     what accuracy you need to move up (sessions required, pitch / timing / overall accuracy,
     minimum notes per session).
     The pitch threshold uses each attempt’s pitch right/wrong result
     (not the friendlier My Progress <strong>Pc%</strong> completion score).</p>
-<p><strong>Advanced Audio &amp; Pitch Settings</strong> 
-    (Pitch Tolerance, RMS Threshold, Cooldown, Pitch Offset) help teachers fine-tune detection. 
-    Most users can leave these alone.</p>
-<p><strong>Note Mastery - Do not use mastered notes in Random music</strong> — see Mastery above.<br/>
-    ON  -  mastered notes will not be used in Random music..<br/>
-    OFF -  all notes will be available for use in Random music</p>
+<p><strong>Advanced Audio &amp; Pitch Settings</strong>
+    (Pitch Tolerance, RMS Threshold, Cooldown, Pitch Offset, Wrong Debounce) help teachers
+    fine-tune detection. Most users can leave these alone.
+    When <strong>Make It Easy</strong> is ON, Music Mate temporarily uses its own
+    beginner-friendly values for some of these; turning Easy OFF restores your Advanced settings.</p>
+<p><strong>Clear Note Attempts except for last session</strong> —
+    when ON (factory default), older Note Attempts are cleared after each completed session
+    so only the latest session’s attempts are kept.</p>
 <p><strong>Storage - Max Session DB (MB)</strong> This slider sets a limit to how much data can be
     stored in the session database. If you set it lower than the current amount then the next time the
     app is opened it will delete the oldest sessions until it reaches the new limit.</p>
@@ -678,7 +710,8 @@
 <ul>
 <li><strong>Factory Defaults</strong> — permanently erase all your progress,
     practice history, statistics, and custom settings. Sets Level to 1 and restores the
-    original factory settings (including advanced options and theme colors).<br/>
+    original factory settings (including advanced options, theme colors, and
+    <strong>Make It Easy — ON</strong>).<br/>
     <strong>Premium purchases are kept.</strong> You must confirm twice. Reset to factory defaults cannot be undone.</li>
 <li><strong>Make Custom Default Settings equal to Current Settings.</strong> — 
     save your current setup as your personal default (does not erase progress by itself).</li>
@@ -716,19 +749,21 @@
     <strong> Back </strong> to
     jump between matches (the <strong>m/n</strong> label shows which match you are on).
     This label is at the end of the search box so you may have to scroll to the top to see it.<br/>
-    You can clear the search box and the highlights with the <strong>Clear button</strong>.</li>
+    You can clear the search box and the highlights with the <strong>Clear button</strong>.
+    Tap <strong>Top</strong> anytime to jump back to the search field at the top of this page.</li>
 <li>buy Premium or confirm your Premium status</li>
 </ul>
 <p>To change how large this guide’s text appears, open <strong>Settings → Display</strong> and
     set <strong>Font used in About page</strong> (sizes from 6 through 24). 
     Scroll the page to move the search box, Premium button, and guide text together —
     after those controls scroll away, more of the guide fits on screen - 
-    but the Next, Back and Clear buttons are always present at the top right.</p>
+    but the Next, Back, Clear, and Top buttons are always present at the top right.</p>
 
 <h2>Tips for Success</h2>
 <ul>
 <li>Start at a level that feels doable. Winning small sessions builds confidence.</li>
 <li>If you see <strong>GO</strong>, tap it so Music Mate is listening.</li>
+<li>Try <strong>Make It Easy — ON</strong> if timing feels too strict when you are starting out.</li>
 <li>Try <strong>Waiting Count-In</strong> if you like a steady beat before the first note.</li>
 <li>Use <strong>Play</strong> to hear the exercise before you play or sing it.</li>
 <li>Watch for the yellow note — that is your target — then enjoy the green when you get it right.</li>

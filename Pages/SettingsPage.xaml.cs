@@ -1,4 +1,5 @@
 using System;
+using musicmate.Diagnostics;
 using musicmate.Utilities;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Storage;
@@ -31,15 +32,26 @@ namespace musicmate.Pages
             return midi < FreeRangeLowMidi || midi > FreeRangeHighMidi;
         }
 
+        /// <summary>
+        /// Play Billing query only — must never drive the navigation spinner.
+        /// Shell already shows busy during navigation; nesting RunAsync(billing) kept
+        /// the overlay up for the entire billing round-trip on Release.
+        /// </summary>
         private static async Task               CheckPremiumStatusAsync()
         {
             try
             {
-                var store = ServiceHelper.GetService<IStoreService>();
-                if (store != null)
-                    await store.CheckPremiumStatusAsync();
+                await SettingsLoadTiming.TimeAsync("CheckPremiumStatusAsync", async () =>
+                {
+                    var store = ServiceHelper.GetService<IStoreService>();
+                    if (store != null)
+                        await store.CheckPremiumStatusAsync().ConfigureAwait(true);
+                });
             }
-            catch { }
+            catch (Exception ex)
+            {
+                SettingsLoadTiming.Mark("CheckPremiumStatusAsync:error", ex.Message);
+            }
         }
 
         private async void                      OnAccidentalPercentDragCompleted(object? sender, EventArgs e)
@@ -70,11 +82,22 @@ namespace musicmate.Pages
             _premiumDialogOpen = false;
         }
 
-        protected override async void           OnAppearing()
+        protected override void                 OnAppearing()
         {
-            _orientation?.ForceLandscape();
-            base.OnAppearing();
-            await NavigationBusyService.Instance.RunAsync(CheckPremiumStatusAsync);
+            SettingsLoadTiming.Mark("OnAppearing:START");
+            try
+            {
+                _orientation?.ForceLandscape();
+                base.OnAppearing();
+
+                // Do not wrap billing in NavigationBusyService.RunAsync — that nested under
+                // Shell navigation busy and held the spinner until Play Billing finished.
+                _ = CheckPremiumStatusAsync();
+            }
+            finally
+            {
+                SettingsLoadTiming.Mark("OnAppearing:END");
+            }
         }
 
         private async void                      OnHighestNotePickerChangedWithPrompt(object? sender, EventArgs e)
@@ -149,13 +172,66 @@ namespace musicmate.Pages
 
         public SettingsPage()
         {
-            InitializeComponent();
-            _viewModel = new SettingsPageViewModel();
-            _session = ServiceHelper.GetService<NoteSessionService>()!;
-            _orientation = ServiceHelper.GetService<IOrientationService>()!;
-            _themeService = ServiceHelper.GetService<ThemeService>()!;
-            BindingContext = _viewModel;
+            SettingsLoadTiming.BeginOpen();
+            SettingsLoadTiming.Mark("Ctor:START");
 
+            var resetService = ServiceHelper.GetService<SettingsResetService>();
+            resetService?.SuspendEvaluation();
+            try
+            {
+                SettingsLoadTiming.Mark("InitializeComponent:START");
+                InitializeComponent();
+                SettingsLoadTiming.Mark("InitializeComponent:END");
+
+                SettingsLoadTiming.Mark("new SettingsPageViewModel:START");
+                _viewModel = new SettingsPageViewModel();
+                SettingsLoadTiming.Mark("new SettingsPageViewModel:END");
+
+                SettingsLoadTiming.Mark("ResolveServices:START");
+                _session = ServiceHelper.GetService<NoteSessionService>()!;
+                _orientation = ServiceHelper.GetService<IOrientationService>()!;
+                _themeService = ServiceHelper.GetService<ThemeService>()!;
+                SettingsLoadTiming.Mark("ResolveServices:END");
+
+                BindingContext = _viewModel;
+
+                SettingsLoadTiming.Mark("SyncViewModelFromSession:START");
+                SyncViewModelFromSession();
+                SettingsLoadTiming.Mark("SyncViewModelFromSession:END");
+
+                ColorPickerDialog.AppColorPicked += (_, e) =>
+                {
+                    _themeService.SetColor(e.Target, e.Color);
+                };
+
+                SettingsLoadTiming.Mark("InitFreeNoteRangeIndices:START");
+                InitFreeNoteRangeIndices();
+                SettingsLoadTiming.Mark("InitFreeNoteRangeIndices:END");
+
+                LowestNotePicker.SelectedIndexChanged += OnLowestNotePickerChangedWithPrompt;
+                HighestNotePicker.SelectedIndexChanged += OnHighestNotePickerChangedWithPrompt;
+            }
+            finally
+            {
+                // One evaluation after bulk sync; always resume even if ctor throws mid-way.
+                try
+                {
+                    SettingsLoadTiming.Mark("ResumeEvaluation:START");
+                    resetService?.ResumeEvaluation(evaluateNow: true);
+                    SettingsLoadTiming.Mark("ResumeEvaluation:END");
+                }
+                catch (Exception ex)
+                {
+                    SettingsLoadTiming.Mark("ResumeEvaluation:error", ex.Message);
+                    try { resetService?.ResumeEvaluation(evaluateNow: false); } catch { }
+                }
+
+                SettingsLoadTiming.Mark("Ctor:END");
+            }
+        }
+
+        private void SyncViewModelFromSession()
+        {
             _viewModel.RefreshThemeColorBindings();
             _viewModel.LowestNote = _session.LowestNote;
             _viewModel.HighestNote = _session.HighestNote;
@@ -170,12 +246,10 @@ namespace musicmate.Pages
             _viewModel.MasteredMethod = _session.MasteredMethod;
             _viewModel.StreakCrit = _session.StreakCrit;
             _viewModel.UseNoteMasteryForGeneration = _session.UseNoteMasteryForGeneration;
+        }
 
-            ColorPickerDialog.AppColorPicked += (_, e) =>
-            {
-                _themeService.SetColor(e.Target, e.Color);
-            };
-
+        private void InitFreeNoteRangeIndices()
+        {
             var notes = _viewModel.NoteRangePickerNoteNames?.ToList();
             if (notes != null && notes.Count > 0)
             {
@@ -184,9 +258,6 @@ namespace musicmate.Pages
                 _lastFreeLowestIndex = c4 >= 0 ? c4 : notes.Count - 1;
                 _lastFreeHighestIndex = f5 >= 0 ? f5 : 0;
             }
-
-            LowestNotePicker.SelectedIndexChanged += OnLowestNotePickerChangedWithPrompt;
-            HighestNotePicker.SelectedIndexChanged += OnHighestNotePickerChangedWithPrompt;
         }
     }
 }

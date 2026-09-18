@@ -3,6 +3,7 @@ using Microsoft.Maui.Graphics;
 using System.Collections.ObjectModel;
 using Microsoft.Maui.Storage;
 using System.Linq;
+using musicmate.Diagnostics;
 using musicmate.Models;
 using musicmate.Services;
 
@@ -53,6 +54,7 @@ namespace musicmate.ViewModels
 
         public SettingsPageViewModel()
         {
+            SettingsLoadTiming.Mark("SettingsPageViewModel.Ctor:START");
             _session = ServiceHelper.GetService<NoteSessionService>();
             _theme = ServiceHelper.GetService<ThemeService>();
             if (_session != null)
@@ -62,6 +64,7 @@ namespace musicmate.ViewModels
                 _theme.PropertyChanged += Theme_PropertyChanged;
                 _theme.ThemeColorsChanged += (_, _) => RefreshThemeColorBindings();
             }
+            SettingsLoadTiming.Mark("SettingsPageViewModel.Ctor:END");
         }
 
         /// <summary>
@@ -200,10 +203,14 @@ namespace musicmate.ViewModels
                 .Where(name => !name.Contains('#') && !name.Contains('b'))
                 .ToArray()).Reverse().ToArray();
 
+        private static string[]? _noteRangePickerNoteNames;
+
         /// <summary>
         /// Low/high picker list spanning every instrument and voice practical extreme.
+        /// Cached — XAML bindings read this repeatedly during layout.
         /// </summary>
-        public string[] NoteRangePickerNoteNames => InstrumentCatalog.BuildNoteRangePickerNames();
+        public string[] NoteRangePickerNoteNames
+            => _noteRangePickerNoteNames ??= InstrumentCatalog.BuildNoteRangePickerNames();
 
         /// <summary>
         /// Notes available for the current instrument (and child level), high→low.

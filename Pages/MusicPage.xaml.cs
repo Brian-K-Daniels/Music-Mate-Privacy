@@ -244,7 +244,7 @@ namespace musicmate.Pages
         public bool IsChildLevelSliderVisible => _session?.ChildLevel > 0 && _session.Tune != "Tuner";
 
         public string MakeItEasyButtonText =>
-            _session?.IsMakeItEasyActive == true ? "Make It Easy — ON" : "Make It Easy";
+            _session?.IsMakeItEasyActive == true ? "Make It Easy — ON" : "Make It Easy — OFF";
 
         public Color MakeItEasyButtonBackgroundColor
         {

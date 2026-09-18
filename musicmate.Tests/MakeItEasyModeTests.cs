@@ -377,12 +377,13 @@ public class MakeItEasyModeTests : IDisposable
     [Fact]
     public void Easy_ToggleOff_RestoresPreviousSettingsExactly()
     {
-        var session = new NoteSessionService
-        {
-            Tolerance = 42,
-            WrongDebounceMs = 275,
-            CooldownMs = 65,
-        };
+        var session = new NoteSessionService();
+        if (session.IsMakeItEasyActive)
+            session.SetMakeItEasyActive(false);
+
+        session.Tolerance = 42;
+        session.WrongDebounceMs = 275;
+        session.CooldownMs = 65;
         Assert.False(session.IsMakeItEasyActive);
 
         session.SetMakeItEasyActive(true);
@@ -396,6 +397,15 @@ public class MakeItEasyModeTests : IDisposable
         Assert.Equal(42, session.Tolerance);
         Assert.Equal(275, session.WrongDebounceMs);
         Assert.Equal(65, session.CooldownMs);
+    }
+
+    [Fact]
+    public void FactoryDefault_MakeItEasyIsOn()
+    {
+        Assert.True(MakeItEasyMode.DefaultActive);
+        var session = new NoteSessionService();
+        Assert.True(session.IsMakeItEasyActive);
+        Assert.Equal(MakeItEasyMode.ToleranceCents, session.Tolerance);
     }
 
     [Fact]
@@ -425,6 +435,9 @@ public class MakeItEasyModeTests : IDisposable
             ShowConductorCues = false,
             ChildLevel = 1,
         };
+        // Factory default is Easy ON — normal-mode tests must turn it off explicitly.
+        if (session.IsMakeItEasyActive)
+            session.SetMakeItEasyActive(false);
         session.Reset();
         session.Tune = "Selected Scale";
         session.Instrument = "concert-pitch";

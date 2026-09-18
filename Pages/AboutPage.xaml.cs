@@ -636,6 +636,21 @@ namespace musicmate.Pages
             }
         }
 
+        private async void OnAboutTopClicked(object? sender, EventArgs e)
+        {
+            try
+            {
+                HideAboutSearchKeyboard(AboutSearchEntry);
+                if (AboutScrollView != null)
+                    await AboutScrollView.ScrollToAsync(0, 0, animated: true);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[AboutScroll] Top button ScrollToAsync failed: {ex.Message}");
+            }
+        }
+
         /// <summary>
         /// Dismisses the About search Entry focus and soft keyboard (Android IME).
         /// </summary>

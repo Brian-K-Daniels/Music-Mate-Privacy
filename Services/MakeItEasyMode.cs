@@ -8,6 +8,8 @@ namespace musicmate.Services
     public static class MakeItEasyMode
     {
         public const string PrefActiveKey = "musicmate.MakeItEasy.Active";
+        /// <summary>Factory default and fresh-install value for Make It Easy.</summary>
+        public const bool DefaultActive = true;
         public const string PrefSavedToleranceKey = "musicmate.MakeItEasy.SavedTolerance";
         public const string PrefSavedWrongDebounceMsKey = "musicmate.MakeItEasy.SavedWrongDebounceMs";
         public const string PrefSavedCooldownMsKey = "musicmate.MakeItEasy.SavedCooldownMs";

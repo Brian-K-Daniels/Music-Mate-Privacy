@@ -62,13 +62,13 @@
   </ContentPage.Resources>
 
   <!--
-        Shell provides the hamburger. TitleView: ← Music | About | m/n | Next | Back | Clear.
+        Shell provides the hamburger. TitleView: ← Music | About | m/n | Next | Back | Clear | Top.
         Search Entry stays in page content so large fonts are never clipped by the nav chrome.
     -->
   <Shell.TitleView>
 
     <Grid
-                ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto"
+                ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto"
             ColumnSpacing="6"
             HeightRequest="44"
             Padding="0,0,8,0"
@@ -155,6 +155,21 @@
                 VerticalOptions="Center"
                 HorizontalOptions="End"
                 SemanticProperties.Description="Clear the About search and remove highlights" />
+
+      <Button
+                x:Name="AboutTitleTopButton"
+                Grid.Column="6"
+                Text="Top"
+                Clicked="OnAboutTopClicked"
+                FontAutoScalingEnabled="False"
+                FontSize="13"
+                FontAttributes="Bold"
+                Padding="10,4"
+                HeightRequest="36"
+                MinimumHeightRequest="36"
+                VerticalOptions="Center"
+                HorizontalOptions="End"
+                SemanticProperties.Description="Scroll to the top of the About page" />
 
     </Grid>
 

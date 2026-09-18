@@ -4,6 +4,11 @@
 #   - "Start debugging Android application failed"
 #   - "New MonoVsDbg debugger process created" (sometimes twice)
 #   - musicmate.dll exited with code 0 before the app is usable under F5
+#   - XAAADB0000 DELETE_FAILED_INTERNAL_ERROR (Release deploy while app running,
+#     or replacing an AAB split install). Stop the app, then:
+#       adb uninstall com.bkdaniels.musicmate
+#     Release device deploy now uses APK by default; Play AAB via
+#     .\scripts\publish-play-aab.ps1
 #
 # This script does NOT fix app logic bugs. It resets adb, clears stale debug state,
 # optionally removes the DEV app, and optionally rebuilds the Android TFM.

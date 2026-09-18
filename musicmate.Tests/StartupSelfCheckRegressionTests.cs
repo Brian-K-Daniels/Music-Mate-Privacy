@@ -51,6 +51,17 @@ public class StartupSelfCheckRegressionTests
         Assert.DoesNotContain("ChildLevelScaleSelectionTests", text);
     }
 
+    [Fact]
+    public void SettingsPage_DoesNotWrapPremiumCheckInNavigationBusy()
+    {
+        string path = FindRepoFile(Path.Combine("Pages", "SettingsPage.xaml.cs"));
+        string text = File.ReadAllText(path);
+
+        Assert.DoesNotContain("RunAsync(CheckPremiumStatusAsync)", text);
+        Assert.Contains("CheckPremiumStatusAsync()", text);
+        Assert.Contains("SettingsLoadTiming", text);
+    }
+
     private static string FindRepoFile(string relativePath)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

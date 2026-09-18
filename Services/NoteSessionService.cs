@@ -85,6 +85,11 @@ namespace musicmate.Services
                 if (e.PropertyName == nameof(StatusService.IsPremiumUser) && !StatusService.Instance.IsPremiumUser)
                     RevertToFreeDefaults();
             };
+
+            // Fresh install / factory default: Easy is ON with no saved Advanced snapshot yet.
+            if (_makeItEasyActive)
+                EnsureMakeItEasySnapshotLoaded();
+
             StartupTiming.Mark("NoteSessionService.Ctor:end");
         }
         private void RevertToFreeDefaults()
@@ -562,7 +567,7 @@ namespace musicmate.Services
 
         // ── Make It Easy (temporary beginner detection preset) ──────────────────
         private bool _makeItEasyActive =
-            SessionPreferences.Get(MakeItEasyMode.PrefActiveKey, false);
+            SessionPreferences.Get(MakeItEasyMode.PrefActiveKey, MakeItEasyMode.DefaultActive);
         private MakeItEasyMode.SettingsSnapshot? _makeItEasySavedSettings;
         private DateTime? _easyWrongArmUtc;
         private int _easyWrongArmIndex = -1;
@@ -636,12 +641,18 @@ namespace musicmate.Services
             if (!_makeItEasyActive || _makeItEasySavedSettings.HasValue)
                 return;
             _makeItEasySavedSettings = MakeItEasyMode.TryLoadSnapshot();
-            // Active without a snapshot (corrupt prefs): drop back to normal.
-            if (!_makeItEasySavedSettings.HasValue)
+            if (_makeItEasySavedSettings.HasValue)
             {
-                _makeItEasyActive = false;
-                SessionPreferences.Set(MakeItEasyMode.PrefActiveKey, false);
+                MakeItEasyMode.ApplyPreset(this);
+                return;
             }
+
+            // Active without a snapshot (new install / factory Easy ON): save current
+            // detection settings as the restore baseline, then apply the Easy preset.
+            var snapshot = MakeItEasyMode.Capture(this);
+            MakeItEasyMode.PersistSnapshot(snapshot);
+            _makeItEasySavedSettings = snapshot;
+            MakeItEasyMode.ApplyPreset(this);
         }
 
         private ConductorOnsetTiming.TimingWindowProfile GetActiveTimingProfile()

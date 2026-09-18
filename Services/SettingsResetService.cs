@@ -105,6 +105,20 @@ namespace musicmate.Services
         public void NotifySettingsChanged()
             => EvaluateDefaultsButtonStates();
 
+        /// <summary>
+        /// Suppress factory/custom default button re-evaluation while bulk-loading Settings UI.
+        /// Always pair with <see cref="ResumeEvaluation"/> (prefer try/finally).
+        /// </summary>
+        public void SuspendEvaluation() => _suppressFactoryEvaluation = true;
+
+        /// <summary>Ends a <see cref="SuspendEvaluation"/> scope and refreshes button state once.</summary>
+        public void ResumeEvaluation(bool evaluateNow = true)
+        {
+            _suppressFactoryEvaluation = false;
+            if (evaluateNow)
+                EvaluateDefaultsButtonStates();
+        }
+
         /// <summary>Resets all Settings / Advanced values to factory defaults.</summary>
         public void ResetToFactoryDefaults()
         {
@@ -323,7 +337,8 @@ namespace musicmate.Services
 
         private void ApplyFactoryDefaultsToLiveSettings()
         {
-            // Leave Make It Easy with the user's saved Advanced values restored first.
+            // Leave Make It Easy with the user's saved Advanced values restored first,
+            // apply factory detection settings, then turn Easy back ON (factory default).
             if (_session.IsMakeItEasyActive)
                 _session.SetMakeItEasyActive(false);
 
@@ -397,6 +412,10 @@ namespace musicmate.Services
 
             LevelUpService.ResetCriteriaToDefaults();
             _theme.ResetAllToFactoryDefaults();
+
+            // Factory default: Make It Easy ON (after Advanced detection defaults are restored).
+            if (!_session.IsMakeItEasyActive)
+                _session.SetMakeItEasyActive(true);
         }
 
         private AppSettingsSnapshot CaptureCurrentSnapshot()
@@ -500,11 +519,18 @@ namespace musicmate.Services
                 Instrument = NoteSessionService.NormalizeInstrumentOption(SettingsPageViewModel.DefaultInstrument),
                 Key = SettingsPageViewModel.DefaultKey,
                 Tune = "Selected Scale",
-                Tolerance = NoteSessionService.DefaultTolerance,
+                // When factory Make It Easy is ON, live Tolerance/Debounce/Cooldown are the Easy preset.
+                Tolerance = MakeItEasyMode.DefaultActive
+                    ? MakeItEasyMode.ToleranceCents
+                    : NoteSessionService.DefaultTolerance,
                 PitchOffsetCents = NoteSessionService.DefaultPitchOffsetCents,
                 RmsThreshold = NoteSessionService.DefaultRmsThreshold,
-                CooldownMs = NoteSessionService.DefaultCooldownMs,
-                WrongDebounceMs = NoteSessionService.DefaultDebounceMs,
+                CooldownMs = MakeItEasyMode.DefaultActive
+                    ? MakeItEasyMode.CooldownMs
+                    : NoteSessionService.DefaultCooldownMs,
+                WrongDebounceMs = MakeItEasyMode.DefaultActive
+                    ? MakeItEasyMode.WrongDebounceMs
+                    : NoteSessionService.DefaultDebounceMs,
                 PcTunes = NoteSessionService.DefaultPcTunes,
                 PcRandom = NoteSessionService.DefaultPcRandom,
                 PcScales = NoteSessionService.DefaultPcScales,
