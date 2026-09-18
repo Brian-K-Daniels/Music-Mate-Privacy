@@ -14,9 +14,10 @@ namespace musicmate
     {
         protected override void OnCreate(Bundle? savedInstanceState)
         {
-            AppLifecycleLog.Write("MainActivity", "OnCreate");
-            // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
-            FirstNoteAndroidReleaseLog.WriteAlways("main-activity", "OnCreate");
+            StartupTiming.Mark("MainActivity.OnCreate:begin",
+                $"savedInstance={(savedInstanceState != null)} pid={Android.OS.Process.MyPid()}");
+            AppLifecycleLog.WriteAlways("MainActivity", "OnCreate",
+                $"savedInstance={(savedInstanceState != null)} pid={Android.OS.Process.MyPid()}");
             base.OnCreate(savedInstanceState);
 
             // Reinforce landscape as soon as the activity exists (before first page OnAppearing).
@@ -27,35 +28,41 @@ namespace musicmate
                 Window.AddFlags(WindowManagerFlags.Fullscreen);
                 Window.ClearFlags(WindowManagerFlags.ForceNotFullscreen);
             }
+            StartupTiming.Mark("MainActivity.OnCreate:end");
         }
 
         protected override void OnStart()
         {
-            AppLifecycleLog.Write("MainActivity", "OnStart");
+            StartupTiming.Mark("MainActivity.OnStart");
+            AppLifecycleLog.WriteAlways("MainActivity", "OnStart");
             base.OnStart();
         }
 
         protected override void OnResume()
         {
-            AppLifecycleLog.Write("MainActivity", "OnResume");
+            StartupTiming.Mark("MainActivity.OnResume");
+            AppLifecycleLog.WriteAlways("MainActivity", "OnResume");
             base.OnResume();
         }
 
         protected override void OnPause()
         {
-            AppLifecycleLog.Write("MainActivity", "OnPause");
+            AppLifecycleLog.WriteAlways("MainActivity", "OnPause",
+                $"IsFinishing={IsFinishing}");
             base.OnPause();
         }
 
         protected override void OnStop()
         {
-            AppLifecycleLog.Write("MainActivity", "OnStop");
+            AppLifecycleLog.WriteAlways("MainActivity", "OnStop",
+                $"IsFinishing={IsFinishing}");
             base.OnStop();
         }
 
         protected override void OnDestroy()
         {
-            AppLifecycleLog.Write("MainActivity", "OnDestroy");
+            AppLifecycleLog.WriteAlways("MainActivity", "OnDestroy",
+                $"IsFinishing={IsFinishing} IsChangingConfigurations={IsChangingConfigurations} pid={Android.OS.Process.MyPid()}");
             base.OnDestroy();
         }
     }

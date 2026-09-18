@@ -88,6 +88,20 @@ namespace musicmate.Models
         /// </summary>
         public float RenderX { get; set; }
 
+        // ── Tie / bar-split engraving ─────────────────────────────────────────────
+
+        /// <summary>
+        /// Shared id for noteheads that belong to one logical note split across a bar
+        /// (or within a bar into tied segments). Null when the note is not part of a tie.
+        /// </summary>
+        public int? TieGroupId { get; init; }
+
+        /// <summary>
+        /// True for every tied segment after the first. Continuations are engraved and
+        /// tied visually but are not separate playback/detection targets.
+        /// </summary>
+        public bool IsTieContinuation { get; init; }
+
         // ── Factory helpers ───────────────────────────────────────────────────────
 
         // ── Derived helpers ───────────────────────────────────────────────────────
@@ -109,6 +123,32 @@ namespace musicmate.Models
                 MeasureIndex = measureIndex,
                 BeatPosition = beatPosition,
                 IsPlayedCorrectly = true   // rests require no player action
+            };
+
+        /// <summary>Copy with optional beat/duration/tie overrides (bar-line split).</summary>
+        public GeneratedNote WithRhythm(
+            NoteDuration duration,
+            int measureIndex,
+            double beatPosition,
+            int? tieGroupId = null,
+            bool isTieContinuation = false)
+            => new()
+            {
+                MidiNumber = MidiNumber,
+                Letter = Letter,
+                Octave = Octave,
+                Accidental = Accidental,
+                SpelledName = SpelledName,
+                TargetFrequency = TargetFrequency,
+                Duration = duration,
+                IsRest = IsRest,
+                MeasureIndex = measureIndex,
+                BeatPosition = beatPosition,
+                IsPlayedCorrectly = IsPlayedCorrectly,
+                CentsDeviation = CentsDeviation,
+                RenderX = RenderX,
+                TieGroupId = tieGroupId,
+                IsTieContinuation = isTieContinuation,
             };
 
         public override string ToString()

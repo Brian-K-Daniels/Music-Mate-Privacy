@@ -102,6 +102,14 @@ namespace musicmate.Services
             try { Preferences.Remove(key); } catch { }
         }
 
+        public static bool ContainsKey(string key)
+        {
+            if (TestStore != null)
+                return TestStore.ContainsKey(key);
+            try { return Preferences.ContainsKey(key); }
+            catch { return false; }
+        }
+
         private static int ConvertToInt(object? value, int defaultValue) => value switch
         {
             int i => i,

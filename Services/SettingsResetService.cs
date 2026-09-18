@@ -323,6 +323,10 @@ namespace musicmate.Services
 
         private void ApplyFactoryDefaultsToLiveSettings()
         {
+            // Leave Make It Easy with the user's saved Advanced values restored first.
+            if (_session.IsMakeItEasyActive)
+                _session.SetMakeItEasyActive(false);
+
             _session.Tempo = SettingsPageViewModel.DefaultTempo;
             _session.AccidentalPercent = SettingsPageViewModel.DefaultAccidentalPct;
             _session.CorrectThreshold = SettingsPageViewModel.DefaultCorrectThreshold;

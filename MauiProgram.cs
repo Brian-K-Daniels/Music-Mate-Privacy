@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using musicmate.Diagnostics;
 using musicmate.Drawables;
 using musicmate.Services;
 using Plugin.Maui.Audio;
@@ -11,24 +12,28 @@ namespace musicmate
     {
         public static MauiApp CreateMauiApp()
         {
+            StartupTiming.Mark("MauiProgram.CreateMauiApp:begin");
+
             var builder = MauiApp.CreateBuilder();
-            builder
-                .UseMauiApp<App>()
-                .UseMauiCommunityToolkit()
-                .UseSkiaSharp()
-                .ConfigureFonts(fonts =>
-                {
-                    fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
-                    // Add this if you ship the MDL2 font file (place the TTF under Resources/Fonts)
-                    fonts.AddFont("SegoeMDL2Assets.ttf", "SegoeMDL2");
-                    fonts.AddFont("Bravura.otf", "Bravura");
-                });
+            StartupTiming.Time("UseMauiApp+toolkit+skia", () =>
+            {
+                builder
+                    .UseMauiApp<App>()
+                    .UseMauiCommunityToolkit()
+                    .UseSkiaSharp()
+                    .ConfigureFonts(fonts =>
+                    {
+                        fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
+                        // Add this if you ship the MDL2 font file (place the TTF under Resources/Fonts)
+                        fonts.AddFont("SegoeMDL2Assets.ttf", "SegoeMDL2");
+                        // Bravura is also embedded for Skia rests; MauiFont registration is light.
+                        // Heavy Skia/Android typeface preload is deferred until after Home appears.
+                        fonts.AddFont("Bravura.otf", "Bravura");
+                    });
+            });
 
-            // Preload Bravura for GraphicsView rest glyphs (ICanvas ignores MauiFont names).
-            SmuFLFont.EnsureLoaded();
-
-            // Configure sqlite-net-base to use the SourceGear SQLite native provider.
-            SQLitePCL.Batteries.Init();
+            // SQLite native provider — keep; typically fast once.
+            StartupTiming.Time("SQLitePCL.Batteries.Init", () => SQLitePCL.Batteries.Init());
 
             builder.Services.AddSingleton<NoteSessionService>();
             builder.Services.AddSingleton<DisplayedTuneHistory>();
@@ -44,6 +49,7 @@ namespace musicmate
             string sessionDbPath = Path.Combine(FileSystem.AppDataDirectory, "sessions.db3");
             string sessionResultDbPath = Path.Combine(FileSystem.AppDataDirectory, "session_results.db3");
             string noteAttemptDbPath = Path.Combine(FileSystem.AppDataDirectory, "note_attempts.db3");
+            // DB wrappers only store paths; tables are created lazily via InitializeAsync.
             builder.Services.AddSingleton(new NoteDatabase(noteDbPath));
             builder.Services.AddSingleton(new SessionDatabase(sessionDbPath));
             builder.Services.AddSingleton(new SessionResultDatabase(sessionResultDbPath));
@@ -79,31 +85,39 @@ namespace musicmate
             builder.Logging.AddDebug();
 #endif
 
+            StartupTiming.Mark("MauiProgram.builder.Build:begin");
             var app = builder.Build();
+            StartupTiming.Mark("MauiProgram.builder.Build:end");
             ServiceHelper.Initialize(app.Services); // <-- ensure service locator is initialized
 
 #if DEBUG
-            Diagnostics.DebugLogSettings.LoadAll();
-            Diagnostics.AppLifecycleLog.RegisterUnhandledExceptionHooks();
+            // Preference sync for log toggles — not needed before first paint.
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    StartupTiming.Time("DebugLogSettings.LoadAll", DebugLogSettings.LoadAll);
+                    AppLifecycleLog.RegisterUnhandledExceptionHooks();
+                }
+                catch { }
+            });
+#else
+            // Release: no debug log prefs.
 #endif
 
-            // Sync premium state from the store on every cold start.
-            // In Debug / LocalRelease this is a no-op (LocalStoreService.InitializeAsync does nothing).
-            // In Play Release this connects to Google Play and refreshes the persisted flag.
+            // Sync premium state from the store on every cold start (already async / fire-and-forget).
             try
             {
                 var store = app.Services.GetService<IStoreService>();
                 if (store != null)
-                    _ = store.InitializeAsync();   // fire-and-forget; StatusService persists result
+                    _ = store.InitializeAsync();
             }
             catch { }
 
-            // Load saved theme colors now that services are initialized
-            try
-            {
-                app.Services.GetService<ThemeService>()?.LoadFromPreferences();
-            }
-            catch { }
+            // Theme colors: App ctor pushes resources when Application exists.
+            // Do not LoadFromPreferences here (duplicates App and runs before UI).
+
+            StartupTiming.Mark("MauiProgram.CreateMauiApp:end");
             return app;
         }
     }

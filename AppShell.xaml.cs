@@ -1,5 +1,6 @@
 using System.Windows.Input;
 using Microsoft.Maui.Controls;
+using musicmate.Diagnostics;
 using musicmate.LayoutDebug;
 using musicmate.Pages;
 using musicmate.Services;
@@ -24,6 +25,7 @@ namespace musicmate
         {
             try
             {
+                StartupTiming.Mark("AppShell.Ctor:begin");
                 InitializeComponent();
 
                 GoPracticeCommand = new Command(async () => await GoToAsync("//HomePage"));
@@ -49,6 +51,7 @@ namespace musicmate
                 // All page routes are declared via Route="..." on ShellContent in AppShell.xaml,
                 // so no additional Routing.RegisterRoute calls are needed here.  The previous
                 // calls silently threw ArgumentException (duplicate route) on every cold start.
+                StartupTiming.Mark("AppShell.Ctor:end");
             }
             catch (Exception ex)
             {

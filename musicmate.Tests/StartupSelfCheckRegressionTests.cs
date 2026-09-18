@@ -20,6 +20,26 @@ public class StartupSelfCheckRegressionTests
     }
 
     [Fact]
+    public void MauiProgram_DoesNotEagerLoadBravuraOnCreateMauiApp()
+    {
+        string path = FindRepoFile("MauiProgram.cs");
+        string text = File.ReadAllText(path);
+
+        Assert.DoesNotContain("SmuFLFont.EnsureLoaded()", text);
+    }
+
+    [Fact]
+    public void SmuFLFont_AndroidPath_DoesNotSyncOverAsyncPackageOpen()
+    {
+        string path = FindRepoFile(Path.Combine("Drawables", "SmuFLFont.cs"));
+        string text = File.ReadAllText(path);
+
+        Assert.Contains("ScheduleBackgroundPreload", text);
+        // Must not block the UI thread with OpenAppPackageFileAsync().GetResult() on Android.
+        Assert.DoesNotContain("OpenAppPackageFileAsync(name).GetAwaiter().GetResult()", text);
+    }
+
+    [Fact]
     public void MusicPage_DoesNotInvokeStaffSelfChecksOnAppearing()
     {
         string path = FindRepoFile(Path.Combine("Pages", "MusicPage.xaml.cs"));

@@ -5,6 +5,7 @@ namespace musicmate.Drawables
 {
     /// <summary>
     /// Loads and caches Bravura for rest rendering (Skia raster + Android platform text).
+    /// Heavy I/O must not run on the UI thread during cold start (ANR risk).
     /// </summary>
     internal static class SmuFLFont
     {
@@ -22,8 +23,38 @@ namespace musicmate.Drawables
         private static Android.Graphics.Typeface? _androidTypeface;
 #endif
         private static bool _loadAttempted;
+        private static int _preloadScheduled;
 
+        /// <summary>
+        /// Loads Bravura if needed. Safe to call from any thread; first caller wins.
+        /// Prefer <see cref="ScheduleBackgroundPreload"/> during app startup.
+        /// </summary>
         internal static void EnsureLoaded() => _ = SkiaTypeface;
+
+        /// <summary>
+        /// Kick off a one-shot background load after the first page is up so MusicPage
+        /// rests do not pay cold-start cost on the UI thread.
+        /// </summary>
+        internal static void ScheduleBackgroundPreload()
+        {
+            if (_loadAttempted || Interlocked.Exchange(ref _preloadScheduled, 1) != 0)
+                return;
+
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    StartupTiming.Mark("SmuFLFont.BackgroundPreload:begin");
+                    EnsureLoaded();
+                    StartupTiming.Mark("SmuFLFont.BackgroundPreload:end",
+                        IsLoaded ? "loaded" : "fallback");
+                }
+                catch (Exception ex)
+                {
+                    StartupTiming.Mark("SmuFLFont.BackgroundPreload:error", ex.Message);
+                }
+            });
+        }
 
         internal static SKTypeface SkiaTypeface
         {
@@ -53,21 +84,33 @@ namespace musicmate.Drawables
             if (_loadAttempted)
                 return;
 
-            _loadAttempted = true;
-            _fontBytes = TryLoadBytes();
-
-            if (_fontBytes != null)
+            lock (typeof(SmuFLFont))
             {
-                _skiaTypeface = SKTypeface.FromStream(new MemoryStream(_fontBytes));
-#if ANDROID
-                _androidTypeface = TryCreateAndroidTypeface(_fontBytes);
-#endif
-            }
+                if (_loadAttempted)
+                    return;
 
-            if (IsLoaded)
-                DebugLog.WriteLine($"[SmuFLFont] Bravura loaded ({_skiaTypeface!.FamilyName})");
-            else
-                DebugLog.WriteLine("[SmuFLFont] Bravura not loaded; using vector rest fallback.");
+                _loadAttempted = true;
+                StartupTiming.Mark("SmuFLFont.LoadIfNeeded:begin");
+                long start = Environment.TickCount64;
+
+                _fontBytes = TryLoadBytes();
+
+                if (_fontBytes != null)
+                {
+                    _skiaTypeface = SKTypeface.FromStream(new MemoryStream(_fontBytes));
+#if ANDROID
+                    _androidTypeface = TryCreateAndroidTypeface(_fontBytes);
+#endif
+                }
+
+                StartupTiming.Mark("SmuFLFont.LoadIfNeeded:end",
+                    $"took={Environment.TickCount64 - start}ms loaded={IsLoaded}");
+
+                if (IsLoaded)
+                    DebugLog.WriteLine($"[SmuFLFont] Bravura loaded ({_skiaTypeface!.FamilyName})");
+                else
+                    DebugLog.WriteLine("[SmuFLFont] Bravura not loaded; using vector rest fallback.");
+            }
         }
 
         private static byte[]? TryLoadBytes()
@@ -76,21 +119,9 @@ namespace musicmate.Drawables
             if (embedded != null)
                 return embedded;
 
-            foreach (var name in PackageAssetCandidates)
-            {
-                try
-                {
-                    using var stream = FileSystem.OpenAppPackageFileAsync(name).GetAwaiter().GetResult();
-                    if (stream != null)
-                        return CopyToBytes(stream);
-                }
-                catch
-                {
-                    // try next
-                }
-            }
-
 #if ANDROID
+            // Prefer Assets.Open (sync, no sync-over-async). Never call
+            // OpenAppPackageFileAsync().GetResult() on the UI thread — it can stall startup.
             try
             {
                 var assets = Android.App.Application.Context?.Assets;
@@ -101,6 +132,7 @@ namespace musicmate.Drawables
                         try
                         {
                             using var stream = assets.Open(name);
+                            StartupTiming.Mark("SmuFLFont.AssetsOpen", name);
                             return CopyToBytes(stream);
                         }
                         catch
@@ -114,6 +146,22 @@ namespace musicmate.Drawables
             {
                 DebugLog.WriteLine($"[SmuFLFont] android assets failed: {ex.Message}");
             }
+#else
+            foreach (var name in PackageAssetCandidates)
+            {
+                try
+                {
+                    // Non-Android: package file API is acceptable off UI; still avoid if possible.
+                    using var stream = FileSystem.OpenAppPackageFileAsync(name).ConfigureAwait(false)
+                        .GetAwaiter().GetResult();
+                    if (stream != null)
+                        return CopyToBytes(stream);
+                }
+                catch
+                {
+                    // try next
+                }
+            }
 #endif
             return null;
         }
@@ -126,6 +174,7 @@ namespace musicmate.Drawables
                 if (stream != null)
                 {
                     DebugLog.WriteLine($"[SmuFLFont] embedded resource: {EmbeddedName}");
+                    StartupTiming.Mark("SmuFLFont.EmbeddedResource", EmbeddedName);
                     return CopyToBytes(stream);
                 }
             }
@@ -142,7 +191,8 @@ namespace musicmate.Drawables
             try
             {
                 var path = Path.Combine(FileSystem.CacheDirectory, "Bravura.otf");
-                File.WriteAllBytes(path, bytes);
+                if (!File.Exists(path) || new FileInfo(path).Length != bytes.Length)
+                    File.WriteAllBytes(path, bytes);
                 var face = Android.Graphics.Typeface.CreateFromFile(path);
                 if (face != null)
                     return face;

@@ -1,6 +1,6 @@
 <Solution>
   <Project Path="musicmate.csproj">
-    <BuildType Project="LocalRelease" />
+    <BuildType Solution="Release|*" Project="LocalRelease" />
     <Deploy />
   </Project>
   <Project Path="musicmate.Tests/musicmate.Tests.csproj" />

@@ -28,6 +28,17 @@ public static class ConductorOnsetTiming
     /// <summary>Ceiling so very slow tempos do not open a multi-second accept window.</summary>
     public const double MaxToleranceMs = 1200.0;
 
+    /// <summary>Beat fractions and clamps for a timing window profile (Normal vs Easy).</summary>
+    public readonly record struct TimingWindowProfile(
+        double EarlyBeats,
+        double LateBeats,
+        double MinMs,
+        double MaxMs);
+
+    /// <summary>Factory / normal-mode conductor timing window.</summary>
+    public static TimingWindowProfile NormalProfile { get; } =
+        new(EarlyToleranceBeats, LateToleranceBeats, MinToleranceMs, MaxToleranceMs);
+
     public static double MsPerBeat(int bpm)
     {
         int safeBpm = Math.Max(1, bpm);
@@ -37,13 +48,22 @@ public static class ConductorOnsetTiming
     public static double SecondsPerBeat(int bpm) => MsPerBeat(bpm) / 1000.0;
 
     public static double EarlyToleranceMs(int bpm)
-        => ClampToleranceMs(EarlyToleranceBeats * MsPerBeat(bpm));
+        => EarlyToleranceMs(bpm, NormalProfile);
 
     public static double LateToleranceMs(int bpm)
-        => ClampToleranceMs(LateToleranceBeats * MsPerBeat(bpm));
+        => LateToleranceMs(bpm, NormalProfile);
+
+    public static double EarlyToleranceMs(int bpm, TimingWindowProfile profile)
+        => ClampToleranceMs(profile.EarlyBeats * MsPerBeat(bpm), profile);
+
+    public static double LateToleranceMs(int bpm, TimingWindowProfile profile)
+        => ClampToleranceMs(profile.LateBeats * MsPerBeat(bpm), profile);
 
     public static double ClampToleranceMs(double toleranceMs)
-        => Math.Clamp(toleranceMs, MinToleranceMs, MaxToleranceMs);
+        => ClampToleranceMs(toleranceMs, NormalProfile);
+
+    public static double ClampToleranceMs(double toleranceMs, TimingWindowProfile profile)
+        => Math.Clamp(toleranceMs, profile.MinMs, profile.MaxMs);
 
     /// <summary>
     /// Absolute expected onset from the conductor timeline.

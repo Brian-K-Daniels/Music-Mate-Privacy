@@ -121,6 +121,9 @@ namespace musicmate.ViewModels
                     OnPropertyChanged(nameof(OmitSliderValue));
                     OnPropertyChanged(nameof(IsPercentCorrectMethod));
                     break;
+                case nameof(NoteSessionService.UseNoteMasteryForGeneration):
+                    OnPropertyChanged(nameof(UseNoteMasteryForGeneration));
+                    break;
                 case nameof(NoteSessionService.StreakCrit):
                     OnPropertyChanged(nameof(StreakCrit));
                     OnPropertyChanged(nameof(OmitSliderValue));
@@ -426,7 +429,38 @@ namespace musicmate.ViewModels
             }
         }
 
-        public List<string> MasteredMethodOptions { get; } = new() { "% Correct", "Streak", "None" };  //  2026.07.16 1136  
+        public List<string> MasteredMethodOptions { get; } = new() { "% Correct", "Streak", "None" };  //  2026.07.16 1136
+
+        /// <summary>
+        /// When on, Random generation omits notes the player has already mastered.
+        /// Bound under Settings → Mastery of Notes (same preference as before).
+        /// </summary>
+        public bool UseNoteMasteryForGeneration
+        {
+            get => _session?.UseNoteMasteryForGeneration
+                   ?? Preferences.Get(
+                       NoteSessionService.PrefUseNoteMasteryForGenerationKey,
+                       MasteryPreferenceDefaults.UseNoteMasteryForGeneration);
+            set
+            {
+                if (_session != null)
+                {
+                    if (_session.UseNoteMasteryForGeneration == value) return;
+                    _session.UseNoteMasteryForGeneration = value;
+                }
+                else
+                {
+                    bool current = Preferences.Get(
+                        NoteSessionService.PrefUseNoteMasteryForGenerationKey,
+                        MasteryPreferenceDefaults.UseNoteMasteryForGeneration);
+                    if (current == value) return;
+                    Preferences.Set(NoteSessionService.PrefUseNoteMasteryForGenerationKey, value);
+                }
+
+                OnPropertyChanged(nameof(UseNoteMasteryForGeneration));
+                NotifyFactoryDefaultsMayHaveChanged();
+            }
+        }
 
         private string _masteredMethod = Preferences.Get("musicmate.MasteredMethod", MasteryPreferenceDefaults.MasteredMethod);
         public string MasteredMethod

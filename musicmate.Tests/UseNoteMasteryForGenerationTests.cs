@@ -4,6 +4,9 @@ using musicmate.Services;
 
 namespace musicmate.Tests;
 
+/// <summary>
+/// Preference <c>musicmate.UseNoteMasteryForGeneration</c> (UI: Settings → Mastery of Notes).
+/// </summary>
 [Collection("SessionPreferences")]
 public class UseNoteMasteryForGenerationTests : IDisposable
 {

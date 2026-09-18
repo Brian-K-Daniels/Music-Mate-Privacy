@@ -18,14 +18,29 @@ namespace musicmate
     {
         public App()
         {
+            StartupTiming.Mark("App.Ctor:begin");
             AppLifecycleLog.Write("App", "Ctor");
             InitializeComponent();
 
-            Services.PrefSchemaMigration.ApplyIfNeeded();
+            StartupTiming.Time("PrefSchemaMigration.ApplyIfNeeded", PrefSchemaMigration.ApplyIfNeeded);
 
-            // Initialize premium status at app startup
-            InitializePremiumStatus();
-            LoadSavedThemeColors();
+            // Premium status is async and must not block first paint.
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    StartupTiming.Mark("InitializePremiumStatus:begin");
+                    await InitializePremiumStatusCoreAsync().ConfigureAwait(false);
+                    StartupTiming.Mark("InitializePremiumStatus:end");
+                }
+                catch (Exception ex)
+                {
+                    StartupTiming.Mark("InitializePremiumStatus:error", ex.Message);
+                }
+            });
+
+            StartupTiming.Time("LoadSavedThemeColors", LoadSavedThemeColors);
+            StartupTiming.Mark("App.Ctor:end");
         }
 
         private void LoadSavedThemeColors()
@@ -39,14 +54,14 @@ namespace musicmate
             catch { }
         }
 
-        private async void InitializePremiumStatus()
+        private async Task InitializePremiumStatusCoreAsync()
         {
 #if !DEBUG && !LOCAL_RELEASE
             // Play Release: clear backup-/DEBUG-restored local flags, then start non-premium.
             // A successful Play purchase query may then grant or keep false; a failed
             // query must not be treated as proof of non-ownership (leave false + retry later).
             ClearLocalPremiumCache();
-            ForceNonPremium();
+            await MainThread.InvokeOnMainThreadAsync(ForceNonPremium);
 #endif
 
             var storeService = Services.ServiceHelper.GetService<Services.IStoreService>();
@@ -54,17 +69,25 @@ namespace musicmate
             {
                 try
                 {
-                    await storeService.InitializeAsync();
-                    var purchased = await storeService.IsPurchasedAsync(PremiumProduct.Id);
+                    await storeService.InitializeAsync().ConfigureAwait(false);
+                    var purchased = await storeService.IsPurchasedAsync(PremiumProduct.Id).ConfigureAwait(false);
 #if !DEBUG && !LOCAL_RELEASE
                     // null = billing query failed/disconnected — do not change entitlement.
                     if (purchased is true)
-                        Services.StatusService.Instance.IsPremiumUser = true;
+                    {
+                        await MainThread.InvokeOnMainThreadAsync(() =>
+                            Services.StatusService.Instance.IsPremiumUser = true);
+                    }
                     else if (purchased is false)
-                        ForceNonPremium();
+                    {
+                        await MainThread.InvokeOnMainThreadAsync(ForceNonPremium);
+                    }
 #else
                     if (purchased is bool known)
-                        Services.StatusService.Instance.IsPremiumUser = known;
+                    {
+                        await MainThread.InvokeOnMainThreadAsync(() =>
+                            Services.StatusService.Instance.IsPremiumUser = known);
+                    }
 #endif
                 }
                 catch
@@ -72,7 +95,8 @@ namespace musicmate
 #if DEBUG || LOCAL_RELEASE
                     // Stub builds: restore persisted state so testers don't lose premium on restart.
                     var val = Preferences.Get(PremiumProduct.PreferenceKey, false);
-                    Services.StatusService.Instance.IsPremiumUser = val;
+                    await MainThread.InvokeOnMainThreadAsync(() =>
+                        Services.StatusService.Instance.IsPremiumUser = val);
 #else
                     // Exception during billing setup — leave the cleared non-premium state;
                     // page OnAppearing CheckPremiumStatusAsync will retry.
@@ -83,9 +107,10 @@ namespace musicmate
             {
 #if DEBUG || LOCAL_RELEASE
                 var val = Preferences.Get(PremiumProduct.PreferenceKey, false);
-                Services.StatusService.Instance.IsPremiumUser = val;
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                    Services.StatusService.Instance.IsPremiumUser = val);
 #else
-                ForceNonPremium();
+                await MainThread.InvokeOnMainThreadAsync(ForceNonPremium);
 #endif
             }
         }
@@ -108,41 +133,44 @@ namespace musicmate
 
         protected override Window CreateWindow(IActivationState? activationState)
         {
-            AppLifecycleLog.Write("App", "CreateWindow");
-            var window = new Window(new AppShell());
+            StartupTiming.Mark("App.CreateWindow:begin");
+            AppLifecycleLog.WriteAlways("App", "CreateWindow");
+            var window = StartupTiming.Time("new Window(AppShell)", () => new Window(new AppShell()));
             // Swipe-away / close / background: stop Count-In and metronome clicks.
             window.Stopped += (_, _) =>
             {
-                AppLifecycleLog.Write("App", "Window.Stopped");
+                AppLifecycleLog.WriteAlways("App", "Window.Stopped");
                 Services.AppCueAudioGate.NotifyAppSuspended();
             };
             window.Destroying += (_, _) =>
             {
-                AppLifecycleLog.Write("App", "Window.Destroying");
+                AppLifecycleLog.WriteAlways("App", "Window.Destroying");
                 Services.AppCueAudioGate.NotifyAppSuspended();
             };
             Microsoft.Maui.ApplicationModel.MainThread.BeginInvokeOnMainThread(() =>
             {
                 Services.ServiceHelper.GetService<Services.ThemeService>()?.ApplyToShellIfAvailable();
             });
+            StartupTiming.Mark("App.CreateWindow:end");
             return window;
         }
 
         protected override void OnStart()
         {
-            AppLifecycleLog.Write("App", "OnStart");
+            StartupTiming.Mark("App.OnStart");
+            AppLifecycleLog.WriteAlways("App", "OnStart");
             base.OnStart();
         }
 
         protected override void OnResume()
         {
-            AppLifecycleLog.Write("App", "OnResume");
+            AppLifecycleLog.WriteAlways("App", "OnResume");
             base.OnResume();
         }
 
         protected override void OnSleep()
         {
-            AppLifecycleLog.Write("App", "OnSleep");
+            AppLifecycleLog.WriteAlways("App", "OnSleep");
             base.OnSleep();
             Services.AppCueAudioGate.NotifyAppSuspended();
         }

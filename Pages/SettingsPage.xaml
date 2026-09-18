@@ -309,7 +309,17 @@
             <RoundRectangle CornerRadius="10"/>
           </Border.StrokeShape>
           <VerticalStackLayout Spacing="8">
-            <Label Text="Mastery of notes" Style="{StaticResource SettingsPanelTitle}" />
+            <Label Text="Mastery of Notes" Style="{StaticResource SettingsPanelTitle}" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" VerticalOptions="Center">
+              <Label Grid.Column="0"
+                     Text="Do not use mastered notes in Random music"
+                     VerticalOptions="Center"
+                     LineBreakMode="WordWrap" />
+              <Switch Grid.Column="1"
+                      IsToggled="{Binding UseNoteMasteryForGeneration, Mode=TwoWay}"
+                      OnColor="{DynamicResource ThemeSlider}"
+                      HorizontalOptions="End" />
+            </Grid>
             <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
               <Label Grid.Column="0" Text="Method" />
               <Picker Grid.Column="1"

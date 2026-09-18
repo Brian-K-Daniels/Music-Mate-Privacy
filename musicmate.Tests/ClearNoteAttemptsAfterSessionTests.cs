@@ -54,38 +54,38 @@ public class ClearNoteAttemptsAfterSessionTests : IDisposable
     }
 
     [Fact]
-    public void FactoryDefault_IsOff()
+    public void FactoryDefault_IsOn()
     {
-        Assert.False(NoteSessionService.DefaultClearNoteAttemptsAfterSession);
-        Assert.False(_session.ClearNoteAttemptsAfterSession);
+        Assert.True(NoteSessionService.DefaultClearNoteAttemptsAfterSession);
+        Assert.True(_session.ClearNoteAttemptsAfterSession);
     }
 
     [Fact]
     public void Setting_PersistsAcrossSessionRecreation()
     {
-        _session.ClearNoteAttemptsAfterSession = true;
-        Assert.True(SessionPreferences.Get(
-            NoteSessionService.PrefClearNoteAttemptsAfterSessionKey, false));
+        _session.ClearNoteAttemptsAfterSession = false;
+        Assert.False(SessionPreferences.Get(
+            NoteSessionService.PrefClearNoteAttemptsAfterSessionKey, true));
 
         var reopened = new NoteSessionService();
-        Assert.True(reopened.ClearNoteAttemptsAfterSession);
+        Assert.False(reopened.ClearNoteAttemptsAfterSession);
 
-        reopened.ClearNoteAttemptsAfterSession = false;
+        reopened.ClearNoteAttemptsAfterSession = true;
         var again = new NoteSessionService();
-        Assert.False(again.ClearNoteAttemptsAfterSession);
+        Assert.True(again.ClearNoteAttemptsAfterSession);
     }
 
     [Fact]
-    public void FactoryReset_RestoresOff()
+    public void FactoryReset_RestoresOn()
     {
         Assert.True(_reset.AreFactoryDefaultsApplied);
 
-        _session.ClearNoteAttemptsAfterSession = true;
+        _session.ClearNoteAttemptsAfterSession = false;
         _reset.EvaluateAreFactoryDefaultsApplied();
         Assert.False(_reset.AreFactoryDefaultsApplied);
 
         _reset.ResetToFactoryDefaults();
-        Assert.False(_session.ClearNoteAttemptsAfterSession);
+        Assert.True(_session.ClearNoteAttemptsAfterSession);
         Assert.True(_reset.AreFactoryDefaultsApplied);
     }
 

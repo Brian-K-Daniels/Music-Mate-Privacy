@@ -5385,9 +5385,82 @@ namespace musicmate.Drawables
 
             // Draw beams using pre-computed stem positions
             DrawBeams(canvas, beamGroups, beamStemTips, barLayouts);
+            DrawTies(canvas, notes, noteLayouts, staffTop, staffMid, ink, fadeAlpha);
 
             if (ChromaticMidi61Diagnostics.IsEnabled)
                 ChromaticMidi61Diagnostics.FinalizeDrawPass();
+        }
+
+        /// <summary>
+        /// Draws a simple concave tie arc between consecutive noteheads that share a
+        /// <see cref="GeneratedNote.TieGroupId"/>.
+        /// </summary>
+        private void DrawTies(
+            ICanvas canvas,
+            List<GeneratedNote> notes,
+            NoteLayout[] noteLayouts,
+            float staffTop,
+            float staffMid,
+            Color ink,
+            byte fadeAlpha)
+        {
+            var byGroup = new Dictionary<int, List<int>>();
+            for (int i = 0; i < notes.Count && i < noteLayouts.Length; i++)
+            {
+                if (notes[i].IsRest || notes[i].TieGroupId is not int gid)
+                    continue;
+                if (!byGroup.TryGetValue(gid, out var list))
+                    byGroup[gid] = list = new List<int>();
+                list.Add(i);
+            }
+
+            if (byGroup.Count == 0)
+                return;
+
+            canvas.SaveState();
+            try
+            {
+                canvas.StrokeColor = ApplyAlpha(ink, fadeAlpha);
+                canvas.StrokeSize = Math.Max(1.25f, _layout.Sls * 0.12f);
+                canvas.StrokeLineCap = LineCap.Round;
+
+                foreach (var indices in byGroup.Values)
+                {
+                    indices.Sort((a, b) => noteLayouts[a].X.CompareTo(noteLayouts[b].X));
+                    for (int k = 0; k < indices.Count - 1; k++)
+                    {
+                        int i0 = indices[k];
+                        int i1 = indices[k + 1];
+                        float x0 = noteLayouts[i0].X;
+                        float x1 = noteLayouts[i1].X;
+                        if (x1 - x0 < 2f)
+                            continue;
+
+                        float y0 = NoteY(notes[i0], staffTop, staffMid);
+                        float y1 = NoteY(notes[i1], staffTop, staffMid);
+                        float y = Math.Min(y0, y1);
+                        float headR = _layout.NoteHeadR;
+                        float left = x0 + headR * 0.55f;
+                        float right = x1 - headR * 0.55f;
+                        float midX = (left + right) * 0.5f;
+                        float bow = Math.Clamp((right - left) * 0.22f, _layout.Sls * 0.35f, _layout.Sls * 1.1f);
+                        // Tie bows under the noteheads when stems are up (notes below midline).
+                        bool bowDown = y0 >= staffMid;
+                        float tipY = bowDown ? y + headR * 0.9f + bow : y - headR * 0.9f - bow;
+                        float startY = bowDown ? y0 + headR * 0.55f : y0 - headR * 0.55f;
+                        float endY = bowDown ? y1 + headR * 0.55f : y1 - headR * 0.55f;
+
+                        var path = new PathF();
+                        path.MoveTo(left, startY);
+                        path.CurveTo(midX, tipY, midX, tipY, right, endY);
+                        canvas.DrawPath(path);
+                    }
+                }
+            }
+            finally
+            {
+                canvas.RestoreState();
+            }
         }
 
         private void EstimateNoteHeadBounds(

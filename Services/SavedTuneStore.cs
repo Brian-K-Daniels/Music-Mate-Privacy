@@ -344,6 +344,8 @@ namespace musicmate.Services
                 IsPlayedCorrectly = note.IsPlayedCorrectly,
                 CentsDeviation = note.CentsDeviation,
                 RenderX = note.RenderX,
+                TieGroupId = note.TieGroupId,
+                IsTieContinuation = note.IsTieContinuation,
             };
         }
 

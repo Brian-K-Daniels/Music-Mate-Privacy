@@ -169,6 +169,7 @@ namespace musicmate.Pages
             _viewModel.ShowSignaturesOnBothStaffs = _session.ShowSignaturesOnBothStaffs;
             _viewModel.MasteredMethod = _session.MasteredMethod;
             _viewModel.StreakCrit = _session.StreakCrit;
+            _viewModel.UseNoteMasteryForGeneration = _session.UseNoteMasteryForGeneration;
 
             ColorPickerDialog.AppColorPicked += (_, e) =>
             {

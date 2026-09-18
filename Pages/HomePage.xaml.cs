@@ -43,10 +43,13 @@ namespace musicmate.Pages
         {
             try
             {
+                StartupTiming.Mark("HomePage.Ctor:begin");
                 InitializeComponent();
 
+                StartupTiming.Mark("HomePage.ResolveServices:begin");
                 _session = ServiceHelper.GetService<NoteSessionService>()!;
                 _orientation = ServiceHelper.GetService<IOrientationService>()!;
+                StartupTiming.Mark("HomePage.ResolveServices:end");
 
                 RefreshInstrumentFromSession();
 
@@ -54,6 +57,7 @@ namespace musicmate.Pages
                 _selectedLevel = Math.Clamp(
                     Preferences.Default.Get(PrefLevelKey, 1), 1, 100);
                 UpdateLevelDisplay();
+                StartupTiming.Mark("HomePage.Ctor:end");
             }
             catch (Exception ex)
             {
@@ -63,8 +67,9 @@ namespace musicmate.Pages
 
         protected override void                 OnAppearing()
         {
+            StartupTiming.Mark("HomePage.OnAppearing:begin");
             base.OnAppearing();
-            AppLifecycleLog.Write("HomePage", "OnAppearing");
+            AppLifecycleLog.WriteAlways("HomePage", "OnAppearing");
             _orientation?.AllowAutorotate();
             _session.PropertyChanged -= OnSessionPropertyChanged;
             _session.PropertyChanged += OnSessionPropertyChanged;
@@ -80,11 +85,15 @@ namespace musicmate.Pages
                 UpdateLevelDisplay();
             }
             Utils.Log($"[HomePage] OnAppearing: savedLevel={savedLevel}, _selectedLevel={_selectedLevel}");
+
+            // Warm Bravura off the UI thread after first paint (Music page rests).
+            musicmate.Drawables.SmuFLFont.ScheduleBackgroundPreload();
+            StartupTiming.Mark("HomePage.OnAppearing:end");
         }
 
         protected override void                 OnDisappearing()
         {
-            AppLifecycleLog.Write("HomePage", "OnDisappearing");
+            AppLifecycleLog.WriteAlways("HomePage", "OnDisappearing");
             _session.PropertyChanged -= OnSessionPropertyChanged;
             base.OnDisappearing();
         }

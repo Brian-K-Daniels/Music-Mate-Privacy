@@ -21,7 +21,8 @@ namespace musicmate.Services
             if (schema < 2)
             {
                 Preferences.Clear();
-                ClearAppDataDatabases();
+                // Deleting *.db3 can be large; do not block first paint on the UI thread.
+                ScheduleClearAppDataDatabases();
             }
 
             if (schema < 3)
@@ -60,6 +61,11 @@ namespace musicmate.Services
             int value = Preferences.Get(OmitMsAvgThresholdKey, 0);
             if (value == 400 || (value > 0 && value <= 10))
                 Preferences.Set(OmitMsAvgThresholdKey, 0);
+        }
+
+        private static void ScheduleClearAppDataDatabases()
+        {
+            _ = Task.Run(ClearAppDataDatabases);
         }
 
         private static void ClearAppDataDatabases()

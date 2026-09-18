@@ -73,6 +73,7 @@ namespace musicmate.Services
         private static readonly HashSet<string> FreeKeys = new() { "C", "F", "Bb", "G", "D" };
         public NoteSessionService()
         {
+            StartupTiming.Mark("NoteSessionService.Ctor:begin");
             Instrument = _instrument;
             if (!NoteRangeCustomized)
                 ApplyAutomaticInstrumentRange(fullReset: true);
@@ -84,6 +85,7 @@ namespace musicmate.Services
                 if (e.PropertyName == nameof(StatusService.IsPremiumUser) && !StatusService.Instance.IsPremiumUser)
                     RevertToFreeDefaults();
             };
+            StartupTiming.Mark("NoteSessionService.Ctor:end");
         }
         private void RevertToFreeDefaults()
         {
@@ -558,11 +560,100 @@ namespace musicmate.Services
         // Track last wrong timestamp per written name for session stats debouncing
         private readonly Dictionary<string, DateTime> _lastRandomWrongUtc = new();
 
+        // ── Make It Easy (temporary beginner detection preset) ──────────────────
+        private bool _makeItEasyActive =
+            SessionPreferences.Get(MakeItEasyMode.PrefActiveKey, false);
+        private MakeItEasyMode.SettingsSnapshot? _makeItEasySavedSettings;
+        private DateTime? _easyWrongArmUtc;
+        private int _easyWrongArmIndex = -1;
+
+        /// <summary>Test hook: replace wall-clock used by wrong-note debounce / Easy hold.</summary>
+        internal Func<DateTime>? UtcNowForTests { get; set; }
+
+        private DateTime GetGradingUtcNow() => UtcNowForTests?.Invoke() ?? DateTime.UtcNow;
+
+        /// <summary>
+        /// When true, conductor timing / pause gaps use the Easy profile and Advanced
+        /// pitch/debounce/cooldown values are the Easy preset (user values snapshotted).
+        /// </summary>
+        public bool IsMakeItEasyActive
+        {
+            get => _makeItEasyActive;
+            private set
+            {
+                if (_makeItEasyActive == value) return;
+                _makeItEasyActive = value;
+                SessionPreferences.Set(MakeItEasyMode.PrefActiveKey, value);
+                OnPropertyChanged(nameof(IsMakeItEasyActive));
+            }
+        }
+
+        /// <summary>
+        /// Toggles Make It Easy: saves the user's Advanced detection settings, applies
+        /// the generous preset; toggling off restores the saved values exactly.
+        /// </summary>
+        public bool ToggleMakeItEasy()
+        {
+            SetMakeItEasyActive(!_makeItEasyActive);
+            return _makeItEasyActive;
+        }
+
+        /// <summary>Enables or disables Make It Easy with snapshot save/restore.</summary>
+        public void SetMakeItEasyActive(bool active)
+        {
+            if (active == _makeItEasyActive)
+                return;
+
+            if (active)
+            {
+                var snapshot = MakeItEasyMode.Capture(this);
+                _makeItEasySavedSettings = snapshot;
+                MakeItEasyMode.PersistSnapshot(snapshot);
+                MakeItEasyMode.ApplyPreset(this);
+                ClearEasyWrongArm();
+                IsMakeItEasyActive = true;
+            }
+            else
+            {
+                var snapshot = _makeItEasySavedSettings ?? MakeItEasyMode.TryLoadSnapshot();
+                if (snapshot.HasValue)
+                    MakeItEasyMode.Restore(this, snapshot.Value);
+                _makeItEasySavedSettings = null;
+                MakeItEasyMode.ClearPersistedSnapshot();
+                ClearEasyWrongArm();
+                IsMakeItEasyActive = false;
+            }
+        }
+
+        private void ClearEasyWrongArm()
+        {
+            _easyWrongArmUtc = null;
+            _easyWrongArmIndex = -1;
+        }
+
+        private void EnsureMakeItEasySnapshotLoaded()
+        {
+            if (!_makeItEasyActive || _makeItEasySavedSettings.HasValue)
+                return;
+            _makeItEasySavedSettings = MakeItEasyMode.TryLoadSnapshot();
+            // Active without a snapshot (corrupt prefs): drop back to normal.
+            if (!_makeItEasySavedSettings.HasValue)
+            {
+                _makeItEasyActive = false;
+                SessionPreferences.Set(MakeItEasyMode.PrefActiveKey, false);
+            }
+        }
+
+        private ConductorOnsetTiming.TimingWindowProfile GetActiveTimingProfile()
+            => _makeItEasyActive
+                ? MakeItEasyMode.TimingProfile
+                : ConductorOnsetTiming.NormalProfile;
+
         private const string PrefMasteredMethodKey = "musicmate.MasteredMethod";
         private const string PrefStreakCritKey = "musicmate.StreakCrit";
-        private const string PrefUseNoteMasteryForGenerationKey = "musicmate.UseNoteMasteryForGeneration";
+        public const string PrefUseNoteMasteryForGenerationKey = "musicmate.UseNoteMasteryForGeneration";
         public const string PrefClearNoteAttemptsAfterSessionKey = "musicmate.ClearNoteAttemptsAfterSession";
-        public const bool DefaultClearNoteAttemptsAfterSession = false;
+        public const bool DefaultClearNoteAttemptsAfterSession = true;
         private string _masteredMethod = SessionPreferences.Get(PrefMasteredMethodKey, MasteryPreferenceDefaults.MasteredMethod);
         private int _streakCrit = SessionPreferences.Get(PrefStreakCritKey, MasteryPreferenceDefaults.StreakCrit);
         private bool _useNoteMasteryForGeneration = SessionPreferences.Get(
@@ -590,7 +681,7 @@ namespace musicmate.Services
         /// <summary>
         /// When true, after each completed Music session Note Attempts from earlier
         /// sessions are deleted so only the most recently completed session remains.
-        /// Factory default is off (all session history retained).
+        /// Factory default is on (retain only the last completed session's attempts).
         /// </summary>
         public bool ClearNoteAttemptsAfterSession
         {
@@ -2669,14 +2760,17 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// Pause after about one beat of no musical input so brief tonguing/hesitation
-        /// still uses normal late/wrong rules.
+        /// Pause after enough silence that ordinary tonguing/gaps do not freeze the
+        /// timeline. Easy uses <see cref="MakeItEasyMode.PauseSilenceBeats"/> (aligned
+        /// with its late window so a long hesitation rebases instead of scoring Late).
         /// </summary>
         private bool HasPauseWorthySilenceGap()
         {
             double gapMs = GetRawSessionElapsedMs() - _lastMusicalInputMs;
-            // Two beats: one-beat on-time playing still uses Late/Wrong; longer silence rebases.
-            return gapMs >= 2.0 * ConductorOnsetTiming.MsPerBeat(GetConductorTimingBpm());
+            double silenceBeats = _makeItEasyActive
+                ? MakeItEasyMode.PauseSilenceBeats
+                : 2.0;
+            return gapMs >= silenceBeats * ConductorOnsetTiming.MsPerBeat(GetConductorTimingBpm());
         }
 
         private (int Measure, int Beat) GetConductorMeasureBeat(int noteIndex)
@@ -2995,10 +3089,32 @@ namespace musicmate.Services
             string reason,
             string? heardNote = null)
         {
-            var nowTrailing = DateTime.UtcNow;
-            if (_lastWrongTimePerIndex.TryGetValue(idx, out var lastTrailing)
+            var nowTrailing = GetGradingUtcNow();
+
+            // Easy mode: first wrong sighting only arms a hold timer. Mark red only after
+            // the wrong pitch has remained stable for WrongDebounceMs (ignores glitches).
+            // Normal mode keeps the existing "first call marks, then debounce re-marks" behavior.
+            if (_makeItEasyActive)
+            {
+                if (_easyWrongArmIndex != idx || !_easyWrongArmUtc.HasValue)
+                {
+                    _easyWrongArmIndex = idx;
+                    _easyWrongArmUtc = nowTrailing;
+                    return false;
+                }
+
+                if ((nowTrailing - _easyWrongArmUtc.Value).TotalMilliseconds < _wrongDebounceMs)
+                    return false;
+
+                // Sustained long enough — mark, then re-arm so another full hold is required
+                // before incrementing the wrong count again.
+                _easyWrongArmUtc = nowTrailing;
+            }
+            else if (_lastWrongTimePerIndex.TryGetValue(idx, out var lastTrailing)
                 && (nowTrailing - lastTrailing).TotalMilliseconds < _wrongDebounceMs)
+            {
                 return false;
+            }
 
             _lastWrongTimePerIndex[idx] = nowTrailing;
             int wrongBefore = curFeedback.Wrong;
@@ -3147,14 +3263,16 @@ namespace musicmate.Services
 
         private ConductorNoteTiming GetConductorNoteTiming(int noteIndex)
         {
+            EnsureMakeItEasySnapshotLoaded();
             int bpm = GetConductorTimingBpm();
             double beat = GetConductorExpectedBeat(noteIndex);
             double expectedMs = ConductorOnsetTiming.ExpectedOnsetMs(_conductorOriginMs, beat, bpm);
+            var profile = GetActiveTimingProfile();
             return new ConductorNoteTiming(
                 beat,
                 expectedMs,
-                ConductorOnsetTiming.EarlyToleranceMs(bpm),
-                ConductorOnsetTiming.LateToleranceMs(bpm));
+                ConductorOnsetTiming.EarlyToleranceMs(bpm, profile),
+                ConductorOnsetTiming.LateToleranceMs(bpm, profile));
         }
 
         /// <summary>
@@ -3166,7 +3284,8 @@ namespace musicmate.Services
         internal bool CatchUpExpiredConductorNotes(
             double freq = 0,
             (bool correct, int cents)? pitchResult = null,
-            bool fromDetectedPitch = false)
+            bool fromDetectedPitch = false,
+            bool pauseWorthySilenceBeforeInput = false)
         {
             if (!IsListeningClockRunning
                 || !IsConductorOnsetGateEnabled()
@@ -3225,6 +3344,29 @@ namespace musicmate.Services
                         cents = pitchResult.Value.cents;
                         latePitchMatch = pitchResult.Value.correct
                             && Mod12(expectedWrittenMidi) == Mod12(detMidiWritten);
+                    }
+
+                    // After a playing pause, do not score Late/Missed against the old origin —
+                    // freeze (wrong pitch) or rebase (correct pitch) so later notes keep a
+                    // full timing window from the resume point.
+                    bool treatAsPause = pauseWorthySilenceBeforeInput || _makeItEasyActive;
+                    if (treatAsPause)
+                    {
+                        if (latePitchMatch)
+                        {
+                            RebaseConductorOriginToOnset(idx, actualMs);
+                            LogConductorTimingDecision(
+                                idx, targetNote, heardNote,
+                                detectedMidi: 0, actualMs,
+                                GetConductorExpectedOnsetMs(idx), GetConductorExpectedBeat(idx),
+                                timing.EarlyToleranceMs, timing.LateToleranceMs,
+                                pitchAccepted: true, timingAccepted: true,
+                                advanceReason: "rebased-after-pause-silence");
+                            return false;
+                        }
+
+                        EnterMusicalPause("expired-after-pause-silence");
+                        return false;
                     }
 
                     string reason = latePitchMatch ? "Late" : "Missed";
@@ -3721,6 +3863,16 @@ namespace musicmate.Services
 
         private string GetWrongDebounceState(int idx)
         {
+            if (_makeItEasyActive)
+            {
+                if (_easyWrongArmIndex != idx || !_easyWrongArmUtc.HasValue)
+                    return "EasyArmReady";
+                double easyElapsed = (GetGradingUtcNow() - _easyWrongArmUtc.Value).TotalMilliseconds;
+                if (easyElapsed >= _wrongDebounceMs)
+                    return "EasyArmSatisfied";
+                return $"EasyArmHold remaining={_wrongDebounceMs - easyElapsed:F0}ms";
+            }
+
             if (!_lastWrongTimePerIndex.TryGetValue(idx, out var last))
                 return "Ready";
 
@@ -3913,6 +4065,9 @@ namespace musicmate.Services
             var curFeedback = NoteFeedbacks.TryGetValue(idx, out var v2) ? v2 : (Wrong: 0, Cents: 0);
             bool conductorGateEnabled = IsConductorOnsetGateEnabled();
             bool pitchMatchesExpected = Mod12(expectedWrittenMidi) == detectedPcWritten;
+            // Capture silence before MarkMusicalInput — CatchUp must not lose the pause gap.
+            bool pauseWorthySilence = HasPauseWorthySilenceGap();
+            bool windowAlreadyExpired = conductorGateEnabled && IsCurrentNoteWindowExpired();
             if (conductorGateEnabled)
             {
                 // Re-anchor only when the expected pitch is heard after a genuine pause.
@@ -3920,10 +4075,19 @@ namespace musicmate.Services
                 if (pitchMatchesExpected)
                 {
                     TryResumeMusicalTimelineFromPlayerInput("update-feedback-correct");
+                    // Easy / long-silence: if the late window already expired but pause was
+                    // never entered (BecameSilent fired too early), rebase now so this attack
+                    // is on-time instead of scoring Late against the original origin.
+                    if (windowAlreadyExpired
+                        && (pauseWorthySilence || _makeItEasyActive)
+                        && !_musicalTimelinePaused)
+                    {
+                        RebaseConductorToCurrentNote("update-feedback-expired-silence");
+                    }
                 }
                 else if (!_musicalTimelinePaused
-                         && HasPauseWorthySilenceGap()
-                         && IsCurrentNoteWindowExpired())
+                         && pauseWorthySilence
+                         && windowAlreadyExpired)
                 {
                     EnterMusicalPause("wrong-pitch-after-silence");
                 }
@@ -3946,7 +4110,11 @@ namespace musicmate.Services
                 conductorTooEarly = ConductorOnsetTiming.IsTooEarly(
                     actualMs, conductorExpectedMs, conductorEarlyTolMs);
 
-                if (CatchUpExpiredConductorNotes(freq, result, fromDetectedPitch: true))
+                if (CatchUpExpiredConductorNotes(
+                        freq,
+                        result,
+                        fromDetectedPitch: true,
+                        pauseWorthySilenceBeforeInput: pauseWorthySilence))
                     return true;
 
                 // Catch-up may have moved the target; refresh for the remainder of this call.
@@ -4358,6 +4526,7 @@ namespace musicmate.Services
 
                 // Update feedback: update cents only on correct
                 CorrectNoteIndices.Add(idx);
+                ClearEasyWrongArm();
                 NoteStateChangeDiagnostics.GetCaller(out var acceptMethod, out var acceptFile, out var acceptLine);
                 NoteStateChangeDiagnostics.LogCorrectAccepted(
                     acceptMethod,
@@ -4884,6 +5053,7 @@ namespace musicmate.Services
             // True below-threshold silence: require an amplitude onset afterward,
             // not merely pitch returning after a detector dropout.
             _samePitchSilenceFromPitchStop = false;
+            ClearEasyWrongArm();
             TryClearNoteOnWaitFromSilence(DateTime.UtcNow);
         }
         /// <summary>

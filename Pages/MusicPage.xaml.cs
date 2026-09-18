@@ -242,6 +242,35 @@ namespace musicmate.Pages
         public bool IsBottomPickersVisible => _session?.Tune != "Tuner";
         public bool IsBottomButtonRowVisible => _session?.Tune != "Tuner";
         public bool IsChildLevelSliderVisible => _session?.ChildLevel > 0 && _session.Tune != "Tuner";
+
+        public string MakeItEasyButtonText =>
+            _session?.IsMakeItEasyActive == true ? "Make It Easy — ON" : "Make It Easy";
+
+        public Color MakeItEasyButtonBackgroundColor
+        {
+            get
+            {
+                if (_session?.IsMakeItEasyActive == true)
+                    return Color.FromArgb("#2E7D32");
+                if (Application.Current?.Resources.TryGetValue("ThemeButtonBackground", out var bg) == true
+                    && bg is Color themed)
+                    return themed;
+                return Color.FromArgb("#8B4513");
+            }
+        }
+
+        public Color MakeItEasyButtonTextColor
+        {
+            get
+            {
+                if (_session?.IsMakeItEasyActive == true)
+                    return Colors.White;
+                if (Application.Current?.Resources.TryGetValue("ThemeContrastingText", out var fg) == true
+                    && fg is Color themed)
+                    return themed;
+                return Colors.White;
+            }
+        }
         public bool IsEffectiveScaleLabelVisible =>
             _session?.IsRandomMode == true
             || _session?.ScaleSelectionMode == ScaleSelectionMode.Random;
@@ -1383,8 +1412,9 @@ namespace musicmate.Pages
             var genUpper = BuildSequenceGenerator(upperMc);
             var upperMeasures = genUpper.GenerateSequence();
             ReportMasteryOmissionFallback(genUpper);
-            var upperFlat = MusicSequenceGenerator.Flatten(upperMeasures);
             double measureBeats = genUpper.TimeSignature.TotalBeats;
+            var upperFlat = BarLineTieNormalizer.Normalize(
+                MusicSequenceGenerator.Flatten(upperMeasures), measureBeats);
             var upperBarBeats = ComputeStaffBarBeats(upperFlat, measureBeats, existingUpper);
 
             int seqNextMeasureIndex = upperMeasures.Count;
@@ -1403,7 +1433,9 @@ namespace musicmate.Pages
                 var genLower = BuildSequenceGenerator(lowerMc, lowerStartPitch, seedSalt: 0x5A5A5A5A);
                 var lowerMeasures = genLower.GenerateSequence();
                 ReportMasteryOmissionFallback(genLower);
-                lowerFlat = MusicSequenceGenerator.Flatten(lowerMeasures);
+                lowerFlat = BarLineTieNormalizer.Normalize(
+                    MusicSequenceGenerator.Flatten(lowerMeasures),
+                    genLower.TimeSignature.TotalBeats);
 
                 double lowerBeatShift = lowerFlat.Count > 0 ? (lowerFlat[0].BeatPosition ?? 0.0) : 0.0;
                 if (lowerBeatShift > 0.0)
@@ -1423,7 +1455,9 @@ namespace musicmate.Pages
                             IsRest = n.IsRest,
                             MeasureIndex = n.MeasureIndex,
                             BeatPosition = (n.BeatPosition ?? 0.0) - lowerBeatShift,
-                            IsPlayedCorrectly = n.IsPlayedCorrectly
+                            IsPlayedCorrectly = n.IsPlayedCorrectly,
+                            TieGroupId = n.TieGroupId,
+                            IsTieContinuation = n.IsTieContinuation,
                         };
                     }
                 }
@@ -1542,7 +1576,11 @@ namespace musicmate.Pages
                 }
                 measureIndex++;
             }
-            return result;
+
+            // Re-pack onto the meter grid so a note that crosses / overflows a bar becomes
+            // tied segments (durations sum to the original) instead of an extra onset on
+            // the next bar line.
+            return BarLineTieNormalizer.Normalize(result, measureBeats);
         }
         /// <summary>
         /// Derives bar-beat positions from a flat list of <see cref="GeneratedNote"/>
@@ -1691,6 +1729,8 @@ namespace musicmate.Pages
                     IsPlayedCorrectly = n.IsPlayedCorrectly,
                     CentsDeviation = n.CentsDeviation,
                     RenderX = n.RenderX,
+                    TieGroupId = n.TieGroupId,
+                    IsTieContinuation = n.IsTieContinuation,
                 });
             }
             return shifted;
@@ -1927,8 +1967,9 @@ namespace musicmate.Pages
                         {
                             var genAll = BuildSequenceGenerator(24);
                             var allMeasures = genAll.GenerateSequence();
-                            var flat = MusicSequenceGenerator.Flatten(allMeasures);
                             double beats = genAll.TimeSignature.TotalBeats;
+                            var flat = BarLineTieNormalizer.Normalize(
+                                MusicSequenceGenerator.Flatten(allMeasures), beats);
                             var bars = ComputeStaffBarBeats(flat, beats, new HashSet<double>());
                             return (genAll, flat, beats, bars, MeasureCount: allMeasures.Count);
                         });
@@ -1997,8 +2038,9 @@ namespace musicmate.Pages
                             {
                                 var gen = BuildSequenceGenerator(desiredMeasures);
                                 var measures = gen.GenerateSequence();
-                                var flat = MusicSequenceGenerator.Flatten(measures);
                                 double beats = gen.TimeSignature.TotalBeats;
+                                var flat = BarLineTieNormalizer.Normalize(
+                                    MusicSequenceGenerator.Flatten(measures), beats);
                                 var bars = ComputeStaffBarBeats(flat, beats, new HashSet<double>());
                                 return (gen, flat, beats, bars);
                             });
@@ -2085,18 +2127,30 @@ namespace musicmate.Pages
                 }
 
                 // Populate session NotesToDraw from upper then lower.
+                // Tie continuations are engraved on the staff but are not separate
+                // playback/detection targets — DurationBeats covers the whole tied group.
                 var rhythmOrder = upperFlat.Concat(lowerFlat).ToList();
-                var rhythmSlots = RhythmStartGate.BuildSlots(rhythmOrder);
+                var tieGroupTotals = rhythmOrder
+                    .Where(n => n.TieGroupId.HasValue && !n.IsRest)
+                    .GroupBy(n => n.TieGroupId!.Value)
+                    .ToDictionary(g => g.Key, g => g.Sum(n => n.BeatDuration));
+
                 int sessionIdx = 0;
-                int pitchIdx = 0;
                 _session.NotesToDraw.Clear();
                 _session.FeedbackViewModels.Clear();
                 var (noteKey, noteScale) = _session.GetNotationKeyAndScale();
+                double? prevStartBeat = null;
                 foreach (var gn in rhythmOrder)
                 {
                     if (gn.IsRest) continue;
-                    var slot = rhythmSlots[pitchIdx++];
+                    if (gn.IsTieContinuation) continue;
                     var (midi, name) = NoteSessionService.ResolveTargetPitch(gn, noteKey, noteScale);
+                    double startBeat = gn.BeatPosition ?? 0.0;
+                    double durationBeats = gn.TieGroupId is int tieId
+                        && tieGroupTotals.TryGetValue(tieId, out double total)
+                        ? total
+                        : gn.BeatDuration;
+                    double gateBeats = prevStartBeat.HasValue ? startBeat - prevStartBeat.Value : 0.0;
                     _session.NotesToDraw.Add(new NoteInfo
                     {
                         Midi = midi,
@@ -2104,11 +2158,12 @@ namespace musicmate.Pages
                         TargetFreq = 440.0 * Math.Pow(2.0, (midi - 69) / 12.0),
                         X = 0f,
                         Duration = gn.Duration,
-                        StartBeat = slot.StartBeat,
-                        DurationBeats = slot.DurationBeats,
-                        GateBeatsAfterPrevious = slot.GateBeatsAfterPrevious,
+                        StartBeat = startBeat,
+                        DurationBeats = durationBeats,
+                        GateBeatsAfterPrevious = gateBeats,
                     });
                     _session.FeedbackViewModels.Add(new FeedbackItem(sessionIdx++, 0, 0, false));
+                    prevStartBeat = startBeat;
                 }
 
                 _session.ConfigureRhythmStartGates();
@@ -2930,6 +2985,25 @@ namespace musicmate.Pages
             {
                 // Newer +/- click replaced this apply.
             }
+        }
+
+        private void OnMakeItEasyClicked(object? sender, EventArgs e)
+        {
+            if (_session == null)
+                return;
+
+            bool nowOn = _session.ToggleMakeItEasy();
+            RefreshMakeItEasyButtonAppearance();
+            StatusService.Instance.StatusMessage = nowOn
+                ? "Make It Easy ON — wider timing, slower red marks (tap again to restore your settings)"
+                : "Make It Easy OFF — your previous detection settings were restored";
+        }
+
+        private void RefreshMakeItEasyButtonAppearance()
+        {
+            OnPropertyChanged(nameof(MakeItEasyButtonText));
+            OnPropertyChanged(nameof(MakeItEasyButtonBackgroundColor));
+            OnPropertyChanged(nameof(MakeItEasyButtonTextColor));
         }
 
         private async void OnSaveTuneAsClicked(object? sender, EventArgs e)
@@ -4153,14 +4227,17 @@ namespace musicmate.Pages
                     DebugLog.WriteLine("[Audio] Sustained quiet — resetting pitch window");
                     _isBelowThreshold = true;
                     _session.NotifySilence();
-                    if (_session.AdvanceTimelineForExpiredNotes())
+                }
+
+                // Keep polling while silent so the late window can freeze the musical
+                // timeline even when BecameSilent fired before the window expired.
+                if (_session.AdvanceTimelineForExpiredNotes())
+                {
+                    MainThread.BeginInvokeOnMainThread(() =>
                     {
-                        MainThread.BeginInvokeOnMainThread(() =>
-                        {
-                            if (!_session.SessionCompleted)
-                                SyncStaffNoteStates();
-                        });
-                    }
+                        if (!_session.SessionCompleted)
+                            SyncStaffNoteStates();
+                    });
                 }
                 return;
             }
@@ -5538,6 +5615,9 @@ namespace musicmate.Pages
             {
                 UpdateEffectiveScaleLabel();
             }
+
+            if (e.PropertyName == nameof(NoteSessionService.IsMakeItEasyActive))
+                RefreshMakeItEasyButtonAppearance();
 
             if (e.PropertyName == nameof(_session.SelectedScale) ||
                 e.PropertyName == nameof(NoteSessionService.Instrument) ||
