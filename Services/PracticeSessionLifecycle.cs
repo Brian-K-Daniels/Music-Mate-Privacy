@@ -230,7 +230,8 @@ namespace musicmate.Services
 
         public static string FormatSessionResultBanner(
             CompletionSummaryStats stats,
-            int? newChildLevel)
+            int? newChildLevel,
+            string? activityWarning = null)
         {
             var total = (int)(stats.Correct + stats.Wrong);
             var bpmText = stats.DetectedBpm.HasValue
@@ -239,8 +240,11 @@ namespace musicmate.Services
             var levelUpText = newChildLevel.HasValue
                 ? $"  🎉 Great job! You advanced to Level {newChildLevel.Value}!"
                 : string.Empty;
+            var warningText = string.IsNullOrWhiteSpace(activityWarning)
+                ? string.Empty
+                : $"  ·  {activityWarning}";
             // stats.Wrong here means notes not yet/never completed (not retry counters).
-            return $"✓ {stats.AccuracyPercent:F0}% correct  ({(int)stats.Correct}/{total}){bpmText}{levelUpText}";
+            return $"✓ {stats.AccuracyPercent:F0}% correct  ({(int)stats.Correct}/{total}){bpmText}{levelUpText}{warningText}";
         }
 
         public static bool ShouldAutoRepeat(bool autoRepeatEnabled, string tune)

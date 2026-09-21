@@ -12,6 +12,11 @@ namespace musicmate.Services
             public bool Skipped { get; init; }
             public string? SkipReason { get; init; }
             public int? NewChildLevel { get; init; }
+            /// <summary>
+            /// When level-up kept an activity that is not in the new level's pool,
+            /// a short explanation for the user (no silent Assortment substitution).
+            /// </summary>
+            public string? ActivityWarning { get; init; }
         }
 
         public static SessionStat BuildSessionStat(NoteSessionService session)
@@ -179,8 +184,14 @@ namespace musicmate.Services
             {
                 Utils.Log($"[LevelUpDebug] Level up! New level={newLevel.Value}");
                 session.ChildLevel = newLevel.Value;
-                DifficultyLevelMapper.PickAndApplyToSession(newLevel.Value, session);
-                return new SaveOutcome { Skipped = false, NewChildLevel = newLevel };
+                DifficultyLevelMapper.ApplyLevelUpToSession(
+                    newLevel.Value, session, out var activityWarning);
+                return new SaveOutcome
+                {
+                    Skipped = false,
+                    NewChildLevel = newLevel,
+                    ActivityWarning = activityWarning,
+                };
             }
 
             Utils.Log("[LevelUpDebug] No level up this session.");

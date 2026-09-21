@@ -276,7 +276,7 @@ namespace musicmate.Services
             }
         }
 
-        /// <summary>When true, red conductor arrows mark conducted beat starts above the staff.</summary>
+        /// <summary>When true, a red conductor arrow marks the current conducted beat above the staff.</summary>
         public bool ShowConductorCues
         {
             get => _showConductorCues;
@@ -494,7 +494,7 @@ namespace musicmate.Services
         private int _tempo = LoadUnifiedTempo();
         private int _tolerance = SessionPreferences.Get(PrefToleranceKey, DefaultTolerance);
         public const int MinTempo = 30;
-        public const int MaxTempo = 150;  //  2026.07.09 1658  reduce from 200 to 150 for better usability after testing play by phone.
+        public const int MaxTempo = 252;
         public const int DefaultTempo = 100;
         public const int DefaultTolerance = 50;
         public const int DefaultMusicBpm = DefaultTempo;
@@ -1807,9 +1807,14 @@ namespace musicmate.Services
 
         /// <summary>Written key and scale for a practice tune's fixed key signature.</summary>
         public static (string Key, string Scale) ResolvePracticeTuneNotation(PracticeTune tune)
-            => string.IsNullOrWhiteSpace(tune.Key)
-                ? ("C", PracticeTuneKeySignatureScale)
-                : (tune.Key, PracticeTuneKeySignatureScale);
+        {
+            // Prefer the authored key/scale captured at save time. Do not re-infer from pitches.
+            string key = string.IsNullOrWhiteSpace(tune.Key) ? "C" : tune.Key!;
+            string scale = string.IsNullOrWhiteSpace(tune.Scale)
+                ? PracticeTuneKeySignatureScale
+                : tune.Scale!;
+            return (key, scale);
+        }
 
         /// <summary>
         /// Key and scale for note spelling and pitch evaluation.

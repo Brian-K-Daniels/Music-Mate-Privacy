@@ -16,8 +16,20 @@ namespace musicmate.Models
         /// <summary>Time signature that applies to all measures unless overridden per-measure.</summary>
         public TimeSignature TimeSignature { get; }
 
-        /// <summary>Written key signature for this tune (e.g. "C", "G"). Null when not fixed.</summary>
+        /// <summary>Written key tonic for this tune (e.g. "C", "G", "Bb"). Null when not fixed.</summary>
         public string? Key { get; }
+
+        /// <summary>
+        /// Scale/mode that defines the displayed key signature with <see cref="Key"/>
+        /// (e.g. "Major", "Natural Minor"). Null means legacy/default Major rules.
+        /// </summary>
+        public string? Scale { get; }
+
+        /// <summary>
+        /// Instrument key at save time (e.g. "concert-pitch", "Bb"). Optional context so
+        /// the same written notation can be reproduced on that instrument.
+        /// </summary>
+        public string? InstrumentKey { get; }
 
         /// <summary>Read-only view of the measures in this tune.</summary>
         public IReadOnlyList<Measure> Measures => _measures;
@@ -28,7 +40,12 @@ namespace musicmate.Models
         /// <summary>Total number of notes across the whole tune.</summary>
         public int NoteCount => _measures.Sum(m => m.Notes.Count);
 
-        public PracticeTune(string title, TimeSignature? timeSignature = null, string? key = null)
+        public PracticeTune(
+            string title,
+            TimeSignature? timeSignature = null,
+            string? key = null,
+            string? scale = null,
+            string? instrumentKey = null)
         {
             if (string.IsNullOrWhiteSpace(title))
                 throw new ArgumentException("Title must not be empty.", nameof(title));
@@ -36,6 +53,8 @@ namespace musicmate.Models
             Title = title;
             TimeSignature = timeSignature ?? TimeSignature.FourFour;
             Key = string.IsNullOrWhiteSpace(key) ? null : key;
+            Scale = string.IsNullOrWhiteSpace(scale) ? null : scale;
+            InstrumentKey = string.IsNullOrWhiteSpace(instrumentKey) ? null : instrumentKey;
         }
 
         /// <summary>Appends a measure to the tune.</summary>

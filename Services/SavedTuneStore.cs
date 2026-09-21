@@ -159,7 +159,8 @@ namespace musicmate.Services
         public static PracticeTune CloneWithTitle(PracticeTune source, string title)
         {
             ArgumentNullException.ThrowIfNull(source);
-            var clone = new PracticeTune(title, source.TimeSignature, source.Key);
+            var clone = new PracticeTune(
+                title, source.TimeSignature, source.Key, source.Scale, source.InstrumentKey);
             foreach (var measure in source.Measures)
             {
                 var m = clone.AppendMeasure();
@@ -215,7 +216,8 @@ namespace musicmate.Services
             if (flat.Count == 0)
                 return source;
 
-            return FromGeneratedNotes(source.Title, flat, source.TimeSignature, source.Key);
+            return FromGeneratedNotes(
+                source.Title, flat, source.TimeSignature, source.Key, source.Scale, source.InstrumentKey);
         }
 
         /// <summary>Builds a <see cref="PracticeTune"/> from staff/session generated notes.</summary>
@@ -223,7 +225,9 @@ namespace musicmate.Services
             string title,
             IReadOnlyList<GeneratedNote> notes,
             TimeSignature timeSignature,
-            string? key)
+            string? key,
+            string? scale = null,
+            string? instrumentKey = null)
         {
             ArgumentNullException.ThrowIfNull(notes);
             if (notes.Count == 0)
@@ -238,7 +242,7 @@ namespace musicmate.Services
                 .ThenBy(n => n.BeatPosition ?? 0.0)
                 .ToList();
 
-            var tune = new PracticeTune(title, timeSignature, key);
+            var tune = new PracticeTune(title, timeSignature, key, scale, instrumentKey);
             PackNotesIntoMeteredMeasures(tune, ordered, timeSignature.TotalBeats);
             if (tune.Measures.Count == 0)
                 throw new ArgumentException("No notes fit the meter; cannot save an empty tune.", nameof(notes));
@@ -389,6 +393,8 @@ namespace musicmate.Services
                 Title = tune.Title,
                 TimeSignature = tune.TimeSignature.ToString(),
                 Key = tune.Key,
+                Scale = tune.Scale,
+                InstrumentKey = tune.InstrumentKey,
                 Measures = tune.Measures.Select(m => new SavedMeasureDto
                 {
                     Notes = m.Notes.Select(n => new SavedNoteDto
@@ -404,7 +410,7 @@ namespace musicmate.Services
         private static PracticeTune ToPracticeTune(SavedTuneDto dto)
         {
             var ts = TimeSignature.FromDisplayString(dto.TimeSignature);
-            var tune = new PracticeTune(dto.Title, ts, dto.Key);
+            var tune = new PracticeTune(dto.Title, ts, dto.Key, dto.Scale, dto.InstrumentKey);
             foreach (var measureDto in dto.Measures ?? Enumerable.Empty<SavedMeasureDto>())
             {
                 var measure = tune.AppendMeasure();
@@ -426,6 +432,8 @@ namespace musicmate.Services
             public string Title { get; set; } = string.Empty;
             public string TimeSignature { get; set; } = "4/4";
             public string? Key { get; set; }
+            public string? Scale { get; set; }
+            public string? InstrumentKey { get; set; }
             public List<SavedMeasureDto> Measures { get; set; } = new();
         }
 

@@ -319,7 +319,7 @@
           <Grid x:Name="StaffOverlayGrid"
                 HorizontalOptions="Fill"
                 VerticalOptions="Fill">
-              <Border x:Name="StaffBorder"
+                <Border x:Name="StaffBorder"
                       Stroke="MediumPurple"
                       StrokeThickness="2"
                       StrokeShape="RoundRectangle 8"
@@ -327,13 +327,63 @@
                       Padding="0"
                       IsVisible="True"
                       HorizontalOptions="Fill"
-                      VerticalOptions="Start">
+                      VerticalOptions="Start"
+                      InputTransparent="False">
+                <Border.GestureRecognizers>
+                  <TapGestureRecognizer Tapped="OnStaffAreaTapped" />
+                </Border.GestureRecognizers>
+                <!-- GraphicsView must not steal taps from the tempo Button overlay. -->
                 <GraphicsView x:Name="StaffGraphicsView"
                               HeightRequest="240"
                               BackgroundColor="{Binding PanelBackgroundColor}"
                               HorizontalOptions="Fill"
-                              Margin="0" />
+                              Margin="0"
+                              InputTransparent="True"
+                              StartInteraction="OnStaffGraphicsStartInteraction" />
               </Border>
+
+              <!-- Real MAUI Button over ♩=BPM — reliable Android hit-testing (not a gesture Border).
+                   Position/size synced after staff draw. Chrome is invisible; TEMPO TAP logs remain. -->
+              <Button x:Name="TempoMarkingHitTarget"
+                      Text=""
+                      BackgroundColor="Transparent"
+                      BorderColor="Transparent"
+                      BorderWidth="0"
+                      Padding="0"
+                      Margin="0"
+                      CornerRadius="4"
+                      InputTransparent="False"
+                      HorizontalOptions="Start"
+                      VerticalOptions="Start"
+                      WidthRequest="48"
+                      HeightRequest="48"
+                      MinimumWidthRequest="48"
+                      MinimumHeightRequest="48"
+                      ZIndex="20"
+                      IsVisible="False"
+                      Clicked="OnTempoMarkingHitTargetClicked"
+                      SemanticProperties.Description="Change practice tempo" />
+
+              <!-- Real MAUI Button over time signature — same reliable hit-testing pattern as tempo. -->
+              <Button x:Name="TimeSignatureHitTarget"
+                      Text=""
+                      BackgroundColor="Transparent"
+                      BorderColor="Transparent"
+                      BorderWidth="0"
+                      Padding="0"
+                      Margin="0"
+                      CornerRadius="4"
+                      InputTransparent="False"
+                      HorizontalOptions="Start"
+                      VerticalOptions="Start"
+                      WidthRequest="48"
+                      HeightRequest="48"
+                      MinimumWidthRequest="48"
+                      MinimumHeightRequest="48"
+                      ZIndex="20"
+                      IsVisible="False"
+                      Clicked="OnTimeSignatureHitTargetClicked"
+                      SemanticProperties.Description="Change time signature" />
 
               <!-- Compact Play/Stop (Music/Sight only; never visible in Tuner): top-left of staff; sized in code -->
               <Border x:Name="TitlePlayButton"
@@ -594,6 +644,126 @@
                   </Grid>
                 </Border>
               </Grid>
+
+              <!-- Tempo nudge strip: top edge sits just below ♩=BPM (margin synced in code).
+                   Step sizes depend on current BPM; visibility set in code. -->
+              <Border x:Name="TempoControlRow"
+                      Margin="8,40,8,0"
+                      Padding="8,6"
+                      BackgroundColor="#EDE8E0"
+                      Stroke="#8B4513"
+                      StrokeThickness="2"
+                      StrokeShape="RoundRectangle 8"
+                      HorizontalOptions="Fill"
+                      VerticalOptions="Start"
+                      HeightRequest="52"
+                      MinimumHeightRequest="52"
+                      ZIndex="30"
+                      IsVisible="False">
+                <Grid ColumnDefinitions="*,*,*,*,*"
+                      ColumnSpacing="4"
+                      HeightRequest="40"
+                      VerticalOptions="Center"
+                      HorizontalOptions="Fill">
+                  <Button x:Name="TempoMinus10Button"
+                          Grid.Column="0"
+                          Text="−20"
+                          FontSize="12"
+                          FontAttributes="Bold"
+                          TextColor="{DynamicResource ThemeContrastingText}"
+                          BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                          CornerRadius="12"
+                          Padding="0"
+                          HeightRequest="36"
+                          VerticalOptions="Center"
+                          HorizontalOptions="Fill"
+                          CommandParameter="-20"
+                          Clicked="OnTempoDeltaClicked"
+                          SemanticProperties.Description="Decrease tempo by the outer step" />
+                  <Button x:Name="TempoMinus5Button"
+                          Grid.Column="1"
+                          Text="−4"
+                          FontSize="12"
+                          FontAttributes="Bold"
+                          TextColor="{DynamicResource ThemeContrastingText}"
+                          BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                          CornerRadius="12"
+                          Padding="0"
+                          HeightRequest="36"
+                          VerticalOptions="Center"
+                          HorizontalOptions="Fill"
+                          CommandParameter="-4"
+                          Clicked="OnTempoDeltaClicked"
+                          SemanticProperties.Description="Decrease tempo by the inner step" />
+                  <Button x:Name="TempoCurrentButton"
+                          Grid.Column="2"
+                          Text="100"
+                          FontSize="13"
+                          FontAttributes="Bold"
+                          TextColor="#1A1A1A"
+                          BackgroundColor="#F5D76E"
+                          CornerRadius="12"
+                          Padding="0"
+                          HeightRequest="36"
+                          VerticalOptions="Center"
+                          HorizontalOptions="Fill"
+                          CommandParameter="0"
+                          Clicked="OnTempoDeltaClicked"
+                          SemanticProperties.Description="Current tempo in BPM; tap to close" />
+                  <Button x:Name="TempoPlus5Button"
+                          Grid.Column="3"
+                          Text="+4"
+                          FontSize="12"
+                          FontAttributes="Bold"
+                          TextColor="{DynamicResource ThemeContrastingText}"
+                          BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                          CornerRadius="12"
+                          Padding="0"
+                          HeightRequest="36"
+                          VerticalOptions="Center"
+                          HorizontalOptions="Fill"
+                          CommandParameter="4"
+                          Clicked="OnTempoDeltaClicked"
+                          SemanticProperties.Description="Increase tempo by the inner step" />
+                  <Button x:Name="TempoPlus10Button"
+                          Grid.Column="4"
+                          Text="+20"
+                          FontSize="12"
+                          FontAttributes="Bold"
+                          TextColor="{DynamicResource ThemeContrastingText}"
+                          BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                          CornerRadius="12"
+                          Padding="0"
+                          HeightRequest="36"
+                          VerticalOptions="Center"
+                          HorizontalOptions="Fill"
+                          CommandParameter="20"
+                          Clicked="OnTempoDeltaClicked"
+                          SemanticProperties.Description="Increase tempo by the outer step" />
+                </Grid>
+              </Border>
+
+              <!-- Time-signature selector: options from TimeSignature.CommonDisplayOptions (built in code).
+                   Position synced next to the drawn meter; visibility set in code. -->
+              <Border x:Name="TimeSignatureControlRow"
+                      Margin="8,80,8,0"
+                      Padding="6,6"
+                      BackgroundColor="#EDE8E0"
+                      Stroke="#8B4513"
+                      StrokeThickness="2"
+                      StrokeShape="RoundRectangle 8"
+                      HorizontalOptions="Start"
+                      VerticalOptions="Start"
+                      WidthRequest="220"
+                      ZIndex="30"
+                      IsVisible="False">
+                <Grid x:Name="TimeSignatureOptionsGrid"
+                      ColumnDefinitions="*,*,*"
+                      RowDefinitions="Auto,Auto,Auto"
+                      ColumnSpacing="4"
+                      RowSpacing="4"
+                      HorizontalOptions="Fill" />
+              </Border>
           </Grid>
         </VerticalStackLayout>
 

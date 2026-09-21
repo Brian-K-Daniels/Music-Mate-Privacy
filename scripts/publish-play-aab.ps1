@@ -1,5 +1,7 @@
 # Build a signed Android App Bundle for Play Console (Closed Testing / production).
-# Device F5/deploy should use Configuration=Release (APK) or LocalRelease — not this script.
+# Release already sets AndroidPackageFormat=aab in musicmate.csproj; this script
+# publishes explicitly to the Publish\ folder.
+# For on-device testing use Configuration=LocalRelease (APK), not this script.
 #
 # Usage (from repo root or scripts):
 #   .\scripts\publish-play-aab.ps1

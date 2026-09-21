@@ -20,9 +20,9 @@
     <Configurations>Debug;Release;LocalRelease</Configurations>
 
     <!-- Versions -->
-    <ApplicationDisplayVersion>1.26</ApplicationDisplayVersion>
-    <ApplicationVersion>26</ApplicationVersion>
-    <PackageVersion>1.26</PackageVersion>
+    <ApplicationDisplayVersion>1.27</ApplicationDisplayVersion>
+    <ApplicationVersion>27</ApplicationVersion>
+    <PackageVersion>1.27</PackageVersion>
 
     <WindowsPackageType>None</WindowsPackageType>
     <AllowUnsafeBlocks Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">true</AllowUnsafeBlocks>
@@ -49,13 +49,13 @@
     <Optimize>true</Optimize>
   </PropertyGroup>
 
-  <!-- Play AAB: only when explicitly requested (Archive/publish). Default Release is APK so
-       Visual Studio device deploy does not uninstall/replace Play-style split packages —
-       that path often fails with XAAADB0000 DELETE_FAILED_INTERNAL_ERROR.
-       Build store bundle: dotnet publish -f net10.0-android -c Release -p:AndroidPackageFormat=aab
-       or .\scripts\publish-play-aab.ps1 -->
+  <!-- Play / Closed Testing Release: build an AAB for Play Console (Archive / publish).
+       Visual Studio device deploy of an AAB (split APKs) often fails with
+       XAAADB0000 DELETE_FAILED_INTERNAL_ERROR — use LocalRelease (APK, .local id) for
+       on-device testing, or one-off: -p:AndroidPackageFormat=apk
+       Store publish: Archive in VS, or .\scripts\publish-play-aab.ps1 -->
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-android' and '$(Configuration)' == 'Release'">
-    <AndroidPackageFormat Condition="'$(AndroidPackageFormat)' == ''">apk</AndroidPackageFormat>
+    <AndroidPackageFormat>aab</AndroidPackageFormat>
   </PropertyGroup>
 
   <!-- LocalRelease: Release-like build that installs beside Closed Testing (separate app data). -->

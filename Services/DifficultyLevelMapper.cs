@@ -163,6 +163,80 @@ namespace musicmate.Services
             return settings;
         }
 
+        /// <summary>
+        /// After a successful level-up: apply level-driven difficulty (range, rhythm,
+        /// accidentals, key validation, Assortment default scale) without changing the
+        /// user's chosen activity (Named scale, Assortment, Random, arpeggio, etc.).
+        /// Never silently switches to Assortment by Level.
+        /// </summary>
+        public static PracticeDifficultySettings ApplyLevelUpToSession(
+            int level,
+            NoteSessionService session,
+            out string? activityWarning,
+            Random? rng = null,
+            bool preserveUserPracticeSettings = false)
+        {
+            level = Math.Clamp(level, 1, 100);
+            var profile = ChildLevelProgression.GetProfile(level);
+            bool preserve = preserveUserPracticeSettings && session.ChildPracticeSettingsCustomized;
+            activityWarning = null;
+
+            // Preserve activity identity — PickAndApplyToSession must not be used here.
+            var mode = session.ScaleSelectionMode;
+            var isRandom = session.IsRandomMode;
+            var tune = session.Tune;
+            var namedScale = session.SelectedScale;
+
+            bool isScaleWalkExercise =
+                string.IsNullOrWhiteSpace(tune)
+                || string.Equals(tune, "Selected Scale", StringComparison.Ordinal);
+
+            if (isScaleWalkExercise)
+            {
+                switch (mode)
+                {
+                    case ScaleSelectionMode.ByLevel:
+                    case ScaleSelectionMode.Random:
+                        session.ApplyScaleSelectionOnLevelChange(level, rng);
+                        break;
+
+                    default:
+                        // Named: keep the user's scale. If somehow invalid at the new
+                        // level, explain — do not substitute Assortment by Level.
+                        session.TryApplyScalePickerSelection(namedScale, out _);
+                        if (!ChildLevelProgression.IsScaleAllowedAtLevel(level, namedScale))
+                        {
+                            activityWarning =
+                                $"{namedScale} is not in the level {level} scale pool. " +
+                                "Choose another activity if you want a level-allowed scale.";
+                        }
+                        break;
+                }
+            }
+
+            // Re-assert activity identity in case scale helpers mutated it.
+            session.ScaleSelectionMode = mode;
+            session.IsRandomMode = isRandom;
+            session.Tune = tune;
+            if (mode == ScaleSelectionMode.Named && !string.IsNullOrWhiteSpace(namedScale))
+                session.SelectedScale = namedScale;
+
+            session.Key = ChildLevelProgression.ValidateKeyForLevel(
+                level, session.SelectedScale, session.Key);
+
+            var settings = BuildSettings(level, profile, session.SelectedScale, session.Key);
+            ApplyToSession(settings, session,
+                applyKeyAndScale: false,
+                applyPracticeSettings: !preserve);
+#if DEBUG
+            DebugLog.WriteLine(
+                $"[ChildLevel] Level-up apply L{level} {session.Key} {session.SelectedScale} " +
+                $"mode={session.ScaleSelectionMode} tune={session.Tune} preserve={preserve}" +
+                (activityWarning == null ? "" : $" warn={activityWarning}"));
+#endif
+            return settings;
+        }
+
         /// <summary>Diagnostic report of weighted pools for sample levels.</summary>
         public static string BuildDiagnosticReport(IEnumerable<int>? levels = null)
             => ChildLevelProgression.BuildDiagnosticReport(levels);

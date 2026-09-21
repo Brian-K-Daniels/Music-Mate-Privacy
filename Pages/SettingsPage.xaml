@@ -183,26 +183,6 @@
           </VerticalStackLayout>
         </Border>
 
-        <!-- Tempo -->
-        <Border Style="{StaticResource SettingsPanelBorder}">
-          <Border.StrokeShape>
-            <RoundRectangle CornerRadius="10"/>
-          </Border.StrokeShape>
-          <VerticalStackLayout Spacing="8">
-            <Label Text="Tempo" Style="{StaticResource SettingsPanelTitle}" />
-            <Grid ColumnDefinitions="170,*,44" ColumnSpacing="4" VerticalOptions="Center">
-              <Label Grid.Column="0" Text="BPM" />
-              <Slider Grid.Column="1"
-                      Minimum="{Binding MinTempo}"
-                      Maximum="{Binding MaxTempo}"
-                      Value="{Binding Tempo, Mode=TwoWay}"
-                      Style="{StaticResource SliderStyle}" />
-              <Label Grid.Column="2" Text="{Binding Tempo}"
-                     HorizontalTextAlignment="End" />
-            </Grid>
-          </VerticalStackLayout>
-        </Border>
-
         <!-- Music -->
         <Border Style="{StaticResource SettingsPanelBorder}">
           <Border.StrokeShape>
@@ -261,13 +241,6 @@
               <Picker Grid.Column="1"
                       ItemsSource="{Binding SyncopationSettingOptions}"
                       SelectedItem="{Binding SyncopationSetting, Mode=TwoWay}"
-                      Style="{StaticResource SettingsPickerStyle}" />
-            </Grid>
-            <Grid ColumnDefinitions="170,*" ColumnSpacing="4" VerticalOptions="Center">
-              <Label Grid.Column="0" Text="Time signature" />
-              <Picker Grid.Column="1"
-                      ItemsSource="{Binding MeterTimeSignatureOptions}"
-                      SelectedItem="{Binding MeterTimeSignature, Mode=TwoWay}"
                       Style="{StaticResource SettingsPickerStyle}" />
             </Grid>
           </VerticalStackLayout>

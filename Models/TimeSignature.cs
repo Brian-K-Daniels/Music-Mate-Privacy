@@ -44,7 +44,7 @@ namespace musicmate.Models
         public static readonly TimeSignature TwelveEight = new(12, NoteDuration.Eighth);
 
         /// <summary>
-        /// Display strings offered in Settings (common meters for practice).
+        /// Display strings offered for practice meters (Music-page selector; single source of truth).
         /// </summary>
         public static IReadOnlyList<string> CommonDisplayOptions { get; } = new[]
         {

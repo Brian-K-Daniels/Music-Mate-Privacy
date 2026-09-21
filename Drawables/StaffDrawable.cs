@@ -5118,6 +5118,12 @@ namespace musicmate.Drawables
                 float keySigEndX = DrawKeySignature(canvas, staffTop, staffMid, ink);
                 if (drawTimeSignature && _session.Tune != "Tuner")
                     DrawTimeSignature(canvas, staffTop, staffMid, ink, keySigEndX + KeySigTimeSigGap);
+                else
+                    ClearTimeSignatureBounds();
+            }
+            else
+            {
+                ClearTimeSignatureBounds();
             }
         }
 
@@ -5154,7 +5160,14 @@ namespace musicmate.Drawables
         private void DrawMusicBpmMarking(ICanvas canvas, Color ink, float staffTop)
         {
             if (_session.Tune == "Tuner")
+            {
+                if (_lastMusicBpmMarkingBounds != null)
+                {
+                    _lastMusicBpmMarkingBounds = null;
+                    MusicBpmMarkingBoundsChanged?.Invoke(this, EventArgs.Empty);
+                }
                 return;
+            }
 
             int bpm = Math.Clamp(_session.Tempo, NoteSessionService.MinTempo, NoteSessionService.MaxTempo);
             float fontSize = Math.Max(10f, _layout.Sls * 1.6f);
@@ -5198,6 +5211,37 @@ namespace musicmate.Drawables
             canvas.DrawString(bpmText, bpmX, textY, bpmWidth, textHeight,
                 HorizontalAlignment.Left, VerticalAlignment.Center);
             canvas.RestoreState();
+
+            // Finger-friendly hit target for opening the Music-page tempo control.
+            float left = headCx - headR - fontSize * 0.4f;
+            float right = bpmX + bpmWidth + fontSize * 0.5f;
+            float top = Math.Min(textY, headCy - headR * NoteHeadHeightFactor * 0.5f) - fontSize * 0.35f;
+            float bottom = textY + textHeight + fontSize * 0.45f;
+            _lastMusicBpmMarkingBounds = new RectF(left, top, Math.Max(8f, right - left), Math.Max(8f, bottom - top));
+            MusicBpmMarkingBoundsChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        private RectF? _lastMusicBpmMarkingBounds;
+
+        /// <summary>Last-drawn ♩ = BPM marking bounds in GraphicsView coordinates, if any.</summary>
+        public RectF? LastMusicBpmMarkingBounds => _lastMusicBpmMarkingBounds;
+
+        /// <summary>Raised after the BPM marking is (re)drawn so the Music page can place its hit target.</summary>
+        public event EventHandler? MusicBpmMarkingBoundsChanged;
+
+        /// <summary>
+        /// True when <paramref name="x"/>/<paramref name="y"/> (GraphicsView coords) hit the
+        /// last-drawn ♩ = BPM marking. Used to open the Music-page tempo control.
+        /// </summary>
+        public bool HitTestMusicBpmMarking(float x, float y)
+        {
+            if (_lastMusicBpmMarkingBounds is not RectF r)
+                return false;
+
+            // Generous padding — the glyph is small and finger taps are imprecise.
+            const float pad = 28f;
+            return x >= r.X - pad && x <= r.X + r.Width + pad
+                && y >= r.Y - pad && y <= r.Y + r.Height + pad;
         }
 
         private void DrawStaffDynamic(
@@ -5523,7 +5567,9 @@ namespace musicmate.Drawables
             TimeSignature               timeSignature,
             double?                     highlightedConductedBeatRel)
         { 
-            if (barLayouts.Length == 0)
+            // Visual simplification: only the moving major cue for the current conducted beat.
+            // Minor (non-current) beat markers are not drawn.
+            if (barLayouts.Length == 0 || !highlightedConductedBeatRel.HasValue)
                 return;
 
             var conductedOffsets = ConductorBeatHelper.GetConductedBeatOffsetsInMeasure(timeSignature);
@@ -5543,6 +5589,9 @@ namespace musicmate.Drawables
 
                     double conductedBeatRel = segmentStartBeat + offset;
 
+                    if (Math.Abs(highlightedConductedBeatRel.Value - conductedBeatRel) >= 0.05)
+                        continue;
+
                     double nextOffset = c + 1 < conductedOffsets.Count
                         ? conductedOffsets[c + 1]
                         : measureBeats;
@@ -5560,14 +5609,12 @@ namespace musicmate.Drawables
                             : ConductorBeatHelper.BeatOffsetToXInMeasure(
                                 measureLeft, measureRight, offset, measureBeats, BarLeftPadding);
 
-                    bool isCurrent = highlightedConductedBeatRel.HasValue
-                        && Math.Abs(highlightedConductedBeatRel.Value - conductedBeatRel) < 0.05;
-
                     float? highestHeadTop = TryGetHighestNoteHeadTopInBeatWindow(
                         notes, noteLayouts, beatOrigin, conductedBeatRel, conductedBeatEndRel,
                         staffTop, staffMid);
 
-                    DrawConductorArrow(canvas, x, staffTop, isCurrent, highestHeadTop);
+                    DrawConductorArrow(canvas, x, staffTop, highestHeadTop);
+                    return;
                 }
             }
         }
@@ -5683,12 +5730,12 @@ namespace musicmate.Drawables
             ICanvas canvas,
             float x,
             float staffTop,
-            bool isCurrent,
             float? highestNoteHeadTop = null)
         {
-            float wing = isCurrent ? 8.0f: 2.0f;  //  2026.07.09 1924  '5.5f : 4f;
-            float height = isCurrent ? 8f : 2.25f;  //  2026.07.09 1926  5.5f;
-            float tipY = staffTop - (isCurrent ? 1f : 4f);
+            // Major (current-beat) cue only — minor beat markers were removed.
+            const float wing = 8.0f;
+            const float height = 8f;
+            float tipY = staffTop - 1f;
 
             // If the note head sits above the normal cue tip, park the tip just above the head.
             const float clearance = 2f;
@@ -5698,7 +5745,7 @@ namespace musicmate.Drawables
             float baseY = tipY - height;
 
             canvas.StrokeColor = Colors.Red;
-            canvas.StrokeSize = isCurrent ? 2.5f : 1.8f;
+            canvas.StrokeSize = 2.5f;
             canvas.DrawLine(x - wing, baseY, x, tipY);
             canvas.DrawLine(x + wing, baseY, x, tipY);
             canvas.DrawLine(x - wing, baseY, x + wing, baseY);
@@ -7071,7 +7118,7 @@ namespace musicmate.Drawables
         {
             if (!string.IsNullOrWhiteSpace(NotationScaleOverride))
                 return NotationScaleOverride!;
-            // Practice / saved tunes always use Major key-signature rules for their authored key.
+            // Practice / saved tunes use their authored key + scale for key-signature rules.
             if (_session.Tune == "Practice Tune" && _session.CurrentTune != null)
                 return _session.GetNotationKeyAndScale().Scale;
             // Arpeggios spell notes via GetNotationKeyAndScale (Natural Minor for minor-family).
@@ -7163,14 +7210,21 @@ namespace musicmate.Drawables
                                        Color ink, float keySigEndX)
         {
             if (_session.Tune == "Tuner")
+            {
+                ClearTimeSignatureBounds();
                 return;
+            }
 
             canvas.SaveState();
             try
             {
                 string timeSig = _session.GetDisplayTimeSignature();
                 var parts = timeSig.Split('/');
-                if (parts.Length != 2) return;
+                if (parts.Length != 2)
+                {
+                    ClearTimeSignatureBounds();
+                    return;
+                }
 
                 float tsX = keySigEndX;
                 float boxW = TimeSignatureBoxWidth(timeSig);
@@ -7190,8 +7244,48 @@ namespace musicmate.Drawables
                 canvas.DrawString(parts[1], tsX, bottomY, boxW, tsFontSize,
                     HorizontalAlignment.Center, VerticalAlignment.Center);
                 canvas.Font = Microsoft.Maui.Graphics.Font.Default;
+
+                // Finger-friendly hit target for opening the Music-page time-signature control.
+                float top = Math.Min(staffTop, topY) - tsFontSize * 0.25f;
+                float bottom = bottomY + tsFontSize + tsFontSize * 0.35f;
+                _lastTimeSignatureBounds = new RectF(
+                    tsX - 4f,
+                    top,
+                    Math.Max(8f, boxW + 8f),
+                    Math.Max(8f, bottom - top));
+                TimeSignatureBoundsChanged?.Invoke(this, EventArgs.Empty);
             }
             finally { canvas.RestoreState(); }
+        }
+
+        private RectF? _lastTimeSignatureBounds;
+
+        /// <summary>Last-drawn time-signature bounds in GraphicsView coordinates, if any.</summary>
+        public RectF? LastTimeSignatureBounds => _lastTimeSignatureBounds;
+
+        /// <summary>Raised after the time signature is (re)drawn so the Music page can place its hit target.</summary>
+        public event EventHandler? TimeSignatureBoundsChanged;
+
+        /// <summary>
+        /// True when <paramref name="x"/>/<paramref name="y"/> (GraphicsView coords) hit the
+        /// last-drawn time signature. Used to open the Music-page time-signature control.
+        /// </summary>
+        public bool HitTestTimeSignature(float x, float y)
+        {
+            if (_lastTimeSignatureBounds is not RectF r)
+                return false;
+
+            const float pad = 20f;
+            return x >= r.X - pad && x <= r.X + r.Width + pad
+                && y >= r.Y - pad && y <= r.Y + r.Height + pad;
+        }
+
+        private void ClearTimeSignatureBounds()
+        {
+            if (_lastTimeSignatureBounds == null)
+                return;
+            _lastTimeSignatureBounds = null;
+            TimeSignatureBoundsChanged?.Invoke(this, EventArgs.Empty);
         }
 
         private string? GetSignatureAccidentalForLetter(char letter)

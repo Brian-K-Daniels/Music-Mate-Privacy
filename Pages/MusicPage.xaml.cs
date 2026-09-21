@@ -242,6 +242,21 @@ namespace musicmate.Pages
         public bool IsBottomPickersVisible => _session?.Tune != "Tuner";
         public bool IsBottomButtonRowVisible => _session?.Tune != "Tuner";
         public bool IsChildLevelSliderVisible => _session?.ChildLevel > 0 && _session.Tune != "Tuner";
+        public bool IsTempoControlVisible => _isTempoControlVisible && _session?.Tune != "Tuner";
+        public bool IsTimeSignatureControlVisible =>
+            _isTimeSignatureControlVisible && _session?.Tune != "Tuner";
+
+        private bool _isTempoControlVisible;
+        private bool _isTimeSignatureControlVisible;
+        private bool _timeSignatureOptionButtonsBuilt;
+        /// <summary>Ignore StaffBorder taps that fire in the same gesture as tempo/time-sig hit-target Clicked.</summary>
+        private long _suppressStaffOverlayTapUntilMs;
+
+        /// <summary>
+        /// When true, the tempo hit Button shows translucent diagnostic chrome.
+        /// Keep false in normal builds; hit area stays enlarged and TEMPO TAP logs remain.
+        /// </summary>
+        private static bool TempoHitTargetDiagnosticsVisible = false;
 
         public string MakeItEasyButtonText =>
             _session?.IsMakeItEasyActive == true ? "Make It Easy — ON" : "Make It Easy — OFF";
@@ -546,6 +561,10 @@ namespace musicmate.Pages
 
                 var safeAreaService = ServiceHelper.GetService<ISafeAreaService>();
                 _staffDrawable = new StaffDrawable(_session, _theme_service!, safeAreaService);
+                _staffDrawable.MusicBpmMarkingBoundsChanged += (_, _) =>
+                    MainThread.BeginInvokeOnMainThread(SyncTempoMarkingHitTarget);
+                _staffDrawable.TimeSignatureBoundsChanged += (_, _) =>
+                    MainThread.BeginInvokeOnMainThread(SyncTimeSignatureHitTarget);
                 StaffGraphicsView.Drawable = _staffDrawable;
                 StaffGraphicsView.SetBinding(GraphicsView.BackgroundColorProperty, new Binding("PanelBackgroundColor"));
                 StaffGraphicsView.SizeChanged += (_, _) =>
@@ -554,9 +573,21 @@ namespace musicmate.Pages
                         && _isPageVisible
                         && !PlayModePickerOptions.IsTunerMode(_session))
                         ScheduleStaffLayoutSettleRefresh();
+                    ScheduleSyncTempoMarkingHitTarget();
+                    ScheduleSyncTimeSignatureHitTarget();
                 };
-                StaffOverlayGrid.SizeChanged += (_, _) => UpdateTitlePlayButtonPosition();
-                StaffBorder.SizeChanged += (_, _) => UpdateTitlePlayButtonPosition();
+                StaffOverlayGrid.SizeChanged += (_, _) =>
+                {
+                    UpdateTitlePlayButtonPosition();
+                    ScheduleSyncTempoMarkingHitTarget();
+                    ScheduleSyncTimeSignatureHitTarget();
+                };
+                StaffBorder.SizeChanged += (_, _) =>
+                {
+                    UpdateTitlePlayButtonPosition();
+                    ScheduleSyncTempoMarkingHitTarget();
+                    ScheduleSyncTimeSignatureHitTarget();
+                };
                 SizeChanged += (_, _) => UpdateTitlePlayButtonPosition();
                 SetPlayButtonPlaying(false);
 
@@ -629,7 +660,9 @@ namespace musicmate.Pages
                         // independent of the CollectNoteStats preference.
                         // Persist session summary + this session's attempts first; optional
                         // cleanup then removes older sessions only (never the one just saved).
-                        int? newChildLevel = await SaveSessionStatAsync();
+                        var saveOutcome = await SaveSessionStatAsync();
+                        int? newChildLevel = saveOutcome.NewChildLevel;
+                        string? levelUpActivityWarning = saveOutcome.ActivityWarning;
                         await SaveNoteAttemptsForSessionAsync(levelBeforeSave);
                         await NoteAttemptSessionCleanup.RetainOnlyCompletedSessionIfEnabledAsync(
                             _noteAttemptDb,
@@ -654,7 +687,7 @@ namespace musicmate.Pages
                                 if (SessionResultLabel != null)
                                 {
                                     SessionResultLabel.Text = PracticeSessionLifecycle.FormatSessionResultBanner(
-                                        summary, newChildLevel);
+                                        summary, newChildLevel, levelUpActivityWarning);
                                 }
                                 if (SessionResultBanner != null)
                                     SessionResultBanner.IsVisible = true;
@@ -2987,6 +3020,649 @@ namespace musicmate.Pages
             }
         }
 
+        private void OnStaffAreaTapped(object? sender, TappedEventArgs e)
+        {
+            var point = e.GetPosition(StaffGraphicsView);
+            long now = Environment.TickCount64;
+            if (now < _suppressStaffOverlayTapUntilMs)
+            {
+                LogTempoTap(
+                    "STAFF BORDER TAP SUPPRESSED",
+                    $"same-gesture-as-hit-target remainingMs={_suppressStaffOverlayTapUntilMs - now}");
+                return;
+            }
+
+            LogTempoTap(
+                "STAFF BORDER TAP",
+                $"point={(point is Point p ? $"{p.X:F0},{p.Y:F0}" : "null")} " +
+                $"borderInputTransparent={StaffBorder?.InputTransparent} " +
+                $"gvInputTransparent={StaffGraphicsView?.InputTransparent}");
+            TryHandleStaffOverlayDismissTap(point);
+        }
+
+        private void OnStaffGraphicsStartInteraction(object? sender, TouchEventArgs e)
+        {
+            // Expected to be rare/never while GraphicsView.InputTransparent=true.
+            string detail = e.Touches.Length == 0
+                ? "no-touches"
+                : $"xy={e.Touches[0].X:F0},{e.Touches[0].Y:F0}";
+            LogTempoTap("GRAPHICS VIEW START INTERACTION", detail);
+        }
+
+        private void OnTempoMarkingHitTargetClicked(object? sender, EventArgs e)
+        {
+            // Exact diagnostic line — before any strip open/close logic.
+            LogTempoTap("HIT TARGET", BuildTempoHitTargetStateDetail());
+
+            // StaffBorder TapGestureRecognizer often fires after this Clicked and would
+            // immediately dismiss (or toggle) the strip — suppress that same-gesture tap.
+            _suppressStaffOverlayTapUntilMs = Environment.TickCount64 + 400;
+            SetTimeSignatureControlVisible(false);
+            SetTempoControlVisible(!_isTempoControlVisible);
+            LogTempoTap(
+                "OPEN STRIP",
+                $"IsTempoControlVisible={IsTempoControlVisible} tempo={_session?.Tempo}");
+        }
+
+        private void TryHandleStaffOverlayDismissTap(Point? point)
+        {
+            if (_session == null || PlayModePickerOptions.IsTunerMode(_session))
+                return;
+
+            if (_isTempoControlVisible)
+            {
+                if (point is Point p && IsPointOverTempoHitTarget(p))
+                {
+                    LogTempoTap("STAFF TAP OVER HIT TARGET IGNORED", $"xy={p.X:F0},{p.Y:F0}");
+                    return;
+                }
+
+                LogTempoTap("STAFF TAP DISMISS STRIP", point is Point d ? $"xy={d.X:F0},{d.Y:F0}" : "no-point");
+                SetTempoControlVisible(false);
+            }
+
+            if (_isTimeSignatureControlVisible)
+            {
+                if (point is Point p2 && IsPointOverTimeSignatureHitTarget(p2))
+                    return;
+
+                SetTimeSignatureControlVisible(false);
+            }
+        }
+
+        private bool IsPointOverTempoHitTarget(Point pointInGraphicsView)
+        {
+            if (TempoMarkingHitTarget == null || !TempoMarkingHitTarget.IsVisible)
+                return false;
+
+            // Hit target uses Margin in StaffOverlayGrid; GraphicsView shares the same origin in practice mode.
+            double x = TempoMarkingHitTarget.Margin.Left;
+            double y = TempoMarkingHitTarget.Margin.Top;
+            double w = TempoMarkingHitTarget.Width > 0 ? TempoMarkingHitTarget.Width : TempoMarkingHitTarget.WidthRequest;
+            double h = TempoMarkingHitTarget.Height > 0 ? TempoMarkingHitTarget.Height : TempoMarkingHitTarget.HeightRequest;
+            if (w > 0 && h > 0
+                && pointInGraphicsView.X >= x
+                && pointInGraphicsView.X <= x + w
+                && pointInGraphicsView.Y >= y
+                && pointInGraphicsView.Y <= y + h)
+            {
+                return true;
+            }
+
+            return _staffDrawable != null
+                && _staffDrawable.HitTestMusicBpmMarking((float)pointInGraphicsView.X, (float)pointInGraphicsView.Y);
+        }
+
+        private bool IsPointOverTimeSignatureHitTarget(Point pointInGraphicsView)
+        {
+            if (TimeSignatureHitTarget == null || !TimeSignatureHitTarget.IsVisible)
+                return false;
+
+            double x = TimeSignatureHitTarget.Margin.Left;
+            double y = TimeSignatureHitTarget.Margin.Top;
+            double w = TimeSignatureHitTarget.Width > 0 ? TimeSignatureHitTarget.Width : TimeSignatureHitTarget.WidthRequest;
+            double h = TimeSignatureHitTarget.Height > 0 ? TimeSignatureHitTarget.Height : TimeSignatureHitTarget.HeightRequest;
+            if (w > 0 && h > 0
+                && pointInGraphicsView.X >= x
+                && pointInGraphicsView.X <= x + w
+                && pointInGraphicsView.Y >= y
+                && pointInGraphicsView.Y <= y + h)
+            {
+                return true;
+            }
+
+            return _staffDrawable != null
+                && _staffDrawable.HitTestTimeSignature((float)pointInGraphicsView.X, (float)pointInGraphicsView.Y);
+        }
+
+        private void OnTempoDeltaClicked(object? sender, EventArgs e)
+        {
+            if (_session == null
+                || sender is not Button { CommandParameter: string param }
+                || !int.TryParse(param, out int delta))
+                return;
+
+            // Center button (current BPM): dismiss without changing tempo.
+            if (delta == 0)
+            {
+                SetTempoControlVisible(false);
+                return;
+            }
+
+            int next = TempoControlLogic.ApplyDelta(_session.Tempo, delta);
+            if (next == _session.Tempo)
+            {
+                RefreshTempoControlDisplay();
+                return;
+            }
+
+            // Single authoritative tempo — ApplyTempo persists prefs and rebuilds rhythm gates.
+            _session.Tempo = next;
+            RefreshTempoControlDisplay();
+            SyncTempoControlRowPosition();
+            _staffDrawable?.InvalidateLayoutCache();
+            StaffGraphicsView?.Invalidate();
+            ScheduleSyncTempoMarkingHitTarget();
+        }
+
+        private void OnTimeSignatureHitTargetClicked(object? sender, EventArgs e)
+        {
+            _suppressStaffOverlayTapUntilMs = Environment.TickCount64 + 400;
+            SetTempoControlVisible(false);
+            SetTimeSignatureControlVisible(!_isTimeSignatureControlVisible);
+        }
+
+        private async void OnTimeSignatureOptionClicked(object? sender, EventArgs e)
+        {
+            if (_session == null
+                || sender is not Button { CommandParameter: string selected })
+                return;
+
+            string? next = TimeSignatureControlLogic.NormalizeSelection(selected);
+            if (next == null)
+                return;
+
+            SetTimeSignatureControlVisible(false);
+
+            if (!TimeSignatureControlLogic.WouldChange(_session.MeterTimeSignature, next))
+            {
+                RefreshTimeSignatureControlDisplay();
+                return;
+            }
+
+            // Built-in Practice Tune meters are owned by the tune; still persist preference for
+            // generated music, but do not force a practice-tune rewrite.
+            _session.MeterTimeSignature = next;
+            if (_session.ChildLevel > 0)
+                _session.MarkChildPracticeSettingsCustomized();
+
+            // Meter change invalidates any Repeat Same snapshot packed for the old signature.
+            _repeatSameSnapshot = null;
+            _session.IsDirty = true;
+
+            RefreshTimeSignatureControlDisplay();
+            _staffDrawable?.InvalidateLayoutCache();
+            StaffGraphicsView?.Invalidate();
+            ScheduleSyncTimeSignatureHitTarget();
+            ScheduleSyncTempoMarkingHitTarget();
+
+            if (!PlayModePickerOptions.IsTunerMode(_session) && _session.Tune != "Practice Tune")
+                await RegenerateNotesAsync();
+        }
+
+        private void SetTimeSignatureControlVisible(bool visible)
+        {
+            if (_session != null
+                && (PlayModePickerOptions.IsTunerMode(_session) || _session.Tune == "Practice Tune"))
+                visible = false;
+
+            if (_isTimeSignatureControlVisible == visible)
+            {
+                if (visible)
+                {
+                    EnsureTimeSignatureOptionButtons();
+                    RefreshTimeSignatureControlDisplay();
+                    SyncTimeSignatureControlRowPosition();
+                }
+                ApplyTimeSignatureControlRowVisibility(visible);
+                return;
+            }
+
+            _isTimeSignatureControlVisible = visible;
+            OnPropertyChanged(nameof(IsTimeSignatureControlVisible));
+            if (visible)
+            {
+                EnsureTimeSignatureOptionButtons();
+                RefreshTimeSignatureControlDisplay();
+                SyncTimeSignatureControlRowPosition();
+            }
+            ApplyTimeSignatureControlRowVisibility(visible);
+        }
+
+        private void ApplyTimeSignatureControlRowVisibility(bool visible)
+        {
+            if (TimeSignatureControlRow == null)
+                return;
+
+            TimeSignatureControlRow.IsVisible = visible;
+            TimeSignatureControlRow.Opacity = visible ? 1 : 0;
+            TimeSignatureControlRow.InputTransparent = !visible;
+            if (visible)
+            {
+                TimeSignatureControlRow.InvalidateMeasure();
+                StaffOverlayGrid?.InvalidateMeasure();
+            }
+        }
+
+        private void EnsureTimeSignatureOptionButtons()
+        {
+            if (_timeSignatureOptionButtonsBuilt || TimeSignatureOptionsGrid == null)
+                return;
+
+            _timeSignatureOptionButtonsBuilt = true;
+            TimeSignatureOptionsGrid.Children.Clear();
+
+            Color textColor = Colors.White;
+            Color bgColor = Color.FromArgb("#8B4513");
+            if (Application.Current?.Resources.TryGetValue("ThemeContrastingText", out var fg) == true
+                && fg is Color themedFg)
+                textColor = themedFg;
+            if (Application.Current?.Resources.TryGetValue("ThemeButtonBackground", out var bg) == true
+                && bg is Color themedBg)
+                bgColor = themedBg;
+
+            var options = TimeSignatureControlLogic.Options;
+            for (int i = 0; i < options.Count; i++)
+            {
+                string opt = options[i];
+                var btn = new Button
+                {
+                    Text = opt,
+                    FontSize = 12,
+                    FontAttributes = FontAttributes.Bold,
+                    TextColor = textColor,
+                    BackgroundColor = bgColor,
+                    CornerRadius = 10,
+                    Padding = 0,
+                    HeightRequest = 34,
+                    MinimumHeightRequest = 34,
+                    HorizontalOptions = LayoutOptions.Fill,
+                    VerticalOptions = LayoutOptions.Center,
+                    CommandParameter = opt,
+                };
+                btn.Clicked += OnTimeSignatureOptionClicked;
+                SemanticProperties.SetDescription(btn, $"Set time signature to {opt}");
+                Grid.SetRow(btn, i / 3);
+                Grid.SetColumn(btn, i % 3);
+                TimeSignatureOptionsGrid.Children.Add(btn);
+            }
+        }
+
+        private void RefreshTimeSignatureControlDisplay()
+        {
+            if (TimeSignatureOptionsGrid == null || _session == null)
+                return;
+
+            string current = _session.GetDisplayTimeSignature();
+            foreach (var child in TimeSignatureOptionsGrid.Children)
+            {
+                if (child is not Button btn || btn.CommandParameter is not string opt)
+                    continue;
+
+                bool selected = string.Equals(opt, current, StringComparison.Ordinal)
+                    || string.Equals(opt, _session.MeterTimeSignature, StringComparison.Ordinal);
+                if (selected)
+                {
+                    btn.BackgroundColor = Color.FromArgb("#F5D76E");
+                    btn.TextColor = Color.FromArgb("#1A1A1A");
+                }
+                else
+                {
+                    if (Application.Current?.Resources.TryGetValue("ThemeButtonBackground", out var bg) == true
+                        && bg is Color themedBg)
+                        btn.BackgroundColor = themedBg;
+                    else
+                        btn.BackgroundColor = Color.FromArgb("#8B4513");
+                    if (Application.Current?.Resources.TryGetValue("ThemeContrastingText", out var fg) == true
+                        && fg is Color themedFg)
+                        btn.TextColor = themedFg;
+                    else
+                        btn.TextColor = Colors.White;
+                }
+            }
+        }
+
+        private void SyncTimeSignatureControlRowPosition()
+        {
+            if (TimeSignatureControlRow == null)
+                return;
+
+            double stroke = StaffBorder?.StrokeThickness ?? 0;
+            const double gap = 4;
+            double left;
+            double top;
+            RectF? bounds = _staffDrawable?.LastTimeSignatureBounds;
+            if (bounds is RectF r)
+            {
+                // Place the selector just to the right of the numerals when there is room;
+                // otherwise tuck it directly under the meter.
+                left = stroke + r.X + r.Width + gap;
+                top = stroke + r.Y;
+                double overlayW = StaffOverlayGrid?.Width ?? 0;
+                double stripW = TimeSignatureControlRow.WidthRequest > 0
+                    ? TimeSignatureControlRow.WidthRequest
+                    : 220;
+                if (overlayW > 0 && left + stripW > overlayW - 8)
+                {
+                    left = Math.Max(8, stroke + r.X);
+                    top = stroke + r.Y + r.Height + gap;
+                }
+            }
+            else
+            {
+                left = 8;
+                top = stroke + 56;
+            }
+
+            if (left < 0) left = 0;
+            if (top < 0) top = 0;
+
+            TimeSignatureControlRow.VerticalOptions = LayoutOptions.Start;
+            TimeSignatureControlRow.HorizontalOptions = LayoutOptions.Start;
+            TimeSignatureControlRow.Margin = new Thickness(left, top, 8, 0);
+        }
+
+        private void ScheduleSyncTimeSignatureHitTarget()
+        {
+            Dispatcher.Dispatch(SyncTimeSignatureHitTarget);
+            Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(50), SyncTimeSignatureHitTarget);
+        }
+
+        private void SyncTimeSignatureHitTarget()
+        {
+            if (TimeSignatureHitTarget == null || StaffGraphicsView == null)
+                return;
+
+            bool practiceTuneOwned = _session?.Tune == "Practice Tune" && _session.CurrentTune != null;
+            if (_session == null
+                || PlayModePickerOptions.IsTunerMode(_session)
+                || practiceTuneOwned)
+            {
+                TimeSignatureHitTarget.IsVisible = false;
+                if (_isTimeSignatureControlVisible)
+                    SetTimeSignatureControlVisible(false);
+                return;
+            }
+
+            RectF? bounds = _staffDrawable?.LastTimeSignatureBounds;
+            double stroke = StaffBorder?.StrokeThickness ?? 0;
+            const double minSize = 48;
+            const double pad = 12;
+
+            double x;
+            double y;
+            double w;
+            double h;
+            if (bounds is RectF r)
+            {
+                x = stroke + r.X - pad;
+                y = stroke + r.Y - pad;
+                w = Math.Max(minSize, r.Width + pad * 2);
+                h = Math.Max(minSize, r.Height + pad * 2);
+            }
+            else
+            {
+                x = stroke + 48;
+                y = stroke + 24;
+                w = minSize;
+                h = 72;
+            }
+
+            if (x < 0) x = 0;
+            if (y < 0) y = 0;
+
+            TimeSignatureHitTarget.Margin = new Thickness(x, y, 0, 0);
+            TimeSignatureHitTarget.WidthRequest = w;
+            TimeSignatureHitTarget.HeightRequest = h;
+            TimeSignatureHitTarget.MinimumWidthRequest = minSize;
+            TimeSignatureHitTarget.MinimumHeightRequest = minSize;
+            TimeSignatureHitTarget.InputTransparent = false;
+            TimeSignatureHitTarget.IsEnabled = true;
+            TimeSignatureHitTarget.IsVisible = true;
+
+            if (_isTimeSignatureControlVisible)
+                SyncTimeSignatureControlRowPosition();
+        }
+
+        private void SetTempoControlVisible(bool visible)
+        {
+            if (_session != null && PlayModePickerOptions.IsTunerMode(_session))
+                visible = false;
+
+            if (_isTempoControlVisible == visible)
+            {
+                if (visible)
+                {
+                    RefreshTempoControlDisplay();
+                    SyncTempoControlRowPosition();
+                }
+                ApplyTempoControlRowVisibility(visible);
+                return;
+            }
+
+            _isTempoControlVisible = visible;
+            OnPropertyChanged(nameof(IsTempoControlVisible));
+            if (visible)
+            {
+                RefreshTempoControlDisplay();
+                SyncTempoControlRowPosition();
+            }
+            ApplyTempoControlRowVisibility(visible);
+        }
+
+        private void ApplyTempoControlRowVisibility(bool visible)
+        {
+            if (TempoControlRow == null)
+            {
+                LogTempoTap("STRIP VIS", "TempoControlRow=null");
+                return;
+            }
+
+            // Direct assignment — do not rely solely on IsTempoControlVisible binding.
+            TempoControlRow.IsVisible = visible;
+            TempoControlRow.Opacity = visible ? 1 : 0;
+            TempoControlRow.InputTransparent = !visible;
+            if (visible)
+            {
+                TempoControlRow.HeightRequest = 52;
+                TempoControlRow.MinimumHeightRequest = 52;
+                // Force a layout pass so Android measures the newly shown strip.
+                TempoControlRow.InvalidateMeasure();
+                StaffOverlayGrid?.InvalidateMeasure();
+            }
+
+            LogTempoTap(
+                "STRIP VIS",
+                $"set={visible} row.IsVisible={TempoControlRow.IsVisible} " +
+                $"h={TempoControlRow.Height:F0} req={TempoControlRow.HeightRequest:F0} " +
+                $"opacity={TempoControlRow.Opacity:F1} z={TempoControlRow.ZIndex} " +
+                $"parent={(TempoControlRow.Parent?.GetType().Name ?? "null")}");
+
+            if (visible)
+            {
+                Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(50), () =>
+                {
+                    if (TempoControlRow == null)
+                        return;
+                    LogTempoTap(
+                        "STRIP LAID OUT",
+                        $"IsVisible={TempoControlRow.IsVisible} h={TempoControlRow.Height:F0} " +
+                        $"w={TempoControlRow.Width:F0} x={TempoControlRow.X:F0} y={TempoControlRow.Y:F0} " +
+                        $"opacity={TempoControlRow.Opacity:F1}");
+                });
+            }
+        }
+
+        private void RefreshTempoControlDisplay()
+        {
+            if (_session == null)
+                return;
+
+            int bpm = Math.Clamp(_session.Tempo, NoteSessionService.MinTempo, NoteSessionService.MaxTempo);
+            int[] deltas = TempoControlLogic.GetDeltaChoices(bpm);
+
+            ApplyTempoNudgeButton(TempoMinus10Button, bpm, deltas[0]);
+            ApplyTempoNudgeButton(TempoMinus5Button, bpm, deltas[1]);
+            ApplyTempoNudgeButton(TempoCurrentButton, bpm, deltas[2]);
+            ApplyTempoNudgeButton(TempoPlus5Button, bpm, deltas[3]);
+            ApplyTempoNudgeButton(TempoPlus10Button, bpm, deltas[4]);
+        }
+
+        private static void ApplyTempoNudgeButton(Button? button, int bpm, int delta)
+        {
+            if (button == null)
+                return;
+            button.Text = TempoControlLogic.FormatButtonLabel(bpm, delta);
+            button.CommandParameter = delta.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// Places the strip so its top edge sits just below the ♩=BPM marking (small gap).
+        /// </summary>
+        private void SyncTempoControlRowPosition()
+        {
+            if (TempoControlRow == null)
+                return;
+
+            double stroke = StaffBorder?.StrokeThickness ?? 0;
+            const double gap = 4;
+            double top;
+            RectF? bounds = _staffDrawable?.LastMusicBpmMarkingBounds;
+            if (bounds is RectF r)
+                top = stroke + r.Y + r.Height + gap;
+            else
+                top = stroke + 40;
+
+            if (top < 0)
+                top = 0;
+
+            TempoControlRow.VerticalOptions = LayoutOptions.Start;
+            TempoControlRow.HorizontalOptions = LayoutOptions.Fill;
+            TempoControlRow.Margin = new Thickness(8, top, 8, 0);
+        }
+
+        private void ScheduleSyncTempoMarkingHitTarget()
+        {
+            // Bounds are written during Draw, which runs after Invalidate — sync next frame(s).
+            Dispatcher.Dispatch(SyncTempoMarkingHitTarget);
+            Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(50), SyncTempoMarkingHitTarget);
+            ScheduleSyncTimeSignatureHitTarget();
+        }
+
+        private void SyncTempoMarkingHitTarget()
+        {
+            if (TempoMarkingHitTarget == null || StaffGraphicsView == null)
+                return;
+
+            if (_session == null || PlayModePickerOptions.IsTunerMode(_session))
+            {
+                TempoMarkingHitTarget.IsVisible = false;
+                return;
+            }
+
+            // Prefer drawable bounds; if missing, still place a tappable fallback near the header.
+            RectF? bounds = _staffDrawable?.LastMusicBpmMarkingBounds;
+            double stroke = StaffBorder?.StrokeThickness ?? 0;
+            const double minSize = 48;
+            const double pad = 20;
+
+            double x;
+            double y;
+            double w;
+            double h;
+            string source;
+            if (bounds is RectF r)
+            {
+                x = stroke + r.X - pad;
+                y = stroke + r.Y - pad;
+                w = Math.Max(minSize, r.Width + pad * 2);
+                h = Math.Max(minSize, r.Height + pad * 2);
+                source = "drawable-bounds";
+            }
+            else
+            {
+                x = stroke + 100;
+                y = stroke + 2;
+                w = 96;
+                h = minSize;
+                source = "fallback-no-drawable-bounds";
+            }
+
+            if (x < 0) x = 0;
+            if (y < 0) y = 0;
+
+            TempoMarkingHitTarget.Margin = new Thickness(x, y, 0, 0);
+            TempoMarkingHitTarget.WidthRequest = w;
+            TempoMarkingHitTarget.HeightRequest = h;
+            TempoMarkingHitTarget.MinimumWidthRequest = minSize;
+            TempoMarkingHitTarget.MinimumHeightRequest = minSize;
+            TempoMarkingHitTarget.InputTransparent = false;
+            TempoMarkingHitTarget.IsEnabled = true;
+            TempoMarkingHitTarget.IsVisible = true;
+            ApplyTempoHitTargetDiagnosticsChrome();
+
+            // Keep the strip tucked under the marking whenever hit-target bounds refresh.
+            if (_isTempoControlVisible)
+                SyncTempoControlRowPosition();
+
+            LogTempoTap(
+                "SYNC",
+                $"source={source} margin={x:F0},{y:F0} size={w:F0}x{h:F0} " +
+                $"visible={TempoMarkingHitTarget.IsVisible} enabled={TempoMarkingHitTarget.IsEnabled} " +
+                $"inputTransparent={TempoMarkingHitTarget.InputTransparent} z={TempoMarkingHitTarget.ZIndex} " +
+                $"drawableBounds={(bounds is RectF b ? $"{b.X:F0},{b.Y:F0},{b.Width:F0}x{b.Height:F0}" : "null")}");
+        }
+
+        private void ApplyTempoHitTargetDiagnosticsChrome()
+        {
+            if (TempoMarkingHitTarget == null)
+                return;
+
+            if (TempoHitTargetDiagnosticsVisible)
+            {
+                TempoMarkingHitTarget.BackgroundColor = Color.FromRgba(255, 136, 0, 0x99);
+                TempoMarkingHitTarget.BorderColor = Colors.Red;
+                TempoMarkingHitTarget.BorderWidth = 2;
+                TempoMarkingHitTarget.Text = "♩";
+                TempoMarkingHitTarget.TextColor = Colors.Black;
+                TempoMarkingHitTarget.FontSize = 18;
+            }
+            else
+            {
+                TempoMarkingHitTarget.BackgroundColor = Colors.Transparent;
+                TempoMarkingHitTarget.BorderColor = Colors.Transparent;
+                TempoMarkingHitTarget.BorderWidth = 0;
+                TempoMarkingHitTarget.Text = string.Empty;
+            }
+        }
+
+        private string BuildTempoHitTargetStateDetail()
+        {
+            if (TempoMarkingHitTarget == null)
+                return "hitTarget=null";
+            return $"visible={TempoMarkingHitTarget.IsVisible} enabled={TempoMarkingHitTarget.IsEnabled} " +
+                   $"inputTransparent={TempoMarkingHitTarget.InputTransparent} " +
+                   $"w={TempoMarkingHitTarget.WidthRequest:F0} h={TempoMarkingHitTarget.HeightRequest:F0} " +
+                   $"margin={TempoMarkingHitTarget.Margin.Left:F0},{TempoMarkingHitTarget.Margin.Top:F0} " +
+                   $"z={TempoMarkingHitTarget.ZIndex} tempo={_session?.Tempo}";
+        }
+
+        private static void LogTempoTap(string stage, string detail)
+        {
+            // Release-safe Android logcat + Debug output (Utils.Log is DEBUG-conditional only).
+            FirstNoteAndroidReleaseLog.WriteAlways($"TEMPO TAP {stage}", detail);
+        }
+
         private void OnMakeItEasyClicked(object? sender, EventArgs e)
         {
             if (_session == null)
@@ -3129,7 +3805,11 @@ namespace musicmate.Pages
                 return null;
 
             var ts = TimeSignature.FromDisplayString(_session.GetDisplayTimeSignature());
-            return SavedTuneStore.FromGeneratedNotes(title, notes, ts, _session.Key);
+            // Capture the displayed notation identity (written key + scale/mode), not a
+            // pitch-inferred signature — scale walks with minor-family roots depend on Scale.
+            var (notationKey, notationScale) = _session.GetNotationKeyAndScale();
+            return SavedTuneStore.FromGeneratedNotes(
+                title, notes, ts, notationKey, notationScale, _session.InstrumentKey);
         }
 
         private List<GeneratedNote> CollectDisplayedGeneratedNotes()
@@ -3572,6 +4252,7 @@ namespace musicmate.Pages
             // A deferred settle refresh rebuilds/redraws once Width is stable (fixes first-visit haywire).
             _allowStaffLayoutSettle = true;
             ScheduleStaffLayoutSettleRefresh();
+            ScheduleSyncTempoMarkingHitTarget();
 
             if (resumeListening
                 && !MusicListeningVisibility.ShouldDeferResumeWhileTunerVisible(
@@ -4604,7 +5285,11 @@ namespace musicmate.Pages
                         if (!_isPageVisible || PlayModePickerOptions.IsTunerMode(_session))
                             throw new OperationCanceledException();
                         return Task.CompletedTask;
-                    });
+                    },
+                    getTempoBpm: () => Math.Clamp(
+                        _session.Tempo,
+                        NoteSessionService.MinTempo,
+                        NoteSessionService.MaxTempo));
 
                 DebugLog.WriteLine("[CountIn] loop ended");
 
@@ -5582,9 +6267,9 @@ namespace musicmate.Pages
         }
         /// <summary>
         /// Saves session statistics and, for child-Practice sessions, a SessionResult.
-        /// Returns the new child level if a level-up occurred, otherwise null.
+        /// Returns the save outcome (including new child level when a level-up occurred).
         /// </summary>        
-        private async Task<int?> SaveSessionStatAsync()
+        private async Task<PracticeSessionPersistence.SaveOutcome> SaveSessionStatAsync()
         {
             var outcome = await PracticeSessionPersistence.SaveSessionStatAsync(
                 _session,
@@ -5601,7 +6286,7 @@ namespace musicmate.Pages
                 UpdateConcertKeyLabel();
                 await RefreshDisplayForLevelChangeAsync();
             }
-            return outcome.NewChildLevel;
+            return outcome;
         }
         private async void Session_PropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
@@ -5722,8 +6407,25 @@ namespace musicmate.Pages
                 || e.PropertyName == nameof(NoteSessionService.MusicBpm)
                 || e.PropertyName == nameof(NoteSessionService.PlaybackBpm))
             {
+                RefreshTempoControlDisplay();
                 _staffDrawable?.InvalidateLayoutCache();
-                MainThread.BeginInvokeOnMainThread(() => StaffGraphicsView?.Invalidate());
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    StaffGraphicsView?.Invalidate();
+                    ScheduleSyncTempoMarkingHitTarget();
+                });
+            }
+
+            if (e.PropertyName == nameof(NoteSessionService.MeterTimeSignature))
+            {
+                RefreshTimeSignatureControlDisplay();
+                _staffDrawable?.InvalidateLayoutCache();
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    StaffGraphicsView?.Invalidate();
+                    ScheduleSyncTimeSignatureHitTarget();
+                    ScheduleSyncTempoMarkingHitTarget();
+                });
             }
 
             if (e.PropertyName == nameof(NoteSessionService.ChildLevel))
@@ -6832,6 +7534,28 @@ namespace musicmate.Pages
             bool leavingTuner = _tunerUiActive && !isTuner;
             _tunerUiActive = isTuner;
 
+            if (isTuner && _isTempoControlVisible)
+            {
+                _isTempoControlVisible = false;
+                ApplyTempoControlRowVisibility(false);
+            }
+
+            if (isTuner && _isTimeSignatureControlVisible)
+            {
+                _isTimeSignatureControlVisible = false;
+                ApplyTimeSignatureControlRowVisibility(false);
+            }
+
+            if (TempoMarkingHitTarget != null && isTuner)
+                TempoMarkingHitTarget.IsVisible = false;
+            else if (!isTuner)
+                ScheduleSyncTempoMarkingHitTarget();
+
+            if (TimeSignatureHitTarget != null && isTuner)
+                TimeSignatureHitTarget.IsVisible = false;
+            else if (!isTuner)
+                ScheduleSyncTimeSignatureHitTarget();
+
             if (StaffBorder != null)
             {
                 StaffBorder.IsVisible = false;
@@ -6842,6 +7566,8 @@ namespace musicmate.Pages
                 TunerGrid.IsVisible = isTuner;
 
             OnPropertyChanged(nameof(IsChildLevelSliderVisible));
+            OnPropertyChanged(nameof(IsTempoControlVisible));
+            OnPropertyChanged(nameof(IsTimeSignatureControlVisible));
             OnPropertyChanged(nameof(IsBottomPickersVisible));
             OnPropertyChanged(nameof(IsBottomButtonRowVisible));
             RefreshNoteAttemptsDebugButtonVisibility();

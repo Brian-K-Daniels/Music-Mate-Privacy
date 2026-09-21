@@ -77,6 +77,39 @@ public class BalancedKeySelectionTests
     }
 
     [Fact]
+    public void L17_Major_IncludesNaturalC_NotOnlyGVersusF()
+    {
+        // L11–20 Major pool is C (natural), G (1♯), F (1♭). Naturals must compete by
+        // weight so practice is not stuck alternating G Major / F Major.
+        const int level = 17;
+        int cCount = 0;
+        int gCount = 0;
+        int fCount = 0;
+
+        for (int seed = 0; seed < 300; seed++)
+        {
+            string key = KeyDifficultyRules.PickBalancedKeyForSignature("Major", level, new Random(seed));
+            Assert.True(KeyDifficultyRules.IsKeyAllowedAtLevel(key, "Major", level));
+            Assert.True(KeyDifficultyRules.GetKeySignatureDifficulty(key, "Major") <= 1);
+            switch (key)
+            {
+                case "C": cCount++; break;
+                case "G": gCount++; break;
+                case "F": fCount++; break;
+                default:
+                    Assert.Fail($"Unexpected L17 Major key '{key}'");
+                    break;
+            }
+        }
+
+        Assert.True(cCount > 80, $"Expected C Major often (weight 60), got {cCount}/300");
+        Assert.True(gCount > 20, $"Expected some G Major, got {gCount}/300");
+        Assert.True(fCount > 20, $"Expected some F Major, got {fCount}/300");
+        Assert.True(cCount > gCount, $"C should outnumber G (got C={cCount}, G={gCount})");
+        Assert.True(cCount > fCount, $"C should outnumber F (got C={cCount}, F={fCount})");
+    }
+
+    [Fact]
     public void L18_NaturalMinor_UsesBothFlatAndSharpBuckets()
     {
         bool sawFlat = false;

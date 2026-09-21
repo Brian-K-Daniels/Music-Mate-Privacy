@@ -167,8 +167,10 @@ namespace musicmate.Services
                 .ToHashSet(StringComparer.Ordinal);
 
         /// <summary>
-        /// Picks a key from the level-permitted list only, with 50% flat vs sharp balance
-        /// applied inside that list (never picks first and downgrades afterward).
+        /// Picks a key from the level-permitted list only.
+        /// Natural keys (e.g. C Major) compete by frequency weight against accidental keys;
+        /// when an accidental key is chosen, sharp vs flat is balanced ~50/50 inside that list
+        /// (never picks first and downgrades afterward).
         /// </summary>
         public static string PickBalancedKeyForSignature(string scale, int level, Random? rng = null)
         {
@@ -178,7 +180,7 @@ namespace musicmate.Services
             // 1) Permitted keys for this level + scale — only source for selection.
             var permitted = GetWeightedKeysForScale(level, scale);
 
-            // 2) Sharp/flat balance only within the permitted list.
+            // 2) Partition within the permitted list.
             var flatOptions = new List<WeightedKeyOption>();
             var sharpOptions = new List<WeightedKeyOption>();
             var naturalOptions = new List<WeightedKeyOption>();
@@ -194,25 +196,63 @@ namespace musicmate.Services
                     naturalOptions.Add(option);
             }
 
-            bool wantFlat = rng.Next(2) == 0;
-            var primary = wantFlat ? flatOptions : sharpOptions;
-            var fallback = wantFlat ? sharpOptions : flatOptions;
+            int naturalWeight = SumWeights(naturalOptions);
+            int accidentalWeight = SumWeights(flatOptions) + SumWeights(sharpOptions);
 
             string picked;
-            if (primary.Count > 0)
-                picked = WeightedChoice.Pick(primary, o => o.Weight, rng).Key;
-            else if (fallback.Count > 0)
-                picked = WeightedChoice.Pick(fallback, o => o.Weight, rng).Key;
-            else if (naturalOptions.Count > 0)
+            // Naturals must compete (C Major weight 60). Old logic only used naturals when
+            // both sharp and flat buckets were empty, so L11–20 Major starved C and
+            // alternated only G vs F — users saw endless G Major.
+            if (naturalWeight > 0 && accidentalWeight > 0)
+            {
+                if (rng.Next(naturalWeight + accidentalWeight) < naturalWeight)
+                    picked = WeightedChoice.Pick(naturalOptions, o => o.Weight, rng).Key;
+                else
+                    picked = PickSharpOrFlatBalanced(flatOptions, sharpOptions, rng);
+            }
+            else if (accidentalWeight > 0)
+            {
+                picked = PickSharpOrFlatBalanced(flatOptions, sharpOptions, rng);
+            }
+            else if (naturalWeight > 0)
+            {
                 picked = WeightedChoice.Pick(naturalOptions, o => o.Weight, rng).Key;
+            }
             else
+            {
                 picked = GetFallbackKeyOption(level, scale).Key;
+            }
 
             // Safety: never return a key outside the permitted list.
             if (!IsKeyAllowedAtLevel(picked, scale, level))
                 return GetFallbackKeyOption(level, scale).Key;
 
             return picked;
+        }
+
+        private static string PickSharpOrFlatBalanced(
+            List<WeightedKeyOption> flatOptions,
+            List<WeightedKeyOption> sharpOptions,
+            Random rng)
+        {
+            bool wantFlat = rng.Next(2) == 0;
+            var primary = wantFlat ? flatOptions : sharpOptions;
+            var fallback = wantFlat ? sharpOptions : flatOptions;
+
+            if (primary.Count > 0)
+                return WeightedChoice.Pick(primary, o => o.Weight, rng).Key;
+            if (fallback.Count > 0)
+                return WeightedChoice.Pick(fallback, o => o.Weight, rng).Key;
+
+            return "C";
+        }
+
+        private static int SumWeights(List<WeightedKeyOption> options)
+        {
+            int sum = 0;
+            foreach (var option in options)
+                sum += option.Weight;
+            return sum;
         }
 
         public static string PickWeightedRandomKey(int level, string scale, Random? rng = null)
