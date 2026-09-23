@@ -2687,6 +2687,71 @@ namespace musicmate.Services
             _firstSoundTimingDiagLogged = false;
 #endif
         }
+
+        /// <summary>
+        /// Clears scoring/timing state for a fresh Go on the same staff notes.
+        /// Does not clear or replace <see cref="NotesToDraw"/>.
+        /// </summary>
+        public void ResetEvaluationKeepingNotes()
+        {
+            SessionCompleted = false;
+            int fbVmBefore = FeedbackViewModels.Count;
+            int correctBefore = CorrectNoteIndices.Count;
+            int wrongFbBefore = NoteFeedbacks.Count;
+            FeedbackViewModels.Clear();
+            CorrectNoteIndices.Clear();
+            NoteFeedbacks.Clear();
+            var resetCtx = BuildNoteStateDiagContext(0);
+            NoteStateChangeDiagnostics.GetCaller(out var method, out var file, out var line);
+            NoteStateChangeDiagnostics.LogCollectionMutation(
+                method, file, line, "FeedbackViewModels", "Clear", fbVmBefore, 0, resetCtx,
+                "Reset evaluation keep notes");
+            NoteStateChangeDiagnostics.LogCollectionMutation(
+                method, file, line, "CorrectNoteIndices", "Clear", correctBefore, 0, resetCtx,
+                "Reset evaluation keep notes");
+            NoteStateChangeDiagnostics.LogCollectionMutation(
+                method, file, line, "NoteFeedbacks", "Clear", wrongFbBefore, 0, resetCtx,
+                "Reset evaluation keep notes");
+            AssignCurrentNoteIndex(0, "Reset evaluation keep notes");
+            IgnoreAudioUntilUtc = DateTime.MinValue;
+            _lockedPitchClassAfterAdvance = null;
+            ClearNoteOnWait();
+            _rhythmGateUntilMs = 0;
+            _rhythmGateStartMs = 0;
+            _rhythmGateAcceptedIdx = -1;
+            _rhythmGatePriorDurationMs = 0;
+            _lastRestViolationLogMs = double.NegativeInfinity;
+            _pitchMedianHistory.Clear();
+            TimingDiagnostics.ResetSession();
+            _onsetData.Clear();
+            _timingAccuracyPercent = null;
+            _detectedBpm = null;
+            _lastCorrectNoteUtc = null;
+            _lastWrongTimePerIndex.Clear();
+            _lastRandomWrongUtc.Clear();
+            _sessionNoteStats.Clear();
+            ClearSessionAttemptOutcomes();
+            _sessionStreaks.Clear();
+            _tunerPrevWrittenMidi = null;
+            SessionElapsedMsOverride = null;
+            _sessionStopwatch.Reset();
+            ResetMusicalTimelineState();
+            PlaybackArmUtc = null;
+            CountInStartUtc = null;
+            CountInEndUtc = null;
+            FirstPitchDetectedUtc = null;
+#if DEBUG
+            _firstSoundTimingDiagLogged = false;
+#endif
+            if (NotesToDraw.Count > 0)
+                ConfigureRhythmStartGates();
+
+            // Go keeps the staff notes but scoring indexes FeedbackViewModels.
+            // Leaving that list empty makes every heard pitch return without a staff update.
+            for (int i = 0; i < NotesToDraw.Count; i++)
+                FeedbackViewModels.Add(new FeedbackItem(i, 0, 0, false));
+        }
+
         /// <summary>
         /// Starts the session clock. Call when the microphone is live (after tune setup).
         /// This restart is the authoritative conductor start (t = 0) for onset timing.
@@ -2696,6 +2761,22 @@ namespace musicmate.Services
             _sessionStopwatch.Restart();
             ResetMusicalTimelineState();
             _lastMusicalInputMs = GetRawSessionElapsedMs();
+        }
+
+        /// <summary>
+        /// Stops the conductor timeline so a repeated session cannot inherit the
+        /// previous clock, count-in marks, or first-pitch time.
+        /// </summary>
+        public void StopListeningClock()
+        {
+            if (_sessionStopwatch.IsRunning)
+                _sessionStopwatch.Stop();
+            _sessionStopwatch.Reset();
+            ResetMusicalTimelineState();
+            PlaybackArmUtc = null;
+            CountInStartUtc = null;
+            CountInEndUtc = null;
+            FirstPitchDetectedUtc = null;
         }
 
         /// <summary>
@@ -2827,7 +2908,11 @@ namespace musicmate.Services
 
         private void EnterMusicalPause(string reason)
         {
-            if (_musicalTimelinePaused || !IsListeningClockRunning || SessionCompleted)
+            // The clock starts on the first correct note. Silence before that
+            // must not freeze the timeline or look like the detector was paused.
+            if (!IsListeningClockRunning)
+                return;
+            if (_musicalTimelinePaused || SessionCompleted)
                 return;
             if (Tune == "Tuner")
                 return;
@@ -2835,6 +2920,8 @@ namespace musicmate.Services
             _pausedElapsedMs = GetRawSessionElapsedMs();
             _musicalTimelinePaused = true;
             _pauseNoteIndex = CurrentNoteIndex;
+            musicmate.Diagnostics.ListeningStartupLog.Write(
+                $"MUSIC AUDIO: entered musical pause reason={reason}");
             LogPauseResume(
                 "MusicalPauseEntered",
                 $"reason={reason} freezeIdx={_pauseNoteIndex} freezeMs={_pausedElapsedMs:F0}",
@@ -2847,11 +2934,17 @@ namespace musicmate.Services
         /// </summary>
         private void RebaseConductorOriginToOnset(int noteIndex, double actualMs)
         {
+            bool wasPaused = _musicalTimelinePaused;
             double beat = GetConductorExpectedBeat(noteIndex);
             double msPerBeat = ConductorOnsetTiming.MsPerBeat(GetConductorTimingBpm());
             _conductorOriginMs = actualMs - beat * msPerBeat;
             _musicalTimelinePaused = false;
             _rhythmGateUntilMs = 0;
+            if (wasPaused)
+            {
+                musicmate.Diagnostics.ListeningStartupLog.Write(
+                    "MUSIC AUDIO: left musical pause reason=timeline-rebased");
+            }
         }
 
         /// <summary>
@@ -3711,10 +3804,7 @@ namespace musicmate.Services
 
         private float _lastDetectionRms;
 
-        /// <summary>
-        /// Temporary Release Android logcat line for first-note accept/reject diagnosis.
-        /// No-op after the first note is accepted, or when not on note index 0.
-        /// </summary>
+        /// <summary>Kept so older call sites stay valid. Listening no longer logs each pitch.</summary>
         public void LogFirstNoteAndroidReleaseDiagnostic(
             string stage,
             double freq,
@@ -3728,84 +3818,6 @@ namespace musicmate.Services
             string? countInOrConductorState = null,
             string? extra = null)
         {
-            if (CurrentNoteIndex != 0 || !FirstNoteAndroidReleaseLog.StillWaitingForFirstAccept)
-                return;
-
-            string? expectedWritten = null;
-            int? expectedMidi = null;
-            double? expectedHz = null;
-            string? heard = null;
-            int? cents = evaluateResult?.cents;
-
-            if (NotesToDraw.Count > 0)
-            {
-                var target = NotesToDraw[0];
-                expectedWritten = ResolveWrittenEvaluationName(target);
-                expectedMidi = ResolveWrittenEvaluationMidi(target);
-                expectedHz = MidiToFreq(expectedMidi.Value + GetInstrumentTransposeOffset());
-            }
-
-            if (freq > 0)
-            {
-                var detectedMidi = (int)Math.Round(69 + 12 * Math.Log(freq / 440.0, 2));
-                var detMidiWritten = detectedMidi - GetInstrumentTransposeOffset();
-                heard = MidiToNoteName(detMidiWritten, KeyUsesFlats(Key));
-
-                if (!cents.HasValue)
-                {
-                    var nearestFreq = MidiToFreq(detectedMidi);
-                    cents = (int)Math.Round(1200 * Math.Log(freq / nearestFreq, 2));
-                }
-
-                if (!pitchPassed.HasValue && evaluateResult.HasValue)
-                    pitchPassed = evaluateResult.Value.correct;
-                else if (!pitchPassed.HasValue && expectedMidi.HasValue)
-                {
-                    var (pcMatch, withinTol, evalCents) = EvaluatePitchMatch(freq);
-                    pitchPassed = pcMatch && withinTol;
-                    cents = evalCents;
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(countInOrConductorState))
-            {
-                var cueParts = new List<string>(3);
-                if (IsListeningClockRunning)
-                    cueParts.Add("clockRunning");
-                else
-                    cueParts.Add("clockNotArmed");
-                if (IsConductorOnsetGateEnabled())
-                    cueParts.Add("conductorOn");
-                if (IsAwaitingNoteOn)
-                    cueParts.Add(GetNoteOnGateState());
-                if (ShouldIgnoreAudio(DateTime.UtcNow))
-                    cueParts.Add(GetAudioCooldownState());
-                countInOrConductorState = string.Join('+', cueParts);
-            }
-
-            // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
-            FirstNoteAndroidReleaseLog.Log(
-                stage: stage,
-                isFirstNote: true,
-                expectedWritten: expectedWritten,
-                expectedMidi: expectedMidi,
-                heardNote: heard,
-                heardHz: freq > 0 ? freq : null,
-                expectedHz: expectedHz,
-                pitchErrorCents: cents,
-                rms: _lastDetectionRms > 0 ? _lastDetectionRms : null,
-                confidence: PitchDetectionService.LastDetectionClarity > 0
-                    ? PitchDetectionService.LastDetectionClarity
-                    : null,
-                timingDeltaMs: timingDeltaMs,
-                earlyLate: earlyLate,
-                pitchPassed: pitchPassed,
-                timingPassed: timingPassed,
-                accepted: accepted,
-                rejectReason: rejectReason,
-                tempoBpm: Tempo,
-                countInOrConductorState: countInOrConductorState,
-                extra: extra);
         }
 
         public void LogNoteRejectedIfPitchIdentified(

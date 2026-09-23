@@ -3,6 +3,7 @@ using Android.Content.PM;
 using Android.OS;
 using Android.Views;
 using musicmate.Diagnostics;
+using musicmate.Services;
 
 namespace musicmate
 {
@@ -31,6 +32,14 @@ namespace musicmate
             StartupTiming.Mark("MainActivity.OnCreate:end");
         }
 
+        public override bool DispatchTouchEvent(MotionEvent? e)
+        {
+            // Any finger-down counts as user activity for inactivity idle (does not steal the gesture).
+            if (e?.ActionMasked == MotionEventActions.Down)
+                UserInteractionProbe.NotifyInteraction();
+            return base.DispatchTouchEvent(e);
+        }
+
         protected override void OnStart()
         {
             StartupTiming.Mark("MainActivity.OnStart");
@@ -43,12 +52,18 @@ namespace musicmate
             StartupTiming.Mark("MainActivity.OnResume");
             AppLifecycleLog.WriteAlways("MainActivity", "OnResume");
             base.OnResume();
+            // Screen-on / return to foreground — Music page may soft-resume listening.
+            AppCueAudioGate.NotifyAppResumed();
         }
 
         protected override void OnPause()
         {
             AppLifecycleLog.WriteAlways("MainActivity", "OnPause",
                 $"IsFinishing={IsFinishing}");
+            // Screen-off and backgrounding hit OnPause before (or instead of) full navigation hide.
+            // A headset or USB microphone also pauses the activity for a moment. The gate waits
+            // briefly so that plug-in does not stop Count-In or Play; a pause that stays paused still does.
+            AppCueAudioGate.NotifyAppSuspended();
             base.OnPause();
         }
 
@@ -56,6 +71,7 @@ namespace musicmate
         {
             AppLifecycleLog.WriteAlways("MainActivity", "OnStop",
                 $"IsFinishing={IsFinishing}");
+            AppCueAudioGate.NotifyAppSuspended();
             base.OnStop();
         }
 

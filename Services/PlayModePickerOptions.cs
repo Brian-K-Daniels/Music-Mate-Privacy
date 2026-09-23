@@ -22,19 +22,18 @@ namespace musicmate.Services
         public const string RandomMelodic = NoteSessionService.ScaleSelectionRandom;
         public const string Tuner = "Tuner";
 
-        /// <summary>True when the session is in Tuner mode (hamburger or Other → Tuner).</summary>
+        /// <summary>True when the session is in Tuner mode (hamburger menu).</summary>
         public static bool IsTunerMode(NoteSessionService? session)
             => session?.Tune == Tuner;
 
         public static bool IsTunerMode(string? tune)
             => string.Equals(tune, Tuner, StringComparison.Ordinal);
 
-        /// <summary>Other picker: Assortment by Level, Random, Tuner.</summary>
+        /// <summary>Other picker: Assortment by Level, Random. Tuner is hamburger-only.</summary>
         public static readonly string[] OtherOptions =
         [
             NoteSessionService.ScaleSelectionByLevel,
-            RandomMelodic,
-            Tuner
+            RandomMelodic
         ];
 
         /// <summary>Tunes picker: rhythm-note exercise first, then library tunes, then saved tunes.</summary>
@@ -85,9 +84,6 @@ namespace musicmate.Services
         {
             if (layoutTestTuneEnabled || IsRhythmNoteTuneSelection(selectedTunePreference))
                 return false;
-
-            if (tune == Tuner)
-                return true;
 
             // Explicit Scales / Tunes / Arpeggios picks are never shown on the Other row.
             if (NoteSessionService.IsNamedScaleOption(selectedTunePreference))
@@ -160,9 +156,6 @@ namespace musicmate.Services
             ScaleSelectionMode scaleSelectionMode = ScaleSelectionMode.ByLevel,
             string? selectedTunePreference = null)
         {
-            if (tune == Tuner)
-                return Tuner;
-
             // Explicit Other → Random persists SelectedTune as "Random".
             // Assortment by Level composition may set IsRandomMode without that preference —
             // keep the picker on Assortment by Level in that case.
@@ -182,8 +175,8 @@ namespace musicmate.Services
         /// <summary>
         /// What To Play should display from the user's saved picker choice, not from
         /// composition-assigned <see cref="NoteSessionService.Tune"/> / arpeggio / tune title.
-        /// Tuner is an exception: main menu and Other picker both set <see cref="NoteSessionService.Tune"/>,
-        /// so the Other row must follow that session state.
+        /// Tuner is a temporary Music-page display from the hamburger menu. What To Play
+        /// keeps showing the saved music choice underneath it.
         /// </summary>
         public static (PlayModePickerCategory Category, string Selection) ResolveDisplayedPicker(
             NoteSessionService session,
@@ -191,7 +184,18 @@ namespace musicmate.Services
             string? selectedTunePreference = null)
         {
             if (session.Tune == Tuner)
-                return (PlayModePickerCategory.Other, Tuner);
+            {
+                var pref = NormalizeRhythmNoteTunePreference(
+                    selectedTunePreference ?? Preferences.Default.Get<string?>("SelectedTune", null));
+                if (string.Equals(pref, Tuner, StringComparison.Ordinal))
+                    pref = NoteSessionService.ScaleSelectionByLevel;
+
+                return ResolveDisplayedPicker(
+                    layoutTestTuneEnabled,
+                    pref,
+                    session.ScaleSelectionMode,
+                    session.SelectedScale);
+            }
 
             return ResolveDisplayedPicker(
                 layoutTestTuneEnabled,
@@ -214,7 +218,7 @@ namespace musicmate.Services
                 return (PlayModePickerCategory.Tunes, HalfThroughSixteenthNotes);
 
             if (string.Equals(selectedTunePreference, Tuner, StringComparison.Ordinal))
-                return (PlayModePickerCategory.Other, Tuner);
+                selectedTunePreference = NoteSessionService.ScaleSelectionByLevel;
 
             if (string.Equals(selectedTunePreference, RandomMelodic, StringComparison.Ordinal))
                 return (PlayModePickerCategory.Other, RandomMelodic);
@@ -506,9 +510,8 @@ namespace musicmate.Services
 
             if (selected == Tuner)
             {
-                // Shared transition for hamburger Tuner and WhatToPlay → Other → Tuner.
-                // Overrides prior Assortment by Level / random play-mode selection; composition and
-                // note generation must not run while Tune == Tuner.
+                // Hamburger Tuner. Do not replace the saved What To Play choice — Back
+                // restores that music on the Music page.
                 session.IsRandomMode = false;
                 session.RepeatSameTune = false;
                 bool enteringTuner = session.Tune != Tuner;
@@ -519,7 +522,6 @@ namespace musicmate.Services
                     session.NotesToDraw.Clear();
                     session.FeedbackViewModels.Clear();
                 }
-                persistSelectedTune(Tuner);
                 return;
             }
 
@@ -549,6 +551,26 @@ namespace musicmate.Services
                 session.Tune = "Selected Scale";
             persistSelectedTune(HalfThroughSixteenthNotes);
         }
+
+        /// <summary>
+        /// True when MusicPage is being constructed for hamburger Tuner.
+        /// Session tune is the source of truth: the load mark can already have been
+        /// consumed by the time the page constructor runs.
+        /// </summary>
+        public static bool ShouldPreserveTunerOnMusicPageConstruction(string? tune)
+            => IsTunerMode(tune);
+
+        /// <summary>
+        /// The first Tuner visit creates MusicPage after Tuner is already selected.
+        /// That constructor must not restore the saved What to Play choice over Tuner.
+        /// </summary>
+        private static int _tunerMusicLoadPending;
+
+        public static void MarkTunerSelectedBeforeMusicPageLoad()
+            => Interlocked.Increment(ref _tunerMusicLoadPending);
+
+        public static bool ConsumeTunerSelectedBeforeMusicPageLoad()
+            => Interlocked.Exchange(ref _tunerMusicLoadPending, 0) > 0;
 
         /// <summary>
         /// Restores Tune / scale / random / practice-tune state from the persisted
@@ -586,7 +608,8 @@ namespace musicmate.Services
 
             if (string.Equals(saved, Tuner, StringComparison.Ordinal))
             {
-                ApplyOtherSelection(session, Tuner, setSelectedTune);
+                // Tuner used to be a What To Play choice. It is hamburger-only now.
+                ApplyOtherSelection(session, NoteSessionService.ScaleSelectionByLevel, setSelectedTune);
                 return;
             }
 

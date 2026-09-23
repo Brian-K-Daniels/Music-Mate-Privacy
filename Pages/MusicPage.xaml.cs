@@ -34,6 +34,16 @@ namespace musicmate.Pages
         private CancellationTokenSource? _playCts;
         private bool _isPlaying = false;
         private bool _isRunning = false;
+        /// <summary>Incremented for each Go/AutoStart. Late failures only roll back their own generation.</summary>
+        private int _listeningStartupGeneration;
+        /// <summary>True from Go until a buffer confirms listening, or the startup is aborted.</summary>
+        private bool _listeningStartupActive;
+        /// <summary>Stop button and "Listening…" have been shown for the confirmed capture.</summary>
+        private bool _listeningChromeShown;
+        /// <summary>When false, the current note is not drawn as the playing (yellow) target.</summary>
+        private bool _showCurrentNoteHighlight = true;
+        private int _loggedFirstBuffer;
+        private CancellationTokenSource? _bufferWatchdogCts;
         private bool _isBelowThreshold = true;
         private bool _dismissedResultBannerForFirstSound;
         private bool _isProgrammaticColorConfirm = false;
@@ -43,11 +53,19 @@ namespace musicmate.Pages
         /// so return can resume Count-In without regenerating notes or treating hide as Stop.
         /// </summary>
         private bool _listeningPausedForPageHide;
+        private string? _listeningPausedReason;
+        private IDispatcherTimer? _musicCaptureHealthTimer;
+        private int _musicCaptureHealthFailures;
+        private int _captureRouteLost;
+        private int _captureRouteReopen;
         /// <summary>
         /// Sticky until Go: user pressed Stop (or equivalent). Prevents AutoStart / Count-In
         /// from restarting on return after an intentional stop.
         /// </summary>
         private bool _userStoppedListening;
+        /// <summary>Session-complete owns the repeat handoff, so MaxBlocks cannot start a second listener.</summary>
+        private bool _repeatHandoff;
+        private readonly RepeatSessionStartup _repeatStartup = new();
         /// <summary>Tracks whether the Tuner UI surface is currently shown on this page.</summary>
         private bool _tunerUiActive;
         /// <summary>
@@ -81,11 +99,12 @@ namespace musicmate.Pages
 
         private bool _practicePickerEventsWired;
 
-        // fields for inactivity tracking
-        private DateTime _lastHeardTime = DateTime.UtcNow;
-#pragma warning disable CS0414
-        private readonly TimeSpan _inactivityTimeout = TimeSpan.FromMinutes(5);
+        // Inactivity idle (battery) — EnterInactivityIdleAsync; constant in InactivityIdleLogic.
+        private DateTime _lastActivityUtc = DateTime.UtcNow;
+        private IDispatcherTimer? _inactivityCheckTimer;
+        private bool _isInactivityIdle;
 
+#pragma warning disable CS0414
         // When true, RegenerateNotesAsync is suppressed so the post-autoplay
         // green feedbacks and session stats remain visible until the next session.
         private bool _freezeStaff = false;
@@ -135,6 +154,10 @@ namespace musicmate.Pages
         private bool _isTunerPitchPlaying;
         private CancellationTokenSource? _tunerPitchCts;
         private int _tunerPitchGeneration;
+        private readonly TunerListeningSession _tunerListening = new();
+        private CancellationTokenSource? _tunerListenCts;
+        private Task? _tunerListenTask;
+        private int _tunerCaptureOwner;
         /// <summary>Source of truth for picker, staff, Play Note pitch, and ◀/▶ enablement.</summary>
         private int _referenceWrittenMidi;
         private IReadOnlyList<TunerReferenceNoteChoice> _referenceNoteChoices =
@@ -150,6 +173,8 @@ namespace musicmate.Pages
         // ── Waiting count-in (Music practice) ─────────────────────────────────
         private WaitingCountInPlayer? _waitingCountInPlayer;
         private CancellationTokenSource? _waitingCountInCts;
+        private readonly object _countInStartGate = new();
+        private readonly CountInSessionGate _countInGate = new();
         private bool _waitingCountInActive;
         private int _waitingCountInGeneration;
         /// <summary>Tracks IgnoreAudio edge for [AudioSuppress] OFF logging.</summary>
@@ -407,25 +432,60 @@ namespace musicmate.Pages
             if (StatusService.Instance.IsTemporaryMessageActive)
                 return;
 
+            string raw = StatusService.Instance.RawStatusMessage ?? "";
+            bool capturing = false;
+            try { capturing = _audio?.IsCapturing == true; } catch { }
+
             if (_session.Tune == "Tuner")
             {
                 StatusService.Instance.StatusMessage = _isTunerPitchPlaying
                     ? "Playing reference tone."
-                    : _isRunning
-                        ? "Listening…"
-                        : "Stopped listening.";
+                    : (_isRunning || capturing)
+                        ? MusicAudioSignalTrace.ListeningMessage
+                        : MusicAudioSignalTrace.StoppedListeningMessage;
                 return;
             }
 
-            var msg = StatusService.Instance.StatusMessage;
-            if (!string.IsNullOrEmpty(msg) && (
-                    msg.StartsWith("Expected:", StringComparison.Ordinal) ||
-                    msg.StartsWith("Playing note", StringComparison.Ordinal) ||
-                    msg.Contains('¢', StringComparison.Ordinal)))
+            // Pitch feedback uses the raw message. The public getter adds leading spaces,
+            // so a StartsWith check on StatusMessage never sees "Expected:" or "Listening…".
+            if (IsLivePitchStatus(raw))
+                return;
+
+            if (string.Equals(raw, MusicAudioSignalTrace.ListeningPausedMessage, StringComparison.Ordinal)
+                && _listeningPausedForPageHide)
+                return;
+
+            bool sessionListening = capturing
+                || (_isRunning && _listeningChromeShown && !_listeningPausedForPageHide);
+            string? corrected = MusicAudioSignalTrace.StatusWhileMusicCaptureActive(raw, sessionListening);
+            if (corrected != null)
+            {
+                StatusService.Instance.StatusMessage = corrected;
+                return;
+            }
+
+            if (string.Equals(raw, MusicAudioSignalTrace.StoppedListeningMessage, StringComparison.Ordinal))
                 return;
 
             StatusService.Instance.StatusMessage = GetCurrentPlayItemName();
         }
+
+        private void ShowCountInStatusPreservingListening()
+        {
+            string raw = StatusService.Instance.RawStatusMessage ?? "";
+            string baseline = MusicAudioSignalTrace.CountInRestoreBaseline(raw);
+            if (!string.Equals(raw, baseline, StringComparison.Ordinal))
+                StatusService.Instance.StatusMessage = baseline;
+            StatusService.Instance.ShowTemporaryMessage(
+                StatusService.CountInStatusMessage,
+                StatusService.CountInStatusDuration);
+        }
+
+        private static bool IsLivePitchStatus(string raw)
+            => raw.StartsWith("Expected:", StringComparison.Ordinal)
+               || raw.StartsWith("Playing note", StringComparison.Ordinal)
+               || string.Equals(raw, MusicAudioSignalTrace.ListeningMessage, StringComparison.Ordinal)
+               || raw.Contains('¢');
         private string _selectedInstrumentShort = "";
         public string SelectedInstrumentShort
         {
@@ -498,7 +558,20 @@ namespace musicmate.Pages
                 _session = ServiceHelper.GetService<NoteSessionService>()!;
                 _displayedTunes = ServiceHelper.GetService<DisplayedTuneHistory>()
                     ?? new DisplayedTuneHistory();
-                PlayModePickerOptions.ApplyPersistedSelection(_session);
+                // First Tuner tap selects Tuner, then creates this page. Restoring the
+                // saved music choice here would show Music instead of Tuner.
+                // The first Tuner visit creates this page after Tune is already Tuner.
+                // GoToAsync can return before this constructor runs and a later consume
+                // used to clear the load mark first. Preserve Tuner from the session
+                // itself so persisted What to Play cannot replace it.
+                bool preserveTuner = PlayModePickerOptions.ShouldPreserveTunerOnMusicPageConstruction(_session.Tune);
+                bool tunerMark = PlayModePickerOptions.ConsumeTunerSelectedBeforeMusicPageLoad();
+                AppLifecycleLog.WriteAlways(
+                    "NAV",
+                    "MusicPage.ctor",
+                    $"tune={_session.Tune} preserveTuner={preserveTuner} mark={tunerMark}");
+                if (!preserveTuner)
+                    PlayModePickerOptions.ApplyPersistedSelection(_session);
                 _sessionDb = ServiceHelper.GetService<SessionDatabase>()!;
                 _sessionResultDb = ServiceHelper.GetService<SessionResultDatabase>()!;
                 _noteAttemptDb = ServiceHelper.GetService<NoteAttemptDatabase>()!;
@@ -509,6 +582,10 @@ namespace musicmate.Pages
                 _waitingCountInPlayer = new WaitingCountInPlayer(countInClicks);
                 AppCueAudioGate.SuspendRequested -= OnAppCueAudioSuspended;
                 AppCueAudioGate.SuspendRequested += OnAppCueAudioSuspended;
+                AppCueAudioGate.ResumeRequested -= OnAppCueAudioResumed;
+                AppCueAudioGate.ResumeRequested += OnAppCueAudioResumed;
+                UserInteractionProbe.InteractionDetected -= OnUserInteractionProbe;
+                UserInteractionProbe.InteractionDetected += OnUserInteractionProbe;
                 BindingContext = _session;
                 StaffBorder.BindingContext = _theme_service;
                 StaffGraphicsView.BindingContext = _theme_service;
@@ -516,17 +593,20 @@ namespace musicmate.Pages
                 {
                     await MainThread.InvokeOnMainThreadAsync(async () =>
                     {
+                        if (_repeatHandoff)
+                            return;
+
                         if (_session.SessionCompleted)
                         {
-                            // Only auto-restart if AutoRepeat is active; otherwise leave the
-                            // final status visible and wait for the user to tap Start.
+                            // Session completion owns this handoff. A second start here
+                            // would open another microphone on top of the repeat.
+                            if (_repeatHandoff)
+                                return;
+
                             if (AutoRepeat)
                             {
                                 DebugLog.WriteLine("[MusicPage] MaxBlocksReached after session completed: full restart (AutoRepeat on).");
-                                await StartListeningAndEvaluatingAsync(
-                                    forceNewNotes: PracticeSessionLifecycle.ShouldForceNewNotesForRepeatMode(
-                                        _session.RepeatSameTune),
-                                    scaleKeyTrigger: "AutoStart");
+                                await BeginRepeatedSessionAsync();
                             }
                             else
                             {
@@ -539,6 +619,11 @@ namespace musicmate.Pages
                             await RestartAudioCaptureAsync();
                         }
                     });
+                };
+                _audio.CaptureRouteLost += () =>
+                {
+                    Volatile.Write(ref _captureRouteLost, 1);
+                    MainThread.BeginInvokeOnMainThread(OnCaptureRouteLost);
                 };
 
                 StatusLabelShell?.BindingContext = StatusService.Instance;
@@ -642,11 +727,22 @@ namespace musicmate.Pages
                 // Session completed event
                 _session.SessionCompletedAsync += async () =>
                 {
+                    bool willRepeat = false;
                     try
                     {
                         // Mid-session staff refreshes are handled by SyncStaffNoteStates; a
                         // SessionCompletedAsync callback means every note was played, so always
                         // run the summary / AutoRepeat restart flow below.
+                        willRepeat = PracticeSessionLifecycle.ShouldAutoRepeat(
+                            AutoRepeat, _session.Tune ?? string.Empty);
+                        if (willRepeat)
+                        {
+                            await MainThread.InvokeOnMainThreadAsync(() =>
+                            {
+                                _repeatHandoff = true;
+                                StopOutgoingListeningForRepeat();
+                            });
+                        }
 
                         await UpdateNoteStatsDatabaseAsync();
 
@@ -672,6 +768,7 @@ namespace musicmate.Pages
                         if (_completionFromPlayback)
                         {
                             _completionFromPlayback = false;
+                            _repeatHandoff = false;
                             _session.SessionCompleted = true;
                             try { _audio.StopCapture(); } catch { }
                             SetButtonStates(false);
@@ -717,19 +814,13 @@ namespace musicmate.Pages
                         }
                         _session.SessionCompleted = true;
 
-                        if (PracticeSessionLifecycle.ShouldAutoRepeat(AutoRepeat, _session.Tune ?? string.Empty))
+                        if (willRepeat)
                         {
                             double repeatDelay = Preferences.Default.Get("RepeatDelaySeconds", 2.0);
                             await Task.Delay(PracticeSessionLifecycle.GetAutoRepeatDelayMs(repeatDelay));
                             _holdResultForChildSession = false;
                             _session.SessionCompleted = false;
-
-                            // Repeat New must force fresh generation at the current child level;
-                            // Repeat Same restores the saved snapshot.
-                            await StartListeningAndEvaluatingAsync(
-                                forceNewNotes: PracticeSessionLifecycle.ShouldForceNewNotesForRepeatMode(
-                                    _session.RepeatSameTune),
-                                scaleKeyTrigger: "AutoStart");
+                            await BeginRepeatedSessionAsync();
                         }
                         else
                         {
@@ -743,6 +834,7 @@ namespace musicmate.Pages
                     }
                     catch (Exception ex)
                     {
+                        _repeatHandoff = false;
                         DebugLog.WriteLine($"Session completion error: {ex}");
                     }
                 };
@@ -821,13 +913,21 @@ namespace musicmate.Pages
                 // Rhythm layout flag and concrete arpeggio still need page-local wiring.
                 var savedTune = PlayModePickerOptions.NormalizeRhythmNoteTunePreference(
                     Preferences.Default.Get<string?>("SelectedTune", null));
-                if (PlayModePickerOptions.IsRhythmNoteTuneSelection(savedTune))
-                    LayoutTestTune.SetEnabled(true);
-                else if (!string.IsNullOrEmpty(savedTune)
-                         && ArpeggioCatalog.TryResolveQuality(savedTune, out var savedArpeggio))
+                if (!PlayModePickerOptions.IsTunerMode(_session))
                 {
-                    _session.ApplyArpeggioQuality(savedArpeggio);
+                    if (PlayModePickerOptions.IsRhythmNoteTuneSelection(savedTune))
+                        LayoutTestTune.SetEnabled(true);
+                    else if (!string.IsNullOrEmpty(savedTune)
+                             && ArpeggioCatalog.TryResolveQuality(savedTune, out var savedArpeggio))
+                    {
+                        _session.ApplyArpeggioQuality(savedArpeggio);
+                    }
                 }
+
+                // Scale/key pickers are not shown on this page. Hide them before the
+                // native picker can echo SelectedIndex and overwrite Tuner with the
+                // saved music choice on the first construction.
+                UpdatePickersContainerVisibility();
 
                 var (displayCategory, displaySelection) = PlayModePickerOptions.ResolveDisplayedPicker(
                     _session, LayoutTestTune.IsEnabled);
@@ -856,8 +956,6 @@ namespace musicmate.Pages
                 InitializePracticePickers(instrumentOptions);
                 UpdateInstrumentPickerSelection();
 
-                // Apply initial pickers-row visibility based on the loaded display mode
-                UpdatePickersContainerVisibility();
                 UpdateKeyPickerSelection();
                 UpdateConcertKeyLabel();
                 UpdateKeyPickerVisibility();
@@ -989,21 +1087,43 @@ namespace musicmate.Pages
 
             if (restartCountIn)
             {
+                if (!_countInGate.TryBegin(
+                        countInEnabled: true,
+                        tuner: false,
+                        noteCount: _session?.NotesToDraw?.Count ?? 0))
+                {
+                    ListeningStartupLog.Write("COUNTIN: resume refused — a count-in is already running");
+                    return;
+                }
+
                 int countInGen = WaitingCountInArming.Arm(ref _waitingCountInGeneration);
                 _waitingCountInActive = true;
-                StatusService.Instance.ShowTemporaryMessage(
-                    StatusService.CountInStatusMessage,
-                    StatusService.CountInStatusDuration);
+                ShowCountInStatusPreservingListening();
                 DebugLog.WriteLine("[CountIn] resume after page visible — fresh Count-In");
-                _ = StartWaitingCountInAsync(countInGen);
+                _ = StartWaitingCountInAsync(countInGen, Volatile.Read(ref _listeningStartupGeneration));
                 return;
             }
 
             if (_audio != null && !_audio.IsCapturing)
             {
                 ResetPitchCapture();
-                if (!_audio.TryStartCapture(OnAudioBlock, out var err))
-                    DebugLog.WriteLine($"[CountIn] resume capture failed: {err}");
+                if (!TryStartMusicCapture(out var err))
+                {
+                    ListeningStartupLog.Write($"AUDIO: resume capture failed {err}");
+                    FailListening(
+                        Volatile.Read(ref _listeningStartupGeneration),
+                        $"resume capture failed: {err}",
+                        includeConfirmed: true);
+                }
+                else
+                {
+                    ArmBufferWatchdog(Volatile.Read(ref _listeningStartupGeneration));
+                    ClaimListeningIfCaptureRunning("resume capture");
+                }
+            }
+            else if (_audio?.IsCapturing == true)
+            {
+                ClaimListeningIfCaptureRunning("resume capture already running");
             }
         }
 
@@ -1038,8 +1158,10 @@ namespace musicmate.Pages
             if (enteringTuner)
                 CancelPendingListeningStarts();
 
-            StopWaitingCountIn();
+            StopWaitingCountIn("tuner display");
             try { ServiceHelper.GetService<ICountInClickService>()?.Stop(); } catch { }
+            if (_listeningStartupActive && !_listeningChromeShown)
+                FailListening(Volatile.Read(ref _listeningStartupGeneration), "tuner display");
 
             if (enteringTuner)
             {
@@ -1068,7 +1190,7 @@ namespace musicmate.Pages
                 return;
             }
 
-            _listeningPausedForPageHide = false;
+            ClearListeningPaused("left Tuner");
             if (PlayModePickerOptions.IsTunerMode(_session) || !_isPageVisible)
                 return;
 
@@ -1088,7 +1210,7 @@ namespace musicmate.Pages
             // Tuner clears exercise notes on entry — wait for regenerate / AutoStart rather
             // than inventing a new listening session here.
             if (!_userStoppedListening
-                && (_session.AutoStart || WaitingCountInSettings.Enabled)
+                && ((_session?.AutoStart ?? false) || WaitingCountInSettings.Enabled)
                 && (_session?.NotesToDraw?.Count ?? 0) > 0)
             {
                 ScheduleAutoStartOnAppear();
@@ -2237,8 +2359,10 @@ namespace musicmate.Pages
 #endif
             });
         }
-        private static bool StaffNoteStatesEqual(StaffNoteState[] a, StaffNoteState[] b)
+        private static bool StaffNoteStatesEqual(StaffNoteState[]? a, StaffNoteState[]? b)
         {
+            a ??= Array.Empty<StaffNoteState>();
+            b ??= Array.Empty<StaffNoteState>();
             if (a.Length != b.Length) return false;
             for (int i = 0; i < a.Length; i++)
             {
@@ -2257,7 +2381,7 @@ namespace musicmate.Pages
                 return;
 
             int upperPitchCount = _sessionUpperPitchCount;
-            int currentSession = _session.CurrentNoteIndex;
+            int currentSession = _showCurrentNoteHighlight ? _session.CurrentNoteIndex : -1;
             var diag = _session.BuildNoteStateDiagContext(currentSession);
             bool isUpperActive = currentSession < upperPitchCount;
 
@@ -2896,18 +3020,44 @@ namespace musicmate.Pages
                 };
             }
         }
-        private void SetButtonStates(bool isRunning, bool keepPlayEnabled = false)
+        private void SetButtonStates(bool isRunning, bool keepPlayEnabled = false, bool presentPlayingChrome = true)
         {
             _isRunning = isRunning;
+            if (!isRunning)
+            {
+                _listeningChromeShown = false;
+                _listeningStartupActive = false;
+                CancelBufferWatchdog();
+            }
+            else if (presentPlayingChrome)
+            {
+                _listeningChromeShown = true;
+                _listeningStartupActive = false;
+                _showCurrentNoteHighlight = true;
+                CancelBufferWatchdog();
+            }
+            else
+            {
+                // Session intent is live so Count-In may run, but Stop / yellow wait for a buffer.
+                _listeningStartupActive = true;
+                _listeningChromeShown = false;
+                _showCurrentNoteHighlight = false;
+            }
+
+            bool showStop = isRunning && presentPlayingChrome;
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                UpdateTitleStartStopButtonVisual(isRunning);
+                if (_listeningChromeShown && _isRunning && !PlayModePickerOptions.IsTunerMode(_session))
+                    StartMusicCaptureHealthTimer();
+                else
+                    StopMusicCaptureHealthTimer();
+                UpdateTitleStartStopButtonVisual(showStop);
                 if (_session?.Tune == "Tuner")
                     SetPlayButtonPlaying(_isTunerPitchPlaying, isEnabled: true);
                 else
                     SetPlayButtonPlaying(_isPlaying, isRunning ? (keepPlayEnabled || _isPlaying) : true);
                 UpdatePlayButtonVisibility();
-                if (_session?.Tune == "Tuner")
+                if (_session?.Tune == "Tuner" || (_isRunning && _listeningChromeShown))
                     SyncPlayItemStatusMessage();
             });
         }
@@ -3167,6 +3317,9 @@ namespace musicmate.Pages
 
         private void OnTimeSignatureHitTargetClicked(object? sender, EventArgs e)
         {
+            FirstNoteAndroidReleaseLog.WriteAlways(
+                "TIME SIG TAP",
+                BuildTimeSignatureHitTargetStateDetail());
             _suppressStaffOverlayTapUntilMs = Environment.TickCount64 + 400;
             SetTempoControlVisible(false);
             SetTimeSignatureControlVisible(!_isTimeSignatureControlVisible);
@@ -3395,9 +3548,8 @@ namespace musicmate.Pages
             }
 
             RectF? bounds = _staffDrawable?.LastTimeSignatureBounds;
+            RectF? tempoBounds = _staffDrawable?.LastMusicBpmMarkingBounds;
             double stroke = StaffBorder?.StrokeThickness ?? 0;
-            const double minSize = 48;
-            const double pad = 12;
 
             double x;
             double y;
@@ -3405,16 +3557,17 @@ namespace musicmate.Pages
             double h;
             if (bounds is RectF r)
             {
-                x = stroke + r.X - pad;
-                y = stroke + r.Y - pad;
-                w = Math.Max(minSize, r.Width + pad * 2);
-                h = Math.Max(minSize, r.Height + pad * 2);
+                // Bounds already run from the tempo-target bottom to the time-signature bottom.
+                x = stroke + r.X;
+                y = stroke + r.Y;
+                w = Math.Max(48, r.Width);
+                h = Math.Max(8, r.Height);
             }
             else
             {
                 x = stroke + 48;
                 y = stroke + 24;
-                w = minSize;
+                w = 48;
                 h = 72;
             }
 
@@ -3424,11 +3577,17 @@ namespace musicmate.Pages
             TimeSignatureHitTarget.Margin = new Thickness(x, y, 0, 0);
             TimeSignatureHitTarget.WidthRequest = w;
             TimeSignatureHitTarget.HeightRequest = h;
-            TimeSignatureHitTarget.MinimumWidthRequest = minSize;
-            TimeSignatureHitTarget.MinimumHeightRequest = minSize;
+            TimeSignatureHitTarget.MinimumWidthRequest = 48;
+            TimeSignatureHitTarget.MinimumHeightRequest = Math.Max(8, h);
             TimeSignatureHitTarget.InputTransparent = false;
             TimeSignatureHitTarget.IsEnabled = true;
             TimeSignatureHitTarget.IsVisible = true;
+
+            FirstNoteAndroidReleaseLog.WriteAlways(
+                "HIT BOUNDS",
+                $"timesig margin={x:F0},{y:F0} size={w:F0}x{h:F0} " +
+                $"drawable={(bounds is RectF b ? $"{b.X:F0},{b.Y:F0},{b.Width:F0}x{b.Height:F0}" : "null")} " +
+                $"tempo={(tempoBounds is RectF t ? $"{t.X:F0},{t.Y:F0},{t.Width:F0}x{t.Height:F0} bottom={t.Y + t.Height:F0}" : "null")}");
 
             if (_isTimeSignatureControlVisible)
                 SyncTimeSignatureControlRowPosition();
@@ -3620,7 +3779,8 @@ namespace musicmate.Pages
                 $"source={source} margin={x:F0},{y:F0} size={w:F0}x{h:F0} " +
                 $"visible={TempoMarkingHitTarget.IsVisible} enabled={TempoMarkingHitTarget.IsEnabled} " +
                 $"inputTransparent={TempoMarkingHitTarget.InputTransparent} z={TempoMarkingHitTarget.ZIndex} " +
-                $"drawableBounds={(bounds is RectF b ? $"{b.X:F0},{b.Y:F0},{b.Width:F0}x{b.Height:F0}" : "null")}");
+                $"drawableBounds={(bounds is RectF b ? $"{b.X:F0},{b.Y:F0},{b.Width:F0}x{b.Height:F0}" : "null")} " +
+                $"bottom={(bounds is RectF bb ? $"{bb.Y + bb.Height:F0}" : "null")}");
         }
 
         private void ApplyTempoHitTargetDiagnosticsChrome()
@@ -3655,6 +3815,19 @@ namespace musicmate.Pages
                    $"w={TempoMarkingHitTarget.WidthRequest:F0} h={TempoMarkingHitTarget.HeightRequest:F0} " +
                    $"margin={TempoMarkingHitTarget.Margin.Left:F0},{TempoMarkingHitTarget.Margin.Top:F0} " +
                    $"z={TempoMarkingHitTarget.ZIndex} tempo={_session?.Tempo}";
+        }
+
+        private string BuildTimeSignatureHitTargetStateDetail()
+        {
+            if (TimeSignatureHitTarget == null)
+                return "hitTarget=null";
+            RectF? bounds = _staffDrawable?.LastTimeSignatureBounds;
+            return $"visible={TimeSignatureHitTarget.IsVisible} enabled={TimeSignatureHitTarget.IsEnabled} " +
+                   $"w={TimeSignatureHitTarget.WidthRequest:F0} h={TimeSignatureHitTarget.HeightRequest:F0} " +
+                   $"margin={TimeSignatureHitTarget.Margin.Left:F0},{TimeSignatureHitTarget.Margin.Top:F0} " +
+                   $"bottom={TimeSignatureHitTarget.Margin.Top + TimeSignatureHitTarget.HeightRequest:F0} " +
+                   $"drawable={(bounds is RectF b ? $"{b.X:F0},{b.Y:F0},{b.Width:F0}x{b.Height:F0}" : "null")} " +
+                   $"meter={_session?.MeterTimeSignature}";
         }
 
         private static void LogTempoTap(string stage, string detail)
@@ -4173,6 +4346,8 @@ namespace musicmate.Pages
             else
                 UpdateTunerVisibility();
             DeviceDisplay.Current.KeepScreenOn = true;
+            RecordUserActivity();
+            EnsureInactivityMonitorRunning();
 
             if (_session.PendingMasteryPracticeNavigation)
             {
@@ -4213,10 +4388,12 @@ namespace musicmate.Pages
             }
             else
             {
-                _listeningPausedForPageHide = false;
+                ClearListeningPaused("page appeared");
             }
 
             _isPageVisible = true;
+            if (appearAsTuner)
+                MaybeAutoStartTunerListening();
 
             // Regenerate before AutoStart so random→scale changes refresh the staff.
             // When Repeat Same is on, restore the saved snapshot instead of re-randomizing key.
@@ -4717,10 +4894,23 @@ namespace musicmate.Pages
             _isPageVisible = false;
             _allowStaffLayoutSettle = false;
 
-            _listeningPausedForPageHide = MusicListeningVisibility.ShouldPauseListeningForHide(
-                _isRunning,
-                _waitingCountInActive,
-                _userStoppedListening);
+            bool disappearingFromTuner = PlayModePickerOptions.IsTunerMode(_session);
+            bool musicPausedBeforeTunerHide = _listeningPausedForPageHide;
+            if (disappearingFromTuner)
+            {
+                AbandonTunerListening();
+                SetButtonStates(false);
+            }
+
+            if (!disappearingFromTuner && _listeningStartupActive && !_listeningChromeShown)
+                FailListening(Volatile.Read(ref _listeningStartupGeneration), "page disappearing");
+
+            _listeningPausedForPageHide = disappearingFromTuner
+                ? musicPausedBeforeTunerHide
+                : MusicListeningVisibility.ShouldPauseListeningForHide(
+                    _isRunning,
+                    _waitingCountInActive,
+                    _userStoppedListening);
 
             // Cancel pending AutoStart / in-flight StartListening so a delayed Arm cannot
             // sound Count-In after Music is obscured (NoteAttempts or any other page).
@@ -4739,20 +4929,73 @@ namespace musicmate.Pages
                 // Soft-pause: keep _isRunning so return resumes Count-In without
                 // regenerating notes or treating hide as an intentional Stop.
                 if (!ShouldPreserveSessionEndMarquee())
-                    StatusService.Instance.StatusMessage = "Listening paused.";
+                    SetListeningPaused(disappearingFromTuner
+                        ? "page disappearing during Tuner"
+                        : "page disappearing");
             }
             else
             {
+                ClearListeningPaused("page disappearing — listening stopped");
                 SetButtonStates(false);
                 if (!ShouldPreserveSessionEndMarquee())
                     StatusService.Instance.StatusMessage = "Stopped listening.";
             }
 
             DeviceDisplay.Current.KeepScreenOn = false;
+            StopInactivityMonitor();
         }
         private async void OnNavigateWhatToPlayClicked(object? sender, EventArgs e)
         {
+            if (PlayModePickerOptions.IsTunerMode(_session))
+            {
+                await ReturnFromTunerToMusicAsync();
+                return;
+            }
+
             await NavigationBusyService.GoToAsync("//WhatToPlayPage");
+        }
+
+        /// <summary>
+        /// Hamburger Tuner uses this page. Back leaves that display and restores the
+        /// saved What To Play music without opening What To Play.
+        /// </summary>
+        private async Task ReturnFromTunerToMusicAsync()
+        {
+            AbandonTunerListening();
+            CancelPendingListeningStarts();
+            try { _playCts?.Cancel(); } catch { }
+            StopWaitingCountIn("leave tuner");
+            try { _player?.CancelPlayback(); } catch { }
+            try { _audio?.StopCapture(); } catch { }
+            _isPlaying = false;
+            SetPlayButtonPlaying(false);
+            await StopReferenceToneAsync(resumeListening: false);
+            await StopTunerPitchAsync();
+            SetButtonStates(false);
+
+            _suppressSessionRegenerate = true;
+            try
+            {
+                PlayModePickerOptions.ApplyPersistedSelection(_session);
+                if (PlayModePickerOptions.IsTunerMode(_session))
+                {
+                    PlayModePickerOptions.ApplyOtherSelection(
+                        _session, NoteSessionService.ScaleSelectionByLevel);
+                }
+            }
+            finally
+            {
+                _suppressSessionRegenerate = false;
+            }
+
+            UpdateTunerVisibility();
+            await RegenerateNotesAsync();
+            SyncPlayItemStatusMessage();
+            if (!_userStoppedListening
+                && !PlayModePickerOptions.IsTunerMode(_session)
+                && (_session.AutoStart || WaitingCountInSettings.Enabled)
+                && (_session.NotesToDraw?.Count ?? 0) > 0)
+                ScheduleAutoStartOnAppear();
         }
         private async void OnPlayEvaluateClicked(object? sender, EventArgs e)
         {
@@ -4846,6 +5089,9 @@ namespace musicmate.Pages
 
         private void OnAudioBlock(short[] pcm16)
         {
+            if (Volatile.Read(ref _captureRouteLost) != 0)
+                Volatile.Write(ref _captureRouteLost, 0);
+
             var buf = new float[pcm16.Length];
             for (var i = 0; i < pcm16.Length; i++)
             {
@@ -4855,6 +5101,7 @@ namespace musicmate.Pages
             var rms = PitchDetectionService.ComputeRms(buf);
             _session.SetLastDetectionTelemetry(rms);
             _session.ObserveLoudness(rms);
+            NoteStartupBuffer();
 
             // Don't accumulate audio during ignore period — ensures the first
             // detection after cooldown uses entirely fresh samples.
@@ -4877,29 +5124,7 @@ namespace musicmate.Pages
 
             if (ingest.Kind == PitchWindowIngestKind.IgnoredQuiet
                 || ingest.Kind == PitchWindowIngestKind.DiscardedIgnorePeriod)
-            {
-                if (_session.CurrentNoteIndex == 0
-                    && _session.Tune != "Tuner"
-                    && !_session.SessionCompleted
-                    && FirstNoteAndroidReleaseLog.StillWaitingForFirstAccept)
-                {
-                    // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
-                    _session.LogFirstNoteAndroidReleaseDiagnostic(
-                        stage: ingest.Kind == PitchWindowIngestKind.IgnoredQuiet
-                            ? "preEval-quiet"
-                            : "preEval-discardedIgnorePeriod",
-                        freq: 0,
-                        accepted: false,
-                        rejectReason: ingest.Kind == PitchWindowIngestKind.IgnoredQuiet
-                            ? "NotDetected-RmsBelowThreshold"
-                            : "NotDetected-AudioIgnorePeriod",
-                        countInOrConductorState: _waitingCountInActive
-                            ? "waitingCountIn"
-                            : null,
-                        extra: $"rms={rms:F4} threshold={_session.RmsThreshold:F4}");
-                }
                 return;
-            }
 
             if (ingest.Kind == PitchWindowIngestKind.BecameSilent)
             {
@@ -4920,12 +5145,15 @@ namespace musicmate.Pages
                             SyncStaffNoteStates();
                     });
                 }
+                // Silence before the first note does not arm the conductor clock and
+                // must not stop the microphone. AdvanceTimeline is a no-op until then.
                 return;
             }
 
             if (ingest.StartedNewOnset)
             {
                 _isBelowThreshold = false;
+                RecordUserActivity();
                 // Fresh onset after silence — completes same-pitch re-trigger arming.
                 _session.NotifyNoteAttack();
 
@@ -4972,21 +5200,6 @@ namespace musicmate.Pages
                     // Count that as silence toward unlocking a repeated same pitch.
                     if (_session.IsAwaitingNoteOn)
                         _session.NotifyPitchStopped();
-                    if (_session.CurrentNoteIndex == 0
-                        && _session.Tune != "Tuner"
-                        && !_session.SessionCompleted
-                        && FirstNoteAndroidReleaseLog.StillWaitingForFirstAccept)
-                    {
-                        // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
-                        _session.LogFirstNoteAndroidReleaseDiagnostic(
-                            stage: "preEval-freqZero",
-                            freq: 0,
-                            accepted: false,
-                            rejectReason: "NotDetected-PitchDetectorReturnedZero",
-                            countInOrConductorState: _waitingCountInActive
-                                ? "waitingCountIn"
-                                : null);
-                    }
                     return;
                 }
 
@@ -5036,6 +5249,11 @@ namespace musicmate.Pages
                     // gap between clicks — players articulate on the beat.
                     if (_waitingCountInActive)
                     {
+                        // Clicks come first. Do not score or mark a note until listening
+                        // has been opened after a click has sounded.
+                        if (!_countInGate.ListeningStarted)
+                            return;
+
                         if (_session.CurrentNoteIndex != 0 || _session.NotesToDraw.Count == 0)
                             return;
 
@@ -5051,7 +5269,8 @@ namespace musicmate.Pages
                                 withinSelfSoundSuppressWindow: false,
                                 heardHz: freq,
                                 accentedClickHz: WaitingCountInSettings.AccentedPitchHz,
-                                unaccentedClickHz: WaitingCountInSettings.UnaccentedPitchHz))
+                                unaccentedClickHz: WaitingCountInSettings.UnaccentedPitchHz)
+                            || !_countInGate.TryAcceptHeardPitch(countInResult.correct, nearClick))
                         {
                             if (nearClick)
                             {
@@ -5069,21 +5288,6 @@ namespace musicmate.Pages
                                     $"[CountIn] waiting for first note heardHz={freq:F1} correct=False");
                             }
 
-                            // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
-                            string reason = nearClick
-                                ? "CountIn-ClickSelfSound"
-                                : countInResult.correct
-                                    ? "CountIn-CorrectPitchNotAccepted"
-                                    : "CountIn-WrongPitch";
-                            _session.LogFirstNoteAndroidReleaseDiagnostic(
-                                stage: "countIn-reject",
-                                freq: freq,
-                                evaluateResult: countInResult,
-                                pitchPassed: countInResult.correct,
-                                timingPassed: null,
-                                accepted: false,
-                                rejectReason: reason,
-                                countInOrConductorState: "waitingCountIn");
                             return;
                         }
 
@@ -5093,8 +5297,7 @@ namespace musicmate.Pages
                         StopWaitingCountIn();
                         _session.ClearCountInClickSelfSoundSuppress("first note accepted — clear before score");
                         _session.StartListeningClock();
-                        if (!_audio.IsCapturing
-                            && !_audio.TryStartCapture(OnAudioBlock, out var capErr))
+                        if (!_audio.IsCapturing && !TryStartMusicCapture(out var capErr))
                         {
                             DebugLog.WriteLine($"[CountIn] capture after first note failed: {capErr}");
                         }
@@ -5117,14 +5320,6 @@ namespace musicmate.Pages
                         DebugLog.WriteLine(
                             $"[AudioSuppress] pitch detected but ignored — reason: IgnoreAudioUntilUtc " +
                             $"heardHz={freq:F1} correct={cooldownResult.correct}");
-                        // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
-                        _session.LogFirstNoteAndroidReleaseDiagnostic(
-                            stage: "preEval-audioCooldown",
-                            freq: freq,
-                            evaluateResult: cooldownResult,
-                            pitchPassed: cooldownResult.correct,
-                            accepted: false,
-                            rejectReason: "AudioCooldown");
                         return;
                     }
 
@@ -5132,15 +5327,6 @@ namespace musicmate.Pages
                     {
                         var pendingResult = _session.Evaluate(freq);
                         _session.LogNoteOnGateRejectionIfPitchIdentified(freq, pendingResult.cents);
-
-                        // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
-                        _session.LogFirstNoteAndroidReleaseDiagnostic(
-                            stage: "preEval-awaitingNoteOn",
-                            freq: freq,
-                            evaluateResult: pendingResult,
-                            pitchPassed: pendingResult.correct,
-                            accepted: false,
-                            rejectReason: "AwaitingNoteOn");
 
                         // Keep the status bar honest during same-pitch repeats (E-E-E): the
                         // previous note already matched; we are waiting for re-articulation.
@@ -5157,20 +5343,7 @@ namespace musicmate.Pages
 
                     var result = _session.Evaluate(freq);
                     if (!_session.TryArmListeningClockOnFirstCorrectPitch(result.correct))
-                    {
-                        // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
-                        _session.LogFirstNoteAndroidReleaseDiagnostic(
-                            stage: "preEval-clockNotArmed",
-                            freq: freq,
-                            evaluateResult: result,
-                            pitchPassed: result.correct,
-                            timingPassed: null,
-                            accepted: false,
-                            rejectReason: result.correct
-                                ? "ClockNotArmed"
-                                : "WrongPitchBeforeClockArmed");
                         return;
-                    }
 
                     string expectedName = _session.CurrentNoteIndex < _session.NotesToDraw.Count
                         ? _session.ResolveWrittenEvaluationName(_session.NotesToDraw[_session.CurrentNoteIndex])
@@ -5207,10 +5380,14 @@ namespace musicmate.Pages
         /// Runs Count-In for a generation armed by the caller. Must not increment the
         /// generation again — Stop invalidates by bumping it so this method exits.
         /// </summary>
-        private async Task StartWaitingCountInAsync(int armedGeneration)
+        private async Task StartWaitingCountInAsync(int armedGeneration, int startupGeneration)
         {
-            if (_waitingCountInPlayer == null || _session == null)
+            var session = _session;
+            if (_waitingCountInPlayer == null || session == null)
+            {
+                FailListening(startupGeneration, "count-in player missing");
                 return;
+            }
 
             if (!WaitingCountInArming.MayBegin(
                     armedGeneration,
@@ -5219,30 +5396,40 @@ namespace musicmate.Pages
                 || !_isPageVisible
                 || PlayModePickerOptions.IsTunerMode(_session))
             {
-                DebugLog.WriteLine("[CountIn] skipped — Stopped, obscured, Tuner, or superseded before arm");
+                ListeningStartupLog.Write(
+                    "COUNTIN: skipped — Stopped, obscured, Tuner, or superseded before arm");
+                if (armedGeneration == Volatile.Read(ref _waitingCountInGeneration))
+                    FailListening(startupGeneration, "count-in skipped before start");
                 return;
             }
 
-            try { _waitingCountInCts?.Cancel(); } catch { }
-            try { _waitingCountInCts?.Dispose(); } catch { }
-            _waitingCountInCts = new CancellationTokenSource();
-            var ct = _waitingCountInCts.Token;
+            CancellationTokenSource? previous;
+            var cts = new CancellationTokenSource();
+            lock (_countInStartGate)
+            {
+                previous = _waitingCountInCts;
+                _waitingCountInCts = cts;
+            }
+            try { previous?.Cancel(); } catch { }
+            try { previous?.Dispose(); } catch { }
+            var ct = cts.Token;
             _waitingCountInActive = true;
-            _session?.MarkCountInStartUtc();
+            session.MarkCountInStartUtc();
 
             try
             {
-                int beats = WaitingCountInLogic.GetBeatsPerMeasure(_session.GetDisplayTimeSignature());
+                int beats = WaitingCountInLogic.GetBeatsPerMeasure(session.GetDisplayTimeSignature());
                 DebugLog.WriteLine(
-                    $"[CountIn] starting beats/measure={beats} tempo={_session.Tempo} " +
+                    $"[CountIn] starting beats/measure={beats} tempo={session.Tempo} " +
                     $"accentHz={WaitingCountInSettings.AccentedPitchHz:F0} " +
                     $"vol={WaitingCountInSettings.AccentedVolume:F2}/{WaitingCountInSettings.UnaccentedVolume:F2} " +
                     $"durPct={WaitingCountInSettings.BeatDurationPercent}");
 
-                // Mic stays open for the whole count-in so Mary can be heard.
-                // Clicks use the shared sine playback service (audible with mic open on Android).
-                try { _audio.StopCapture(); } catch { }
-                await Task.Delay(80, ct).ConfigureAwait(false);
+                // Release the microphone so the first click is not ducked or
+                // cancelled by listening startup. Capture opens after that click.
+                try { _audio.StopCapture(); } catch (Exception stopEx) { ListeningStartupLog.Exception("AUDIO", stopEx); }
+                _listeningStartupActive = false;
+                _showCurrentNoteHighlight = false;
 
                 if (!WaitingCountInArming.MayContinue(
                         armedGeneration,
@@ -5252,19 +5439,29 @@ namespace musicmate.Pages
                     || !_isPageVisible
                     || PlayModePickerOptions.IsTunerMode(_session))
                 {
-                    DebugLog.WriteLine("[CountIn] aborted after delay — Stopped, obscured, Tuner, or superseded");
+                    ListeningStartupLog.Write(
+                        "COUNTIN: aborted before clicks — Stopped, obscured, Tuner, or superseded");
+                    if (armedGeneration == Volatile.Read(ref _waitingCountInGeneration))
+                        FailListening(startupGeneration, "count-in aborted before clicks");
                     return;
                 }
 
-                ResetPitchCapture();
-                if (!_audio.TryStartCapture(OnAudioBlock, out var startCapErr))
+                await Task.Delay(1, ct);
+                if (!WaitingCountInArming.MayContinue(
+                        armedGeneration,
+                        Volatile.Read(ref _waitingCountInGeneration),
+                        _isRunning,
+                        ct.IsCancellationRequested)
+                    || !_isPageVisible
+                    || PlayModePickerOptions.IsTunerMode(_session))
                 {
-                    DebugLog.WriteLine($"[CountIn] initial capture failed: {startCapErr}");
-                    // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
-                    FirstNoteAndroidReleaseLog.WriteAlways(
-                        "countIn-capture",
-                        $"initialFailed err={startCapErr}");
+                    ListeningStartupLog.Write("COUNTIN: aborted before clicks — superseded");
+                    if (armedGeneration == Volatile.Read(ref _waitingCountInGeneration))
+                        FailListening(startupGeneration, "count-in aborted before clicks");
+                    return;
                 }
+
+                ListeningStartupLog.Write("COUNTIN: starting");
 
                 await _waitingCountInPlayer.RunAsync(
                     tempoBpm: _session.Tempo,
@@ -5281,16 +5478,34 @@ namespace musicmate.Pages
                         // on-beat first notes (most of each beat). Click self-sound is
                         // filtered by frequency in the Count-In accept path instead.
                         _ = clickDurationMs;
-                        _ = clickCt;
-                        if (!_isPageVisible || PlayModePickerOptions.IsTunerMode(_session))
+                        if (clickCt.IsCancellationRequested
+                            || armedGeneration != Volatile.Read(ref _waitingCountInGeneration))
                             throw new OperationCanceledException();
+                        if (!_isPageVisible || PlayModePickerOptions.IsTunerMode(_session))
+                        {
+                            ListeningStartupLog.Write("COUNTIN: cancelled — page not visible or Tuner");
+                            throw new OperationCanceledException();
+                        }
+
                         return Task.CompletedTask;
                     },
                     getTempoBpm: () => Math.Clamp(
-                        _session.Tempo,
+                        session.Tempo,
                         NoteSessionService.MinTempo,
-                        NoteSessionService.MaxTempo));
+                        NoteSessionService.MaxTempo),
+                    onFirstClickSounded: () =>
+                    {
+                        if (armedGeneration != Volatile.Read(ref _waitingCountInGeneration)
+                            || ct.IsCancellationRequested)
+                            return;
+                        _countInGate.OnClickSounded();
+                        BeginListeningAfterCountInClick(armedGeneration, startupGeneration, ct);
+                    },
+                    source: "COUNTIN");
 
+                ListeningStartupLog.Write(ct.IsCancellationRequested
+                    ? "COUNTIN: cancelled"
+                    : "COUNTIN: completed");
                 DebugLog.WriteLine("[CountIn] loop ended");
 
                 // If Count-In was cancelled/stopped, restore evaluation immediately.
@@ -5340,28 +5555,42 @@ namespace musicmate.Pages
                     && !_audio.IsCapturing)
                 {
                     ResetPitchCapture();
-                    if (!_audio.TryStartCapture(OnAudioBlock, out var err))
-                        DebugLog.WriteLine($"[CountIn] post-loop capture failed: {err}");
+                    if (!TryStartMusicCapture(out var err))
+                    {
+                        ListeningStartupLog.Write($"AUDIO: post-loop capture failed {err}");
+                        FailListening(startupGeneration, $"post-loop capture failed: {err}", includeConfirmed: true);
+                    }
+                    else
+                        ArmBufferWatchdog(startupGeneration);
                 }
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException ex)
             {
-                DebugLog.WriteLine("[CountIn] cancelled");
+                ListeningStartupLog.Write($"COUNTIN: cancelled {ex.Message}");
+                if (armedGeneration == Volatile.Read(ref _waitingCountInGeneration))
+                    FailListening(startupGeneration, "count-in cancelled", ex);
             }
             catch (Exception ex)
             {
-                DebugLog.WriteLine($"[CountIn] error: {ex}");
+                ListeningStartupLog.Exception("COUNTIN", ex);
+                if (armedGeneration == Volatile.Read(ref _waitingCountInGeneration))
+                    FailListening(startupGeneration, "count-in error", ex);
             }
             finally
             {
                 if (armedGeneration == Volatile.Read(ref _waitingCountInGeneration)
+                    && ReferenceEquals(_waitingCountInCts, cts)
                     && _waitingCountInPlayer?.IsActive != true)
                     _waitingCountInActive = false;
             }
         }
 
-        private void StopWaitingCountIn()
+        private void StopWaitingCountIn(string reason = "unspecified")
         {
+            ListeningStartupLog.Write(
+                $"COUNTIN: stop reason={reason} gen={Volatile.Read(ref _waitingCountInGeneration)} " +
+                $"active={_waitingCountInActive} caller={ListeningStartupLog.Caller()}");
+            _countInGate.Stop();
             WaitingCountInArming.Invalidate(ref _waitingCountInGeneration);
             _waitingCountInActive = false;
             // Always restore evaluation when Count-In stops/cancels. Residual protection
@@ -5377,7 +5606,436 @@ namespace musicmate.Pages
         }
 
         /// <summary>
-        /// App swipe-away / sleep / window close — stop Count-In and Tuner metronome beeps.
+        /// Rolls a not-yet-confirmed Go back to the idle button. A newer startup generation
+        /// or an already-confirmed listening session is left alone.
+        /// </summary>
+        private void FailListening(
+            int startupGeneration, string reason, Exception? ex = null, bool includeConfirmed = false)
+        {
+            void Core()
+            {
+                int current = Volatile.Read(ref _listeningStartupGeneration);
+                bool startupAbort = ListeningStartupGate.ShouldAbortStartup(
+                    _listeningStartupActive, _listeningChromeShown, startupGeneration, current);
+                bool confirmedAbort = includeConfirmed
+                    && startupGeneration == current
+                    && _listeningChromeShown
+                    && _isRunning
+                    && !_userStoppedListening;
+                if (!startupAbort && !confirmedAbort)
+                    return;
+
+                if (ex == null)
+                    ListeningStartupLog.Write($"STARTUP: failed {reason}");
+                else
+                    ListeningStartupLog.Exception($"STARTUP: {reason}", ex);
+
+                Interlocked.Increment(ref _listeningStartupGeneration);
+                _showCurrentNoteHighlight = false;
+                CancelBufferWatchdog();
+                try { StopWaitingCountIn($"failed: {reason}"); }
+                catch (Exception stopEx) { ListeningStartupLog.Exception("COUNTIN", stopEx); }
+                try { _audio?.StopCapture(); }
+                catch (Exception stopEx) { ListeningStartupLog.Exception("AUDIO", stopEx); }
+                SetButtonStates(false);
+                try { SyncStaffNoteStates(); } catch { }
+                if (!ShouldPreserveSessionEndMarquee())
+                    StatusService.Instance.StatusMessage = "Microphone did not start — tap Go to retry.";
+            }
+
+            if (MainThread.IsMainThread)
+                Core();
+            else
+                MainThread.BeginInvokeOnMainThread(Core);
+        }
+
+        /// <summary>
+        /// Opens the microphone only after the first count-in click has had a beat to sound.
+        /// A capture failure must not cancel the click loop.
+        /// </summary>
+        private void BeginListeningAfterCountInClick(
+            int armedGeneration, int startupGeneration, CancellationToken ct)
+        {
+            if (!_countInGate.MayBeginListening())
+                return;
+
+            _countInGate.MarkListeningStarted();
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                if (ct.IsCancellationRequested
+                    || armedGeneration != Volatile.Read(ref _waitingCountInGeneration)
+                    || !_countInGate.ListeningStarted
+                    || !_isPageVisible
+                    || PlayModePickerOptions.IsTunerMode(_session))
+                    return;
+
+                _listeningStartupActive = true;
+                Interlocked.Exchange(ref _loggedFirstBuffer, 0);
+                _showCurrentNoteHighlight = false;
+                ResetPitchCapture();
+                if (!TryStartMusicCapture(out var err))
+                {
+                    ListeningStartupLog.Write($"AUDIO: capture after count-in click failed {err}");
+                    // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
+                    FirstNoteAndroidReleaseLog.WriteAlways(
+                        "countIn-capture",
+                        $"afterClickFailed err={err}");
+                    _ = RetryCountInCaptureAsync(armedGeneration, startupGeneration, ct);
+                    return;
+                }
+
+                ArmBufferWatchdog(startupGeneration);
+                ListeningStartupLog.Write("COUNTIN: listening opened after first click");
+            });
+        }
+
+        /// <summary>
+        /// Mic retry while Count-In clicks are already running. A failed open must not
+        /// cancel the click loop.
+        /// </summary>
+        private async Task RetryCountInCaptureAsync(
+            int armedGeneration, int startupGeneration, CancellationToken ct)
+        {
+            try
+            {
+                await Task.Delay(150, ct).ConfigureAwait(false);
+                await EnsureMainThreadAsync();
+                if (ct.IsCancellationRequested
+                    || armedGeneration != Volatile.Read(ref _waitingCountInGeneration)
+                    || !_waitingCountInActive
+                    || !_countInGate.ListeningStarted
+                    || !_isRunning)
+                    return;
+                if (_audio?.IsCapturing == true)
+                    return;
+                if (!TryStartMusicCapture(out var err))
+                {
+                    ListeningStartupLog.Write($"AUDIO: count-in capture retry failed {err}");
+                    return;
+                }
+
+                ArmBufferWatchdog(startupGeneration);
+            }
+            catch (OperationCanceledException)
+            {
+                // Count-In stopped.
+            }
+        }
+
+        private void NoteStartupBuffer()
+        {
+            if (_audio?.IsCapturing != true)
+                return;
+            if (Interlocked.Exchange(ref _loggedFirstBuffer, 1) != 0)
+                return;
+
+            if (!_listeningStartupActive || _listeningChromeShown || !_isRunning || _userStoppedListening)
+                return;
+
+            CancelBufferWatchdog();
+            int gen = Volatile.Read(ref _listeningStartupGeneration);
+            MainThread.BeginInvokeOnMainThread(() => ConfirmListeningChrome(gen));
+        }
+
+        private void ConfirmListeningChrome(int startupGeneration)
+        {
+            if (startupGeneration != Volatile.Read(ref _listeningStartupGeneration))
+                return;
+            if (_countInGate.CountInRunning && !_countInGate.ListeningStarted)
+            {
+                ListeningStartupLog.Write("COUNTIN: deferred listening chrome until a click has sounded");
+                return;
+            }
+            if (_listeningChromeShown || !_listeningStartupActive || !_isRunning
+                || _userStoppedListening || !_isPageVisible)
+                return;
+
+            CancelBufferWatchdog();
+            SetButtonStates(true);
+            try { SyncStaffNoteStates(); } catch { }
+            if (_listeningPausedForPageHide)
+            {
+                ListeningStartupLog.Write(
+                    "MUSIC AUDIO: kept Listening paused — first buffer arrived during pause " +
+                    $"reason={_listeningPausedReason ?? "paused"}");
+                return;
+            }
+            if (!ClaimListeningIfCaptureRunning("first audio buffer"))
+            {
+                ListeningStartupLog.Write(
+                    "MUSIC AUDIO: UI would say Listening but capture is not running");
+                if (_waitingCountInActive || _waitingCountInPlayer?.IsActive == true)
+                {
+                    ListeningStartupLog.Write("COUNTIN: kept clicks — capture not confirmed yet");
+                    return;
+                }
+
+                FailListening(
+                    startupGeneration,
+                    "capture not running when Listening shown",
+                    includeConfirmed: true);
+            }
+        }
+
+        private void ArmBufferWatchdog(int startupGeneration)
+        {
+            if (startupGeneration == 0 || _listeningChromeShown || !_listeningStartupActive)
+                return;
+
+            CancelBufferWatchdog();
+            var cts = new CancellationTokenSource();
+            _bufferWatchdogCts = cts;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(3), cts.Token).ConfigureAwait(false);
+                    if (Volatile.Read(ref _loggedFirstBuffer) == 1)
+                        return;
+                    if (Volatile.Read(ref _captureRouteLost) != 0)
+                    {
+                        ListeningStartupLog.Write(
+                            "AUDIO: no buffer after input change — reopening microphone, Count-In stays");
+                        MainThread.BeginInvokeOnMainThread(OnCaptureRouteLost);
+                        return;
+                    }
+                    ListeningStartupLog.Write("AUDIO: no buffer within 3s");
+                    FailListening(startupGeneration, "no audio buffer within 3s");
+                }
+                catch (OperationCanceledException)
+                {
+                    // Buffer arrived or the startup was cancelled.
+                }
+            });
+        }
+
+        private void CancelBufferWatchdog()
+        {
+            try { _bufferWatchdogCts?.Cancel(); } catch { }
+        }
+
+        private void SetListeningPaused(string reason)
+        {
+            bool changed = !_listeningPausedForPageHide
+                || !string.Equals(_listeningPausedReason, reason, StringComparison.Ordinal);
+            _listeningPausedForPageHide = true;
+            _listeningPausedReason = reason;
+            if (changed)
+            {
+                ListeningStartupLog.Write(
+                    $"MUSIC AUDIO: entered Listening paused reason={reason}");
+            }
+            if (!ShouldPreserveSessionEndMarquee())
+                StatusService.Instance.StatusMessage = MusicAudioSignalTrace.ListeningPausedMessage;
+        }
+
+        private void ClearListeningPaused(string reason)
+        {
+            if (!_listeningPausedForPageHide && _listeningPausedReason == null)
+                return;
+            ListeningStartupLog.Write(
+                $"MUSIC AUDIO: left Listening paused reason={reason}");
+            _listeningPausedForPageHide = false;
+            _listeningPausedReason = null;
+        }
+
+        /// <summary>
+        /// Same capture start the Tuner uses: TryStartCapture must leave IsCapturing true.
+        /// </summary>
+        private bool TryStartMusicCapture(out string? error)
+        {
+            error = null;
+            if (_audio == null)
+            {
+                error = "no audio service";
+                return false;
+            }
+
+            if (_audio.TryStartCapture(OnAudioBlock, out error) && _audio.IsCapturing)
+                return true;
+
+            if (string.IsNullOrWhiteSpace(error))
+                error = "capture did not stay running";
+            try { _audio.StopCapture(); } catch { }
+            return false;
+        }
+
+        /// <summary>
+        /// The input device changed (external microphone plugged in). Reopen the recorder
+        /// on that device. Do not cancel Count-In clicks or Play.
+        /// </summary>
+        private void OnCaptureRouteLost()
+        {
+            if (!_isPageVisible || _userStoppedListening || _isInactivityIdle || _isPlaying
+                || (!_waitingCountInActive && !_isRunning && !_listeningStartupActive))
+            {
+                Volatile.Write(ref _captureRouteLost, 0);
+                return;
+            }
+
+            if (Interlocked.CompareExchange(ref _captureRouteReopen, 1, 0) != 0)
+                return;
+
+            Volatile.Write(ref _captureRouteLost, 1);
+            ListeningStartupLog.Write(
+                "AUDIO: input changed — reopening microphone without stopping Count-In or Play");
+            _ = ReopenCaptureAfterRouteChangeAsync();
+        }
+
+        private async Task ReopenCaptureAfterRouteChangeAsync()
+        {
+            try
+            {
+                for (int attempt = 1; attempt <= 3; attempt++)
+                {
+                    if (!_isPageVisible || _userStoppedListening || _isInactivityIdle || _isPlaying)
+                        return;
+                    if (_audio?.IsCapturing == true)
+                    {
+                        Volatile.Write(ref _captureRouteLost, 0);
+                        return;
+                    }
+
+                    if (attempt > 1)
+                        await Task.Delay(300);
+
+                    if (TryStartMusicCapture(out var err))
+                    {
+                        ListeningStartupLog.Write("AUDIO: microphone reopened on the new input");
+                        Volatile.Write(ref _captureRouteLost, 0);
+                        if (_listeningStartupActive && !_listeningChromeShown)
+                            ArmBufferWatchdog(Volatile.Read(ref _listeningStartupGeneration));
+                        return;
+                    }
+
+                    ListeningStartupLog.Write(
+                        $"AUDIO: reopen after input change failed {err} attempt={attempt}");
+                }
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _captureRouteReopen, 0);
+            }
+        }
+
+        /// <summary>Show Listening only while the recorder is actually running.</summary>
+        private bool ClaimListeningIfCaptureRunning(string reason)
+        {
+            bool capturing = _audio?.IsCapturing == true;
+            if (MusicAudioSignalTrace.UiSaysListeningWhileCaptureStopped(uiSaysListening: true, capturing))
+            {
+                ListeningStartupLog.Write(
+                    $"MUSIC AUDIO: refused Listening reason={reason} because capture is not running");
+                return false;
+            }
+
+            if (_listeningPausedForPageHide)
+                ClearListeningPaused(reason);
+            StatusService.Instance.StatusMessage = "Listening…";
+            ListeningStartupLog.Write($"UI: Listening=true reason={reason}");
+            return true;
+        }
+
+        private void StartMusicCaptureHealthTimer()
+        {
+            if (_musicCaptureHealthTimer != null)
+                return;
+            _musicCaptureHealthFailures = 0;
+            _musicCaptureHealthTimer = Dispatcher.CreateTimer();
+            _musicCaptureHealthTimer.Interval = TimeSpan.FromSeconds(1);
+            _musicCaptureHealthTimer.Tick += OnMusicCaptureHealthTick;
+            _musicCaptureHealthTimer.Start();
+        }
+
+        private void StopMusicCaptureHealthTimer()
+        {
+            if (_musicCaptureHealthTimer == null)
+                return;
+            try { _musicCaptureHealthTimer.Stop(); } catch { }
+            _musicCaptureHealthTimer.Tick -= OnMusicCaptureHealthTick;
+            _musicCaptureHealthTimer = null;
+        }
+
+        private void OnMusicCaptureHealthTick(object? sender, EventArgs e)
+        {
+            if (PlayModePickerOptions.IsTunerMode(_session) || !_isPageVisible)
+                return;
+            // Play does not use the microphone. Opening one here takes the output
+            // away from the exercise when a headset or USB mic is attached.
+            if (_isPlaying)
+                return;
+            if (!_isRunning || _userStoppedListening || _isInactivityIdle || !_listeningChromeShown)
+                return;
+
+            if (_listeningPausedForPageHide)
+            {
+                string shown = StatusService.Instance.RawStatusMessage ?? "";
+                if (shown.Contains("Listening", StringComparison.Ordinal)
+                    && !shown.Contains("paused", StringComparison.OrdinalIgnoreCase))
+                {
+                    SetListeningPaused(_listeningPausedReason ?? "capture health");
+                }
+                return;
+            }
+
+            if (_audio?.IsCapturing == true)
+            {
+                _musicCaptureHealthFailures = 0;
+                if (!StatusService.Instance.IsTemporaryMessageActive)
+                {
+                    string? corrected = MusicAudioSignalTrace.StatusWhileMusicCaptureActive(
+                        StatusService.Instance.RawStatusMessage,
+                        listeningSessionActive: true);
+                    if (corrected != null)
+                    {
+                        StatusService.Instance.StatusMessage = corrected;
+                        ListeningStartupLog.Write(
+                            "UI: replaced Stopped listening because capture is running");
+                    }
+                }
+                return;
+            }
+
+            ListeningStartupLog.Write(
+                "MUSIC AUDIO: UI says Listening but no capture is running — restarting microphone");
+            if (TryStartMusicCapture(out var err))
+            {
+                _musicCaptureHealthFailures = 0;
+                ClaimListeningIfCaptureRunning("capture restarted");
+                return;
+            }
+
+            _musicCaptureHealthFailures++;
+            if (_waitingCountInActive)
+            {
+                if (_musicCaptureHealthFailures <= 2)
+                {
+                    ListeningStartupLog.Write(
+                        $"MUSIC AUDIO: capture restart failed {err} attempt={_musicCaptureHealthFailures}");
+                }
+                if (_musicCaptureHealthFailures == 2)
+                {
+                    ListeningStartupLog.Write(
+                        "AUDIO: microphone still down during count-in — clicks stay running");
+                }
+                return;
+            }
+
+            ListeningStartupLog.Write(
+                $"MUSIC AUDIO: capture restart failed {err} attempt={_musicCaptureHealthFailures}");
+            if (_musicCaptureHealthFailures < 2)
+                return;
+
+            StopMusicCaptureHealthTimer();
+            SetButtonStates(false);
+            StatusService.Instance.StatusMessage = "Microphone did not start — tap Go to retry.";
+            ListeningStartupLog.Write(
+                "MUSIC AUDIO: left Listening reason=capture stayed stopped");
+        }
+
+        /// <summary>
+        /// Runs after the suspend grace, once the app has actually stayed in the background.
+        /// A brief pause from plugging in a microphone never reaches this method.
         /// </summary>
         private void OnAppCueAudioSuspended()
         {
@@ -5385,13 +6043,37 @@ namespace musicmate.Pages
             {
                 void StopLocal()
                 {
+                    FirstNoteAndroidReleaseLog.WriteAlways(
+                        "INACTIVITY",
+                        "app suspended — stopping capture/cues");
+
+                    // A startup that never confirmed listening must not stay on Stop / yellow.
+                    if (_listeningStartupActive && !_listeningChromeShown)
+                        FailListening(Volatile.Read(ref _listeningStartupGeneration), "app suspended");
+
+                    if (_isRunning && !_userStoppedListening && !_isInactivityIdle)
+                        _listeningPausedForPageHide = true;
+
+                    CancelPendingListeningStarts();
                     StopWaitingCountIn();
                     try { _waitingCountInPlayer?.Stop(); } catch { }
                     try { ServiceHelper.GetService<ICountInClickService>()?.Stop(); } catch { }
-                    try { _audio?.StopCapture(); } catch { }
+                    try
+                    {
+                        _audio?.StopCapture();
+                        FirstNoteAndroidReleaseLog.WriteAlways("INACTIVITY", "microphone stopped");
+                    }
+                    catch { }
                     _session?.ClearCountInClickSelfSoundSuppress("app suspended");
                     _ = StopReferenceToneAsync(resumeListening: false);
                     _ = StopTunerPitchAsync();
+                    try { _player?.CancelPlayback(); } catch { }
+                    _isPlaying = false;
+                    try { DeviceDisplay.Current.KeepScreenOn = false; } catch { }
+                    StopInactivityMonitor();
+
+                    if (_listeningPausedForPageHide && !ShouldPreserveSessionEndMarquee())
+                        SetListeningPaused("app suspended");
                 }
 
                 if (MainThread.IsMainThread)
@@ -5400,6 +6082,153 @@ namespace musicmate.Pages
                     MainThread.BeginInvokeOnMainThread(StopLocal);
             }
             catch { }
+        }
+
+        /// <summary>
+        /// Foreground resume while Music is still the visible page — soft-resume listening if we paused for suspend.
+        /// Does not override inactivity idle or an intentional user Stop (tap Go to restart).
+        /// </summary>
+        private void OnAppCueAudioResumed()
+        {
+            try
+            {
+                void ResumeLocal()
+                {
+                    if (!_isPageVisible || _isInactivityIdle || _userStoppedListening)
+                        return;
+
+                    RecordUserActivity();
+                    EnsureInactivityMonitorRunning();
+
+                    if (_listeningPausedForPageHide && _isRunning)
+                        ScheduleResumeListeningAfterAppear();
+                }
+
+                if (MainThread.IsMainThread)
+                    ResumeLocal();
+                else
+                    MainThread.BeginInvokeOnMainThread(ResumeLocal);
+            }
+            catch { }
+        }
+
+        private void OnUserInteractionProbe()
+            => MainThread.BeginInvokeOnMainThread(RecordUserActivity);
+
+        private void RecordUserActivity()
+        {
+            _lastActivityUtc = DateTime.UtcNow;
+        }
+
+        private void EnsureInactivityMonitorRunning()
+        {
+            if (_inactivityCheckTimer != null)
+                return;
+
+            _inactivityCheckTimer = Dispatcher.CreateTimer();
+            _inactivityCheckTimer.Interval = TimeSpan.FromSeconds(30);
+            _inactivityCheckTimer.Tick += OnInactivityCheckTick;
+            _inactivityCheckTimer.Start();
+        }
+
+        private void StopInactivityMonitor()
+        {
+            if (_inactivityCheckTimer == null)
+                return;
+            try { _inactivityCheckTimer.Stop(); } catch { }
+            _inactivityCheckTimer.Tick -= OnInactivityCheckTick;
+            _inactivityCheckTimer = null;
+        }
+
+        private void OnInactivityCheckTick(object? sender, EventArgs e)
+        {
+            if (!_isPageVisible || _isInactivityIdle)
+                return;
+
+            bool intentionalCueOrPlayback =
+                _waitingCountInActive
+                || _isReferenceTonePlaying
+                || _isTunerPitchPlaying
+                || _isPlaying;
+
+            bool capturing = false;
+            try { capturing = _audio?.IsCapturing == true; } catch { }
+
+            bool hasBatteryWork =
+                _isRunning
+                || capturing
+                || intentionalCueOrPlayback
+                || DeviceDisplay.Current.KeepScreenOn;
+
+            if (intentionalCueOrPlayback)
+            {
+                RecordUserActivity();
+                return;
+            }
+
+            if (!InactivityIdleLogic.ShouldEnterIdle(
+                    DateTime.UtcNow,
+                    _lastActivityUtc,
+                    hasBatteryWork,
+                    intentionalCueOrPlaybackActive: false))
+            {
+                return;
+            }
+
+            _ = EnterInactivityIdleAsync();
+        }
+
+        /// <summary>
+        /// Stops mic, pitch loop, cue timers, and KeepScreenOn after prolonged inactivity.
+        /// Leaves the Music page visible with Go so the user can restart normally.
+        /// </summary>
+        private async Task EnterInactivityIdleAsync()
+        {
+            await EnsureMainThreadAsync();
+            if (_isInactivityIdle)
+                return;
+
+            FirstNoteAndroidReleaseLog.WriteAlways("INACTIVITY", "entering idle state");
+            if (_listeningStartupActive && !_listeningChromeShown)
+                FailListening(Volatile.Read(ref _listeningStartupGeneration), "inactivity idle");
+            _isInactivityIdle = true;
+            _userStoppedListening = true;
+            ClearListeningPaused("inactivity idle");
+
+            CancelPendingListeningStarts();
+            try { _playCts?.Cancel(); } catch { }
+            StopWaitingCountIn();
+            try { ServiceHelper.GetService<ICountInClickService>()?.Stop(); } catch { }
+            try { _player?.CancelPlayback(); } catch { }
+            _isPlaying = false;
+            SetPlayButtonPlaying(false);
+
+            try
+            {
+                _audio?.StopCapture();
+                FirstNoteAndroidReleaseLog.WriteAlways("INACTIVITY", "microphone stopped");
+            }
+            catch { }
+
+            _session?.ClearCountInClickSelfSoundSuppress("inactivity idle");
+            await StopReferenceToneAsync(resumeListening: false);
+            await StopTunerPitchAsync();
+
+            try { DeviceDisplay.Current.KeepScreenOn = false; } catch { }
+            SetButtonStates(false);
+            StatusService.Instance.StatusMessage = "Idle — tap Go to resume.";
+            StopInactivityMonitor();
+            UpdateTunerModeChrome();
+        }
+
+        private void ClearInactivityIdleForUserResume()
+        {
+            if (!_isInactivityIdle)
+                return;
+            FirstNoteAndroidReleaseLog.WriteAlways("INACTIVITY", "resumed by user");
+            _isInactivityIdle = false;
+            RecordUserActivity();
+            EnsureInactivityMonitorRunning();
         }
 
         /// <summary>
@@ -5425,7 +6254,7 @@ namespace musicmate.Pages
                 _audio.StopCapture();
                 ResetPitchCapture();
                 await _audio.EnsurePermissionAsync();
-                if (!_audio.TryStartCapture(OnAudioBlock, out var restartErr))
+                if (!TryStartMusicCapture(out var restartErr))
                 {
                     DebugLog.WriteLine($"[Restart] capture failed: {restartErr}");
                     throw new InvalidOperationException(restartErr ?? "capture failed");
@@ -5681,10 +6510,107 @@ namespace musicmate.Pages
                 _suppressSessionRegenerate = false;
             }
         }
+        /// <summary>
+        /// The finished session's microphone, count-in, and conductor clock stop
+        /// before the next exercise is allowed to listen.
+        /// </summary>
+        private void StopOutgoingListeningForRepeat()
+        {
+            _repeatStartup.StopPreviousListener();
+            try { _autoStartCts?.Cancel(); } catch { }
+            try { _resumeListeningCts?.Cancel(); } catch { }
+            try { _sessionStartCts?.Cancel(); } catch { }
+            Interlocked.Increment(ref _startListeningEpoch);
+            Interlocked.Increment(ref _listeningStartupGeneration);
+            CancelBufferWatchdog();
+            try { StopWaitingCountIn("repeat — previous session"); } catch { }
+            try { _audio?.StopCapture(); } catch { }
+            ResetPitchCapture();
+            try { _session?.StopListeningClock(); } catch { }
+            _session?.ClearCountInClickSelfSoundSuppress("repeat — previous session");
+            _waitingCountInActive = false;
+            ClearListeningPaused("repeat transition");
+            // Not a user Stop. Auto-start on the next exercise must still be allowed.
+            _userStoppedListening = false;
+            _showCurrentNoteHighlight = false;
+            SetButtonStates(false);
+            ListeningStartupLog.Write("REPEAT: previous listener stopped");
+        }
+
+        /// <summary>
+        /// Next repeated exercise. Listening starts only when "Listening starts when
+        /// music appears" is on, through the same routine as a new Music session.
+        /// </summary>
+        private async Task BeginRepeatedSessionAsync()
+        {
+            await EnsureMainThreadAsync();
+            if (PlayModePickerOptions.IsTunerMode(_session))
+            {
+                _repeatHandoff = false;
+                return;
+            }
+
+            StopOutgoingListeningForRepeat();
+            _holdResultForChildSession = false;
+            _session.SessionCompleted = false;
+
+            bool autoListen = RepeatSessionStartup.ShouldAutoStartListening(
+                AutoRepeat, _session.AutoStart, _session.Tune);
+            bool conductorCues = _session.ShowConductorCues;
+            bool forceNewNotes = PracticeSessionLifecycle.ShouldForceNewNotesForRepeatMode(
+                _session.RepeatSameTune);
+
+            try
+            {
+                if (!autoListen)
+                {
+                    if (!_repeatStartup.WaitForGo(conductorCues))
+                    {
+                        ListeningStartupLog.Write("REPEAT: waiting for GO refused — listener still active");
+                        return;
+                    }
+
+                    ListeningStartupLog.Write("REPEAT: next session ready — waiting for GO");
+                    await StartListeningAndEvaluatingAsync(
+                        forceNewNotes: forceNewNotes,
+                        scaleKeyTrigger: "AutoStart",
+                        armListening: false);
+                    return;
+                }
+
+                if (!_repeatStartup.TryBeginAutoStart(
+                        WaitingCountInSettings.Enabled, conductorCues))
+                {
+                    ListeningStartupLog.Write("REPEAT: auto-start refused — listener still active");
+                    return;
+                }
+
+                ListeningStartupLog.Write("REPEAT: auto-start listening for next session");
+                await StartListeningAndEvaluatingAsync(
+                    forceNewNotes: forceNewNotes,
+                    scaleKeyTrigger: "AutoStart",
+                    armListening: true);
+
+                bool pipelineArmed = _isRunning
+                    && (_audio?.IsCapturing == true || _waitingCountInActive);
+                _repeatStartup.CompleteAutoStart(pipelineArmed);
+                if (!pipelineArmed)
+                    ListeningStartupLog.Write("REPEAT: listening pipeline did not start");
+                else if (_session.CurrentNoteIndex != 0)
+                    ListeningStartupLog.Write(
+                        $"REPEAT: first note index is {_session.CurrentNoteIndex} after prepare");
+            }
+            finally
+            {
+                _repeatHandoff = false;
+            }
+        }
+
         private async Task StartListeningAndEvaluatingAsync(
             bool playBack = false,
             bool forceNewNotes = false,
-            string? scaleKeyTrigger = null)
+            string? scaleKeyTrigger = null,
+            bool armListening = true)
         {
             await EnsureMainThreadAsync();
 
@@ -5704,12 +6630,25 @@ namespace musicmate.Pages
                 await EnsureMainThreadAsync();
             }
 
+            // Tuner must not enter the Music Count-In path. That path treats Tuner as
+            // "count-in aborted" and shows a microphone failure without opening capture,
+            // so Go repeats the same failure.
+            if (!playBack && PlayModePickerOptions.IsTunerMode(_session))
+            {
+                await EnsureTunerListeningAsync();
+                return;
+            }
+
             int epoch = Interlocked.Increment(ref _startListeningEpoch);
             _sessionStartCts = PracticeSessionLifecycle.ReplaceSessionStartCancellation(_sessionStartCts);
             var ct = _sessionStartCts.Token;
             bool launchedPlayback = false;
+            int startupGen = 0;
+            ClearInactivityIdleForUserResume();
+            ClearListeningPaused("Go");
             _userStoppedListening = false;
-            _listeningPausedForPageHide = false;
+            RecordUserActivity();
+            EnsureInactivityMonitorRunning();
 
             try
             {
@@ -5725,11 +6664,49 @@ namespace musicmate.Pages
                     return;
                 }
 
+                if (!playBack
+                    && PracticeSessionLifecycle.ShouldAbortListeningBecauseEmpty(forceNewNotes, displayedCount))
+                {
+                    DebugLog.WriteLine("[Start] Go aborted: no displayed notes (will not generate)");
+                    SetButtonStates(false);
+                    StatusService.Instance.StatusMessage = "No music displayed — change What to Play.";
+                    return;
+                }
+
                 bool reuseDisplayed = PracticeSessionLifecycle.ShouldReuseDisplayedExercise(
                     playBack, forceNewNotes, displayedCount);
 
                 DebugLog.WriteLine($"[Start] Starting listening, playBack={playBack}, forceNewNotes={forceNewNotes}, reuseDisplayed={reuseDisplayed}");
-                SetButtonStates(true, keepPlayEnabled: playBack);
+                if (!playBack)
+                {
+                    // The previous recorder must be down before this startup treats a
+                    // buffer as its first one. A leftover buffer was confirming, then
+                    // failing, the repeated session and leaving GO idle.
+                    try { _audio.StopCapture(); } catch { }
+                    try { StopWaitingCountIn("new listening session"); } catch { }
+                    CancelBufferWatchdog();
+                }
+
+                if (playBack)
+                    SetButtonStates(true, keepPlayEnabled: true);
+                else if (!armListening)
+                {
+                    _showCurrentNoteHighlight = false;
+                    SetButtonStates(false);
+                }
+                else
+                {
+                    startupGen = Interlocked.Increment(ref _listeningStartupGeneration);
+                    Interlocked.Exchange(ref _loggedFirstBuffer, 0);
+                    SetButtonStates(true, presentPlayingChrome: false);
+                    // Note generation can take longer than a buffer. Leave the
+                    // first-buffer gate closed until capture/count-in actually starts,
+                    // or a stray buffer confirms, fails, and cancels the clicks.
+                    _listeningStartupActive = false;
+                    ListeningStartupLog.Write(
+                        $"STARTUP: begin trigger={scaleKeyTrigger ?? "session"} gen={startupGen}");
+                    try { SyncStaffNoteStates(); } catch { }
+                }
                 // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
                 FirstNoteAndroidReleaseLog.ResetForNewSession();
                 FirstNoteAndroidReleaseLog.WriteAlways(
@@ -5760,14 +6737,6 @@ namespace musicmate.Pages
                     }
 
                     ct.ThrowIfCancellationRequested();
-
-                    // Tuner uses the same mic/pitch pipeline as scales, but must not run
-                    // exercise preparation (RegenerateNotesAsync / Assortment by Level / composition).
-                    if (PlayModePickerOptions.IsTunerMode(_session) && !playBack)
-                    {
-                        await StartTunerMicrophoneCaptureAsync(ct);
-                        return;
-                    }
 
                     if (!_session.RepeatSameTune)
                         _repeatSameSnapshot = null;
@@ -5839,12 +6808,17 @@ namespace musicmate.Pages
                 }
                 else
                 {
-                    // Play the staff as-is. Do not Reset, regenerate, or re-roll What to Play.
+                    // Go / Play: staff as-is. Do not Reset notes, regenerate, or re-roll What to Play.
                     _freezeStaff = false;
                     try { _audio.StopCapture(); } catch { }
                     StopWaitingCountIn();
+                    ResetPitchCapture();
+                    if (!playBack)
+                        _session.ResetEvaluationKeepingNotes();
+                    // Assign a fresh session ID for NoteAttempts grouping without changing notes.
+                    _currentSessionId = PracticeSessionLifecycle.NewSessionId();
                     DebugLog.WriteLine(
-                        "[Start] Play reusing displayed exercise "
+                        "[Start] Reusing displayed exercise "
                         + PracticeSessionLifecycle.DisplayedExerciseFingerprint(
                             _session.NotesToDraw ?? Enumerable.Empty<NoteInfo>()));
                 }
@@ -5853,11 +6827,12 @@ namespace musicmate.Pages
 
                 ct.ThrowIfCancellationRequested();
 
-                if (!playBack)
+                if (!playBack && armListening)
                 {
                     if (!_isRunning)
                     {
-                        DebugLog.WriteLine("[Start] Aborted before capture: no longer running");
+                        ListeningStartupLog.Write("STARTUP: aborted before capture — no longer running");
+                        FailListening(startupGen, "aborted before capture");
                         return;
                     }
 
@@ -5870,7 +6845,8 @@ namespace musicmate.Pages
                     ct.ThrowIfCancellationRequested();
                     if (!_isRunning)
                     {
-                        DebugLog.WriteLine("[Start] Aborted after permission: no longer running");
+                        ListeningStartupLog.Write("STARTUP: aborted after permission — no longer running");
+                        FailListening(startupGen, "aborted after permission");
                         return;
                     }
 
@@ -5894,52 +6870,80 @@ namespace musicmate.Pages
                     DebugLog.WriteLine(
                         $"[NoteStateDiag] Diagnostic log file: {NoteStateChangeDiagnostics.LogFilePath}");
                     _session?.MarkPlaybackArmUtc();
-                    // Count-in pauses capture around each click; start capture only when
-                    // not using count-in, otherwise the first beforeClick will stop it.
-                    bool startCountIn = WaitingCountInSettings.Enabled
+                    bool startCountIn = !PlayModePickerOptions.IsTunerMode(_session)
+                        && WaitingCountInSettings.Enabled
                         && (_session?.NotesToDraw?.Count ?? 0) > 0;
                     if (startCountIn)
                     {
                         if (epoch != Volatile.Read(ref _startListeningEpoch)
-                            || !_isPageVisible
-                            || PlayModePickerOptions.IsTunerMode(_session))
+                            || !_isPageVisible)
                         {
-                            DebugLog.WriteLine("[Start] Count-in aborted — superseded, obscured, or Tuner");
+                            ListeningStartupLog.Write("COUNTIN: aborted — superseded or obscured");
+                            FailListening(startupGen, "count-in aborted before arm");
                             return;
                         }
 
+                        // Listening stays closed until the existing click loop has sounded.
+                        _listeningStartupActive = false;
+                        _showCurrentNoteHighlight = false;
+
                         // Always cancel any prior Count-In before arming a fresh one
                         // (including reuseDisplayed restarts that skip SessionReset).
-                        StopWaitingCountIn();
+                        StopWaitingCountIn("arming fresh count-in");
+                        if (!_countInGate.TryBegin(
+                                countInEnabled: true,
+                                tuner: false,
+                                noteCount: _session?.NotesToDraw?.Count ?? 0))
+                        {
+                            ListeningStartupLog.Write("COUNTIN: refused — a count-in is already running");
+                            FailListening(startupGen, "count-in already running");
+                            return;
+                        }
 
                         // Arm generation before fire-and-forget so Stop cannot be raced by a late start.
                         int countInGen = WaitingCountInArming.Arm(ref _waitingCountInGeneration);
                         _waitingCountInActive = true;
-                        StatusService.Instance.ShowTemporaryMessage(
-                            StatusService.CountInStatusMessage,
-                            StatusService.CountInStatusDuration);
+                        ShowCountInStatusPreservingListening();
                         DebugLog.WriteLine("[Start] Count-in enabled — starting click loop");
                         // Own CTS so session-start replacement cannot kill the loop mid-measure.
-                        _ = StartWaitingCountInAsync(countInGen);
+                        _ = StartWaitingCountInAsync(countInGen, Volatile.Read(ref _listeningStartupGeneration));
                     }
                     else
                     {
                         _waitingCountInActive = false;
-                        if (!_audio.TryStartCapture(OnAudioBlock, out var capErr))
+                        _countInGate.Stop();
+                        _countInGate.TryBegin(
+                            countInEnabled: false,
+                            tuner: PlayModePickerOptions.IsTunerMode(_session),
+                            noteCount: _session?.NotesToDraw?.Count ?? 0);
+                        ListeningStartupLog.Write(
+                            "COUNTIN: not started " +
+                            $"enabled={WaitingCountInSettings.Enabled} " +
+                            $"tuner={PlayModePickerOptions.IsTunerMode(_session)} " +
+                            $"notes={_session?.NotesToDraw?.Count ?? 0}");
+                        _listeningStartupActive = true;
+                        Interlocked.Exchange(ref _loggedFirstBuffer, 0);
+                        if (!TryStartMusicCapture(out var capErr))
                         {
-                            DebugLog.WriteLine($"[Start] capture failed: {capErr}");
+                            ListeningStartupLog.Write($"AUDIO: capture failed {capErr}");
                             // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
                             FirstNoteAndroidReleaseLog.WriteAlways(
                                 "session-capture",
                                 $"failed err={capErr}");
-                            StatusService.Instance.StatusMessage =
-                                "Microphone unavailable — tap ● to retry.";
-                            SetButtonStates(false);
+                            FailListening(startupGen, $"capture failed: {capErr}", includeConfirmed: true);
                             return;
                         }
+                        ArmBufferWatchdog(startupGen);
                         // Conductor clock starts on first correct note (see OnAudioBlock / TryArmListeningClockOnFirstCorrectPitch).
                     }
                     DebugLog.WriteLine("[Start] Audio capture / count-in armed");
+                }
+                else if (!playBack)
+                {
+                    _showCurrentNoteHighlight = false;
+                    SetButtonStates(false);
+                    try { SyncStaffNoteStates(); } catch { }
+                    ListeningStartupLog.Write("STARTUP: exercise ready — waiting for GO");
                 }
                 else
                 {
@@ -5968,17 +6972,22 @@ namespace musicmate.Pages
                     launchedPlayback = true;
                 }
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException ex)
             {
-                DebugLog.WriteLine("[Start] Cancelled");
+                ListeningStartupLog.Write($"STARTUP: cancelled {ex.Message}");
+                if (!playBack)
+                    FailListening(startupGen, "start cancelled", ex);
                 if (playBack && !launchedPlayback)
                     FinishPlaybackInstrumentRestore();
             }
             catch (Exception ex)
             {
+                ListeningStartupLog.Exception("STARTUP", ex);
                 DebugLog.WriteLine($"[Start] ERROR: {ex}");
                 _isPlaying = false;
                 SetPlayButtonPlaying(false);
+                if (!playBack)
+                    FailListening(startupGen, "start error", ex);
                 SetButtonStates(false);
                 if (playBack && !launchedPlayback)
                     FinishPlaybackInstrumentRestore();
@@ -5996,47 +7005,109 @@ namespace musicmate.Pages
         /// <summary>
         /// Tuner mic start: same permission + StartCapture(OnAudioBlock) path as scales,
         /// without regenerating exercise notes or requiring an active staff target.
+        /// Success is a live capture, not a button-label change.
         /// </summary>
-        private async Task StartTunerMicrophoneCaptureAsync(CancellationToken ct)
+        private async Task StartTunerMicrophoneCaptureAsync(int generation, CancellationToken ct)
         {
+            ListeningStartupLog.Write("TUNER: start listening");
             DebugLog.WriteLine("[Tuner] activated — starting microphone (shared scale pipeline)");
+            _userStoppedListening = false;
+            SetButtonStates(true, presentPlayingChrome: false);
+            // Tuner success is live capture, not the Music first-buffer gate.
+            // Leaving that gate active lets a Count-In abort stop the attempt and ignore Go.
+            _listeningStartupActive = false;
+            _listeningChromeShown = false;
 
-            if (!_isRunning)
+            try
             {
-                DebugLog.WriteLine("[Tuner] Aborted before permission: no longer running");
-                return;
-            }
+                using (PracticeSessionStartProfiler.Scope("AudioPermission"))
+                {
+                    await _audio.EnsurePermissionAsync();
+                }
+                DebugLog.WriteLine("[Tuner] microphone permission requested/checked");
 
-            using (PracticeSessionStartProfiler.Scope("AudioPermission"))
+                ct.ThrowIfCancellationRequested();
+                if (generation != _tunerListening.Generation
+                    || !PlayModePickerOptions.IsTunerMode(_session))
+                {
+                    ListeningStartupLog.Write("TUNER: start superseded before capture");
+                    ReleaseSupersededTunerStart(generation);
+                    return;
+                }
+
+                try { _audio.StopCapture(); } catch { }
+                ResetPitchCapture();
+                _lastProcess = DateTime.MinValue;
+
+                DebugLog.WriteLine("[Tuner] microphone start requested");
+                _tunerCaptureOwner = generation;
+                bool started = _audio.TryStartCapture(OnAudioBlock, out var tunerCapErr)
+                    && _audio.IsCapturing;
+                if (generation != _tunerListening.Generation)
+                {
+                    ReleaseSupersededTunerStart(generation);
+                    return;
+                }
+
+                if (!started)
+                {
+                    ListeningStartupLog.Write($"TUNER: capture failed {tunerCapErr}");
+                    DebugLog.WriteLine($"[Tuner] capture failed: {tunerCapErr}");
+                    _tunerCaptureOwner = 0;
+                    try { _audio?.StopCapture(); } catch { }
+                    _tunerListening.CompleteStart(generation, captureIsRunning: false);
+                    SetButtonStates(false);
+                    StatusService.Instance.StatusMessage = _tunerListening.StatusMessage
+                        ?? TunerListeningSession.MicrophoneFailedMessage;
+                    UpdateTunerModeChrome();
+                    return;
+                }
+
+                _tunerListening.CompleteStart(generation, captureIsRunning: true);
+                _session?.StartListeningClock();
+                SetButtonStates(true);
+                StatusService.Instance.StatusMessage = TunerListeningSession.ListeningMessage;
+                ListeningStartupLog.Write("UI: Listening=true");
+                UpdateTunerModeChrome();
+                RefreshTunerPickerDisplayLabel();
+                DebugLog.WriteLine("[Tuner] microphone capture running");
+            }
+            catch (OperationCanceledException)
             {
-                await _audio.EnsurePermissionAsync();
+                ListeningStartupLog.Write("TUNER: start cancelled");
+                if (generation == _tunerListening.Generation)
+                {
+                    _tunerListening.CompleteStart(generation, captureIsRunning: false);
+                    SetButtonStates(false);
+                    if (PlayModePickerOptions.IsTunerMode(_session) && _isPageVisible)
+                    {
+                        StatusService.Instance.StatusMessage = TunerListeningSession.MicrophoneFailedMessage;
+                    }
+                    try { _audio?.StopCapture(); } catch { }
+                }
+                else
+                {
+                    ReleaseSupersededTunerStart(generation);
+                }
             }
-            DebugLog.WriteLine("[Tuner] microphone permission requested/checked");
-
-            ct.ThrowIfCancellationRequested();
-            if (!_isRunning)
+            catch (Exception ex)
             {
-                DebugLog.WriteLine("[Tuner] Aborted after permission: no longer running");
-                return;
+                ListeningStartupLog.Exception("TUNER", ex);
+                DebugLog.WriteLine($"[Tuner] capture error: {ex}");
+                if (generation == _tunerListening.Generation)
+                {
+                    _tunerCaptureOwner = 0;
+                    _tunerListening.CompleteStart(generation, captureIsRunning: false);
+                    SetButtonStates(false);
+                    StatusService.Instance.StatusMessage = TunerListeningSession.MicrophoneFailedMessage;
+                    UpdateTunerModeChrome();
+                    try { _audio?.StopCapture(); } catch { }
+                }
+                else
+                {
+                    ReleaseSupersededTunerStart(generation);
+                }
             }
-
-            try { _audio.StopCapture(); } catch { }
-            ResetPitchCapture();
-            _lastProcess = DateTime.MinValue;
-
-            DebugLog.WriteLine("[Tuner] microphone start requested");
-            if (!_audio.TryStartCapture(OnAudioBlock, out var tunerCapErr))
-            {
-                DebugLog.WriteLine($"[Tuner] capture failed: {tunerCapErr}");
-                StatusService.Instance.StatusMessage = "Microphone unavailable — tap Listen to retry.";
-                SetButtonStates(false);
-                return;
-            }
-            _session?.StartListeningClock();
-            StatusService.Instance.StatusMessage = "Listening…";
-            UpdateTunerModeChrome();
-            RefreshTunerPickerDisplayLabel();
-            DebugLog.WriteLine("[Tuner] microphone capture running");
         }
         /// <summary>Full rhythmic sequence (notes and rests) for autoplay.</summary>
         private List<GeneratedNote>? TryGetAutoplayRhythmSequence()
@@ -6494,8 +7565,6 @@ namespace musicmate.Pages
             {
                 if (idx >= 0 && KeyPicker.SelectedIndex != idx)
                     KeyPicker.SelectedIndex = idx;
-                if (idx >= 0 && PracticeKeyPicker != null && PracticeKeyPicker.SelectedIndex != idx)
-                    PracticeKeyPicker.SelectedIndex = idx;
             }
             finally
             {
@@ -6530,12 +7599,12 @@ namespace musicmate.Pages
             }
 
             var text = $"(Concert {_session.GetConcertKey()})";
-            ConcertKeyLabel.Text = text;
-            if (PracticeConcertKeyLabel != null) PracticeConcertKeyLabel.Text = text;
+            if (ConcertKeyLabel != null)
+                ConcertKeyLabel.Text = text;
         }
         private void InitializePracticePickers(string[] instrumentOptions)
         {
-            if (PracticeInstrumentPicker == null || PracticeKeyPicker == null)
+            if (PracticeInstrumentPicker == null)
                 return;
 
             if (PracticeInstrumentPicker.ItemsSource == null)
@@ -6543,16 +7612,9 @@ namespace musicmate.Pages
                 PracticeInstrumentPicker.ItemsSource = instrumentOptions;
             }
 
-            if (PracticeKeyPicker.ItemsSource == null && KeyPicker?.ItemsSource != null)
-            {
-                PracticeKeyPicker.ItemsSource = KeyPicker.ItemsSource;
-                PracticeKeyPicker.SelectedIndex = KeyPicker.SelectedIndex;
-            }
-
             if (!_practicePickerEventsWired)
             {
                 PracticeInstrumentPicker.SelectedIndexChanged += PracticeInstrumentPicker_SelectedIndexChanged;
-                PracticeKeyPicker.SelectedIndexChanged += PracticeKeyPicker_SelectedIndexChanged;
                 _practicePickerEventsWired = true;
             }
 
@@ -6579,7 +7641,7 @@ namespace musicmate.Pages
         }
         private void EnsurePracticePickersReady()
         {
-            if (PracticeInstrumentPicker == null || PracticeKeyPicker == null)
+            if (PracticeInstrumentPicker == null)
                 return;
 
             if (PracticeInstrumentPicker.ItemsSource == null && InstrumentPicker?.ItemsSource is string[] instrumentOptions)
@@ -6609,15 +7671,6 @@ namespace musicmate.Pages
             if (KeyLabel != null) KeyLabel.IsVisible = show;
             if (KeyBorder != null) KeyBorder.IsVisible = show;
             if (ConcertKeyLabel != null) ConcertKeyLabel.IsVisible = show;
-
-            if (PracticeKeyPicker != null)
-            {
-                PracticeKeyPicker.IsVisible = show;
-                PracticeKeyPicker.IsEnabled = show;
-            }
-            if (PracticeKeyLabel != null) PracticeKeyLabel.IsVisible = show;
-            if (PracticeKeyBorder != null) PracticeKeyBorder.IsVisible = show;
-            if (PracticeConcertKeyLabel != null) PracticeConcertKeyLabel.IsVisible = show;
         }
         // ── Tuner reference-tone helpers ───────────────────────────────────────
 
@@ -7288,7 +8341,8 @@ namespace musicmate.Pages
                     getTempoBpm: () => Math.Clamp(
                         _tunerTempoBpm,
                         NoteSessionService.MinTempo,
-                        NoteSessionService.MaxTempo));
+                        NoteSessionService.MaxTempo),
+                    source: "METRONOME");
             }
             catch (OperationCanceledException)
             {
@@ -7501,20 +8555,75 @@ namespace musicmate.Pages
         }
 
         /// <summary>
-        /// Starts the shared scale mic pipeline for Tuner exactly once when not already running.
+        /// Opens the Tuner microphone. Does not use <see cref="StartListeningAndEvaluatingAsync"/>:
+        /// that path treats Tuner as an aborted Music Count-In and never calls capture, so Go
+        /// repeats the same failure.
         /// </summary>
-        private async Task EnsureTunerListeningAsync()
+        private Task EnsureTunerListeningAsync()
         {
             if (_session.Tune != "Tuner" || _isReferenceTonePlaying || _isTunerPitchPlaying)
-                return;
-            if (_isRunning)
+                return Task.CompletedTask;
+
+            if (!_tunerListening.TryBeginStart(_audio?.IsCapturing == true))
             {
-                DebugLog.WriteLine("[Tuner] EnsureTunerListening: already running");
+                DebugLog.WriteLine("[Tuner] EnsureTunerListening: joining in-flight or live capture");
+                return _tunerListenTask ?? Task.CompletedTask;
+            }
+
+            int generation = _tunerListening.Generation;
+            try { _tunerListenCts?.Cancel(); } catch { }
+            _tunerListenCts?.Dispose();
+            _tunerListenCts = new CancellationTokenSource();
+            DebugLog.WriteLine("[Tuner] EnsureTunerListening: starting microphone capture");
+            _tunerListenTask = StartTunerMicrophoneCaptureAsync(generation, _tunerListenCts.Token);
+            return _tunerListenTask;
+        }
+
+        /// <summary>
+        /// "Listening starts when music appears" is the preference to listen when a listening
+        /// page appears, including Tuner.
+        /// </summary>
+        private void MaybeAutoStartTunerListening()
+        {
+            if (!PlayModePickerOptions.IsTunerMode(_session) || !_isPageVisible)
+                return;
+            if (!_tunerListening.ShouldAutoStartOnAppear(
+                    _session.AutoStart,
+                    _audio?.IsCapturing == true,
+                    _isReferenceTonePlaying,
+                    _isTunerPitchPlaying))
+                return;
+
+            ListeningStartupLog.Write("TUNER: auto-start on appear");
+            _ = EnsureTunerListeningAsync();
+        }
+
+        /// <summary>Drops Tuner capture ownership so a late start cannot finish or block the next Go.</summary>
+        private void AbandonTunerListening()
+        {
+            int owner = _tunerCaptureOwner;
+            _tunerListening.Leave();
+            _tunerCaptureOwner = 0;
+            try { _tunerListenCts?.Cancel(); } catch { }
+            if (owner != 0)
+            {
+                try { _audio?.StopCapture(); } catch { }
+            }
+        }
+
+        private void ReleaseSupersededTunerStart(int generation)
+        {
+            if (generation == _tunerListening.Generation)
+            {
+                _tunerListening.CompleteStart(generation, captureIsRunning: false);
                 return;
             }
 
-            DebugLog.WriteLine("[Tuner] EnsureTunerListening: requesting StartListening");
-            await StartListeningAndEvaluatingAsync();
+            if (_tunerCaptureOwner == generation)
+            {
+                _tunerCaptureOwner = 0;
+                try { _audio?.StopCapture(); } catch { }
+            }
         }
         private void UpdatePickersContainerVisibility()
         {
@@ -7585,14 +8694,13 @@ namespace musicmate.Pages
                 UpdateTunerStaffDisplay();
                 ApplyTunerHeight();
                 Dispatcher.Dispatch(ApplyTunerHeight);
-                if (!_isRunning && !_isReferenceTonePlaying && !_isTunerPitchPlaying)
-                {
-                    DebugLog.WriteLine("[Tuner] UpdateTunerVisibility → EnsureTunerListening");
-                    _ = EnsureTunerListeningAsync();
-                }
+                if (enteringTuner && _isPageVisible)
+                    MaybeAutoStartTunerListening();
             }
             else
             {
+                if (leavingTuner)
+                    AbandonTunerListening();
                 _ = StopReferenceToneAsync(resumeListening: false);
                 _ = StopTunerPitchAsync();
                 if (TitlePageModeLabel != null)
@@ -7832,40 +8940,14 @@ namespace musicmate.Pages
             }
             SizeTunerCompactPickers();
         }
-        private async void PracticeKeyPicker_SelectedIndexChanged(object? sender, EventArgs e)
-        {
-            if (PracticeKeyPicker == null) return;
-            if (IsPickerSyncSuppressed) return;
-            var shortKey = GetPickerKeyShortName(PracticeKeyPicker);
-            if (shortKey == null) return;
-            if (IsPremiumKey(shortKey) && !StatusService.Instance.IsPremiumUser)
-            {
-                var purchased = await PremiumPromptHelper.ShowAsync(this,
-                    onDecline: () => PracticeKeyPicker.SelectedIndex = _lastFreeKeyIndex);
-                if (!purchased) return;
-            }
-            else { _lastFreeKeyIndex = PracticeKeyPicker.SelectedIndex; }
-            _session.Key = shortKey;
-            MarkChildKeyScaleOverrideIfNeeded();
-            EnterPickerSyncSuppress();
-            try
-            {
-                if (KeyPicker.SelectedIndex != PracticeKeyPicker.SelectedIndex)
-                    KeyPicker.SelectedIndex = PracticeKeyPicker.SelectedIndex;
-            }
-            finally { ExitPickerSyncSuppress(); }
-            UpdateConcertKeyLabel();
-            _staffDrawable?.InvalidateLayoutCache();
-            if (_isPageVisible && !_suppressSessionRegenerate)
-            {
-                _freezeStaff = false;
-                await RegenerateNotesAsync();
-            }
-        }
         private async void OnScaleTunePickerChanged(object? sender, EventArgs e)
         {
             DebugLog.WriteLine($"[PickerDBG] OnScaleTunePickerChanged fired. suppress={IsPickerSyncSuppressed} sender={sender?.GetType().Name}");
             if (IsPickerSyncSuppressed) return;
+            // This picker is hidden on the Music page. A first-load echo must not
+            // replace Tuner (or the tune just opened) with whatever index was assigned.
+            if (PickersContainer == null || !PickersContainer.IsVisible)
+                return;
             var sourcePicker = (sender as Picker) ?? ScaleTunePicker;
             var items = sourcePicker.ItemsSource as string[];
             var idx = sourcePicker.SelectedIndex;
@@ -8022,7 +9104,7 @@ namespace musicmate.Pages
         private async Task StopListeningAndEvaluatingAsync(string statusMessage = "Stopped.")
         {
             _userStoppedListening = true;
-            _listeningPausedForPageHide = false;
+            ClearListeningPaused("user stop");
             CancelPendingListeningStarts();
             _playCts?.Cancel();
             StopWaitingCountIn();
@@ -8072,6 +9154,8 @@ namespace musicmate.Pages
 
         private async Task HandleStartStopToggleAsync()
         {
+            RecordUserActivity();
+
             // Tuner: dedicated listen/stop so Stop leaves the page quiet for pick → staff → play.
             if (_session.Tune == "Tuner")
             {
@@ -8093,14 +9177,26 @@ namespace musicmate.Pages
                     return;
                 }
 
-                if (_isRunning)
+                if (_tunerListening.ShouldStopOnGo(_audio?.IsCapturing == true))
                 {
                     await StopTunerListeningAsync();
                     return;
                 }
 
+                ClearInactivityIdleForUserResume();
+                _userStoppedListening = false;
                 await EnsureTunerListeningAsync();
                 UpdateTunerModeChrome();
+                return;
+            }
+
+            // Ownership:
+            //   Stop (running) → halt activity + generate next music (or restore Repeat Same).
+            //   Go (idle) → start currently displayed music only — never generate/replace.
+            // A second tap while Go is still showing is not Stop — startup has not confirmed listening.
+            if (_listeningStartupActive && !_listeningChromeShown)
+            {
+                ListeningStartupLog.Write("GO: ignored — startup already in progress");
                 return;
             }
 
@@ -8110,8 +9206,9 @@ namespace musicmate.Pages
             if (plan.Action is PracticeSessionLifecycle.StopToggleAction.StopRestoreRepeatSame
                 or PracticeSessionLifecycle.StopToggleAction.StopRegenerateFresh)
             {
+                _showCurrentNoteHighlight = true;
                 _userStoppedListening = true;
-                _listeningPausedForPageHide = false;
+                ClearListeningPaused("user stop");
                 CancelPendingListeningStarts();
                 try
                 {
@@ -8146,13 +9243,15 @@ namespace musicmate.Pages
             }
             else
             {
+                // Go — ForceNewNotes is always false from PlanStopToggle.
+                ListeningStartupLog.Write("GO: tapped");
                 _userStoppedListening = false;
-                _listeningPausedForPageHide = false;
+                ClearListeningPaused("Go");
                 _holdResultForChildSession = false;
                 _session.SessionCompleted = false;
 
                 await StartListeningAndEvaluatingAsync(
-                    forceNewNotes: plan.ForceNewNotes,
+                    forceNewNotes: false,
                     scaleKeyTrigger: plan.ScaleKeyTrigger);
             }
         }
@@ -8163,7 +9262,9 @@ namespace musicmate.Pages
         /// </summary>
         private async Task StopTunerListeningAsync()
         {
+            _userStoppedListening = true;
             _sessionStartCts?.Cancel();
+            AbandonTunerListening();
             try
             {
                 StopTunerMicrophoneCaptureCore(clearDetection: true);

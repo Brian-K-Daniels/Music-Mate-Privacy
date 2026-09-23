@@ -13,6 +13,7 @@ namespace musicmate.Services
     public class AudioCaptureService : IAudioCaptureService
     {
         public event Action? MaxBlocksReached;
+        public event Action? CaptureRouteLost;
 
         private readonly object _gate = new();
         private AudioRecord? _rec;
@@ -125,6 +126,7 @@ namespace musicmate.Services
 
             lock (_gate)
             {
+                ListeningStartupLog.Write("AUDIO: StartListening requested");
                 _callback = onBlock;
                 StopCapture_NoLock(waitForLoop: true);
 
@@ -148,6 +150,8 @@ namespace musicmate.Services
                         var rec = new AudioRecord(
                             AudioSource.Mic, SampleRate, ChannelIn.Mono,
                             Android.Media.Encoding.Pcm16bit, useBuf);
+                        ListeningStartupLog.Write(
+                            $"AUDIO: recorder created state={rec.State} buf={useBuf}");
 
                         if (rec.State != State.Initialized)
                         {
@@ -158,6 +162,8 @@ namespace musicmate.Services
                             continue;
                         }
 
+                        ListeningStartupLog.Write("AUDIO: recorder.StartRecording called");
+                        AndroidPlaybackRoute.Apply("listening");
                         rec.StartRecording();
 
                         _rec = rec;
@@ -176,6 +182,7 @@ namespace musicmate.Services
                     catch (Exception ex)
                     {
                         lastEx = ex;
+                        ListeningStartupLog.Exception("AUDIO", ex);
                         Debug.WriteLine($"[AudioCapture] Start attempt {attempt} failed: {ex.Message}");
                         Thread.Sleep(50 * attempt);
                     }
@@ -193,6 +200,7 @@ namespace musicmate.Services
 
         private void CaptureLoop(AudioRecord rec, CancellationToken token, int gen)
         {
+            bool routeLost = false;
             try
             {
                 var buf = new short[BufferSize];
@@ -209,6 +217,7 @@ namespace musicmate.Services
                     catch (Exception ex)
                     {
                         Debug.WriteLine($"[AudioCapture] Read error: {ex.Message}");
+                        routeLost = true;
                         break;
                     }
 
@@ -232,7 +241,9 @@ namespace musicmate.Services
                     }
                     else if (read < 0)
                     {
+                        // Device unplug or a newly attached microphone invalidates this AudioRecord.
                         Debug.WriteLine($"[AudioCapture] Read returned {read}");
+                        routeLost = true;
                         break;
                     }
                 }
@@ -240,10 +251,18 @@ namespace musicmate.Services
             catch (Exception ex)
             {
                 Debug.WriteLine($"CaptureLoop error: {ex}");
+                routeLost = true;
             }
             finally
             {
                 Volatile.Write(ref _loopRunning, 0);
+                // StopCapture bumps the generation. Only an unexpected recorder death reopens the mic.
+                if (routeLost
+                    && !token.IsCancellationRequested
+                    && Volatile.Read(ref _generation) == gen)
+                {
+                    try { CaptureRouteLost?.Invoke(); } catch { }
+                }
             }
         }
 
@@ -255,6 +274,7 @@ namespace musicmate.Services
 
         private void StopCapture_NoLock(bool waitForLoop)
         {
+            ListeningStartupLog.Write($"AUDIO: StopCapture caller={ListeningStartupLog.Caller()}");
             Interlocked.Increment(ref _generation);
 
             try

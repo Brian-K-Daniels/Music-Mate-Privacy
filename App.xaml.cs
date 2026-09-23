@@ -166,12 +166,15 @@ namespace musicmate
         {
             AppLifecycleLog.WriteAlways("App", "OnResume");
             base.OnResume();
+            Services.AppCueAudioGate.NotifyAppResumed();
         }
 
         protected override void OnSleep()
         {
             AppLifecycleLog.WriteAlways("App", "OnSleep");
             base.OnSleep();
+            // Suspend mic / cue audio after a short grace. A microphone plug-in pauses and
+            // resumes immediately; screen-off and background stay paused and still stop audio.
             Services.AppCueAudioGate.NotifyAppSuspended();
         }
     }

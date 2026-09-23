@@ -45,9 +45,11 @@ namespace musicmate.Pages
                         var session = ServiceHelper.GetService<NoteSessionService>();
                         if (session != null)
                             PlayModePickerOptions.ApplyOtherSelection(session, PlayModePickerOptions.Tuner);
+                        PlayModePickerOptions.MarkTunerSelectedBeforeMusicPageLoad();
 
                         Shell.Current.FlyoutIsPresented = false;
                         await Shell.Current.GoToAsync("//MusicPage");
+                        PlayModePickerOptions.ConsumeTunerSelectedBeforeMusicPageLoad();
                     }
                 }
                 catch (Exception ex)

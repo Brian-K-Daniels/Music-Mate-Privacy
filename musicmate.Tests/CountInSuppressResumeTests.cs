@@ -17,7 +17,12 @@ public class CountInSuppressResumeTests : IDisposable
         _store.Clear();
     }
 
-    public void Dispose() => SessionPreferences.TestStore = null;
+    public void Dispose()
+    {
+        SessionPreferences.TestStore = null;
+        AppCueAudioGate.SuspendGrace = AppCueAudioGate.DefaultSuspendGrace;
+        AppCueAudioGate.CancelPendingSuspend();
+    }
 
     [Fact]
     public void MatchingPitch_DuringCountInSuppress_FarFromClick_MayEndCountIn()
@@ -201,6 +206,8 @@ public class CountInSuppressResumeTests : IDisposable
     [Fact]
     public void AppCueAudioGate_NotifyInvokesSubscribers()
     {
+        var previous = AppCueAudioGate.SuspendGrace;
+        AppCueAudioGate.SuspendGrace = TimeSpan.Zero;
         int hits = 0;
         void Handler() => hits++;
         AppCueAudioGate.SuspendRequested += Handler;
@@ -212,6 +219,79 @@ public class CountInSuppressResumeTests : IDisposable
         finally
         {
             AppCueAudioGate.SuspendRequested -= Handler;
+            AppCueAudioGate.SuspendGrace = previous;
+            AppCueAudioGate.CancelPendingSuspend();
+        }
+    }
+
+    [Fact]
+    public async Task AppCueAudioGate_ResumeDuringGrace_DoesNotStopCues()
+    {
+        var previous = AppCueAudioGate.SuspendGrace;
+        AppCueAudioGate.SuspendGrace = TimeSpan.FromMilliseconds(150);
+        int hits = 0;
+        void Handler() => hits++;
+        AppCueAudioGate.SuspendRequested += Handler;
+        try
+        {
+            AppCueAudioGate.NotifyAppSuspended();
+            AppCueAudioGate.NotifyAppResumed();
+            await Task.Delay(400);
+            Assert.Equal(0, hits);
+        }
+        finally
+        {
+            AppCueAudioGate.SuspendRequested -= Handler;
+            AppCueAudioGate.SuspendGrace = previous;
+            AppCueAudioGate.CancelPendingSuspend();
+        }
+    }
+
+    [Fact]
+    public async Task AppCueAudioGate_GraceElapsed_SuspendsOnce()
+    {
+        var previous = AppCueAudioGate.SuspendGrace;
+        AppCueAudioGate.SuspendGrace = TimeSpan.FromMilliseconds(80);
+        int hits = 0;
+        void Handler() => Interlocked.Increment(ref hits);
+        AppCueAudioGate.SuspendRequested += Handler;
+        try
+        {
+            AppCueAudioGate.NotifyAppSuspended();
+            AppCueAudioGate.NotifyAppSuspended();
+            var signaled = false;
+            for (int i = 0; i < 40 && !signaled; i++)
+            {
+                await Task.Delay(25);
+                signaled = Volatile.Read(ref hits) >= 1;
+            }
+
+            Assert.True(signaled);
+            await Task.Delay(120);
+            Assert.Equal(1, Volatile.Read(ref hits));
+        }
+        finally
+        {
+            AppCueAudioGate.SuspendRequested -= Handler;
+            AppCueAudioGate.SuspendGrace = previous;
+            AppCueAudioGate.CancelPendingSuspend();
+        }
+    }
+
+    [Fact]
+    public void AppCueAudioGate_NotifyResumeInvokesSubscribers()
+    {
+        int hits = 0;
+        void Handler() => hits++;
+        AppCueAudioGate.ResumeRequested += Handler;
+        try
+        {
+            AppCueAudioGate.NotifyAppResumed();
+            Assert.Equal(1, hits);
+        }
+        finally
+        {
+            AppCueAudioGate.ResumeRequested -= Handler;
         }
     }
 

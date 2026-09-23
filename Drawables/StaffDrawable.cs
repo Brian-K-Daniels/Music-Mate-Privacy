@@ -976,12 +976,18 @@ namespace musicmate.Drawables
 
             // BPM marking stays on the upper staff only; key/time may repeat on lower.
             // Interval Sight Training (SingleStaffLayout): clef + key only — no tempo or time sig.
+            // Time-signature hit target is owned by the lower staff when it draws a meter;
+            // otherwise the single engraved staff owns it. Upper staff never keeps its own target.
+            bool lowerWillOwnTimeSignatureHit = _session.Tune != "Tuner" && !SingleStaffLayout
+                && PracticeTuneStaffSplit.ShouldEngraveStaff(LowerNotes.Count)
+                && (UpperNotes.Count == 0 || _session.ShowSignaturesOnBothStaffs);
             if (PracticeTuneStaffSplit.ShouldEngraveStaff(UpperNotes.Count))
             {
                 DrawStaffHeaderChrome(canvas, ink, upperTop, upperMid, upperBot,
                     drawKeyAndTimeSig: true,
                     drawBpmMarking: !SingleStaffLayout,
-                    drawTimeSignature: !SingleStaffLayout);
+                    drawTimeSignature: !SingleStaffLayout,
+                    captureTimeSignatureHitTarget: !lowerWillOwnTimeSignatureHit);
             }
             if (_session.Tune != "Tuner" && !SingleStaffLayout
                 && PracticeTuneStaffSplit.ShouldEngraveStaff(LowerNotes.Count))
@@ -991,7 +997,8 @@ namespace musicmate.Drawables
                 DrawStaffHeaderChrome(canvas, ink, lowerTop, lowerMid, lowerBot,
                     drawKeyAndTimeSig: drawLowerSignatures,
                     drawBpmMarking: UpperNotes.Count == 0,
-                    drawTimeSignature: drawLowerSignatures);
+                    drawTimeSignature: drawLowerSignatures,
+                    captureTimeSignatureHitTarget: true);
             }
         }
 
@@ -5100,7 +5107,8 @@ namespace musicmate.Drawables
             float staffTop, float staffMid, float staffBot,
             bool drawKeyAndTimeSig,
             bool drawBpmMarking = true,
-            bool drawTimeSignature = true)
+            bool drawTimeSignature = true,
+            bool captureTimeSignatureHitTarget = true)
         {
             canvas.SaveState();
             canvas.FontColor = ink;
@@ -5117,11 +5125,11 @@ namespace musicmate.Drawables
             {
                 float keySigEndX = DrawKeySignature(canvas, staffTop, staffMid, ink);
                 if (drawTimeSignature && _session.Tune != "Tuner")
-                    DrawTimeSignature(canvas, staffTop, staffMid, ink, keySigEndX + KeySigTimeSigGap);
-                else
+                    DrawTimeSignature(canvas, staffTop, staffMid, ink, keySigEndX + KeySigTimeSigGap, captureTimeSignatureHitTarget);
+                else if (captureTimeSignatureHitTarget)
                     ClearTimeSignatureBounds();
             }
-            else
+            else if (captureTimeSignatureHitTarget)
             {
                 ClearTimeSignatureBounds();
             }
@@ -7207,11 +7215,12 @@ namespace musicmate.Drawables
         }
 
         private void DrawTimeSignature(ICanvas canvas, float staffTop, float staffMid,
-                                       Color ink, float keySigEndX)
+                                       Color ink, float keySigEndX, bool captureHitTarget)
         {
             if (_session.Tune == "Tuner")
             {
-                ClearTimeSignatureBounds();
+                if (captureHitTarget)
+                    ClearTimeSignatureBounds();
                 return;
             }
 
@@ -7222,7 +7231,8 @@ namespace musicmate.Drawables
                 var parts = timeSig.Split('/');
                 if (parts.Length != 2)
                 {
-                    ClearTimeSignatureBounds();
+                    if (captureHitTarget)
+                        ClearTimeSignatureBounds();
                     return;
                 }
 
@@ -7245,14 +7255,27 @@ namespace musicmate.Drawables
                     HorizontalAlignment.Center, VerticalAlignment.Center);
                 canvas.Font = Microsoft.Maui.Graphics.Font.Default;
 
-                // Finger-friendly hit target for opening the Music-page time-signature control.
-                float top = Math.Min(staffTop, topY) - tsFontSize * 0.25f;
-                float bottom = bottomY + tsFontSize + tsFontSize * 0.35f;
-                _lastTimeSignatureBounds = new RectF(
-                    tsX - 4f,
-                    top,
-                    Math.Max(8f, boxW + 8f),
-                    Math.Max(8f, bottom - top));
+                // Upper staff draws the numerals but does not own a hit target when a lower
+                // staff also shows a time signature. The single target's bottom stays at this
+                // staff's time-signature bottom; its top meets the bottom of the tempo hit area.
+                if (!captureHitTarget)
+                    return;
+
+                float left = tsX - 4f;
+                float width = Math.Max(8f, boxW + 8f);
+                float glyphBottom = bottomY + tsFontSize + tsFontSize * 0.35f;
+                float hitTop = Math.Min(staffTop, topY);
+                if (_lastMusicBpmMarkingBounds is RectF bpm)
+                {
+                    float tempoBottom = bpm.Y + bpm.Height;
+                    if (tempoBottom < glyphBottom)
+                        hitTop = tempoBottom;
+                }
+
+                if (hitTop > glyphBottom - 8f)
+                    hitTop = glyphBottom - 8f;
+
+                _lastTimeSignatureBounds = new RectF(left, hitTop, width, Math.Max(8f, glyphBottom - hitTop));
                 TimeSignatureBoundsChanged?.Invoke(this, EventArgs.Empty);
             }
             finally { canvas.RestoreState(); }
@@ -7275,9 +7298,11 @@ namespace musicmate.Drawables
             if (_lastTimeSignatureBounds is not RectF r)
                 return false;
 
-            const float pad = 20f;
-            return x >= r.X - pad && x <= r.X + r.Width + pad
-                && y >= r.Y - pad && y <= r.Y + r.Height + pad;
+            // Horizontal slack only — vertical edges stay at tempo-bottom and time-sig bottom
+            // so the target does not overlap the tempo hit area.
+            const float padX = 8f;
+            return x >= r.X - padX && x <= r.X + r.Width + padX
+                && y >= r.Y && y <= r.Y + r.Height;
         }
 
         private void ClearTimeSignatureBounds()

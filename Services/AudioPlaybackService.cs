@@ -53,6 +53,9 @@ namespace musicmate.Services
 
             try
             {
+#if ANDROID
+                AndroidPlaybackRoute.Apply("playback");
+#endif
                 foreach (var f in freqs)
                 {
                     token.ThrowIfCancellationRequested();
@@ -104,6 +107,7 @@ namespace musicmate.Services
             try
             {
 #if ANDROID
+                AndroidPlaybackRoute.Apply("sustained-playback");
                 await PlaySustainedAudioTrackAsync(freq, gain, token).ConfigureAwait(false);
 #elif WINDOWS
                 await PlaySustainedWindowsGraphAsync(freq, gain, token).ConfigureAwait(false);
@@ -205,6 +209,7 @@ namespace musicmate.Services
                 }
 
                 track.SetVolume(1f);
+                AndroidPlaybackRoute.ApplyTo(track);
                 track.Play();
 
                 var held = track;
@@ -394,7 +399,11 @@ namespace musicmate.Services
         private async Task PlayOneToneAsync(double freq, double durationSeconds, float volume, CancellationToken ct)
         {
 #if ANDROID
-            if (durationSeconds <= AndroidAudioTrackMaxSeconds)
+            // USB-mic output has no speaker. Pinned playback must use AudioTrack so
+            // SetPreferredDevice can keep the tone on the phone speaker. The normal
+            // short-click path stays on AudioTrack as well. Longer tones without a
+            // pin still use MediaPlayer.
+            if (durationSeconds <= AndroidAudioTrackMaxSeconds || AndroidPlaybackRoute.HasPinnedOutput)
             {
                 await PlayOneToneAudioTrackAsync(freq, durationSeconds, volume, ct).ConfigureAwait(false);
                 return;
@@ -528,6 +537,7 @@ namespace musicmate.Services
 
                 // PCM samples already include gain; keep track gain at unity.
                 track.SetVolume(1f);
+                AndroidPlaybackRoute.ApplyTo(track);
                 track.Play();
 
                 int offset = 0;

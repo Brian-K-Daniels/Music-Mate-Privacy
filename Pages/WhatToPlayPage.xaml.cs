@@ -168,8 +168,8 @@ namespace musicmate.Pages
 
         {
 
-            // Tune can change from the main-menu Tuner action while this page is hidden;
-            // still sync pickers so Other shows Tuner when the user returns.
+            // Tune can change from the hamburger Tuner action while this page is hidden.
+            // Pickers stay on the saved music choice; Tuner is not a What To Play row.
             var allowWhenHidden = e.PropertyName == nameof(NoteSessionService.Tune);
 
             if (_localPlayModeChange || (!_isPageVisible && !allowWhenHidden)) return;
@@ -919,50 +919,6 @@ namespace musicmate.Pages
             ClearOtherPlayModePickers(OtherPicker);
 
             LayoutTestTune.SetEnabled(false);
-
-
-
-            if (string.Equals(selected, PlayModePickerOptions.Tuner, StringComparison.Ordinal))
-
-            {
-
-                if (!PlayModePickerOptions.IsNewPlaySelection(previousSelection, nextSelection))
-
-                {
-
-                    ApplyPlayModeSessionChange(() =>
-
-                        PlayModePickerOptions.ApplyOtherSelection(_session, selected));
-
-                    UpdatePlayModePickersFromSession();
-
-                    UpdateRepeatButtonsVisibility();
-
-                    return;
-
-                }
-
-
-
-                if (Shell.Current is musicmate.AppShell shell)
-
-                    await shell.SelectTunerAndOpenMusicAsync();
-
-                else
-
-                {
-
-                    ApplyPlayModeSessionChange(() =>
-
-                        PlayModePickerOptions.ApplyOtherSelection(_session, selected));
-
-                    await Shell.Current.GoToAsync("//MusicPage");
-
-                }
-
-                return;
-
-            }
 
 
 

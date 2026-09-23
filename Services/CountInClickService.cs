@@ -1,8 +1,6 @@
 using System.Diagnostics;
-using Plugin.Maui.Audio;
-#if DEBUG
 using musicmate.Diagnostics;
-#endif
+using Plugin.Maui.Audio;
 #if ANDROID
 using Android.Media;
 #endif
@@ -21,8 +19,7 @@ namespace musicmate.Services
         private int _playEpoch;
 
 #if ANDROID
-        private SoundPool? _soundPool;
-        private readonly Dictionary<ClickCacheKey, int> _soundIds = new();
+        private readonly Dictionary<ClickCacheKey, AudioTrack> _tracks = new();
 #endif
 
         public CountInClickService(IAudioManager audioManager)
@@ -38,14 +35,16 @@ namespace musicmate.Services
             int durationMs)
         {
             int dur = Math.Clamp(durationMs, 20, 2000);
-            PrepareCached(
-                WaitingCountInSettings.ClampPitchHz(accentedPitchHz),
-                WaitingCountInSettings.ClampVolume(accentedVolume),
-                dur);
-            PrepareCached(
-                WaitingCountInSettings.ClampPitchHz(unaccentedPitchHz),
-                WaitingCountInSettings.ClampVolume(unaccentedVolume),
-                dur);
+            double accentHz = WaitingCountInSettings.ClampPitchHz(accentedPitchHz);
+            float accentVol = WaitingCountInSettings.ClampVolume(accentedVolume);
+            double plainHz = WaitingCountInSettings.ClampPitchHz(unaccentedPitchHz);
+            float plainVol = WaitingCountInSettings.ClampVolume(unaccentedVolume);
+#if ANDROID
+            EnsureAndroidClicksReady(accentHz, accentVol, plainHz, plainVol, dur);
+#else
+            PrepareCached(accentHz, accentVol, dur);
+            PrepareCached(plainHz, plainVol, dur);
+#endif
         }
 
         public Task PlayClickAsync(
@@ -59,8 +58,8 @@ namespace musicmate.Services
             if (ct.IsCancellationRequested)
                 return Task.CompletedTask;
 
+            _ = accented;
             int epochAtStart = Volatile.Read(ref _playEpoch);
-            long triggerTick = Stopwatch.GetTimestamp();
 
             double hz = WaitingCountInSettings.ClampPitchHz(frequencyHz);
             int dur = Math.Clamp(durationMs, 20, 2000);
@@ -73,30 +72,15 @@ namespace musicmate.Services
                     return Task.CompletedTask;
 
 #if ANDROID
-                PlayAndroidCached(key, hz, vol, dur, epochAtStart, ct);
+                PlayPreparedAndroid(key, hz, vol, dur, epochAtStart, ct, schedule);
 #else
-                PlayWindowsCached(key, hz, vol, dur, epochAtStart, ct);
+                PlayWindowsCached(key, hz, vol, dur, epochAtStart, ct, schedule);
 #endif
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"[CountInClick] play failed: {ex.Message}");
             }
-
-#if DEBUG
-            if (schedule.HasValue)
-            {
-                var s = schedule.Value;
-                double audioLatencyMs = (triggerTick - s.SchedulerTick) * 1000.0 / Stopwatch.Frequency;
-                MetronomeBeatDiagnostics.LogAudioTrigger(
-                    s.MeasureNumber,
-                    s.BeatNumber,
-                    s.IntendedMs,
-                    s.SchedulerMs,
-                    audioLatencyMs,
-                    accented);
-            }
-#endif
 
             return Task.CompletedTask;
         }
@@ -107,7 +91,7 @@ namespace musicmate.Services
             lock (_gate)
             {
 #if ANDROID
-                ReleaseSoundPool_NoLock();
+                ReleaseTracks_NoLock();
 #endif
                 foreach (var cached in _cache.Values)
                     cached.DisposePlayer();
@@ -120,9 +104,11 @@ namespace musicmate.Services
             var key = ClickCacheKey.From(hz, volume, durationMs);
             lock (_gate)
             {
-                _ = GetOrCreateCached_NoLock(key, hz, volume, durationMs);
-#if ANDROID
-                _ = GetOrLoadSoundId_NoLock(key, _cache[key].Pcm);
+                var cached = GetOrCreateCached_NoLock(key, hz, volume, durationMs);
+#if !ANDROID
+                EnsureWindowsPlayer_NoLock(cached);
+#else
+                _ = cached;
 #endif
             }
         }
@@ -145,108 +131,290 @@ namespace musicmate.Services
         }
 
 #if ANDROID
-        private void PlayAndroidCached(
+        /// <summary>
+        /// One static track per click. SoundPool is not used: a pool created on the
+        /// main looper can start the same sample again when play() is called off that
+        /// looper, which is a second click that drifts against the beat.
+        /// </summary>
+        private void EnsureAndroidClicksReady(
+            double accentHz,
+            float accentVol,
+            double plainHz,
+            float plainVol,
+            int durationMs)
+        {
+            int epoch = Volatile.Read(ref _playEpoch);
+            bool pin = false;
+            try
+            {
+                AndroidPlaybackRoute.Apply("count-in");
+                pin = OperatingSystem.IsAndroidVersionAtLeast(23) && AndroidPlaybackRoute.HasPinnedOutput;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[CountInClick] route failed: {ex.Message}");
+            }
+
+            PrimeTrack(ClickCacheKey.From(accentHz, accentVol, durationMs), accentHz, accentVol, durationMs, epoch, pin);
+            PrimeTrack(ClickCacheKey.From(plainHz, plainVol, durationMs), plainHz, plainVol, durationMs, epoch, pin);
+        }
+
+        private void PrimeTrack(
+            ClickCacheKey key,
+            double hz,
+            float volume,
+            int durationMs,
+            int epoch,
+            bool pinOutput)
+        {
+            if (Volatile.Read(ref _playEpoch) != epoch)
+                return;
+
+            short[] pcm;
+            lock (_gate)
+            {
+                if (Volatile.Read(ref _playEpoch) != epoch || _tracks.ContainsKey(key))
+                    return;
+                var cached = GetOrCreateCached_NoLock(key, hz, volume, durationMs);
+                if (cached.Pcm.Length == 0)
+                    return;
+                pcm = PadWithSilence(cached.Pcm);
+            }
+
+            AudioTrack? track = CreateStaticTrack(pcm, pinOutput);
+            if (track == null)
+                return;
+
+            lock (_gate)
+            {
+                if (Volatile.Read(ref _playEpoch) != epoch || _tracks.ContainsKey(key))
+                {
+                    ReleaseTrack(track);
+                    return;
+                }
+
+                _tracks[key] = track;
+            }
+        }
+
+        private static AudioTrack? CreateStaticTrack(short[] pcm, bool pinOutput)
+        {
+            AudioTrack? track = null;
+            try
+            {
+                int bytes = pcm.Length * 2;
+#pragma warning disable CS0618
+                track = new AudioTrack(
+                    Android.Media.Stream.Music,
+                    MetronomeClickPcm.SampleRate,
+                    ChannelOut.Mono,
+                    Android.Media.Encoding.Pcm16bit,
+                    bytes,
+                    AudioTrackMode.Static);
+#pragma warning restore CS0618
+                if (track.State == AudioTrackState.Uninitialized)
+                {
+                    ReleaseTrack(track);
+                    return null;
+                }
+
+                if (pinOutput && OperatingSystem.IsAndroidVersionAtLeast(23))
+                    AndroidPlaybackRoute.ApplyTo(track);
+
+                int written = track.Write(pcm, 0, pcm.Length);
+                if (written < pcm.Length)
+                {
+                    ReleaseTrack(track);
+                    return null;
+                }
+
+                track.SetVolume(1f);
+                return track;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[CountInClick] static track failed: {ex.Message}");
+                if (track != null)
+                    ReleaseTrack(track);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// One Play() for this beat. Any other prepared track is paused first so
+        /// accent and unaccent cannot sound together.
+        /// </summary>
+        private void PlayPreparedAndroid(
             ClickCacheKey key,
             double hz,
             float volume,
             int durationMs,
             int epochAtStart,
-            CancellationToken ct)
+            CancellationToken ct,
+            MetronomeClickScheduleInfo? schedule)
         {
-            int soundId;
-            SoundPool? pool;
+            _ = (hz, volume, durationMs);
+            if (!MayPlay(epochAtStart, ct))
+                return;
+
+            AudioTrack? track = null;
+            var others = new List<AudioTrack>();
             lock (_gate)
             {
                 if (!MayPlay(epochAtStart, ct))
                     return;
+                if (!_tracks.TryGetValue(key, out track) || track == null)
+                {
+                    LogBeat(schedule, Stopwatch.GetTimestamp(), "unavailable", 0);
+                    return;
+                }
 
-                var cached = GetOrCreateCached_NoLock(key, hz, volume, durationMs);
-                soundId = GetOrLoadSoundId_NoLock(key, cached.Pcm);
-                pool = _soundPool;
+                foreach (var candidate in _tracks.Values)
+                {
+                    if (!ReferenceEquals(candidate, track))
+                        others.Add(candidate);
+                }
             }
 
-            if (soundId == 0 || pool == null)
-                return;
-            if (!MayPlay(epochAtStart, ct))
+            foreach (var other in others)
+            {
+                try { other.Pause(); } catch { }
+            }
+
+            long entered = Stopwatch.GetTimestamp();
+            if (!ReplayOnce(track, out long playedAt, out bool reloaded))
                 return;
 
-            // Non-blocking — suitable for 150+ BPM metronome clicks.
-            pool.Play(soundId, volume, volume, 1, 0, 1f);
+            double prepMs = (playedAt - entered) * 1000.0 / Stopwatch.Frequency;
+            LogBeat(schedule, playedAt, reloaded ? "AudioTrackReload" : "AudioTrack", prepMs);
         }
 
-        private void EnsureSoundPool_NoLock()
+        /// <summary>
+        /// The click is shorter than a beat, so a static track reaches the end and
+        /// releases its buffer. Reloading that buffer on the beat blocks for a
+        /// variable time and bunches the next click. Silence after the click keeps
+        /// the track playing until the next beat, which only pauses and restarts it.
+        /// </summary>
+        private static short[] PadWithSilence(short[] click)
         {
-            if (_soundPool != null)
-                return;
+            // Longer than the slowest beat (30 BPM = 2000 ms).
+            int samples = MetronomeClickPcm.SampleRate * 32 / 10;
+            if (click.Length >= samples)
+                return click;
 
-            var attrsBuilder = new AudioAttributes.Builder();
-            attrsBuilder.SetUsage(AudioUsageKind.Media);
-            attrsBuilder.SetContentType(AudioContentType.Music);
-            var attrs = attrsBuilder.Build()
-                ?? throw new InvalidOperationException("AudioAttributes.Builder.Build returned null.");
-
-            var poolBuilder = new SoundPool.Builder();
-            poolBuilder.SetMaxStreams(6);
-            poolBuilder.SetAudioAttributes(attrs);
-            _soundPool = poolBuilder.Build();
+            var padded = new short[samples];
+            Buffer.BlockCopy(click, 0, padded, 0, click.Length * sizeof(short));
+            return padded;
         }
 
-        private int GetOrLoadSoundId_NoLock(ClickCacheKey key, short[] pcm)
+        private static bool ReplayOnce(AudioTrack track, out long playedAt, out bool reloaded)
         {
-            if (_soundIds.TryGetValue(key, out int existing) && existing != 0)
-                return existing;
-
-            EnsureSoundPool_NoLock();
-            byte[] wav = BuildWavBytes(pcm);
-            string cacheDir = Path.Combine(FileSystem.CacheDirectory, "metronome_clicks");
-            Directory.CreateDirectory(cacheDir);
-            string path = Path.Combine(cacheDir, $"{key.HzMilli}_{key.VolumeMilli}_{key.DurationMs}.wav");
-            if (!File.Exists(path))
-                File.WriteAllBytes(path, wav);
-            int soundId = _soundPool!.Load(path, 1);
-            if (soundId != 0)
-                _soundIds[key] = soundId;
-            return soundId;
+            reloaded = false;
+            try
+            {
+                try { track.Pause(); } catch { }
+                track.SetPlaybackHeadPosition(0);
+                playedAt = Stopwatch.GetTimestamp();
+                track.Play();
+                return true;
+            }
+            catch (Exception first)
+            {
+                try
+                {
+                    reloaded = true;
+                    try { track.Stop(); } catch { }
+                    track.ReloadStaticData();
+                    track.SetPlaybackHeadPosition(0);
+                    playedAt = Stopwatch.GetTimestamp();
+                    track.Play();
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    playedAt = Stopwatch.GetTimestamp();
+                    Debug.WriteLine($"[CountInClick] replay failed: {first.Message}; {ex.Message}");
+                    return false;
+                }
+            }
         }
 
-        private void ReleaseSoundPool_NoLock()
+        private void ReleaseTracks_NoLock()
         {
-            _soundIds.Clear();
-            if (_soundPool == null)
-                return;
-            try { _soundPool.Release(); } catch { }
-            try { _soundPool.Dispose(); } catch { }
-            _soundPool = null;
+            foreach (var track in _tracks.Values)
+                ReleaseTrack(track);
+            _tracks.Clear();
+        }
+
+        private static void ReleaseTrack(AudioTrack track)
+        {
+            try { track.Stop(); } catch { }
+            try { track.Release(); } catch { }
+            try { track.Dispose(); } catch { }
         }
 #else
+        private void EnsureWindowsPlayer_NoLock(CachedClickSound cached)
+        {
+            if (cached.Player != null)
+                return;
+
+            cached.WavStream.Position = 0;
+            cached.Player = _audioManager.CreatePlayer(cached.WavStream);
+            if (cached.Player != null)
+                cached.Player.Volume = 1f;
+        }
+
         private void PlayWindowsCached(
             ClickCacheKey key,
             double hz,
             float volume,
             int durationMs,
             int epochAtStart,
-            CancellationToken ct)
+            CancellationToken ct,
+            MetronomeClickScheduleInfo? schedule)
         {
+            IAudioPlayer? player;
             lock (_gate)
             {
                 if (!MayPlay(epochAtStart, ct))
                     return;
 
                 var cached = GetOrCreateCached_NoLock(key, hz, volume, durationMs);
-                cached.WavStream.Position = 0;
-                cached.DisposePlayer();
-                if (!MayPlay(epochAtStart, ct))
+                EnsureWindowsPlayer_NoLock(cached);
+                player = cached.Player;
+                if (player == null || !MayPlay(epochAtStart, ct))
                     return;
-
-                cached.Player = _audioManager.CreatePlayer(cached.WavStream);
-                if (cached.Player == null)
-                    return;
-
-                cached.Player.Volume = 1f;
-                cached.Player.Play();
             }
+
+            long entered = Stopwatch.GetTimestamp();
+            long playedAt;
+            try
+            {
+                try { player.Pause(); } catch { }
+                try { player.Seek(0); } catch { }
+                player.Volume = 1f;
+                playedAt = Stopwatch.GetTimestamp();
+                player.Play();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[CountInClick] play failed: {ex.Message}");
+                return;
+            }
+
+            double prepMs = (playedAt - entered) * 1000.0 / Stopwatch.Frequency;
+            LogBeat(schedule, playedAt, "WindowsPlayer", prepMs);
         }
 #endif
+
+        private static void LogBeat(MetronomeClickScheduleInfo? schedule, long playedAt, string path, double prepMs)
+        {
+            if (schedule is not { } info || info.GridOriginTimestamp == 0)
+                return;
+
+            ListeningStartupLog.Write(
+                info.FormatAudibleBeat(info.ElapsedMsAt(playedAt), path) + $" prep={prepMs:F1}");
+        }
 
         private static byte[] BuildWavBytes(short[] pcm)
         {

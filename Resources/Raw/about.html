@@ -57,7 +57,7 @@
 <li><strong>Home</strong> — choose instrument or voice and level, then start practice.</li>
 <li><strong>About</strong> — this guide, search, and Premium purchase.</li>
 <li><strong>What to Play</strong> — 
-    choose tunes, scales, arpeggios, Assortment by Level, Random, or Tuner, and repeat options.</li>
+    choose tunes, scales, arpeggios, Assortment by Level, or Random, and repeat options.</li>
 <li><strong>Music</strong> — the main practice screen with the staff, listening, and playback.</li>
 <li><strong>Interval Ear Training</strong> — 
     hear intervals and identify them by ear (no instrument required).</li>
@@ -73,7 +73,9 @@
     (for teachers and experienced users).</li>
 <li><strong>Reset and Options</strong> — 
     factory defaults or your own saved custom defaults (some choices erase progress).</li>
-<li><strong>Tuner</strong> — jump straight into tuner mode on the Music page (same as Other → Tuner).</li>
+<li><strong>Tuner</strong> — open the tuner on the Music page.
+    Tuner is not a What to Play choice.
+    Back from the tuner returns to the music you had selected.</li>
 </ul>
 <p>On most pages, the back arrow (←) returns you to <strong>Music</strong>. 
     On the Music page it takes you to the <strong>"What to Play Page"</strong></p>
@@ -187,7 +189,9 @@
 </ul>
 
 <h3>Tuner</h3>
-<p>Choose <strong>Tuner</strong> from the main menu, or under <strong>Other</strong> on What to Play.</p>
+<p>Choose <strong>Tuner</strong> from the main menu.
+    It is not listed on What to Play.
+    Back from the tuner restores the music you were practicing.</p>
 <p>Play or sing a note. Music Mate listens and shows the nearest written note name,
     how sharp or flat you are (in cents), and the detected frequency.
     You can select a reference note and see it displayed on a staff.
@@ -217,6 +221,9 @@
 <li><strong>Repeat New Each Time</strong> — next create a new random exercise.</li>
 <li><strong>Repeat Same</strong> (Random) — practice the same random exercise again.</li>
 </ul>
+<p>If <strong>Listening starts when music appears</strong> is on, the next session starts
+    listening by itself and plays a count-in when count-in is enabled.
+    If that switch is off, the new music waits until you tap <strong>GO</strong>.</p>
 
 <h2>Interval Ear Training</h2>
 <p><strong>What it does:</strong> Music Mate plays two notes (an interval) through the speaker.
@@ -389,7 +396,10 @@
 
 <h3>Listening and playback</h3>
 <p>Tap the green <strong>GO</strong> circle to start listening.
-    While listening, it becomes a red <strong>Stop</strong> button.</p>
+    While listening, it becomes a red <strong>Stop</strong> button.
+    <strong>Stop</strong> ends listening and any count-in, then prepares the next exercise.
+    The next <strong>GO</strong> listens to the music already on the staff; it does not replace that music.
+    If Music sits idle for about 10 minutes, listening stops until you tap <strong>GO</strong>.</p>
 <p><strong>Remember:</strong> the first time you open <strong>Music</strong> after
     launching the app, tap <strong>GO</strong> if you see it —
     otherwise Music Mate may not be listening yet.</p>
@@ -428,9 +438,17 @@
     The status message says <strong>Count-in… play the first note when ready.</strong></p>
 <p>Clicks follow your time signature and BPM.
     The first beat of each measure is accented (louder and higher pitch by default).
+    In 4/4 that is four clicks in a measure. In 6/8 it is two conducted beats,
+    the same pulse as the conductor cues.
+    The opening click sounds before the microphone starts listening,
+    and the first note is not marked as heard during that opening click.
+    A count-in click is not treated as the note you played.
     Play or sing the first yellow note when you are ready.
     Wrong notes do not stop the count-in; when you play the first note correctly,
-    count-in stops and normal practice continues.</p>
+    count-in stops and normal practice continues.
+    <strong>Stop</strong> silences any remaining clicks immediately.
+    The next <strong>GO</strong> starts a fresh count-in.
+    When Repeat starts the next session by itself, that session gets its own count-in too.</p>
 <p>If you leave Music for another page (or open Tuner), count-in stops.
     When you return to Music, you may get a fresh count-in if it is still enabled.</p>
 <p>In <strong>Settings → Waiting Count-In</strong> you can turn count-in on or off and

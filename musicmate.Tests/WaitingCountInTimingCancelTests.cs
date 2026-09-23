@@ -19,17 +19,20 @@ public class WaitingCountInTimingCancelTests : IDisposable
 
     public void Dispose() => SessionPreferences.TestStore = null;
 
-    [Theory]
-    [InlineData(40)]   // slow
-    [InlineData(100)]  // medium
-    [InlineData(180)]  // fast
-    public async Task BeatIntervals_StayWithinTolerance_AcrossTempos(int tempoBpm)
+        [Theory]
+        [InlineData(30)]
+        [InlineData(52)]
+        [InlineData(60)]
+        [InlineData(100)]
+        [InlineData(130)]
+        [InlineData(180)]
+        public async Task BeatIntervals_StayWithinTolerance_AcrossTempos(int tempoBpm)
     {
         var clicks = new RecordingInstantClicks();
         var player = new WaitingCountInPlayer(clicks);
         using var cts = new CancellationTokenSource();
         double msPerBeat = WaitingCountInLogic.MsPerBeat(tempoBpm);
-        const int beatCount = 8;
+        int beatCount = tempoBpm <= 52 ? 4 : 6;
         int toleranceMs = tempoBpm >= 150 ? 40 : 35;
 
         var run = player.RunAsync(tempoBpm, 4, 0.4f, 0.2f, 1760, 880, 15, cts.Token);
@@ -53,6 +56,128 @@ public class WaitingCountInTimingCancelTests : IDisposable
             double gap = clicks.PlayTimesMs[i] - clicks.PlayTimesMs[i - 1];
             Assert.InRange(gap, msPerBeat - toleranceMs, msPerBeat + toleranceMs);
         }
+
+        double firstError = Math.Abs(
+            clicks.PlayTimesMs[0] - WaitingCountInLogic.GetAbsoluteBeatStartMs(0, msPerBeat));
+        int last = clicks.PlayTimesMs.Count - 1;
+        double lastError = Math.Abs(
+            clicks.PlayTimesMs[last] - WaitingCountInLogic.GetAbsoluteBeatStartMs(last, msPerBeat));
+        Assert.True(lastError <= firstError + toleranceMs,
+            $"Timing drifted from {firstError:F1}ms on beat 0 to {lastError:F1}ms on beat {last} at {tempoBpm} BPM");
+    }
+
+    [Theory]
+    [InlineData(30)]
+    [InlineData(52)]
+    [InlineData(60)]
+    [InlineData(100)]
+    [InlineData(130)]
+    [InlineData(180)]
+    public void LateWake_DoesNotMoveTheNextAbsoluteTarget(int tempoBpm)
+    {
+        double interval = WaitingCountInLogic.MsPerBeat(tempoBpm);
+        Assert.Equal(60000.0 / tempoBpm, interval, precision: 6);
+
+        for (int n = 0; n < 32; n++)
+        {
+            double target = WaitingCountInLogic.GetAbsoluteBeatStartMs(n, interval);
+            double lateActual = target + 18.0;
+            double next = WaitingCountInLogic.GetAbsoluteBeatStartMs(n + 1, interval);
+            double chainedFromLateBeep = lateActual + interval;
+
+            Assert.Equal(target + interval, next, precision: 3);
+            Assert.True(Math.Abs(next - chainedFromLateBeep) > 10,
+                $"Beat {n + 1} target followed the late beep at {tempoBpm} BPM");
+            Assert.False(WaitingCountInLogic.IsTooLateToSound(lateActual, target, interval));
+        }
+    }
+
+    [Fact]
+    public void BeatLog_ReportsTargetActualAndError()
+    {
+        var info = new MetronomeClickScheduleInfo(2, 1, 3, 2000, 2000, 0, 1);
+        Assert.Equal(
+            "Beat 3 target=2000.0 actual=2006.4 error=+6.4 ms",
+            info.FormatBeatLine(2006.4));
+        Assert.Equal(
+            "Beat 1 target=0.0 actual=4.0 error=+4.0 ms",
+            new MetronomeClickScheduleInfo(0, 1, 1, 0, 0, 0, 1).FormatBeatLine(4));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CountInAndMetronome_ScheduleTheSameAbsoluteTargets(bool countInBeforeClick)
+    {
+        var clicks = new RecordingInstantClicks();
+        var player = new WaitingCountInPlayer(clicks);
+        using var cts = new CancellationTokenSource();
+        const int tempoBpm = 180;
+        double msPerBeat = WaitingCountInLogic.MsPerBeat(tempoBpm);
+        Func<int, CancellationToken, Task>? beforeClick = countInBeforeClick
+            ? (_, _) => Task.CompletedTask
+            : null;
+
+        var run = player.RunAsync(
+            tempoBpm, 4, 0.4f, 0.2f, 1760, 880, 15, cts.Token, beforeClickAsync: beforeClick);
+        await Task.Delay((int)Math.Round(msPerBeat * 5));
+        player.Stop();
+        await run;
+
+        Assert.True(clicks.IntendedMs.Count >= 4);
+        for (int i = 0; i < clicks.IntendedMs.Count; i++)
+        {
+            Assert.Equal(
+                WaitingCountInLogic.GetAbsoluteBeatStartMs(i, msPerBeat),
+                clicks.IntendedMs[i],
+                precision: 3);
+        }
+    }
+
+    [Fact]
+    public async Task Restart_DoesNotRunTwoTimingLoops()
+    {
+        var clicks = new RecordingInstantClicks();
+        var player = new WaitingCountInPlayer(clicks);
+        using var cts = new CancellationTokenSource();
+
+        var first = player.RunAsync(120, 4, 0.4f, 0.2f, 1760, 880, 15, cts.Token);
+        await Task.Delay(40);
+        int stopsBeforeRestart = clicks.StopCount;
+        var second = player.RunAsync(120, 4, 0.4f, 0.2f, 1760, 880, 15, cts.Token);
+        await Task.Delay(40);
+        Assert.True(clicks.StopCount > stopsBeforeRestart);
+        Assert.True(player.IsActive);
+
+        int atSecondLoop = clicks.PlayCount;
+        await Task.Delay(1100);
+        player.Stop();
+        await Task.WhenAll(first, second);
+
+        int added = clicks.PlayCount - atSecondLoop;
+        Assert.InRange(added, 1, 4);
+        Assert.False(player.IsActive);
+    }
+
+    [Fact]
+    public async Task OverlappingStarts_PlayOnlyTheNewestLoop()
+    {
+        var clicks = new RecordingInstantClicks();
+        var player = new WaitingCountInPlayer(clicks);
+        using var cts = new CancellationTokenSource();
+
+        var first = player.RunAsync(
+            120, 4, 0.4f, 0.2f, 1760, 880, 15, cts.Token, source: "COUNTIN");
+        var second = player.RunAsync(
+            120, 4, 0.4f, 0.2f, 1760, 880, 15, cts.Token, source: "METRONOME");
+        await Task.Delay(900);
+        player.Stop();
+        await Task.WhenAll(first, second);
+
+        Assert.NotEmpty(clicks.LoopIds);
+        Assert.Single(clicks.LoopIds.Distinct());
+        Assert.InRange(clicks.PlayCount, 1, 4);
+        Assert.False(player.IsActive);
     }
 
     [Fact]
@@ -231,6 +356,33 @@ public class WaitingCountInTimingCancelTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task BusyClick_DoesNotCarryItsDelayIntoTheNextTarget()
+    {
+        const int busyMs = 80;
+        var clicks = new BusyClickService(busyMs);
+        var player = new WaitingCountInPlayer(clicks);
+        using var cts = new CancellationTokenSource();
+        const int tempo = 100;
+        double msPerBeat = WaitingCountInLogic.MsPerBeat(tempo);
+        const int beatCount = 5;
+        const int toleranceMs = 30;
+
+        var run = player.RunAsync(tempo, 4, 0.4f, 0.2f, 1760, 880, 15, cts.Token);
+        await Task.Delay((int)Math.Round(msPerBeat * beatCount + msPerBeat));
+        player.Stop();
+        await run;
+
+        Assert.InRange(clicks.PlayTimesMs.Count, beatCount - 1, beatCount + 1);
+        for (int i = 1; i < clicks.PlayTimesMs.Count; i++)
+        {
+            double gap = clicks.PlayTimesMs[i] - clicks.PlayTimesMs[i - 1];
+            Assert.InRange(gap, msPerBeat - toleranceMs, msPerBeat + toleranceMs);
+            Assert.True(gap < msPerBeat + busyMs - 20,
+                $"Beat {i} gap {gap:F1}ms includes the previous click's {busyMs}ms");
+        }
+    }
+
     private static async Task RunArmedAsync(
         WaitingCountInPlayer player,
         int armedGeneration,
@@ -273,8 +425,10 @@ public class WaitingCountInTimingCancelTests : IDisposable
         private readonly Stopwatch _clock = Stopwatch.StartNew();
         private readonly object _lock = new();
         private int _epoch;
-        public List<double> PlayTimesMs { get; } = new();
-        public int PlayCount { get; private set; }
+            public List<double> PlayTimesMs { get; } = new();
+            public List<double> IntendedMs { get; } = new();
+            public List<int> LoopIds { get; } = new();
+            public int PlayCount { get; private set; }
         public int StopCount { get; private set; }
         public int WarmupCount { get; private set; }
 
@@ -283,6 +437,8 @@ public class WaitingCountInTimingCancelTests : IDisposable
             lock (_lock)
             {
                 PlayTimesMs.Clear();
+                IntendedMs.Clear();
+                LoopIds.Clear();
                 _clock.Restart();
             }
         }
@@ -321,6 +477,11 @@ public class WaitingCountInTimingCancelTests : IDisposable
                 if (Volatile.Read(ref _epoch) != epochAtStart)
                     return Task.CompletedTask;
                 PlayTimesMs.Add(atMs);
+                if (schedule.HasValue)
+                {
+                    IntendedMs.Add(schedule.Value.IntendedMs);
+                    LoopIds.Add(schedule.Value.LoopId);
+                }
                 PlayCount++;
             }
 

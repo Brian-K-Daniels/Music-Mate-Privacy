@@ -24,11 +24,14 @@ public static class TempoControlLogic
         return new TempoStepSizes(60, 12);
     }
 
-    /// <summary>Five deltas for the strip: −outer, −inner, 0, +inner, +outer.</summary>
+    /// <summary>
+    /// Five deltas: −outer, −inner, 0, +(inner+1), +outer.
+    /// The two small steps differ by 1 so repeated taps can reach every integer BPM.
+    /// </summary>
     public static int[] GetDeltaChoices(int currentBpm)
     {
         var steps = GetStepSizes(currentBpm);
-        return [-steps.Outer, -steps.Inner, 0, steps.Inner, steps.Outer];
+        return [-steps.Outer, -steps.Inner, 0, steps.Inner + 1, steps.Outer];
     }
 
     /// <summary>Applies a BPM delta and clamps to the session tempo range (no wrap-around).</summary>

@@ -40,13 +40,19 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// Play must use the notes already on the staff. Do not generate or select a new tune.
+        /// Go and Play must use the notes already on the staff. Do not generate or replace the tune.
         /// </summary>
         public static bool ShouldReuseDisplayedExercise(
             bool playBack,
             bool forceNewNotes,
             int displayedNoteCount)
-            => playBack && !forceNewNotes && displayedNoteCount > 0;
+            => !forceNewNotes && displayedNoteCount > 0;
+
+        /// <summary>
+        /// Go with an empty staff must abort rather than generate music.
+        /// </summary>
+        public static bool ShouldAbortListeningBecauseEmpty(bool forceNewNotes, int displayedNoteCount)
+            => !forceNewNotes && displayedNoteCount <= 0;
 
         /// <summary>Play with an empty staff must abort rather than generate music.</summary>
         public static bool ShouldAbortPlaybackBecauseEmpty(bool playBack, int displayedNoteCount)
@@ -182,8 +188,11 @@ namespace musicmate.Services
 
         public enum StopToggleAction
         {
+            /// <summary>Stop activity and restore the Repeat Same snapshot (same music).</summary>
             StopRestoreRepeatSame,
+            /// <summary>Stop activity and generate the next exercise under current selection rules.</summary>
             StopRegenerateFresh,
+            /// <summary>Start listening/count-in for the currently displayed staff — never generate.</summary>
             StartListening
         }
 
@@ -193,6 +202,13 @@ namespace musicmate.Services
             string? ScaleKeyTrigger,
             bool ClearRepeatSameSnapshot);
 
+        /// <summary>
+        /// Explicit ownership for the Music title Go/Stop control:
+        /// <list type="bullet">
+        /// <item><description>Stop (running) → halt activity, then generate next music (or restore Repeat Same).</description></item>
+        /// <item><description>Go (idle) → start currently displayed music only; <see cref="StopTogglePlan.ForceNewNotes"/> is always false.</description></item>
+        /// </list>
+        /// </summary>
         public static StopTogglePlan PlanStopToggle(bool isRunning, bool repeatSameTune, PracticeSessionSnapshot? snapshot)
         {
             bool hasSnapshot = snapshot?.Notes.Count > 0;
@@ -205,10 +221,10 @@ namespace musicmate.Services
                 return new StopTogglePlan(StopToggleAction.StopRegenerateFresh, false, null, true);
             }
 
-            bool repeatSameStart = repeatSameTune && hasSnapshot;
+            // Go: never generate or replace the displayed tune.
             return new StopTogglePlan(
                 StopToggleAction.StartListening,
-                ForceNewNotes: !repeatSameStart,
+                ForceNewNotes: false,
                 ScaleKeyTrigger: "GoButton",
                 ClearRepeatSameSnapshot: false);
         }

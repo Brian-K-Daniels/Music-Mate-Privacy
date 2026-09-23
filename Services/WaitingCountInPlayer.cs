@@ -1,8 +1,6 @@
 using System.Diagnostics;
 using System.Threading;
-#if DEBUG
 using musicmate.Diagnostics;
-#endif
 
 namespace musicmate.Services
 {
@@ -18,6 +16,10 @@ namespace musicmate.Services
         private CancellationTokenSource? _cts;
         private int _generation;
         private int _activeLoops;
+        private int _firstSoundNotified;
+        private int _nextLoopId;
+        private int _activeLoopId;
+        private string _activeSource = "COUNTIN";
 
         public WaitingCountInPlayer(ICountInClickService clicks)
         {
@@ -30,12 +32,23 @@ namespace musicmate.Services
 
         public void Stop()
         {
-            Interlocked.Increment(ref _generation);
             CancellationTokenSource? toCancel;
+            int retiredLoopId;
+            string retiredSource;
             lock (_gate)
             {
                 toCancel = _cts;
                 _cts = null;
+                retiredLoopId = Volatile.Read(ref _activeLoopId);
+                retiredSource = _activeSource;
+                Volatile.Write(ref _activeLoopId, 0);
+                Interlocked.Increment(ref _generation);
+            }
+
+            if (retiredLoopId != 0)
+            {
+                ListeningStartupLog.Write($"{retiredSource} session={retiredLoopId} event=stop");
+                ListeningStartupLog.Write("COUNTIN: player.Stop");
             }
 
             // Cancel only — RunAsync's finally disposes the linked CTS it created.
@@ -55,18 +68,39 @@ namespace musicmate.Services
             CancellationToken externalCt,
             Func<int, CancellationToken, Task>? beforeClickAsync = null,
             Func<CancellationToken, Task>? afterClickAsync = null,
-            Func<int>? getTempoBpm = null)
+            Func<int>? getTempoBpm = null,
+            Action? onFirstClickSounded = null,
+            string source = "COUNTIN")
         {
+            if (string.IsNullOrWhiteSpace(source))
+                source = "COUNTIN";
+
+            // Retire any loop already playing, then publish this loop's id and
+            // generation together so a second start cannot keep the same id.
             Stop();
-            int gen = Volatile.Read(ref _generation);
-            var linked = CancellationTokenSource.CreateLinkedTokenSource(externalCt);
+            Interlocked.Exchange(ref _firstSoundNotified, 0);
+            CancellationTokenSource? replaced;
+            int gen;
+            int loopId;
+            CancellationTokenSource linked;
             lock (_gate)
             {
+                replaced = _cts;
+                _cts = null;
+                gen = Interlocked.Increment(ref _generation);
+                loopId = Interlocked.Increment(ref _nextLoopId);
+                _activeSource = source;
+                Volatile.Write(ref _activeLoopId, loopId);
+                linked = CancellationTokenSource.CreateLinkedTokenSource(externalCt);
                 _cts = linked;
             }
 
+            try { replaced?.Cancel(); } catch { }
+
             var ct = linked.Token;
             Interlocked.Exchange(ref _activeLoops, 1);
+            ListeningStartupLog.Write(
+                $"{source} session={loopId} event=start bpm={tempoBpm} conductorAudible=false");
 
             try
             {
@@ -76,8 +110,14 @@ namespace musicmate.Services
                     NoteSessionService.MinTempo,
                     NoteSessionService.MaxTempo);
 
-                // Preload accented + unaccented click buffers before the grid starts so
-                // SoundPool/file I/O cannot stretch the first beats.
+                // Leave the UI thread before warmup. SoundPool's load callback has to
+                // run on the main looper, and this wait must not block that looper.
+                await Task.Delay(1, ct).ConfigureAwait(false);
+                if (ct.IsCancellationRequested || Volatile.Read(ref _generation) != gen)
+                    return;
+
+                // Finish click preparation before the clock starts so load time is not
+                // part of beat 0, and so later beats do not rebuild audio.
                 WarmupClicks(
                     activeTempo,
                     beatDurationPercent,
@@ -89,10 +129,13 @@ namespace musicmate.Services
                 if (ct.IsCancellationRequested || Volatile.Read(ref _generation) != gen)
                     return;
 
+                long gridOrigin = Stopwatch.GetTimestamp();
                 var clock = Stopwatch.StartNew();
                 long beatIndex = 0;
 
-                while (!ct.IsCancellationRequested && Volatile.Read(ref _generation) == gen)
+                while (!ct.IsCancellationRequested
+                    && Volatile.Read(ref _generation) == gen
+                    && Volatile.Read(ref _activeLoopId) == loopId)
                 {
                     int tempo = Math.Clamp(
                         getTempoBpm?.Invoke() ?? tempoBpm,
@@ -108,7 +151,10 @@ namespace musicmate.Services
                             unaccentedVolume,
                             accentedPitchHz,
                             unaccentedPitchHz);
+                        if (ct.IsCancellationRequested || Volatile.Read(ref _generation) != gen)
+                            break;
                         clock.Restart();
+                        gridOrigin = Stopwatch.GetTimestamp();
                         beatIndex = 0;
                     }
 
@@ -146,24 +192,31 @@ namespace musicmate.Services
                         int selfSoundMs = WaitingCountInLogic.ResolveClickSelfSoundDurationMs(durationMs);
                         long schedulerTick = Stopwatch.GetTimestamp();
                         var schedule = new MetronomeClickScheduleInfo(
-                            beatIndex, measureNumber, beatNumber, intendedMs, actualMs, schedulerTick);
+                            beatIndex, measureNumber, beatNumber, intendedMs, actualMs, schedulerTick, gridOrigin,
+                            loopId, activeTempo, source);
 
                         try
                         {
                             if (beforeClickAsync != null)
                                 await beforeClickAsync(selfSoundMs, ct).ConfigureAwait(false);
 
-                            if (ct.IsCancellationRequested || Volatile.Read(ref _generation) != gen)
+                            if (ct.IsCancellationRequested
+                                || Volatile.Read(ref _generation) != gen
+                                || Volatile.Read(ref _activeLoopId) != loopId)
                                 break;
 
+                            // Submit on this thread. Play is already prepared, so it must not
+                            // wait for the previous beep, the UI thread, or the microphone.
                             TriggerClick(
                                 gen,
+                                loopId,
                                 click.IsAccented,
                                 durationMs,
                                 click.Volume,
                                 click.FrequencyHz,
                                 ct,
-                                schedule);
+                                schedule,
+                                onFirstClickSounded);
 
                             if (afterClickAsync != null
                                 && Volatile.Read(ref _generation) == gen
@@ -183,15 +236,29 @@ namespace musicmate.Services
 
                     beatIndex++;
                 }
+
+                bool owned = Volatile.Read(ref _generation) == gen
+                    && Volatile.Read(ref _activeLoopId) == loopId;
+                ListeningStartupLog.Write(
+                    $"{source} session={loopId} event={(ct.IsCancellationRequested || !owned ? "cancelled" : "stop")} " +
+                    $"bpm={activeTempo}");
+                ListeningStartupLog.Write(
+                    $"COUNTIN: loop exit cancelled={ct.IsCancellationRequested} " +
+                    $"generationMatch={Volatile.Read(ref _generation) == gen} session={loopId}");
             }
             catch (OperationCanceledException)
             {
-                // expected
+                ListeningStartupLog.Write($"{source} session={loopId} event=cancelled");
+                ListeningStartupLog.Write("COUNTIN: loop cancelled");
             }
             finally
             {
-                if (Volatile.Read(ref _generation) == gen)
+                ListeningStartupLog.Write($"{source} session={loopId} event=disposed");
+                if (Volatile.Read(ref _generation) == gen && Volatile.Read(ref _activeLoopId) == loopId)
+                {
                     Volatile.Write(ref _activeLoops, 0);
+                    Volatile.Write(ref _activeLoopId, 0);
+                }
 
                 lock (_gate)
                 {
@@ -274,37 +341,52 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// Fire the click on a worker so SoundPool/file work cannot stretch the absolute grid.
-        /// Generation + token are re-checked immediately before audio starts.
+        /// Submit a prepared click immediately. The next beat is not scheduled from this return.
         /// </summary>
         private void TriggerClick(
             int generation,
+            int loopId,
             bool accented,
             int durationMs,
             float volume,
             double frequencyHz,
             CancellationToken ct,
-            MetronomeClickScheduleInfo schedule)
+            MetronomeClickScheduleInfo schedule,
+            Action? onFirstClickSounded)
         {
-            _ = Task.Run(async () =>
-            {
-                if (ct.IsCancellationRequested || Volatile.Read(ref _generation) != generation)
-                    return;
+            if (ct.IsCancellationRequested
+                || Volatile.Read(ref _generation) != generation
+                || Volatile.Read(ref _activeLoopId) != loopId)
+                return;
 
-                try
+            try
+            {
+                _clicks.PlayClickAsync(accented, durationMs, volume, frequencyHz, ct, schedule)
+                    .GetAwaiter()
+                    .GetResult();
+                if (onFirstClickSounded == null
+                    || ct.IsCancellationRequested
+                    || Volatile.Read(ref _generation) != generation
+                    || Volatile.Read(ref _activeLoopId) != loopId)
+                    return;
+                if (Interlocked.Exchange(ref _firstSoundNotified, 1) != 0)
+                    return;
+                if (Volatile.Read(ref _generation) != generation)
                 {
-                    await _clicks.PlayClickAsync(accented, durationMs, volume, frequencyHz, ct, schedule)
-                        .ConfigureAwait(false);
+                    Interlocked.Exchange(ref _firstSoundNotified, 0);
+                    return;
                 }
-                catch (OperationCanceledException)
-                {
-                    // Stopped.
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"[CountIn] click failed: {ex.Message}");
-                }
-            }, CancellationToken.None);
+
+                onFirstClickSounded();
+            }
+            catch (OperationCanceledException)
+            {
+                // Stopped.
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[CountIn] click failed: {ex.Message}");
+            }
         }
     }
 }

@@ -52,6 +52,10 @@ namespace musicmate
                 // so no additional Routing.RegisterRoute calls are needed here.  The previous
                 // calls silently threw ArgumentException (duplicate route) on every cold start.
                 StartupTiming.Mark("AppShell.Ctor:end");
+                AppLifecycleLog.WriteAlways(
+                    "NAV",
+                    "shell constructed",
+                    "startup route is the first flyout item; no automatic Music navigation");
             }
             catch (Exception ex)
             {
@@ -86,6 +90,12 @@ namespace musicmate
         /// </summary>
         private void OnShellNavigated(object? sender, ShellNavigatedEventArgs e)
         {
+            AppLifecycleLog.WriteAlways(
+                "NAV",
+                "navigated",
+                $"from={e.Previous?.Location?.OriginalString ?? "(none)"} " +
+                $"to={e.Current?.Location?.OriginalString ?? "(none)"} " +
+                $"source={e.Source}");
             try
             {
                 // End (not Reset) so nested page OnAppearing busy scopes can keep the overlay.
@@ -280,11 +290,27 @@ namespace musicmate
                 var session = ServiceHelper.GetService<NoteSessionService>();
                 if (session != null)
                     PlayModePickerOptions.ApplyOtherSelection(session, PlayModePickerOptions.Tuner);
+                PlayModePickerOptions.MarkTunerSelectedBeforeMusicPageLoad();
 
                 FlyoutIsPresented = false;
+                bool musicPageAlreadyCurrent = CurrentPage is MusicPage;
+                AppLifecycleLog.WriteAlways(
+                    "NAV",
+                    "Tuner request",
+                    $"current={CurrentState?.Location?.OriginalString ?? "(none)"} " +
+                    $"page={CurrentPage?.GetType().Name ?? "(none)"} tune={session?.Tune}");
                 // Let a cancelled flyout navigation finish before switching routes (Android).
                 await Task.Delay(50);
                 await GoToAsync("//MusicPage");
+                // The constructor consumes the mark when this navigation creates MusicPage.
+                // An already-visible Music page does not run the constructor.
+                if (musicPageAlreadyCurrent)
+                    PlayModePickerOptions.ConsumeTunerSelectedBeforeMusicPageLoad();
+                AppLifecycleLog.WriteAlways(
+                    "NAV",
+                    "Tuner result",
+                    $"current={CurrentState?.Location?.OriginalString ?? "(none)"} " +
+                    $"page={CurrentPage?.GetType().Name ?? "(none)"} tune={session?.Tune}");
                 FlyoutIsPresented = false;
             }
             catch (Exception ex)
@@ -309,6 +335,11 @@ namespace musicmate
         {
             var target = e.Target?.Location?.OriginalString ?? string.Empty;
             var current = CurrentState?.Location?.OriginalString ?? string.Empty;
+            AppLifecycleLog.WriteAlways(
+                "NAV",
+                "navigating",
+                $"requested={target} current={current} canCancel={e.CanCancel} " +
+                $"musicNav={_isNavigatingToMusic} busy={_shellNavInProgress}");
 
             if (target.IndexOf("TunerEntry", StringComparison.OrdinalIgnoreCase) >= 0)
             {

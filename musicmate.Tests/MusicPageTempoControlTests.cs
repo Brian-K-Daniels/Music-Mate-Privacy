@@ -65,8 +65,59 @@ public class MusicPageTempoControlTests : IDisposable
     [Fact]
     public void GetDeltaChoices_RecalculatesWhenCrossingThreshold()
     {
-        Assert.Equal(new[] { -20, -4, 0, 4, 20 }, TempoControlLogic.GetDeltaChoices(119));
-        Assert.Equal(new[] { -30, -6, 0, 6, 30 }, TempoControlLogic.GetDeltaChoices(120));
+        Assert.Equal(new[] { -20, -4, 0, 5, 20 }, TempoControlLogic.GetDeltaChoices(119));
+        Assert.Equal(new[] { -30, -6, 0, 7, 30 }, TempoControlLogic.GetDeltaChoices(120));
+    }
+
+    [Theory]
+    [InlineData(45, 2)]
+    [InlineData(65, 3)]
+    [InlineData(100, 4)]
+    [InlineData(130, 6)]
+    [InlineData(180, 8)]
+    [InlineData(250, 12)]
+    public void SmallSteps_DifferByOne(int bpm, int inner)
+    {
+        int[] deltas = TempoControlLogic.GetDeltaChoices(bpm);
+        Assert.Equal(-inner, deltas[1]);
+        Assert.Equal(inner + 1, deltas[3]);
+        Assert.Equal(1, Math.Abs(deltas[3]) - Math.Abs(deltas[1]));
+    }
+
+    [Fact]
+    public void EveryIntegerBpm_IsReachableFromEveryOtherUsingButtons()
+    {
+        int min = NoteSessionService.MinTempo;
+        int max = NoteSessionService.MaxTempo;
+        Assert.Equal(30, min);
+        Assert.Equal(252, max);
+
+        for (int start = min; start <= max; start++)
+        {
+            var seen = new bool[max - min + 1];
+            var queue = new Queue<int>();
+            queue.Enqueue(start);
+            seen[start - min] = true;
+            while (queue.Count > 0)
+            {
+                int current = queue.Dequeue();
+                foreach (int delta in TempoControlLogic.GetDeltaChoices(current))
+                {
+                    if (delta == 0)
+                        continue;
+                    int next = TempoControlLogic.ApplyDelta(current, delta);
+                    if (next == current)
+                        continue;
+                    int index = next - min;
+                    if (seen[index])
+                        continue;
+                    seen[index] = true;
+                    queue.Enqueue(next);
+                }
+            }
+
+            Assert.DoesNotContain(false, seen);
+        }
     }
 
     [Fact]
@@ -174,7 +225,7 @@ public class MusicPageTempoControlTests : IDisposable
     public void FiveButtonLabels_MatchTempoControlUiAt100Bpm()
     {
         Assert.Equal(
-            new[] { "−20", "−4", "100", "+4", "+20" },
+            new[] { "−20", "−4", "100", "+5", "+20" },
             TempoControlLogic.GetDeltaChoices(100)
                 .Select(d => TempoControlLogic.FormatButtonLabel(100, d))
                 .ToArray());
