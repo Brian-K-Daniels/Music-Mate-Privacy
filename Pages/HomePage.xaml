@@ -1,0 +1,127 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="musicmate.Pages.HomePage"
+             Shell.NavBarIsVisible="True"
+             Title="Home"
+             BackgroundColor="{DynamicResource ThemeMainBackground}">
+  <!--BackgroundColor="{DynamicResource ThemeMainBackground}-->
+  <!--BackgroundColor="LimeGreen"-->
+
+    <ScrollView>
+        <VerticalStackLayout Spacing="28" Padding="24,32,24,40" HorizontalOptions="Center"
+                             MaximumWidthRequest="420">
+
+            <!-- Logo + title -->
+            <VerticalStackLayout Spacing="4" HorizontalOptions="Center">
+                <Border Style="{StaticResource LargeLogoBorder}" HorizontalOptions="Center">
+                    <Image Source="logo.png" Aspect="AspectFill" />
+                </Border>
+                <Label Text="Music Mate"
+                       FontSize="36"
+                       FontAttributes="Bold"
+                       TextColor="{DynamicResource ThemeContrastingText}"
+                       HorizontalOptions="Center" />
+            </VerticalStackLayout>
+
+            <!-- Instrument picker -->
+            <VerticalStackLayout Spacing="8">
+                <Label Text="Instrument"
+                       FontSize="18"
+                       FontAttributes="Bold"
+                       TextColor="{DynamicResource ThemeContrastingText}"
+                       HorizontalOptions="Center" />
+                <Border x:Name="InstrumentPickerBorder"
+                        BackgroundColor="{DynamicResource ThemePickerBackground}"
+                        Stroke="{DynamicResource ThemePickerBorder}"
+                        StrokeThickness="2"
+                        Padding="16,14">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="10"/>
+                    </Border.StrokeShape>
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnInstrumentTapped" />
+                    </Border.GestureRecognizers>
+                    <Label x:Name="InstrumentPickerLabel"
+                           Text="Tap here and pick your instrument. Then swipe up/down."
+                           FontSize="12"
+                           TextColor="{DynamicResource ThemePickerText}"
+                           VerticalOptions="Center"
+                           InputTransparent="True" />
+                </Border>
+            </VerticalStackLayout>
+
+            <!-- HomePage control -->
+            <VerticalStackLayout Spacing="8">
+                <Label Text="Level"
+                       FontSize="18"
+                       FontAttributes="Bold"
+                       TextColor="{DynamicResource ThemeContrastingText}"
+                       HorizontalOptions="Center" />
+                <HorizontalStackLayout Spacing="16" HorizontalOptions="Center">
+                    <Button x:Name="LevelDownButton"
+                            Text="&#x2212;"
+                            Pressed="OnLevelDownPressed"
+                            Released="OnLevelButtonReleased"
+                            FontSize="26"
+                            FontAttributes="Bold"
+                            WidthRequest="64"
+                            HeightRequest="64"
+                            BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                            TextColor="{DynamicResource ThemeButtonText}"
+                            CornerRadius="32" />
+                    <Border BackgroundColor="{DynamicResource ThemePickerBackground}"
+                            Stroke="{DynamicResource ThemePickerBorder}"
+                            StrokeThickness="2"
+                            Padding="16,8"
+                            MinimumWidthRequest="90">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="10"/>
+                        </Border.StrokeShape>
+                        <Label x:Name="LevelLabel"
+                               Text="1"
+                               FontSize="30"
+                               FontAttributes="Bold"
+                               TextColor="{DynamicResource ThemeHeadingText}"
+                               HorizontalOptions="Center"
+                               VerticalOptions="Center" />
+                    </Border>
+                    <Button x:Name="LevelUpButton"
+                            Text="+"
+                            Pressed="OnLevelUpPressed"
+                            Released="OnLevelButtonReleased"
+                            FontSize="26"
+                            FontAttributes="Bold"
+                            WidthRequest="64"
+                            HeightRequest="64"
+                            BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                            TextColor="{DynamicResource ThemeButtonText}"
+                            CornerRadius="32"
+                            BorderColor="{DynamicResource ThemePickerBorder}"
+                            BorderWidth="2" />
+                </HorizontalStackLayout>
+                <Label x:Name="LevelDescLabel"
+                       Text="Beginner"
+                       FontSize="15"
+                       TextColor="{DynamicResource ThemeContrastingText}"
+                       HorizontalOptions="Center"
+                       HorizontalTextAlignment="Center"
+                       LineBreakMode="WordWrap" />
+            </VerticalStackLayout>
+
+            <!-- Start button -->
+            <Button x:Name="StartButton"
+                    Text="▶  Start"
+                    Clicked="OnStartClicked"
+                    FontSize="26"
+                    FontAttributes="Bold"
+                    BackgroundColor="{DynamicResource ThemeButtonBackground}"
+                    TextColor="{DynamicResource ThemeButtonText}"
+                    HeightRequest="68"
+                    CornerRadius="34"
+                    HorizontalOptions="Fill"
+                    Margin="0,16,0,0" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>
