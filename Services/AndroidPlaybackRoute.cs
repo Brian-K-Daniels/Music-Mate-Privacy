@@ -109,15 +109,24 @@ namespace musicmate.Services
         }
 
         private static PlaybackOutputKind Map(AudioDeviceInfo device)
-            => device.Type switch
+        {
+            AudioDeviceType type = device.Type;
+            // UsbHeadset was added in API 26. USB output on 23–25 is UsbDevice / UsbAccessory.
+            if (OperatingSystem.IsAndroidVersionAtLeast(26))
+            {
+                if (type == AudioDeviceType.UsbHeadset)
+                    return PlaybackOutputKind.UsbExternal;
+            }
+
+            return type switch
             {
                 AudioDeviceType.BuiltinSpeaker => PlaybackOutputKind.BuiltInSpeaker,
                 AudioDeviceType.WiredHeadphones or AudioDeviceType.WiredHeadset => PlaybackOutputKind.Wired,
                 AudioDeviceType.BluetoothA2dp => PlaybackOutputKind.BluetoothMusic,
-                AudioDeviceType.UsbDevice or AudioDeviceType.UsbHeadset or AudioDeviceType.UsbAccessory
-                    => PlaybackOutputKind.UsbExternal,
+                AudioDeviceType.UsbDevice or AudioDeviceType.UsbAccessory => PlaybackOutputKind.UsbExternal,
                 _ => PlaybackOutputKind.Other
             };
+        }
 
         private static string Join(AudioDeviceInfo[] devices)
         {

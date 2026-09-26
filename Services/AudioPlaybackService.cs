@@ -54,7 +54,8 @@ namespace musicmate.Services
             try
             {
 #if ANDROID
-                AndroidPlaybackRoute.Apply("playback");
+                if (OperatingSystem.IsAndroidVersionAtLeast(23))
+                    AndroidPlaybackRoute.Apply("playback");
 #endif
                 foreach (var f in freqs)
                 {
@@ -107,7 +108,8 @@ namespace musicmate.Services
             try
             {
 #if ANDROID
-                AndroidPlaybackRoute.Apply("sustained-playback");
+                if (OperatingSystem.IsAndroidVersionAtLeast(23))
+                    AndroidPlaybackRoute.Apply("sustained-playback");
                 await PlaySustainedAudioTrackAsync(freq, gain, token).ConfigureAwait(false);
 #elif WINDOWS
                 await PlaySustainedWindowsGraphAsync(freq, gain, token).ConfigureAwait(false);
@@ -403,7 +405,8 @@ namespace musicmate.Services
             // SetPreferredDevice can keep the tone on the phone speaker. The normal
             // short-click path stays on AudioTrack as well. Longer tones without a
             // pin still use MediaPlayer.
-            if (durationSeconds <= AndroidAudioTrackMaxSeconds || AndroidPlaybackRoute.HasPinnedOutput)
+            if (durationSeconds <= AndroidAudioTrackMaxSeconds
+                || (OperatingSystem.IsAndroidVersionAtLeast(23) && AndroidPlaybackRoute.HasPinnedOutput))
             {
                 await PlayOneToneAudioTrackAsync(freq, durationSeconds, volume, ct).ConfigureAwait(false);
                 return;

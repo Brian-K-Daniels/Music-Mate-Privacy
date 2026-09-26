@@ -6011,6 +6011,14 @@ namespace musicmate.Drawables
 
                 foreach (var subTips in SplitBeamTipsAtBarLines(tips, barLayouts))
                 {
+                    // A bar that splits a beam can leave one note. It was marked beamed, so
+                    // DrawNote suppressed its flag — draw the flag here or it looks like a quarter.
+                    if (subTips.Count == 1)
+                    {
+                        DrawUnbeamedFlag(canvas, subTips[0], grpStemUp);
+                        continue;
+                    }
+
                     if (subTips.Count < 2) continue;
 
                     float x0 = subTips[0].x;
@@ -6054,19 +6062,14 @@ namespace musicmate.Drawables
                                 ti++;
                             int segEnd = ti;
 
-                            float sx0 = Math.Max(subTips[segStart].x, drawLeft);
-                            float sx1 = Math.Min(subTips[segEnd].x, drawRight);
-                            if (sx1 - sx0 < 1f)
+                            float noteLeft = subTips[segStart].x;
+                            float noteRight = subTips[segEnd].x;
+                            float minHook = Math.Max(4f, _layout.Sls * 0.45f);
+                            if (!TryResolveSecondaryBeamSpan(
+                                    segStart, segEnd, noteLeft, noteRight,
+                                    x0, x1, subTips.Count, drawLeft, drawRight, minHook,
+                                    out float sx0, out float sx1))
                                 continue;
-
-                            if (segStart == segEnd)
-                            {
-                                float halfSlot = (x1 - x0) / Math.Max(subTips.Count - 1, 1) * 0.5f;
-                                if (segStart == 0)
-                                    sx1 = Math.Min(sx0 + halfSlot, drawRight);
-                                else
-                                    sx0 = Math.Max(sx1 - halfSlot, drawLeft);
-                            }
 
                             canvas.StrokeSize = beamThick;
                             canvas.DrawLine(
@@ -6109,7 +6112,7 @@ namespace musicmate.Drawables
 
                 if (split)
                 {
-                    if (current.Count >= 2)
+                    if (current.Count >= 1)
                         result.Add(current);
                     current = new List<(int, float, float, Color, NoteDuration dur)> { tips[i] };
                 }
@@ -6119,10 +6122,61 @@ namespace musicmate.Drawables
                 }
             }
 
-            if (current.Count >= 2)
+            if (current.Count >= 1)
                 result.Add(current);
 
             return result;
+        }
+
+        /// <summary>
+        /// Secondary (sixteenth) beam span. A run of one sixteenth used to be rejected
+        /// before its hook was extended, so it kept only the primary beam and read as an eighth.
+        /// </summary>
+        internal static bool TryResolveSecondaryBeamSpan(
+            int segStart,
+            int segEnd,
+            float noteLeft,
+            float noteRight,
+            float groupLeft,
+            float groupRight,
+            int groupCount,
+            float drawLeft,
+            float drawRight,
+            float minHook,
+            out float spanLeft,
+            out float spanRight)
+        {
+            spanLeft = Math.Max(noteLeft, drawLeft);
+            spanRight = Math.Min(noteRight, drawRight);
+            if (segStart == segEnd)
+            {
+                float halfSlot = (groupRight - groupLeft) / Math.Max(groupCount - 1, 1) * 0.5f;
+                if (halfSlot < minHook)
+                    halfSlot = minHook;
+                if (segStart == 0)
+                    spanRight = Math.Min(spanLeft + halfSlot, drawRight);
+                else
+                    spanLeft = Math.Max(spanRight - halfSlot, drawLeft);
+            }
+
+            return spanRight - spanLeft >= 1f;
+        }
+
+        private void DrawUnbeamedFlag(
+            ICanvas canvas,
+            (int noteIdx, float x, float y, Color color, NoteDuration dur) tip,
+            bool stemUp)
+        {
+            if (tip.dur == NoteDuration.Eighth)
+            {
+                SmuFLFlagDrawer.Draw(
+                    canvas, stemUp, tip.x, tip.y, _layout.Sls, _layout.GlyphScale, tip.color);
+            }
+            else if (tip.dur == NoteDuration.Sixteenth)
+            {
+                SmuFLFlagDrawer.DrawSixteenth(
+                    canvas, stemUp, tip.x, tip.y, _layout.Sls, _layout.GlyphScale, tip.color);
+            }
         }
 
         /// <summary>Splits a beam span into measure-safe segments that stop before each bar line.</summary>

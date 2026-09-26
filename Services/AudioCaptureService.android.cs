@@ -163,7 +163,8 @@ namespace musicmate.Services
                         }
 
                         ListeningStartupLog.Write("AUDIO: recorder.StartRecording called");
-                        AndroidPlaybackRoute.Apply("listening");
+                        if (OperatingSystem.IsAndroidVersionAtLeast(23))
+                            AndroidPlaybackRoute.Apply("listening");
                         rec.StartRecording();
 
                         _rec = rec;

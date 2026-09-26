@@ -361,16 +361,16 @@
                       Clicked="OnTimeSignatureHitTargetClicked"
                       SemanticProperties.Description="Change time signature" />
 
-              <!-- Compact Play/Stop (Music/Sight only; never visible in Tuner): top-left of staff; sized in code -->
+              <!-- Compact Play/Stop (Music/Sight only; never visible in Tuner): far right of the staff, clear of the tempo marking. Sized in code. -->
               <Border x:Name="TitlePlayButton"
                       BackgroundColor="#2E8B57"
                       Stroke="#1F5C3A"
                       StrokeThickness="1"
                       Padding="0"
                       InputTransparent="False"
-                      HorizontalOptions="Start"
+                      HorizontalOptions="End"
                       VerticalOptions="Start"
-                      Margin="2,2,0,0"
+                      Margin="0,2,8,0"
                       ZIndex="10"
                       IsVisible="{Binding Source={x:Reference musicPage}, Path=IsTitlePlayButtonVisible, x:DataType=pages:MusicPage}">
                 <Border.StrokeShape>
@@ -891,14 +891,28 @@
                         VerticalOptions="Fill"
                         HorizontalOptions="Fill" />
               </Border>
-              <Label x:Name="ConcertKeyLabel"
+            </HorizontalStackLayout>
+
+            <Grid Grid.Column="1"
+                  ColumnDefinitions="*,Auto"
+                  ColumnSpacing="6"
+                  VerticalOptions="Center">
+              <Label x:Name="KeyModeLabel"
+                     Grid.Column="0"
                      FontSize="12"
+                     FontAttributes="Bold"
                      TextColor="#333333"
                      VerticalOptions="Center"
                      LineBreakMode="TailTruncation"
-                     MaxLines="1"
-                     MaximumWidthRequest="140" />
-            </HorizontalStackLayout>
+                     MaxLines="1" />
+              <Label x:Name="ConcertKeyLabel"
+                     Grid.Column="1"
+                     FontSize="12"
+                     TextColor="#333333"
+                     VerticalOptions="Center"
+                     LineBreakMode="NoWrap"
+                     MaxLines="1" />
+            </Grid>
 
             <Button x:Name="MakeItEasyButton"
                     Grid.Column="2"

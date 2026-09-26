@@ -337,6 +337,7 @@ namespace musicmate.Pages
 
             OnPropertyChanged(nameof(IsEffectiveScaleLabelVisible));
             OnPropertyChanged(nameof(EffectiveScaleLabelText));
+            UpdateKeyModeLabel();
             if (_session?.IsRandomMode == true)
             {
                 UpdatePracticePlayItemLabel();
@@ -441,26 +442,33 @@ namespace musicmate.Pages
                 StatusService.Instance.StatusMessage = _isTunerPitchPlaying
                     ? "Playing reference tone."
                     : (_isRunning || capturing)
-                        ? MusicAudioSignalTrace.ListeningMessage
+                        ? GetCurrentPlayItemName()
                         : MusicAudioSignalTrace.StoppedListeningMessage;
                 return;
             }
 
             // Pitch feedback uses the raw message. The public getter adds leading spaces,
             // so a StartsWith check on StatusMessage never sees "Expected:" or "Listening…".
-            if (IsLivePitchStatus(raw))
+            if (IsLivePitchStatus(raw)
+                && !string.Equals(raw, MusicAudioSignalTrace.ListeningMessage, StringComparison.Ordinal))
                 return;
 
             if (string.Equals(raw, MusicAudioSignalTrace.ListeningPausedMessage, StringComparison.Ordinal)
                 && _listeningPausedForPageHide)
                 return;
 
+            if (string.Equals(raw, MusicAudioSignalTrace.ListeningMessage, StringComparison.Ordinal))
+            {
+                StatusService.Instance.StatusMessage = GetCurrentPlayItemName();
+                return;
+            }
+
             bool sessionListening = capturing
                 || (_isRunning && _listeningChromeShown && !_listeningPausedForPageHide);
             string? corrected = MusicAudioSignalTrace.StatusWhileMusicCaptureActive(raw, sessionListening);
             if (corrected != null)
             {
-                StatusService.Instance.StatusMessage = corrected;
+                StatusService.Instance.StatusMessage = ListeningPlaceholderOr(corrected);
                 return;
             }
 
@@ -473,7 +481,7 @@ namespace musicmate.Pages
         private void ShowCountInStatusPreservingListening()
         {
             string raw = StatusService.Instance.RawStatusMessage ?? "";
-            string baseline = MusicAudioSignalTrace.CountInRestoreBaseline(raw);
+            string baseline = ListeningPlaceholderOr(MusicAudioSignalTrace.CountInRestoreBaseline(raw));
             if (!string.Equals(raw, baseline, StringComparison.Ordinal))
                 StatusService.Instance.StatusMessage = baseline;
             StatusService.Instance.ShowTemporaryMessage(
@@ -2683,8 +2691,8 @@ namespace musicmate.Pages
         }
         /// <summary>
         /// Compact Play/Stop pill height (mm). Short enough to sit in the above-staff
-        /// breathing room without covering tempo / clef / key; still tappable when paired
-        /// with a wider text-fitted width.
+        /// breathing room at the far right, clear of the tempo marking, clef, key, and
+        /// time signature; still tappable when paired with a wider text-fitted width.
         /// </summary>
         private const double TitlePlayButtonHeightMm = 4.0;
         private const double TitlePlayButtonMinWidthMm = 7.0;
@@ -2710,8 +2718,9 @@ namespace musicmate.Pages
             TitlePlayButton.HeightRequest = height;
             TitlePlayButton.MinimumWidthRequest = width;
             TitlePlayButton.MinimumHeightRequest = height;
-            // Keep tucked into the graphics corner; layout Margin in XAML handles insets.
-            TitlePlayButton.Margin = new Thickness(2, 2, 0, 0);
+            // Far right of the staff overlay, inset from the border. End alignment tracks width.
+            TitlePlayButton.HorizontalOptions = LayoutOptions.End;
+            TitlePlayButton.Margin = new Thickness(0, 2, 8, 0);
             UpdateTitlePlayButtonFontSize(fontSize, width, height);
         }
 
@@ -3066,6 +3075,14 @@ namespace musicmate.Pages
             OnPropertyChanged(nameof(IsTitlePlayButtonVisible));
             UpdateTitlePlayButtonPosition();
         }
+        /// <summary>
+        /// "Listening…" is the idle capture label. The status bar shows the exercise name instead.
+        /// </summary>
+        private string ListeningPlaceholderOr(string status)
+            => string.Equals(status, MusicAudioSignalTrace.ListeningMessage, StringComparison.Ordinal)
+                ? GetCurrentPlayItemName()
+                : status;
+
         private string GetCurrentPlayItemName()
         {
             string? practiceTitle = _session.CurrentTune?.Title;
@@ -5931,7 +5948,7 @@ namespace musicmate.Pages
 
             if (_listeningPausedForPageHide)
                 ClearListeningPaused(reason);
-            StatusService.Instance.StatusMessage = "Listening…";
+            StatusService.Instance.StatusMessage = GetCurrentPlayItemName();
             ListeningStartupLog.Write($"UI: Listening=true reason={reason}");
             return true;
         }
@@ -5970,8 +5987,9 @@ namespace musicmate.Pages
             if (_listeningPausedForPageHide)
             {
                 string shown = StatusService.Instance.RawStatusMessage ?? "";
-                if (shown.Contains("Listening", StringComparison.Ordinal)
-                    && !shown.Contains("paused", StringComparison.OrdinalIgnoreCase))
+                if (!shown.Contains("paused", StringComparison.OrdinalIgnoreCase)
+                    && (shown.Contains("Listening", StringComparison.Ordinal)
+                        || string.Equals(shown, GetCurrentPlayItemName(), StringComparison.Ordinal)))
                 {
                     SetListeningPaused(_listeningPausedReason ?? "capture health");
                 }
@@ -5988,7 +6006,7 @@ namespace musicmate.Pages
                         listeningSessionActive: true);
                     if (corrected != null)
                     {
-                        StatusService.Instance.StatusMessage = corrected;
+                        StatusService.Instance.StatusMessage = ListeningPlaceholderOr(corrected);
                         ListeningStartupLog.Write(
                             "UI: replaced Stopped listening because capture is running");
                     }
@@ -7066,7 +7084,7 @@ namespace musicmate.Pages
                 _tunerListening.CompleteStart(generation, captureIsRunning: true);
                 _session?.StartListeningClock();
                 SetButtonStates(true);
-                StatusService.Instance.StatusMessage = TunerListeningSession.ListeningMessage;
+                StatusService.Instance.StatusMessage = GetCurrentPlayItemName();
                 ListeningStartupLog.Write("UI: Listening=true");
                 UpdateTunerModeChrome();
                 RefreshTunerPickerDisplayLabel();
@@ -7601,6 +7619,28 @@ namespace musicmate.Pages
             var text = $"(Concert {_session.GetConcertKey()})";
             if (ConcertKeyLabel != null)
                 ConcertKeyLabel.Text = text;
+            UpdateKeyModeLabel();
+        }
+
+        /// <summary>
+        /// Shows the scale already chosen for this exercise so "Key C" is not read as C major
+        /// when the staff is in C natural minor or another mode.
+        /// </summary>
+        private void UpdateKeyModeLabel()
+        {
+            if (!MainThread.IsMainThread)
+            {
+                RunOnMainThread(UpdateKeyModeLabel);
+                return;
+            }
+
+            if (KeyModeLabel == null || _session == null)
+                return;
+
+            var (_, scale) = _session.GetNotationKeyAndScale();
+            KeyModeLabel.Text = scale?.Trim() ?? "";
+            KeyModeLabel.IsVisible = _session.Tune != "Tuner"
+                && !string.IsNullOrWhiteSpace(KeyModeLabel.Text);
         }
         private void InitializePracticePickers(string[] instrumentOptions)
         {
@@ -7671,6 +7711,8 @@ namespace musicmate.Pages
             if (KeyLabel != null) KeyLabel.IsVisible = show;
             if (KeyBorder != null) KeyBorder.IsVisible = show;
             if (ConcertKeyLabel != null) ConcertKeyLabel.IsVisible = show;
+            if (KeyModeLabel != null)
+                KeyModeLabel.IsVisible = show && !string.IsNullOrWhiteSpace(KeyModeLabel.Text);
         }
         // ── Tuner reference-tone helpers ───────────────────────────────────────
 
@@ -8425,7 +8467,7 @@ namespace musicmate.Pages
                     StatusService.Instance.StatusMessage = "Microphone unavailable — tap Listen to retry.";
                     return;
                 }
-                StatusService.Instance.StatusMessage = "Listening…";
+                StatusService.Instance.StatusMessage = GetCurrentPlayItemName();
                 UpdateTunerModeChrome();
                 RefreshTunerPickerDisplayLabel();
                 DebugLog.WriteLine("[Tuner] microphone capture running (resumed)");

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using musicmate.Diagnostics;
 using Plugin.Maui.Audio;
 #if ANDROID
+using System.Runtime.Versioning;
 using Android.Media;
 #endif
 
@@ -147,8 +148,11 @@ namespace musicmate.Services
             bool pin = false;
             try
             {
-                AndroidPlaybackRoute.Apply("count-in");
-                pin = OperatingSystem.IsAndroidVersionAtLeast(23) && AndroidPlaybackRoute.HasPinnedOutput;
+                if (OperatingSystem.IsAndroidVersionAtLeast(23))
+                {
+                    AndroidPlaybackRoute.Apply("count-in");
+                    pin = AndroidPlaybackRoute.HasPinnedOutput;
+                }
             }
             catch (Exception ex)
             {
@@ -203,15 +207,9 @@ namespace musicmate.Services
             try
             {
                 int bytes = pcm.Length * 2;
-#pragma warning disable CS0618
-                track = new AudioTrack(
-                    Android.Media.Stream.Music,
-                    MetronomeClickPcm.SampleRate,
-                    ChannelOut.Mono,
-                    Android.Media.Encoding.Pcm16bit,
-                    bytes,
-                    AudioTrackMode.Static);
-#pragma warning restore CS0618
+                track = OperatingSystem.IsAndroidVersionAtLeast(26)
+                    ? CreateStaticTrackApi26(bytes)
+                    : CreateStaticTrackLegacy(bytes);
                 if (track.State == AudioTrackState.Uninitialized)
                 {
                     ReleaseTrack(track);
@@ -238,6 +236,50 @@ namespace musicmate.Services
                     ReleaseTrack(track);
                 return null;
             }
+        }
+
+        /// <summary>
+        /// API 26+ replacement for the stream-type <see cref="AudioTrack"/> constructor.
+        /// Same static PCM buffer, media usage, and mono 16-bit format as the legacy track.
+        /// </summary>
+        [SupportedOSPlatform("android26.0")]
+        private static AudioTrack CreateStaticTrackApi26(int bytes)
+        {
+            var attrsBuilder = new AudioAttributes.Builder();
+            attrsBuilder.SetUsage(AudioUsageKind.Media);
+            attrsBuilder.SetContentType(AudioContentType.Music);
+            var attrs = attrsBuilder.Build()
+                ?? throw new InvalidOperationException("AudioAttributes.Builder.Build returned null.");
+
+            var formatBuilder = new AudioFormat.Builder();
+            formatBuilder.SetSampleRate(MetronomeClickPcm.SampleRate);
+            formatBuilder.SetEncoding(Android.Media.Encoding.Pcm16bit);
+            formatBuilder.SetChannelMask(ChannelOut.Mono);
+            var format = formatBuilder.Build()
+                ?? throw new InvalidOperationException("AudioFormat.Builder.Build returned null.");
+
+            var trackBuilder = new AudioTrack.Builder();
+            trackBuilder.SetAudioAttributes(attrs);
+            trackBuilder.SetAudioFormat(format);
+            trackBuilder.SetBufferSizeInBytes(bytes);
+            trackBuilder.SetTransferMode(AudioTrackMode.Static);
+            return trackBuilder.Build()
+                ?? throw new InvalidOperationException("AudioTrack.Builder.Build returned null.");
+        }
+
+        /// <summary>Stream-type constructor for Android 21–25. Obsolete starting with API 26.</summary>
+        [UnsupportedOSPlatform("android26.0")]
+        private static AudioTrack CreateStaticTrackLegacy(int bytes)
+        {
+#pragma warning disable CS0618
+            return new AudioTrack(
+                Android.Media.Stream.Music,
+                MetronomeClickPcm.SampleRate,
+                ChannelOut.Mono,
+                Android.Media.Encoding.Pcm16bit,
+                bytes,
+                AudioTrackMode.Static);
+#pragma warning restore CS0618
         }
 
         /// <summary>
