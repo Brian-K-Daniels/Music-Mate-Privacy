@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using musicmate.LayoutDebug;
 using musicmate.Services;
 using musicmate.ViewModels;
 using Microsoft.Maui.Storage;
@@ -25,7 +26,7 @@ namespace musicmate.Pages
             _viewModel = new AdvancedPageViewModel(_themeService, _session!);
             BindingContext = _viewModel;
             if (NoteAttemptsDebugSection is not null)
-                NoteAttemptsDebugSection.IsVisible = true;
+                NoteAttemptsDebugSection.IsVisible = NoteAttemptsViewerSettings.IsCompiledIn;
         }
 
         protected async override void OnAppearing()

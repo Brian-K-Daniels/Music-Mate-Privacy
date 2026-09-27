@@ -11,12 +11,14 @@ public static class SettingsLoadTiming
 
     private static long _openOriginMs;
 
+    [Conditional("DEBUG")]
     public static void BeginOpen()
     {
         _openOriginMs = Environment.TickCount64;
         Write("OPEN:begin");
     }
 
+    [Conditional("DEBUG")]
     public static void Mark(string phase, string? detail = null)
     {
         long elapsed = _openOriginMs == 0 ? 0 : Environment.TickCount64 - _openOriginMs;
@@ -53,6 +55,7 @@ public static class SettingsLoadTiming
         }
     }
 
+    [Conditional("DEBUG")]
     private static void Write(string message)
     {
         string line = $"[SettingsLoad] {message}";

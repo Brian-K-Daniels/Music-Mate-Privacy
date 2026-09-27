@@ -174,7 +174,7 @@ public sealed class NoteMasteryService
             Scale = scale,
             LowestNote = _session.LowestNote,
             HighestNote = _session.HighestNote,
-            PreferBassClef = PrefersBassClef(_session.CurrentInstrumentProfile.Id),
+            PreferBassClef = PrefersBassClef(_session.CurrentInstrumentProfile),
             ComputedUtc = DateTime.UtcNow,
             Fingerprint = fingerprint,
         };
@@ -242,9 +242,10 @@ public sealed class NoteMasteryService
         return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool PrefersBassClef(string instrumentId)
-        => instrumentId is "double-bass"
-            or "voice-baritone"
-            or "voice-bass-baritone"
-            or "voice-bass";
+    private static bool PrefersBassClef(InstrumentProfile profile)
+        => profile.DefaultClef == Clef.Bass
+            || profile.Id is "double-bass"
+                or "voice-baritone"
+                or "voice-bass-baritone"
+                or "voice-bass";
 }

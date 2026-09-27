@@ -45,6 +45,11 @@ namespace musicmate.Pages
             var vm = new AboutPageViewModel(_themeService);
             BindingContext = vm;
             SyncAboutSearchRowHeight();
+            if (AboutVersionLabel is not null)
+            {
+                AboutVersionLabel.Text =
+                    $"Version {AppInfo.Current.VersionString} ({AppInfo.Current.BuildString})";
+            }
 #if DEBUG
             if (AboutBuildIdentificationLabel is not null)
                 AboutBuildIdentificationLabel.Text = Diagnostics.BuildIdentification.FullMultiline;

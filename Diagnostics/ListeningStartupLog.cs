@@ -8,12 +8,14 @@ namespace musicmate.Diagnostics;
 /// </summary>
 public static class ListeningStartupLog
 {
+    [Conditional("DEBUG")]
     public static void Write(string message)
     {
         var line = $"{DateTime.Now:HH:mm:ss.fff} {message}";
         FirstNoteAndroidReleaseLog.WriteAlways("startup", line);
     }
 
+    [Conditional("DEBUG")]
     public static void Exception(string stage, Exception ex)
         => Write($"{stage} exception {ex.GetType().Name}: {ex.Message}");
 

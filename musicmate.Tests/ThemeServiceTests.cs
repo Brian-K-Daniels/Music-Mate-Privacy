@@ -3,6 +3,7 @@ using musicmate.Services;
 
 namespace musicmate.Tests;
 
+[Collection("SessionPreferences")]
 public class ThemeServiceTests : IDisposable
 {
     private readonly Dictionary<string, string> _store = new();

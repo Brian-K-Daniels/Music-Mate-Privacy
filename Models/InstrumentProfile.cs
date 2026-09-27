@@ -8,5 +8,6 @@ namespace musicmate.Models
         int TransposeOffset,
         string PracticalLowestNote,
         string PracticalHighestNote,
-        IReadOnlyList<string> Aliases);
+        IReadOnlyList<string> Aliases,
+        Clef DefaultClef = Clef.Treble);
 }

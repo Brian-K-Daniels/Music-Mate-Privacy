@@ -17,9 +17,9 @@ public static class AppLifecycleLog
         => WriteCore(source, eventName, detail);
 
     /// <summary>
-    /// Always emits (Debug and Release) — use immediately before any path that can
-    /// end the Activity/process, and on destroy/stop so logcat survives debugger detach.
+    /// Lifecycle breadcrumb. Compiled into Debug only; Release call sites are omitted.
     /// </summary>
+    [Conditional("DEBUG")]
     public static void WriteAlways(string source, string eventName, string? detail = null)
         => WriteCore(source, eventName, detail);
 

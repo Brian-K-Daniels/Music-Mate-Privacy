@@ -294,6 +294,12 @@
 
       </Grid>
 
+      <Label x:Name="AboutVersionLabel"
+             FontSize="12"
+             Margin="8,2,8,0"
+             LineBreakMode="WordWrap"
+             TextColor="{DynamicResource ThemeContrastingText}" />
+
       <!-- Temporary build fingerprint (DEBUG diagnostics) -->
       <Border x:Name="AboutBuildInfoBorder"
               Stroke="#888888"

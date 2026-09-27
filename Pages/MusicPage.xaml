@@ -240,7 +240,8 @@
                  TextColor="#555555"
                  Margin="8,0,8,0"
                  LineBreakMode="WordWrap"
-                 HorizontalOptions="Fill" />
+                 HorizontalOptions="Fill"
+                 IsVisible="False" />
 
           <Label x:Name="Midi61DiagnosticLabel"
                  FontSize="10"
@@ -248,7 +249,8 @@
                  FontAttributes="Bold"
                  Margin="8,0,8,2"
                  LineBreakMode="WordWrap"
-                 HorizontalOptions="Fill" />
+                 HorizontalOptions="Fill"
+                 IsVisible="False" />
 
           <Grid x:Name="NoteEmphasisBanner"
                 IsVisible="False"

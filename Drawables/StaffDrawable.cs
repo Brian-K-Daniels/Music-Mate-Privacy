@@ -11,7 +11,8 @@ namespace musicmate.Drawables
 {
     /// <summary>
     /// Two-staff drawable.
-    /// Renders an upper and a lower treble staff inside a single <see cref="ICanvas"/>.
+    /// Renders an upper and a lower staff inside a single <see cref="ICanvas"/>.
+    /// The clef comes from the selected instrument and only affects vertical placement.
     /// Reading order follows standard sheet music: upper staff first, then lower staff.
     /// These are two <b>independent</b> lines of music (not a grand staff). Key and time
     /// signatures may be drawn on both staffs or only the upper staff
@@ -23,9 +24,8 @@ namespace musicmate.Drawables
     /// it toward 1 from the page layer.  The drawable reads <see cref="UpperAlpha"/> and
     /// <see cref="LowerAlpha"/> and applies them uniformly to every note on that staff.</para>
     ///
-    /// <para><b>Feedback:</b> noteheads are coloured:
-    /// blue = current target, red = one or more wrong attempts (still pending),
-    /// green = correct, muted = pending future.</para>
+        /// <para><b>Feedback:</b> noteheads use the four Settings colors:
+        /// Note unplayed, Note to be played, Note played, and Note wrong.</para>
     /// </summary>
     public class StaffDrawable : IDrawable
     {
@@ -682,6 +682,7 @@ namespace musicmate.Drawables
             public string TimeSig { get; init; }
             public int MusicBpm { get; init; }
             public bool ShowSignaturesOnBothStaffs { get; init; }
+            public Clef NotationClef { get; init; }
 
             public bool Equals(LayoutCacheKey other) =>
                 Width == other.Width && Height == other.Height
@@ -693,7 +694,8 @@ namespace musicmate.Drawables
                 && SessionKey == other.SessionKey && SessionScale == other.SessionScale
                 && SessionTune == other.SessionTune
                 && TimeSig == other.TimeSig && MusicBpm == other.MusicBpm
-                && ShowSignaturesOnBothStaffs == other.ShowSignaturesOnBothStaffs;
+                && ShowSignaturesOnBothStaffs == other.ShowSignaturesOnBothStaffs
+                && NotationClef == other.NotationClef;
 
             public override bool Equals(object? obj) => obj is LayoutCacheKey other && Equals(other);
             public override int GetHashCode()
@@ -706,6 +708,7 @@ namespace musicmate.Drawables
                 hc.Add(UpperHasEndBar); hc.Add(BeginnerLayout); hc.Add(ChildLevel);
                 hc.Add(SessionKey); hc.Add(SessionScale); hc.Add(SessionTune); hc.Add(TimeSig); hc.Add(MusicBpm);
                 hc.Add(ShowSignaturesOnBothStaffs);
+                hc.Add(NotationClef);
                 return hc.ToHashCode();
             }
         }
@@ -764,6 +767,7 @@ namespace musicmate.Drawables
                 TimeSig = _session.GetDisplayTimeSignature(),
                 MusicBpm = _session.MusicBpm,
                 ShowSignaturesOnBothStaffs = _session.ShowSignaturesOnBothStaffs,
+                NotationClef = _session.NotationClef,
             };
 
         private bool TryDrawFromLayoutCache(
@@ -1573,7 +1577,7 @@ namespace musicmate.Drawables
                     continue;
 
                 var (letter, octave) = ResolveStaffLetterOctave(note);
-                int steps = DiatonicStepsFromB4(letter, octave);
+                int steps = ClefStaffPosition.StepsBelowMiddle(_session.NotationClef, letter, octave);
 
                 if (!hasU)
                 {
@@ -1594,7 +1598,7 @@ namespace musicmate.Drawables
                     continue;
 
                 var (letter, octave) = ResolveStaffLetterOctave(note);
-                int steps = DiatonicStepsFromB4(letter, octave);
+                int steps = ClefStaffPosition.StepsBelowMiddle(_session.NotationClef, letter, octave);
 
                 if (!hasL)
                 {
@@ -5112,10 +5116,7 @@ namespace musicmate.Drawables
         {
             canvas.SaveState();
             canvas.FontColor = ink;
-            canvas.FontSize = _layout.Sls * 5f;
-            float clefH = staffBot - staffTop + _layout.Sls * 3.2f;
-            canvas.DrawString("𝄞", _headerMetrics.ClefX, staffTop, _headerMetrics.ClefWidth, clefH,
-                HorizontalAlignment.Left, VerticalAlignment.Top);
+            DrawClef(canvas, ink, staffTop, staffBot);
             canvas.RestoreState();
 
             if (drawBpmMarking && drawKeyAndTimeSig && drawTimeSignature)
@@ -5133,6 +5134,34 @@ namespace musicmate.Drawables
             {
                 ClearTimeSignatureBounds();
             }
+        }
+
+        /// <summary>
+        /// Treble clef is the existing unicode glyph. Bass clef is the SMuFL
+        /// fClef anchored on F3 (second line from the top), with a unicode fallback.
+        /// </summary>
+        private void DrawClef(ICanvas canvas, Color ink, float staffTop, float staffBot)
+        {
+            if (_session.NotationClef == Clef.Bass)
+            {
+                float fLineY = staffTop + _layout.Sls;
+                float fontSize = _layout.Sls * 4.2f;
+                if (SmuFLRestRaster.TryDrawGlyphAtOrigin(canvas, "\uE062", _headerMetrics.ClefX, fLineY, fontSize, ink))
+                    return;
+
+                canvas.FontColor = ink;
+                canvas.FontSize = fontSize;
+                float clefH = staffBot - staffTop + _layout.Sls * 1.6f;
+                canvas.DrawString("\U0001D122", _headerMetrics.ClefX, staffTop - _layout.Sls * 0.4f,
+                    _headerMetrics.ClefWidth, clefH,
+                    HorizontalAlignment.Left, VerticalAlignment.Top);
+                return;
+            }
+
+            canvas.FontSize = _layout.Sls * 5f;
+            float trebleH = staffBot - staffTop + _layout.Sls * 3.2f;
+            canvas.DrawString("𝄞", _headerMetrics.ClefX, staffTop, _headerMetrics.ClefWidth, trebleH,
+                HorizontalAlignment.Left, VerticalAlignment.Top);
         }
 
         /// <summary>
@@ -5891,14 +5920,6 @@ namespace musicmate.Drawables
         /// <summary>Minimum stem length (in staff spaces) for at least one note in each beam group.</summary>
         private const float MinBeamedStemStaffSpaces = 3f;
 
-        // Flats Bb Eb Ab Db Gb Cb Fb → B4 E5 A4 D5 G4 C5 F4 (Db major 2nd flat is E5 top space, not E4).
-        private static readonly (char Letter, int Octave)[] KeySigFlatPitches =
-            { ('B', 4), ('E', 5), ('A', 4), ('D', 5), ('G', 4), ('C', 5), ('F', 4) };
-
-        // Sharps F# C# G# D# A# E# B# → treble staff: F5 C5 G5 D5 A4 E5 B4 (B major: F5 C5 G5 D5 A4).
-        private static readonly (char Letter, int Octave)[] KeySigSharpPitches =
-            { ('F', 5), ('C', 5), ('G', 5), ('D', 5), ('A', 4), ('E', 5), ('B', 4) };
-
         /// <summary>
         /// Computes per-note stem tip Y for beamed notes so tips lie on a sloped beam line
         /// and at least one stem in each group reaches <see cref="MinBeamedStemStaffSpaces"/>.
@@ -6358,7 +6379,7 @@ namespace musicmate.Drawables
         private float NoteY(GeneratedNote note, float staffTop, float staffMid)
         {
             var (letter, octave) = ResolveStaffLetterOctave(note);
-            int steps = DiatonicStepsFromB4(letter, octave);
+            int steps = ClefStaffPosition.StepsBelowMiddle(_session.NotationClef, letter, octave);
             return staffMid + steps * _layout.HS;
         }
 
@@ -6381,7 +6402,7 @@ namespace musicmate.Drawables
         }
 
         private float KeySigLineY(char letter, int octave, float staffMid)
-            => staffMid + DiatonicStepsFromB4(letter, octave) * _layout.HS;
+            => staffMid + ClefStaffPosition.StepsBelowMiddle(_session.NotationClef, letter, octave) * _layout.HS;
 
         private float KeySigAccidentalFontSize(bool isFlat)
             => _layout.Sls * 2.4f * KeySigAccidentalScale() * ArpeggioKeySigSizeBoost() * (isFlat ? KeySigFlatSizeBoost : 1f);
@@ -6464,30 +6485,17 @@ namespace musicmate.Drawables
             return TrySmuFLAccidentalAtStaffY(canvas, bravuraGlyph, anchorX, yLine, fontSize, ink);
         }
 
-        private static int DiatonicStepsFromB4(char letter, int octave)
-        {
-            int noteVal = letter switch
-            {
-                'C' => 0,
-                'D' => 1,
-                'E' => 2,
-                'F' => 3,
-                'G' => 4,
-                'A' => 5,
-                'B' => 6,
-                _ => 0
-            };
-            int b4Val = 6 + 4 * 7;
-            int thisVal = noteVal + octave * 7;
-            return b4Val - thisVal;
-        }
-
         /// <summary>
         /// Diatonic staff steps below (+) / above (−) the treble middle line (B4).
-        /// Used by <see cref="NoteY"/> and by written-note display regression tests.
+        /// Used by written-note display regression tests. Bass clef uses
+        /// <see cref="GetStaffSteps"/> instead.
         /// </summary>
         internal static int GetDiatonicStepsFromB4(char letter, int octave)
-            => DiatonicStepsFromB4(letter, octave);
+            => ClefStaffPosition.StepsBelowMiddle(Clef.Treble, letter, octave);
+
+        /// <summary>Staff steps for a written pitch on <paramref name="clef"/>.</summary>
+        internal static int GetStaffSteps(Clef clef, char letter, int octave)
+            => ClefStaffPosition.StepsBelowMiddle(clef, letter, octave);
 
         // ── Drawing primitives ────────────────────────────────────────────────────
 
@@ -6540,29 +6548,17 @@ namespace musicmate.Drawables
         private static Color ApplyAlpha(Color c, byte alpha)
             => Color.FromRgba(c.Red, c.Green, c.Blue, alpha / 255f);
 
-        /// <summary>Tuner notes are always green; other pages keep their existing note colors.</summary>
-        private Color ResolveDrawnNoteColor(StaffNoteState state, Color ink, byte fadeAlpha)
+        /// <summary>Configured color for a note state, before staff fade. Tuner reference notes stay green.</summary>
+        internal Color GetConfiguredNoteColor(StaffNoteState state)
         {
             if (IsTunerReferenceStaff)
-                return ApplyAlpha(Color.FromArgb("#22AA44"), fadeAlpha);
-
-            // Match the historical DrawNote palette (Current = Gold on Music/Sight).
-            return state switch
-            {
-                StaffNoteState.Current => ApplyAlpha(Colors.Gold, fadeAlpha),
-                StaffNoteState.Correct => ApplyAlpha(Color.FromArgb("#22AA44"), fadeAlpha),
-                StaffNoteState.Wrong => ApplyAlpha(Color.FromArgb("#CC2222"), fadeAlpha),
-                _ => ApplyAlpha(Colors.Black, (byte)(fadeAlpha * 0.85f))
-            };
+                return Color.FromArgb("#22AA44");
+            return _theme.GetColor(NoteStateColors.TargetFor(state));
         }
 
-        private static Color GetNoteColor(StaffNoteState state, Color ink, byte fadeAlpha) => state switch
-        {
-            StaffNoteState.Current => ApplyAlpha(Colors.Yellow, fadeAlpha),  //  2026.06.13 1552  Color.FromArgb("#007BFF"), fadeAlpha),
-            StaffNoteState.Correct => ApplyAlpha(Color.FromArgb("#22AA44"), fadeAlpha),
-            StaffNoteState.Wrong => ApplyAlpha(Color.FromArgb("#CC2222"), fadeAlpha),
-            _ => ApplyAlpha(Colors.Black, (byte)(fadeAlpha * 0.85f))
-        };
+        /// <summary>Tuner notes are always green. Practice notes use the four note-state colors.</summary>
+        private Color ResolveDrawnNoteColor(StaffNoteState state, Color ink, byte fadeAlpha)
+            => ApplyAlpha(GetConfiguredNoteColor(state), fadeAlpha);
 
         private void DrawNote(ICanvas canvas, NoteDuration duration, float x, float y,
                               float staffTop, float staffBot, Color ink,
@@ -6664,19 +6660,17 @@ namespace musicmate.Drawables
                 float r = _layout.NoteHeadR;
                 if (state == StaffNoteState.Current)
                 {
-                    canvas.FillColor = ApplyAlpha(Color.FromArgb("#007BFF"), (byte)(fadeAlpha * 0.19f));
-                    canvas.StrokeColor = ApplyAlpha(Color.FromArgb("#007BFF"), fadeAlpha);
+                    Color current = GetConfiguredNoteColor(StaffNoteState.Current);
+                    canvas.FillColor = ApplyAlpha(current, (byte)(fadeAlpha * 0.19f));
+                    canvas.StrokeColor = ApplyAlpha(current, fadeAlpha);
                     canvas.StrokeSize = 1.5f;
                     canvas.FillRoundedRectangle(x - r * 2f, staffMid - r * 3f, r * 4f, r * 6f, 4f);
                 }
 
-                Color rc = state switch
-                {
-                    StaffNoteState.Correct => ApplyAlpha(Colors.Green, fadeAlpha),
-                    StaffNoteState.Wrong => ApplyAlpha(Colors.DarkRed, fadeAlpha),
-                    StaffNoteState.Current => ApplyAlpha(Color.FromArgb("#007BFF"), fadeAlpha),
-                    _ => ApplyAlpha(ink, fadeAlpha)
-                };
+                // Rests stay in staff ink until they are the current, accepted, or wrong slot.
+                Color rc = state == StaffNoteState.Pending
+                    ? ApplyAlpha(ink, fadeAlpha)
+                    : ResolveDrawnNoteColor(state, ink, fadeAlpha);
 
                 float restScale = Math.Min(1f, CompactRestScale * _layout.GlyphScale);
                 SmuFLRestDrawer.Draw(canvas, duration, x, staffTop, staffMid, _layout.Sls, rc, restScale);
@@ -7238,12 +7232,12 @@ namespace musicmate.Drawables
             bool useFlats = KeySignatureRules.KeySignatureUsesFlats(key, ActiveKeySignatureScale());
             string glyph = useFlats ? "\uE260" : "\uE262";
             float fontSize = KeySigAccidentalFontSize(useFlats);
-            var pitches = useFlats ? KeySigFlatPitches : KeySigSharpPitches;
+            var pitches = ClefStaffPosition.KeySignaturePositions(_session.NotationClef, useFlats);
 
             canvas.SaveState();
             canvas.FontColor = ink;
             float sigX = _headerMetrics.KeySigStartX;
-            for (int i = 0; i < Math.Min(accCount, pitches.Length); i++)
+            for (int i = 0; i < Math.Min(accCount, pitches.Count); i++)
             {
                 var (letter, octave) = pitches[i];
                 float yLine = KeySigLineY(letter, octave, staffMid);
@@ -7468,8 +7462,8 @@ namespace musicmate.Drawables
             // treble-clef letter+octave for each accidental in BEADGCF / FCGDAEB order.
             var flatExpected = new[] { ('B', 4), ('E', 5), ('A', 4), ('D', 5), ('G', 4), ('C', 5), ('F', 4) };
             var sharpExpected = new[] { ('F', 5), ('C', 5), ('G', 5), ('D', 5), ('A', 4), ('E', 5), ('B', 4) };
-            bool flatOk = KeySigFlatPitches.SequenceEqual(flatExpected);
-            bool sharpOk = KeySigSharpPitches.SequenceEqual(sharpExpected);
+            bool flatOk = ClefStaffPosition.KeySignaturePositions(Clef.Treble, flats: true).SequenceEqual(flatExpected);
+            bool sharpOk = ClefStaffPosition.KeySignaturePositions(Clef.Treble, flats: false).SequenceEqual(sharpExpected);
             Utilities.DebugTestLog.Write($"[KeySigTest] {(flatOk ? "OK" : "FAIL: KeySigFlatPitches mismatch")} | flat staff positions (BEADGCF)");
             Utilities.DebugTestLog.Write($"[KeySigTest] {(sharpOk ? "OK" : "FAIL: KeySigSharpPitches mismatch")} | sharp staff positions (FCGDAEB)");
 

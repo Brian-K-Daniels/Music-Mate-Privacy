@@ -65,7 +65,7 @@ namespace musicmate.Platforms.Android
             Log($"PurchaseAsync: number of products returned={products.Count}");
             if (products.Count == 0)
             {
-                Log("PurchaseAsync: abort — no product details "
+                LogFailure("PurchaseAsync: abort — no product details "
                     + $"(package={PackageName()} must match Play Console app that owns '{id}').");
                 return false;
             }
@@ -73,7 +73,7 @@ namespace musicmate.Platforms.Android
             var activity = Microsoft.Maui.ApplicationModel.Platform.CurrentActivity;
             if (activity == null)
             {
-                Log("PurchaseAsync: abort — CurrentActivity is null.");
+                LogFailure("PurchaseAsync: abort — CurrentActivity is null.");
                 return false;
             }
 
@@ -101,7 +101,7 @@ namespace musicmate.Platforms.Android
                 Log("PurchaseAsync: purchase callback succeeded — Premium granted.");
                 return true;
             }
-            Log($"PurchaseAsync: failed or timed out "
+            LogFailure($"PurchaseAsync: failed or timed out "
                 + $"(callbackCompleted={completed == _purchaseTcs.Task}, "
                 + $"result={(completed == _purchaseTcs.Task ? _purchaseTcs.Task.Result.ToString() : "timeout")}).");
             return false;
@@ -116,7 +116,7 @@ namespace musicmate.Platforms.Android
                 return owned;
             }
 
-            Log("RestorePurchasesAsync: query did not succeed — leaving entitlement unchanged.");
+            LogFailure("RestorePurchasesAsync: query did not succeed — leaving entitlement unchanged.");
             return StatusService.Instance.IsPremiumUser;
         }
 
@@ -132,7 +132,7 @@ namespace musicmate.Platforms.Android
                 return owned;
             }
 
-            Log("CheckPremiumStatusAsync: query did not succeed — leaving entitlement unchanged "
+            LogFailure("CheckPremiumStatusAsync: query did not succeed — leaving entitlement unchanged "
                 + $"(IsPremiumUser={StatusService.Instance.IsPremiumUser}).");
             return StatusService.Instance.IsPremiumUser;
         }
@@ -168,10 +168,14 @@ namespace musicmate.Platforms.Android
                 _ = CompleteAlreadyOwnedPurchaseAsync();
                 return;
             }
+            else if (code != BillingResponseCode.UserCancelled)
+            {
+                LogFailure($"OnPurchasesUpdated: no Premium grant (responseCode={code}, "
+                    + $"purchases={(purchases == null ? "null" : purchases.Count.ToString())}).");
+            }
             else
             {
-                Log($"OnPurchasesUpdated: no Premium grant (responseCode={code}, "
-                    + $"purchases={(purchases == null ? "null" : purchases.Count.ToString())}).");
+                Log($"OnPurchasesUpdated: canceled (responseCode={code}).");
             }
             _purchaseTcs?.TrySetResult(false);
         }
@@ -187,7 +191,7 @@ namespace musicmate.Platforms.Android
             }
             catch (Exception ex)
             {
-                Log($"CompleteAlreadyOwnedPurchaseAsync failed: {ex.Message} — granting Premium.");
+                LogFailure($"CompleteAlreadyOwnedPurchaseAsync failed: {ex.Message} — granting Premium.");
                 ApplyPremiumEntitlement(true);
                 _purchaseTcs?.TrySetResult(true);
             }
@@ -260,14 +264,19 @@ namespace musicmate.Platforms.Android
             _billingClient!.StartConnection(new BillingStateListener(
                 result =>
                 {
-                    Log($"BillingClient connection result: responseCode={result.ResponseCode}, "
+                    string connectMessage =
+                        $"BillingClient connection result: responseCode={result.ResponseCode}, "
                         + $"BillingResult debugMessage={result.DebugMessage ?? "(null)"}, "
-                        + $"isReady={_billingClient?.IsReady}");
+                        + $"isReady={_billingClient?.IsReady}";
+                    if (result.ResponseCode == BillingResponseCode.Ok)
+                        Log(connectMessage);
+                    else
+                        LogFailure(connectMessage);
                     tcs.TrySetResult(result.ResponseCode == BillingResponseCode.Ok);
                 },
                 () =>
                 {
-                    Log("Billing service disconnected.");
+                    LogFailure("Billing service disconnected.");
                     tcs.TrySetResult(false);
                 }));
             return tcs.Task;
@@ -284,7 +293,7 @@ namespace musicmate.Platforms.Android
             // One reconnect attempt if still not ready.
             if (!_billingClient.IsReady)
             {
-                Log("Billing client not ready after connect — rebuilding and retrying once.");
+                LogFailure("Billing client not ready after connect — rebuilding and retrying once.");
                 _billingClient = BuildClient();
                 await ConnectAsync();
             }
@@ -343,7 +352,7 @@ namespace musicmate.Platforms.Android
 
             if (_billingClient == null || !_billingClient.IsReady)
             {
-                Log("QueryCurrentPurchasesAsync: billing not ready — querySucceeded=false, entitlement unchanged.");
+                LogFailure("QueryCurrentPurchasesAsync: billing not ready — querySucceeded=false, entitlement unchanged.");
                 return PurchaseQueryResult.Failed(BillingResponseCode.ServiceDisconnected);
             }
 
@@ -415,11 +424,16 @@ namespace musicmate.Platforms.Android
             Log(sb.ToString());
         }
 
-        private static void Log(string message)
+        [Conditional("DEBUG")]
+        private static void Log(string message) => Emit(global::Android.Util.LogPriority.Info, message);
+
+        /// <summary>Billing failure that a published build should still record.</summary>
+        private static void LogFailure(string message) => Emit(global::Android.Util.LogPriority.Warn, message);
+
+        private static void Emit(global::Android.Util.LogPriority priority, string message)
         {
-            string line = $"[{LogTag}] {message}";
-            Debug.WriteLine(line);
-            try { global::Android.Util.Log.Info(LogTag, message); } catch { /* ignore */ }
+            Debug.WriteLine($"[{LogTag}] {message}");
+            try { global::Android.Util.Log.WriteLine(priority, LogTag, message); } catch { /* ignore */ }
         }
 
         private void AcknowledgePurchase(Purchase purchase)
@@ -471,8 +485,12 @@ namespace musicmate.Platforms.Android
         {
             public void OnAcknowledgePurchaseResponse(BillingResult r)
             {
-                Log($"acknowledgement result: responseCode={r.ResponseCode}, "
-                    + $"BillingResult debugMessage={r.DebugMessage ?? "(null)"}");
+                string message = $"acknowledgement result: responseCode={r.ResponseCode}, "
+                    + $"BillingResult debugMessage={r.DebugMessage ?? "(null)"}";
+                if (r.ResponseCode == BillingResponseCode.Ok)
+                    Log(message);
+                else
+                    LogFailure(message);
             }
         }
     }

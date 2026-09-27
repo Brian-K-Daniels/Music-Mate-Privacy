@@ -1234,6 +1234,11 @@ namespace musicmate.Services
         public InstrumentProfile CurrentInstrumentProfile => InstrumentCatalog.Resolve(_instrument);
         public string InstrumentDisplayName => CurrentInstrumentProfile.DisplayName;
         public string InstrumentKey => CurrentInstrumentProfile.InstrumentKey;
+        /// <summary>
+        /// Clef used to place written pitches on the staff. Independent of
+        /// <see cref="InstrumentTransposeOffset"/>.
+        /// </summary>
+        public Clef NotationClef => CurrentInstrumentProfile.DefaultClef;
         public string AutomaticNoteRangeDisplay => $"{LowestNote} - {HighestNote}";
         public IReadOnlyList<int> AvailableInstrumentMidis
             => InstrumentCatalog.BuildAvailableMidiSet(CurrentInstrumentProfile, ChildLevel);
@@ -1502,6 +1507,7 @@ namespace musicmate.Services
                 OnPropertyChanged(nameof(InstrumentDisplayName));
                 OnPropertyChanged(nameof(InstrumentKey));
                 OnPropertyChanged(nameof(InstrumentTransposeOffset));
+                OnPropertyChanged(nameof(NotationClef));
             }
         }
 
@@ -2445,7 +2451,7 @@ namespace musicmate.Services
         private static readonly int[] DoubleHarmonicUp = new[] { 0, 1, 4, 5, 7, 8, 11, 12 };
         private static readonly int[] NeapolitanMinorUp = new[] { 0, 1, 3, 5, 7, 8, 11, 12 };
         private static readonly int[] NeapolitanMajorUp = new[] { 0, 1, 3, 5, 7, 9, 11, 12 };
-        // Timing: onset-based linear regression (least-squares fit)
+        // Detected tempo uses onset regression. Tmg uses each note's conductor error.
         private readonly Stopwatch _sessionStopwatch = new();
         /// <summary>
         /// Test seam: when set, <see cref="GetRawSessionElapsedMs"/> returns this instead of the stopwatch.
@@ -3640,6 +3646,10 @@ namespace musicmate.Services
         /// Records the onset time and expected beat position for the note that was just
         /// played correctly. Called from UpdateFeedbackForCurrent when a note advances.
         /// </summary>
+        /// <summary>Test seam: wall-clock onset samples used only for detected BPM.</summary>
+        internal void AddOnsetSampleForTests(double onsetMs, double expectedBeat)
+            => _onsetData.Add((onsetMs, expectedBeat));
+
         private void RecordOnsetIfNeeded(int noteIndex)
         {
             if (!_sessionStopwatch.IsRunning || noteIndex >= NotesToDraw.Count)
@@ -3669,77 +3679,47 @@ namespace musicmate.Services
             return beatPosition;
         }
         /// <summary>
-        /// Computes timing accuracy using least-squares linear regression.
-        /// Fits ActualOnsetTimeMs = StartOffsetMs + MsPerBeat * ExpectedBeatStart
-        /// and scores each note based on its timing error relative to adaptive thresholds.
+        /// Stores detected tempo from onset regression, then timing quality from each
+        /// note's conductor error. Detected BPM still uses <see cref="_onsetData"/>.
+        /// Tmg does not: that fit ignored pause rebases and scored against a sixteenth-note
+        /// scale much tighter than the accept window.
         /// </summary>
         public void FinalizeSessionStats()
         {
             _detectedBpm = ComputeDetectedBpmFromOnsets();
-
-            // Need at least 3 notes for meaningful linear regression
-            if (_onsetData.Count < 3)
-            {
-                _timingAccuracyPercent = null;
-                NotifyTimingStatsChanged();
-                TimingDiagnostics.Flush();
-                TimingDiagnostics.WriteSessionSummary();
-                return;
-            }
-
-            // Check for zero variance in expected beats (would cause divide-by-zero)
-            var beatValues = _onsetData.Select(d => d.ExpectedBeat).ToArray();
-            if (beatValues.Distinct().Count() < 2)
-            {
-                _timingAccuracyPercent = null;
-                NotifyTimingStatsChanged();
-                TimingDiagnostics.Flush();
-                TimingDiagnostics.WriteSessionSummary();
-                return;
-            }
-
-            // Least-squares linear regression: y = mx + b
-            // y = ActualOnsetMs, x = ExpectedBeat
-            int n = _onsetData.Count;
-            double sumX = _onsetData.Sum(d => d.ExpectedBeat);
-            double sumY = _onsetData.Sum(d => d.OnsetMs);
-            double sumXY = _onsetData.Sum(d => d.ExpectedBeat * d.OnsetMs);
-            double sumX2 = _onsetData.Sum(d => d.ExpectedBeat * d.ExpectedBeat);
-
-            // Slope (MsPerBeat) and intercept (StartOffsetMs)
-            double msPerBeat = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-            double startOffsetMs = (sumY - msPerBeat * sumX) / n;
-
-            // Compute timing score for each note
-            var noteScores = new List<double>();
-            double sixteenthMs = msPerBeat * 0.25;
-            double goodThresholdMs = sixteenthMs * 0.25;
-            double badThresholdMs = sixteenthMs * 1.00;
-
-            foreach (var (onsetMs, expectedBeat) in _onsetData)
-            {
-                double expectedFittedMs = startOffsetMs + msPerBeat * expectedBeat;
-                double timingErrorMs = Math.Abs(onsetMs - expectedFittedMs);
-
-                double noteScore;
-                if (timingErrorMs <= goodThresholdMs)
-                    noteScore = 100.0;
-                else if (timingErrorMs >= badThresholdMs)
-                    noteScore = 0.0;
-                else
-                    noteScore = 100.0 * (1.0 - (timingErrorMs - goodThresholdMs) / (badThresholdMs - goodThresholdMs));
-
-                noteScores.Add(noteScore);
-            }
-
-            _timingAccuracyPercent = noteScores.Average();
+            _timingAccuracyPercent = ComputeTimingQualityPercent();
             NotifyTimingStatsChanged();
             TimingDiagnostics.Flush();
             TimingDiagnostics.WriteSessionSummary();
         }
+
         /// <summary>
-        /// Returns timing accuracy percentage from least-squares onset fitting.
-        /// Null when fewer than 3 notes were played or expected beats have no variance.
+        /// Mean timing quality of non-rest attempts that were compared with the conductor.
+        /// Rests and attempts with no timing comparison are omitted. Null when none qualify,
+        /// which is stored as 0.0 on the session row.
+        /// </summary>
+        private double? ComputeTimingQualityPercent()
+        {
+            var samples = new List<(double ErrorMs, double ToleranceMs)>();
+            foreach (var outcome in _sessionAttemptOutcomes)
+            {
+                if (outcome.IsRest)
+                    continue;
+                if (outcome.TimingCorrect is null)
+                    continue;
+                if (outcome.TimingErrorMs is not double errorMs)
+                    continue;
+                if (outcome.TimingToleranceMs is not double toleranceMs || toleranceMs <= 0)
+                    continue;
+                samples.Add((errorMs, toleranceMs));
+            }
+
+            return TimingQualityScore.Average(samples);
+        }
+
+        /// <summary>
+        /// Timing quality percentage (0–100). Null when no non-rest note was compared
+        /// with the conductor. See <see cref="TimingQualityScore"/>.
         /// </summary>
         public double? GetTimingAccuracyPercent() => _timingAccuracyPercent;
         /// <summary>
@@ -4495,8 +4475,17 @@ namespace musicmate.Services
                     || ConductorOnsetTiming.IsWithinTimingWindow(
                         actualMs, conductorExpectedMs, conductorEarlyTolMs, conductorLateTolMs);
 
-                // Timing: record onset time and expected beat position
+                // Timing: record onset time and expected beat position (detected BPM only).
                 RecordOnsetIfNeeded(idx);
+
+                double? conductorTimingErrorMs = conductorGateEnabled
+                    ? actualMs - conductorExpectedMs
+                    : null;
+                // Tolerance on the side of the error, so Tmg uses the same window that
+                // accepted the note. An on-time or late attack uses the late window.
+                double conductorSideTolMs = conductorTimingErrorMs is < 0
+                    ? conductorEarlyTolMs
+                    : conductorLateTolMs;
 
                 var acceptOutcome = BuildNoteOutcome(
                     idx, targetNote, heardNote, result.cents,
@@ -4505,8 +4494,8 @@ namespace musicmate.Services
                     expectedStartMs: conductorGateEnabled
                         ? conductorExpectedMs
                         : (targetNote.StartBeat > 0 ? null : actualMs),
-                    timingErrorMs: conductorGateEnabled ? actualMs - conductorExpectedMs : null,
-                    timingToleranceMs: conductorGateEnabled ? conductorEarlyTolMs : 0);
+                    timingErrorMs: conductorTimingErrorMs,
+                    timingToleranceMs: conductorGateEnabled ? conductorSideTolMs : 0);
                 RecordAttemptOutcome(acceptOutcome);
                 var stored = _sessionAttemptOutcomes.LastOrDefault(o => o.NoteIndex == idx);
                 NoteGradeDiagnostics.LogCandidate(

@@ -732,6 +732,13 @@ namespace musicmate.Pages
                     }
                 };
 
+                _theme_service?.ThemeColorsChanged += (_, _) =>
+                    MainThread.BeginInvokeOnMainThread(() =>
+                    {
+                        StaffGraphicsView?.Invalidate();
+                        TunerGraphicsView?.Invalidate();
+                    });
+
                 // Session completed event
                 _session.SessionCompletedAsync += async () =>
                 {

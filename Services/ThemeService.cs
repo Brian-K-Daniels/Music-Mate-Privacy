@@ -26,6 +26,11 @@ public class ThemeService : INotifyPropertyChanged
         [AppColorTarget.PickerBorder] = "#AAAAFA",
         [AppColorTarget.EntryBackground] = "#DCFAD2",
         [AppColorTarget.EntryText] = "#000000",
+        // Previous current-note ink was gold/yellow and was not stored in preferences.
+        [AppColorTarget.NoteUnplayed] = "#000000",
+        [AppColorTarget.NoteToBePlayed] = "#007BFF",
+        [AppColorTarget.NotePlayed] = "#22AA44",
+        [AppColorTarget.NoteWrong] = "#CC2222",
     };
 
     /// <summary>When set, preferences read/write use this dictionary instead of MAUI Preferences (tests).</summary>
@@ -39,9 +44,10 @@ public class ThemeService : INotifyPropertyChanged
             _colors[target] = Color.FromArgb(FactoryDefaultHex[target]);
     }
 
-    public Color CurrentNoteHighlightColor => Colors.Yellow.WithAlpha(0.95f);
-    public Color CorrectNoteColor => Colors.LightGreen.WithAlpha(0.95f);
-    public Color WrongNoteColor => Colors.LightPink.WithAlpha(0.95f);
+    public Color NoteUnplayedColor => GetColor(AppColorTarget.NoteUnplayed);
+    public Color NoteToBePlayedColor => GetColor(AppColorTarget.NoteToBePlayed);
+    public Color NotePlayedColor => GetColor(AppColorTarget.NotePlayed);
+    public Color NoteWrongColor => GetColor(AppColorTarget.NoteWrong);
 
     public Color MainBackgroundColor => GetColor(AppColorTarget.MainBackground);
     public Color PanelBackgroundColor
@@ -89,6 +95,10 @@ public class ThemeService : INotifyPropertyChanged
         AppColorTarget.PickerBorder => "Picker border",
         AppColorTarget.EntryBackground => "Entry background",
         AppColorTarget.EntryText => "Entry text",
+        AppColorTarget.NoteUnplayed => "Note unplayed",
+        AppColorTarget.NoteToBePlayed => "Note to be played",
+        AppColorTarget.NotePlayed => "Note played",
+        AppColorTarget.NoteWrong => "Note wrong",
         _ => target.ToString(),
     };
 
@@ -328,6 +338,18 @@ public class ThemeService : INotifyPropertyChanged
             case AppColorTarget.EntryText:
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(EntryTextColor)));
                 break;
+            case AppColorTarget.NoteUnplayed:
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NoteUnplayedColor)));
+                break;
+            case AppColorTarget.NoteToBePlayed:
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NoteToBePlayedColor)));
+                break;
+            case AppColorTarget.NotePlayed:
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NotePlayedColor)));
+                break;
+            case AppColorTarget.NoteWrong:
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NoteWrongColor)));
+                break;
         }
 
         ThemeColorsChanged?.Invoke(this, EventArgs.Empty);
@@ -349,6 +371,10 @@ public class ThemeService : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PickerBorderColor)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(EntryBackgroundColor)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(EntryTextColor)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NoteUnplayedColor)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NoteToBePlayedColor)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NotePlayedColor)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NoteWrongColor)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ContrastingTextColor)));
         ThemeColorsChanged?.Invoke(this, EventArgs.Empty);
         PushToApplicationResources();

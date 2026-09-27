@@ -362,7 +362,7 @@ public static class ChromaticMidi61Diagnostics
     private static void Emit(string message)
     {
         Debug.WriteLine($"[Midi61Diag] {message}");
-#if ANDROID
+#if DEBUG && ANDROID
         Log.Info("MusicMate", $"[Midi61Diag] {message}");
 #endif
     }

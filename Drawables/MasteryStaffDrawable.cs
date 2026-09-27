@@ -269,34 +269,17 @@ public sealed class MasteryStaffDrawable : IDrawable
     /// <summary>
     /// Positions by written letter/octave (Music-page spelling), not chromatic MIDI mapping,
     /// so E#/Cb/Fb sit on the correct staff degree.
-    /// Treble: E4 = bottom line; Bass: G2 = bottom line.
+    /// Uses <see cref="ClefStaffPosition"/>: treble middle line B4, bass middle line D3.
     /// </summary>
     private float NoteY(NoteMasteryItemViewModel note, float staffTop, float sls)
     {
         string name = note.WrittenNoteName;
         char letter = string.IsNullOrWhiteSpace(name) ? 'C' : char.ToUpperInvariant(name[0]);
         int octave = NoteSessionService.ParseOctaveFromSpelledName(name);
-        int diatonic = LetterOctaveToDiatonicSteps(letter, octave);
-        int reference = PreferBassClef
-            ? LetterOctaveToDiatonicSteps('G', 2)
-            : LetterOctaveToDiatonicSteps('E', 4);
-        return staffTop + 4 * sls - (diatonic - reference) * (sls * 0.5f);
-    }
-
-    private static int LetterOctaveToDiatonicSteps(char letter, int octave)
-    {
-        int noteVal = char.ToUpperInvariant(letter) switch
-        {
-            'C' => 0,
-            'D' => 1,
-            'E' => 2,
-            'F' => 3,
-            'G' => 4,
-            'A' => 5,
-            'B' => 6,
-            _ => 0
-        };
-        return noteVal + octave * 7;
+        var clef = PreferBassClef ? Clef.Bass : Clef.Treble;
+        int steps = ClefStaffPosition.StepsBelowMiddle(clef, letter, octave);
+        float staffMid = staffTop + 2f * sls;
+        return staffMid + steps * (sls * 0.5f);
     }
 
     private static string AccidentalGlyph(string writtenName)

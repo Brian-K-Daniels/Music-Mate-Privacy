@@ -20,7 +20,7 @@ namespace musicmate.ViewModels
             }
         }
 
-        /// <summary>Null when fewer than 3 timed onsets were recorded.</summary>
+        /// <summary>Null when no non-rest note was compared with the conductor.</summary>
         public double? CurrentSessionTimingAccuracyPercent => _session.GetTimingAccuracyPercent();
 
         public double CurrentSessionOverallAccuracyPercent => CurrentSessionPitchAccuracyPercent;

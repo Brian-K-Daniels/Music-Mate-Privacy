@@ -18,7 +18,7 @@ namespace musicmate.Services
                 [
                     "C",
                     "C, Flute Oboe Bassoon Trumpet Trombone Euphoneum Tuba Piano",
-                    "Flute", "Oboe", "Bassoon", "Trombone", "Euphonium", "Tuba", "Piano"
+                    "Flute", "Oboe", "Bassoon", "Trombone", "Euphonium", "Piano"
                 ]),
             new(
                 Id: "bb-clarinet",
@@ -128,6 +128,17 @@ namespace musicmate.Services
                 PracticalLowestNote: "E2",
                 PracticalHighestNote: "G4",
                 Aliases: ["Double Bass", "Contrabassoon", "C - 1 octave", "C - 1 octave,  Double Bass, Contrabassoon"]),
+            // Concert-band tuba: bass clef, sounds as written (not a Bb transposition).
+            new(
+                Id: "tuba",
+                DisplayName: "Tuba",
+                InstrumentKey: "C",
+                LegacyInstrumentValue: "Tuba",
+                TransposeOffset: 0,
+                PracticalLowestNote: "E2",
+                PracticalHighestNote: "C4",
+                Aliases: ["Tuba"],
+                DefaultClef: Clef.Bass),
             // Concert-pitch voice categories (transposition key C, offset 0).
             new(
                 Id: "voice-soprano",

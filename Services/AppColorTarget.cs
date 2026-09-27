@@ -16,4 +16,8 @@ public enum AppColorTarget
     PickerBorder,
     EntryBackground,
     EntryText,
+    NoteUnplayed,
+    NoteToBePlayed,
+    NotePlayed,
+    NoteWrong,
 }

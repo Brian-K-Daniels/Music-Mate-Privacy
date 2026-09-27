@@ -85,7 +85,10 @@ namespace musicmate.Models
         [Column("TmgErr")]
         public double? TimingErrorMs { get; set; }
 
-        /// <summary>Timing tolerance in milliseconds when timing was evaluated.</summary>
+        /// <summary>
+        /// Accept-window width in milliseconds on the side of <see cref="TimingErrorMs"/>
+        /// (early window when the attack was early, late window otherwise).
+        /// </summary>
         [Column("TmgTol")]
         public double? TimingToleranceMs { get; set; }
 

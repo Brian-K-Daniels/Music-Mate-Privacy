@@ -52,9 +52,9 @@ namespace musicmate.Models
         public double AveragePitchErrorCents { get; set; }
 
         /// <summary>
-        /// Timing accuracy percentage (0–100) computed via least-squares onset fitting.
-        /// Measures how closely the player follows the written rhythm, allowing for
-        /// tempo variations. Null when fewer than 3 notes were played.
+        /// Timing quality percentage (0–100). Each timed non-rest attack is scored from
+        /// its conductor error relative to that side's accept window (100 on the beat,
+        /// 50 at the window edge, 0 at twice the window). Null when no note was timed.
         /// </summary>
         public double? TimingAccuracyPercent { get; set; }
 
@@ -71,14 +71,14 @@ namespace musicmate.Models
         /// [DEPRECATED] Mean inter-note interval in milliseconds.
         /// Use TimingAccuracyPercent instead.
         /// </summary>
-        [System.Obsolete("Use TimingAccuracyPercent for least-squares onset timing")]
+        [System.Obsolete("Use TimingAccuracyPercent")]
         public double AverageTimingMs { get; set; }
 
         /// <summary>
         /// [DEPRECATED] Timing standard deviation in milliseconds.
         /// Use TimingAccuracyPercent instead.
         /// </summary>
-        [System.Obsolete("Use TimingAccuracyPercent for least-squares onset timing")]
+        [System.Obsolete("Use TimingAccuracyPercent")]
         public double TimingStdDevMs { get; set; }
 
         // ── Overall ────────────────────────────────────────────────────────────

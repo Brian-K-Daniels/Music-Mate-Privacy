@@ -14,6 +14,7 @@ public static class StartupTiming
 
     public static long ElapsedMs => Environment.TickCount64 - s_originMs;
 
+    [Conditional("DEBUG")]
     public static void Mark(string phase, string? detail = null)
     {
         long now = Environment.TickCount64;

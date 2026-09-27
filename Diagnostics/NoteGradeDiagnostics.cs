@@ -4,13 +4,14 @@ using System.Text;
 namespace musicmate.Diagnostics;
 
 /// <summary>
-/// Temporary Release-safe note-grade diagnostics (no VS debugger required).
+/// Debug-only note-grade diagnostics.
 /// Filter: <c>adb logcat -s MusicMateNoteGrade</c>
 /// </summary>
 public static class NoteGradeDiagnostics
 {
     public const string Tag = "MusicMateNoteGrade";
 
+    [System.Diagnostics.Conditional("DEBUG")]
     public static void Log(string message)
     {
         try
@@ -24,6 +25,7 @@ public static class NoteGradeDiagnostics
         System.Diagnostics.Debug.WriteLine($"[{Tag}] {message}");
     }
 
+    [System.Diagnostics.Conditional("DEBUG")]
     public static void LogCandidate(
         string stage,
         int noteIndex,
@@ -71,6 +73,7 @@ public static class NoteGradeDiagnostics
         Log(sb.ToString());
     }
 
+    [System.Diagnostics.Conditional("DEBUG")]
     public static void LogFinal(
         int noteIndex,
         string? expected,

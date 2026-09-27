@@ -4,9 +4,8 @@ using System.Text;
 namespace musicmate.Diagnostics;
 
 /// <summary>
-/// Temporary Release-safe first-note diagnostics for Android logcat (no VS debugger required).
+/// Debug-only first-note diagnostics for Android logcat.
 /// Filter: <c>adb logcat MusicMateFirstNote:I *:S</c> or <c>adb logcat | findstr MusicMateFirstNote</c>
-/// Uses Android.Util.Log Info priority so entries survive default logcat filters that drop Debug.
 /// </summary>
 public static class FirstNoteAndroidReleaseLog
 {
@@ -16,6 +15,7 @@ public static class FirstNoteAndroidReleaseLog
     private static long _lastNonAcceptTicks;
     private const int MinNonAcceptIntervalMs = 250;
 
+    [System.Diagnostics.Conditional("DEBUG")]
     public static void ResetForNewSession()
     {
         Interlocked.Exchange(ref _firstNoteAccepted, 0);
@@ -25,13 +25,15 @@ public static class FirstNoteAndroidReleaseLog
     public static bool StillWaitingForFirstAccept
         => Volatile.Read(ref _firstNoteAccepted) == 0;
 
-    /// <summary>Always emits (not gated on first-note accept). Use for arming / mic failures.</summary>
+    /// <summary>Debug-only trace. Release call sites are omitted.</summary>
+    [System.Diagnostics.Conditional("DEBUG")]
     public static void WriteAlways(string stage, string detail)
     {
         // SPECIAL DEBUG FOR ANDROID LOG IN RELEASE MODE
         Emit($"{stage} {detail}");
     }
 
+    [System.Diagnostics.Conditional("DEBUG")]
     public static void Log(
         string stage,
         bool isFirstNote,

@@ -13,7 +13,13 @@ public readonly struct NoteAttemptOutcome
     public double? ExpectedBeat { get; init; }
     public double? ExpectedStartMs { get; init; }
     public double? ActualDetectedMs { get; init; }
+    /// <summary>Signed conductor error in milliseconds (negative = early). Null when timing was not compared.</summary>
     public double? TimingErrorMs { get; init; }
+
+    /// <summary>
+    /// Accept-window width in milliseconds on the side of <see cref="TimingErrorMs"/>
+    /// (early window when the attack was early, late window otherwise).
+    /// </summary>
     public double? TimingToleranceMs { get; init; }
     public bool PitchCorrect { get; init; }
     public bool? TimingCorrect { get; init; }

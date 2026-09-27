@@ -119,9 +119,8 @@ namespace musicmate.Services
             => SessionPreferences.Get("LevelUp.MinPitchPct", DefaultMinPitchAccuracyPercent);
 
         /// <summary>
-        /// Minimum timing accuracy (%) required when timing data is available.
-        /// Timing is measured using least-squares onset fitting: notes with
-        /// smaller deviations from the fitted beat timeline score higher.
+        /// Minimum timing quality (%) required when timing data is available.
+        /// Each attack scores 100 on the beat and 50 at the edge of its accept window.
         /// Default = 75.
         /// </summary>
         public static double MinTimingAccuracyPercent
