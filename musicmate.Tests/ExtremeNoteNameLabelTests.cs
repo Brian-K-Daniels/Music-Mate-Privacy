@@ -169,7 +169,7 @@ public class ExtremeNoteNameLabelTests
     public void NoteNameDisplayOff_DoesNotAffectPlacementHelper_RangeUnchanged()
     {
         var range = ChildLevelProgression.NoteRangeForLevel(95);
-        Assert.Equal("E2", range.Lo);
+        Assert.Equal("Bb1", range.Lo);
         Assert.Equal("C8", range.Hi);
 
         // Placement helper is independent of display mode; Off simply skips DrawNoteName.

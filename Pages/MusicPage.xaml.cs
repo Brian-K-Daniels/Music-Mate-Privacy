@@ -66,6 +66,9 @@ namespace musicmate.Pages
         /// <summary>Session-complete owns the repeat handoff, so MaxBlocks cannot start a second listener.</summary>
         private bool _repeatHandoff;
         private readonly RepeatSessionStartup _repeatStartup = new();
+        /// <summary>True only after hamburger Tuner marked this visit. Cleared when leaving that visit.</summary>
+        private bool _openedAsExplicitTuner;
+        private bool _restoringMusicSurface;
         /// <summary>Tracks whether the Tuner UI surface is currently shown on this page.</summary>
         private bool _tunerUiActive;
         /// <summary>
@@ -164,10 +167,14 @@ namespace musicmate.Pages
             Array.Empty<TunerReferenceNoteChoice>();
         private bool _isUpdatingReferenceNoteUi;
         private string? _lastLoggedTunerHeardNote;
-        /// <summary>Tuner-local BPM for repeated reference playback (independent of Settings until synced).</summary>
-        private int _tunerTempoBpm = NoteSessionService.DefaultTempo;
+        /// <summary>Tuner metronome BPM. Not the Music page tempo.</summary>
+        private int _tunerTempoBpm = TunerMetronomeSettings.DefaultTempo;
+        private bool _tunerTempoLoaded;
         private bool _isUpdatingTunerTempoPicker;
-        private const string PrefTunerTempoKey = "musicmate.TunerTempo";
+        /// <summary>Tuner metronome meter. Not the Music page time signature.</summary>
+        private string _tunerTimeSignature = TunerMetronomeSettings.DefaultTimeSignature;
+        private bool _tunerTimeSignatureLoaded;
+        private bool _isUpdatingTunerTimeSignaturePicker;
         /// <summary>Fraction of each beat that the reference note sounds (remainder is silence).</summary>
 
         // ── Waiting count-in (Music practice) ─────────────────────────────────
@@ -439,11 +446,13 @@ namespace musicmate.Pages
 
             if (_session.Tune == "Tuner")
             {
-                StatusService.Instance.StatusMessage = _isTunerPitchPlaying
+                string next = _isTunerPitchPlaying
                     ? "Playing reference tone."
                     : (_isRunning || capturing)
                         ? GetCurrentPlayItemName()
                         : MusicAudioSignalTrace.StoppedListeningMessage;
+                // The title heading is already "Tuner"; do not repeat it in the status line.
+                StatusService.Instance.StatusMessage = TunerPageHeading.StatusBesideHeading(next);
                 return;
             }
 
@@ -566,20 +575,13 @@ namespace musicmate.Pages
                 _session = ServiceHelper.GetService<NoteSessionService>()!;
                 _displayedTunes = ServiceHelper.GetService<DisplayedTuneHistory>()
                     ?? new DisplayedTuneHistory();
-                // First Tuner tap selects Tuner, then creates this page. Restoring the
-                // saved music choice here would show Music instead of Tuner.
-                // The first Tuner visit creates this page after Tune is already Tuner.
-                // GoToAsync can return before this constructor runs and a later consume
-                // used to clear the load mark first. Preserve Tuner from the session
-                // itself so persisted What to Play cannot replace it.
-                bool preserveTuner = PlayModePickerOptions.ShouldPreserveTunerOnMusicPageConstruction(_session.Tune);
-                bool tunerMark = PlayModePickerOptions.ConsumeTunerSelectedBeforeMusicPageLoad();
+                // Hamburger Tuner is the only entry that may keep Tune == Tuner.
+                // A persisted or leftover Tuner value is restored to the saved music choice.
+                _openedAsExplicitTuner = PlayModePickerOptions.PrepareMusicPageForNavigation(_session);
                 AppLifecycleLog.WriteAlways(
                     "NAV",
                     "MusicPage.ctor",
-                    $"tune={_session.Tune} preserveTuner={preserveTuner} mark={tunerMark}");
-                if (!preserveTuner)
-                    PlayModePickerOptions.ApplyPersistedSelection(_session);
+                    $"tune={_session.Tune} explicitTuner={_openedAsExplicitTuner}");
                 _sessionDb = ServiceHelper.GetService<SessionDatabase>()!;
                 _sessionResultDb = ServiceHelper.GetService<SessionResultDatabase>()!;
                 _noteAttemptDb = ServiceHelper.GetService<NoteAttemptDatabase>()!;
@@ -658,6 +660,8 @@ namespace musicmate.Pages
                     MainThread.BeginInvokeOnMainThread(SyncTempoMarkingHitTarget);
                 _staffDrawable.TimeSignatureBoundsChanged += (_, _) =>
                     MainThread.BeginInvokeOnMainThread(SyncTimeSignatureHitTarget);
+                _staffDrawable.ClefBoundsChanged += (_, _) =>
+                    MainThread.BeginInvokeOnMainThread(SyncClefHitTarget);
                 StaffGraphicsView.Drawable = _staffDrawable;
                 StaffGraphicsView.SetBinding(GraphicsView.BackgroundColorProperty, new Binding("PanelBackgroundColor"));
                 StaffGraphicsView.SizeChanged += (_, _) =>
@@ -873,26 +877,49 @@ namespace musicmate.Pages
                         UpdateKeyPickerVisibility();
                         OnPropertyChanged(nameof(Tune));
 
-                        // Hamburger / WhatToPlay set Tune via ApplyOtherSelection. If Music is
-                        // already visible, OnAppearing may not re-run — switch Tuner chrome here
-                        // so both entry points use the same display activation path.
-                        if (_isPageVisible)
+                        // Hamburger Tuner marks the entry before setting Tune. Any other
+                        // change to Tuner is a stale value and must not switch the UI.
+                        if (!_restoringMusicSurface)
                         {
                             if (PlayModePickerOptions.IsTunerMode(_session))
-                                ApplyTunerDisplayState();
-                            else
+                            {
+                                if (PlayModePickerOptions.IsExplicitTunerOpenPending || _openedAsExplicitTuner)
+                                {
+                                    _openedAsExplicitTuner = true;
+                                    if (_isPageVisible)
+                                        ApplyTunerDisplayState();
+                                }
+                                else if (_isPageVisible)
+                                {
+                                    ShowNormalMusicInterface();
+                                }
+                            }
+                            else if (_isPageVisible)
+                            {
+                                _openedAsExplicitTuner = false;
                                 UpdateTunerVisibility();
+                            }
                         }
                     }
 
                     if (e.PropertyName == nameof(NoteSessionService.ShowConductorCues)
                         || e.PropertyName == nameof(NoteSessionService.NoteNameDisplay)
-                        || e.PropertyName == nameof(NoteSessionService.ShowSignaturesOnBothStaffs))
+                        || e.PropertyName == nameof(NoteSessionService.ShowSignaturesOnBothStaffs)
+                        || e.PropertyName == nameof(NoteSessionService.NotationClef))
                     {
-                        // Signatures-on-both changes first-note X; bust layout cache without regenerating notes.
-                        if (e.PropertyName == nameof(NoteSessionService.ShowSignaturesOnBothStaffs))
+                        // Clef and signature placement change geometry; do not generate a new tune.
+                        if (e.PropertyName == nameof(NoteSessionService.ShowSignaturesOnBothStaffs)
+                            || e.PropertyName == nameof(NoteSessionService.NotationClef))
                             _staffDrawable?.InvalidateLayoutCache();
-                        MainThread.BeginInvokeOnMainThread(() => StaffGraphicsView?.Invalidate());
+                        MainThread.BeginInvokeOnMainThread(() =>
+                        {
+                            StaffGraphicsView?.Invalidate();
+                            if (e.PropertyName == nameof(NoteSessionService.NotationClef))
+                            {
+                                UpdateClefAccessibility();
+                                SyncClefHitTarget();
+                            }
+                        });
                     }
                 };
 
@@ -3211,6 +3238,14 @@ namespace musicmate.Pages
                 $"point={(point is Point p ? $"{p.X:F0},{p.Y:F0}" : "null")} " +
                 $"borderInputTransparent={StaffBorder?.InputTransparent} " +
                 $"gvInputTransparent={StaffGraphicsView?.InputTransparent}");
+            if (point is Point clefPoint
+                && _staffDrawable != null
+                && _staffDrawable.HitTestClef((float)clefPoint.X, (float)clefPoint.Y))
+            {
+                ToggleNotationClef();
+                return;
+            }
+
             TryHandleStaffOverlayDismissTap(point);
         }
 
@@ -3221,6 +3256,59 @@ namespace musicmate.Pages
                 ? "no-touches"
                 : $"xy={e.Touches[0].X:F0},{e.Touches[0].Y:F0}";
             LogTempoTap("GRAPHICS VIEW START INTERACTION", detail);
+        }
+
+        private void OnClefHitTargetClicked(object? sender, EventArgs e)
+        {
+            _suppressStaffOverlayTapUntilMs = Environment.TickCount64 + 400;
+            ToggleNotationClef();
+        }
+
+        private void ToggleNotationClef()
+        {
+            if (_session == null || !_session.CanToggleNotationClef)
+                return;
+
+            _session.ToggleNotationClef();
+        }
+
+        private void UpdateClefAccessibility()
+        {
+            if (ClefHitTarget == null || _session == null)
+                return;
+
+            SemanticProperties.SetDescription(ClefHitTarget, _session.NotationClefAccessibilityText);
+        }
+
+        private void SyncClefHitTarget()
+        {
+            if (ClefHitTarget == null || StaffGraphicsView == null)
+                return;
+
+            if (_session == null
+                || !_session.CanToggleNotationClef
+                || PlayModePickerOptions.IsTunerMode(_session)
+                || _staffDrawable == null
+                || _staffDrawable.ClefBounds.Count == 0
+                || _staffDrawable.ClefBounds[0].Width <= 0)
+            {
+                ClefHitTarget.IsVisible = false;
+                return;
+            }
+
+            RectF glyph = _staffDrawable.ClefBounds[0];
+            RectF? timeSignature = _staffDrawable.LastTimeSignatureBounds;
+            RectF hit = ClefHitTargetLayout.Expand(glyph, timeSignature);
+            double stroke = StaffBorder?.StrokeThickness ?? 0;
+            ClefHitTarget.Margin = new Thickness(stroke + hit.X, stroke + hit.Y, 0, 0);
+            ClefHitTarget.WidthRequest = hit.Width;
+            ClefHitTarget.HeightRequest = hit.Height;
+            ClefHitTarget.MinimumWidthRequest = Math.Min(ClefHitTargetLayout.MinimumSize, hit.Width);
+            ClefHitTarget.MinimumHeightRequest = Math.Min(ClefHitTargetLayout.MinimumSize, hit.Height);
+            ClefHitTarget.InputTransparent = false;
+            ClefHitTarget.IsEnabled = true;
+            ClefHitTarget.IsVisible = true;
+            UpdateClefAccessibility();
         }
 
         private void OnTempoMarkingHitTargetClicked(object? sender, EventArgs e)
@@ -3740,6 +3828,8 @@ namespace musicmate.Pages
             Dispatcher.Dispatch(SyncTempoMarkingHitTarget);
             Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(50), SyncTempoMarkingHitTarget);
             ScheduleSyncTimeSignatureHitTarget();
+            Dispatcher.Dispatch(SyncClefHitTarget);
+            Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(50), SyncClefHitTarget);
         }
 
         private void SyncTempoMarkingHitTarget()
@@ -4360,8 +4450,33 @@ namespace musicmate.Pages
             UpdateEffectiveScaleLabel();
             UpdateNoteEmphasisBanner();
 
+            // A pending mark is a hamburger Tuner open that arrived after this page was created.
+            // Reappearing an earlier Tuner visit (Back, history) must not show Tuner again.
+            if (PlayModePickerOptions.IsExplicitTunerOpenPending)
+                _openedAsExplicitTuner = PlayModePickerOptions.PrepareMusicPageForNavigation(_session);
+            else if (_openedAsExplicitTuner && PlayModePickerOptions.IsTunerMode(_session))
+            {
+                _openedAsExplicitTuner = false;
+                _restoringMusicSurface = true;
+                _suppressSessionRegenerate = true;
+                try
+                {
+                    BackNavigationTunerPolicy.ApplyIfBackWouldOpenTuner(
+                        _session, BackNavigationTunerPolicy.MusicPageTarget);
+                }
+                finally
+                {
+                    _suppressSessionRegenerate = false;
+                    _restoringMusicSurface = false;
+                }
+            }
+            else if (!_openedAsExplicitTuner && PlayModePickerOptions.IsTunerMode(_session))
+                ShowNormalMusicInterface();
+            else if (_openedAsExplicitTuner && !PlayModePickerOptions.IsTunerMode(_session))
+                _openedAsExplicitTuner = false;
+
             // Capture soft-pause before Tuner display activation clears _isRunning.
-            bool appearAsTuner = PlayModePickerOptions.IsTunerMode(_session);
+            bool appearAsTuner = _openedAsExplicitTuner && PlayModePickerOptions.IsTunerMode(_session);
             bool softPausedBeforeDisplay = _listeningPausedForPageHide;
             bool wasRunningBeforeDisplay = _isRunning;
 
@@ -4967,6 +5082,12 @@ namespace musicmate.Pages
 
             DeviceDisplay.Current.KeepScreenOn = false;
             StopInactivityMonitor();
+
+            // Leaving the page ends the temporary Tuner visit. A mark that is already
+            // pending belongs to a new hamburger Tuner open and must stay set.
+            if (!PlayModePickerOptions.IsExplicitTunerOpenPending
+                && (disappearingFromTuner || _openedAsExplicitTuner))
+                ShowNormalMusicInterface();
         }
         private async void OnNavigateWhatToPlayClicked(object? sender, EventArgs e)
         {
@@ -4980,11 +5101,47 @@ namespace musicmate.Pages
         }
 
         /// <summary>
+        /// Normal Music interface. Drops a temporary Tuner visit and any explicit-open
+        /// mark that is not for the entry now being shown.
+        /// </summary>
+        public void ShowNormalMusicInterface()
+        {
+            PlayModePickerOptions.ClearExplicitTunerOpen();
+            _openedAsExplicitTuner = false;
+            if (_session == null || !PlayModePickerOptions.IsTunerMode(_session))
+            {
+                if (_isPageVisible)
+                    UpdateTunerVisibility();
+                return;
+            }
+
+            _restoringMusicSurface = true;
+            _suppressSessionRegenerate = true;
+            try
+            {
+                PlayModePickerOptions.RestoreMusicSurfaceFromTemporaryTuner(_session);
+            }
+            finally
+            {
+                _suppressSessionRegenerate = false;
+                _restoringMusicSurface = false;
+            }
+
+            if (!_isPageVisible)
+                return;
+
+            UpdateTunerVisibility();
+            _ = RegenerateNotesAsync();
+        }
+
+        /// <summary>
         /// Hamburger Tuner uses this page. Back leaves that display and restores the
         /// saved What To Play music without opening What To Play.
         /// </summary>
         private async Task ReturnFromTunerToMusicAsync()
         {
+            _openedAsExplicitTuner = false;
+            PlayModePickerOptions.ClearExplicitTunerOpen();
             AbandonTunerListening();
             CancelPendingListeningStarts();
             try { _playCts?.Cancel(); } catch { }
@@ -4997,19 +5154,16 @@ namespace musicmate.Pages
             await StopTunerPitchAsync();
             SetButtonStates(false);
 
+            _restoringMusicSurface = true;
             _suppressSessionRegenerate = true;
             try
             {
-                PlayModePickerOptions.ApplyPersistedSelection(_session);
-                if (PlayModePickerOptions.IsTunerMode(_session))
-                {
-                    PlayModePickerOptions.ApplyOtherSelection(
-                        _session, NoteSessionService.ScaleSelectionByLevel);
-                }
+                PlayModePickerOptions.RestoreMusicSurfaceFromTemporaryTuner(_session);
             }
             finally
             {
                 _suppressSessionRegenerate = false;
+                _restoringMusicSurface = false;
             }
 
             UpdateTunerVisibility();
@@ -5046,25 +5200,29 @@ namespace musicmate.Pages
             _suppressSessionRegenerate = true;
             try
             {
-                // Save user's instrument selection to restore after playback
-                _savedInstrumentForPlayback = _session.Instrument;
+                // Transposing instruments are shown as Concert Pitch during Play.
+                // Concert-pitch instruments keep their saved notation clef (Euphonium bass/treble).
                 _savedInstrumentIndexForPlayback = InstrumentPicker?.SelectedIndex ?? -1;
-
-                try
+                _savedInstrumentForPlayback = _session.BeginPlaybackInstrumentOverride();
+                if (_savedInstrumentForPlayback == null)
+                    _savedInstrumentIndexForPlayback = -1;
+                else
                 {
-                    var instrumentOptions = NoteSessionService.InstrumentOptions.Cast<string>().ToArray();
-                    var instIdx = Array.FindIndex(instrumentOptions, s => s == "Concert Pitch");
-                    if (instIdx >= 0)
+                    try
                     {
-                        InstrumentPicker?.SelectedIndex = instIdx;
-                        _session.Instrument = instrumentOptions[instIdx];
-                        SelectedInstrumentShort = _session.InstrumentDisplayName;
-                        UpdateInstrumentPickerVisibility();
+                        var instrumentOptions = NoteSessionService.InstrumentOptions.Cast<string>().ToArray();
+                        var instIdx = Array.FindIndex(instrumentOptions, s => s == "Concert Pitch");
+                        if (instIdx >= 0 && InstrumentPicker != null)
+                        {
+                            InstrumentPicker.SelectedIndex = instIdx;
+                            SelectedInstrumentShort = _session.InstrumentDisplayName;
+                            UpdateInstrumentPickerVisibility();
+                        }
                     }
-                }
-                catch
-                {
-                    // best-effort; ignore failures
+                    catch
+                    {
+                        // best-effort; ignore failures
+                    }
                 }
 
                 _isPlaying = true;
@@ -5091,8 +5249,7 @@ namespace musicmate.Pages
             {
                 if (_savedInstrumentIndexForPlayback >= 0 && InstrumentPicker != null)
                     InstrumentPicker.SelectedIndex = _savedInstrumentIndexForPlayback;
-                if (!string.IsNullOrEmpty(_savedInstrumentForPlayback))
-                    _session.Instrument = _savedInstrumentForPlayback;
+                _session.EndPlaybackInstrumentOverride(_savedInstrumentForPlayback);
             }
             catch
             {
@@ -7732,6 +7889,7 @@ namespace musicmate.Pages
                 return;
 
             EnsureTunerTempoPicker();
+            EnsureTunerTimeSignaturePicker();
             WireTunerPickerTextFit();
             BuildReferenceNoteChoices();
 
@@ -7762,21 +7920,6 @@ namespace musicmate.Pages
             Preferences.Default.Set(TunerReferenceNoteCatalog.PreferenceKeyWrittenMidi, writtenMidi);
         }
 
-        private static int LoadPersistedTunerTempo()
-        {
-            int saved = Preferences.Default.Get(PrefTunerTempoKey, 0);
-            if (saved >= NoteSessionService.MinTempo && saved <= NoteSessionService.MaxTempo)
-                return saved;
-            return 0;
-        }
-
-        private static void PersistTunerTempo(int bpm)
-        {
-            Preferences.Default.Set(
-                PrefTunerTempoKey,
-                Math.Clamp(bpm, NoteSessionService.MinTempo, NoteSessionService.MaxTempo));
-        }
-
         private void EnsureTunerTempoPicker()
         {
             if (TunerTempoPicker == null)
@@ -7788,16 +7931,13 @@ namespace musicmate.Pages
                     TunerTempoPicker.Items.Add(bpm.ToString(System.Globalization.CultureInfo.InvariantCulture));
             }
 
-            int tempo = _tunerTempoBpm;
-            if (tempo < NoteSessionService.MinTempo || tempo > NoteSessionService.MaxTempo)
+            if (!_tunerTempoLoaded)
             {
-                int persisted = LoadPersistedTunerTempo();
-                tempo = persisted > 0
-                    ? persisted
-                    : Math.Clamp(_session.Tempo, NoteSessionService.MinTempo, NoteSessionService.MaxTempo);
+                _tunerTempoLoaded = true;
+                _tunerTempoBpm = TunerMetronomeSettings.LoadTempo();
             }
 
-            SetTunerTempo(tempo, persist: true, updatePicker: true);
+            SetTunerTempo(_tunerTempoBpm, persist: false, updatePicker: true);
         }
 
         private void SetTunerTempo(int bpm, bool persist, bool updatePicker)
@@ -7805,7 +7945,7 @@ namespace musicmate.Pages
             int clamped = Math.Clamp(bpm, NoteSessionService.MinTempo, NoteSessionService.MaxTempo);
             _tunerTempoBpm = clamped;
             if (persist)
-                PersistTunerTempo(clamped);
+                TunerMetronomeSettings.SaveTempo(clamped);
 
             if (!updatePicker || TunerTempoPicker == null)
                 return;
@@ -7838,6 +7978,74 @@ namespace musicmate.Pages
             int bpm = NoteSessionService.MinTempo + TunerTempoPicker.SelectedIndex;
             SetTunerTempo(bpm, persist: true, updatePicker: false);
             DebugLog.WriteLine($"[ReferenceTone] tuner tempo → {bpm} BPM (loop reads next beat)");
+        }
+
+        private void EnsureTunerTimeSignaturePicker()
+        {
+            if (TunerTimeSignaturePicker == null)
+                return;
+
+            if (TunerTimeSignaturePicker.Items.Count == 0)
+            {
+                foreach (string meter in TimeSignatureControlLogic.Options)
+                    TunerTimeSignaturePicker.Items.Add(meter);
+            }
+
+            if (!_tunerTimeSignatureLoaded)
+            {
+                _tunerTimeSignatureLoaded = true;
+                _tunerTimeSignature = TunerMetronomeSettings.LoadTimeSignature();
+            }
+
+            SetTunerTimeSignature(_tunerTimeSignature, persist: false, updatePicker: true);
+        }
+
+        private void SetTunerTimeSignature(string? display, bool persist, bool updatePicker)
+        {
+            string meter = TimeSignatureControlLogic.NormalizeSelection(display)
+                ?? TunerMetronomeSettings.DefaultTimeSignature;
+            _tunerTimeSignature = meter;
+            if (persist)
+                TunerMetronomeSettings.SaveTimeSignature(meter);
+
+            if (!updatePicker || TunerTimeSignaturePicker == null)
+                return;
+
+            int index = -1;
+            for (int i = 0; i < TunerTimeSignaturePicker.Items.Count; i++)
+            {
+                if (string.Equals(TunerTimeSignaturePicker.Items[i], meter, StringComparison.Ordinal))
+                {
+                    index = i;
+                    break;
+                }
+            }
+
+            if (index < 0 || TunerTimeSignaturePicker.SelectedIndex == index)
+                return;
+
+            _isUpdatingTunerTimeSignaturePicker = true;
+            try
+            {
+                TunerTimeSignaturePicker.SelectedIndex = index;
+            }
+            finally
+            {
+                _isUpdatingTunerTimeSignaturePicker = false;
+            }
+        }
+
+        private void OnTunerTimeSignaturePickerChanged(object? sender, EventArgs e)
+        {
+            if (_isUpdatingTunerTimeSignaturePicker || TunerTimeSignaturePicker == null)
+                return;
+            int index = TunerTimeSignaturePicker.SelectedIndex;
+            if (index < 0 || index >= TunerTimeSignaturePicker.Items.Count)
+                return;
+
+            SetTunerTimeSignature(TunerTimeSignaturePicker.Items[index], persist: true, updatePicker: false);
+            DebugLog.WriteLine(
+                $"[TunerMetronome] time signature → {_tunerTimeSignature} (loop reads next beat)");
         }
 
         private void OnTunerUseSettingsTempoClicked(object? sender, EventArgs e)
@@ -8035,6 +8243,7 @@ namespace musicmate.Pages
             AttachTunerPickerTextFit(TunerInstrumentPicker);
             AttachTunerPickerTextFit(TunerNotePicker);
             AttachTunerPickerTextFit(TunerTempoPicker);
+            AttachTunerPickerTextFit(TunerTimeSignaturePicker);
             if (TunerPickerRow != null)
                 TunerPickerRow.SizeChanged += (_, _) => SizeTunerCompactPickers();
         }
@@ -8143,10 +8352,18 @@ namespace musicmate.Pages
             }
         }
 
+        private void SetPageModeHeading(bool tuner)
+        {
+            if (TitlePageModeLabel == null)
+                return;
+
+            TitlePageModeLabel.Text = tuner ? TunerPageHeading.Title : "Music";
+            TitlePageModeLabel.FontSize = tuner ? TunerPageHeading.TitleFontSize : 18;
+        }
+
         private void UpdateTunerModeChrome()
         {
-            if (TitlePageModeLabel != null)
-                TitlePageModeLabel.Text = _session.Tune == "Tuner" ? "  Tuner " : "  Music ";
+            SetPageModeHeading(_session.Tune == "Tuner");
 
             if (TunerModeStatusLabel != null)
             {
@@ -8366,14 +8583,14 @@ namespace musicmate.Pages
 
             try
             {
-                int beats = WaitingCountInLogic.GetBeatsPerMeasure(_session.GetDisplayTimeSignature());
+                int beats = TunerMetronomeSettings.BeatsPerMeasure(_tunerTimeSignature);
                 int tempo = Math.Clamp(
                     _tunerTempoBpm,
                     NoteSessionService.MinTempo,
                     NoteSessionService.MaxTempo);
 
                 DebugLog.WriteLine(
-                    $"[TunerMetronome] start tempo={tempo} beats/measure={beats} " +
+                    $"[TunerMetronome] start tempo={tempo} meter={_tunerTimeSignature} beats/measure={beats} " +
                     $"accentHz={WaitingCountInSettings.AccentedPitchHz:F0} " +
                     $"vol={WaitingCountInSettings.AccentedVolume:F2}/{WaitingCountInSettings.UnaccentedVolume:F2} " +
                     $"durPct={WaitingCountInSettings.BeatDurationPercent}");
@@ -8391,7 +8608,8 @@ namespace musicmate.Pages
                         _tunerTempoBpm,
                         NoteSessionService.MinTempo,
                         NoteSessionService.MaxTempo),
-                    source: "METRONOME");
+                    source: "METRONOME",
+                    getBeatsPerMeasure: () => TunerMetronomeSettings.BeatsPerMeasure(_tunerTimeSignature));
             }
             catch (OperationCanceledException)
             {
@@ -8752,8 +8970,7 @@ namespace musicmate.Pages
                     AbandonTunerListening();
                 _ = StopReferenceToneAsync(resumeListening: false);
                 _ = StopTunerPitchAsync();
-                if (TitlePageModeLabel != null)
-                    TitlePageModeLabel.Text = "  Music ";
+                SetPageModeHeading(tuner: false);
                 BackgroundColor = Color.FromArgb("#F7F7F7");
                 if (MainPageRootGrid != null)
                     MainPageRootGrid.BackgroundColor = Colors.Transparent;

@@ -83,6 +83,7 @@ namespace musicmate.Pages
         {
             try
             {
+                BackNavigationTunerPolicy.ApplyBackArrowToMusicPage();
                 await Shell.Current.GoToAsync("//MusicPage");
             }
             catch (Exception ex)

@@ -975,8 +975,12 @@ namespace musicmate.Drawables
             float lowerTop, float lowerMid, float lowerBot)
         {
             // Ear Training compact reveal: staff lines + notes only.
+            _clefBounds.Clear();
             if (OmitStaffHeader)
+            {
+                PublishClefBounds();
                 return;
+            }
 
             // BPM marking stays on the upper staff only; key/time may repeat on lower.
             // Interval Sight Training (SingleStaffLayout): clef + key only — no tempo or time sig.
@@ -1004,6 +1008,8 @@ namespace musicmate.Drawables
                     drawTimeSignature: drawLowerSignatures,
                     captureTimeSignatureHitTarget: true);
             }
+
+            PublishClefBounds();
         }
 
         private void DrawBothStaffsDynamic(
@@ -5142,6 +5148,7 @@ namespace musicmate.Drawables
         /// </summary>
         private void DrawClef(ICanvas canvas, Color ink, float staffTop, float staffBot)
         {
+            RecordClefBounds(staffTop, staffBot);
             if (_session.NotationClef == Clef.Bass)
             {
                 float fLineY = staffTop + _layout.Sls;
@@ -5162,6 +5169,69 @@ namespace musicmate.Drawables
             float trebleH = staffBot - staffTop + _layout.Sls * 3.2f;
             canvas.DrawString("𝄞", _headerMetrics.ClefX, staffTop, _headerMetrics.ClefWidth, trebleH,
                 HorizontalAlignment.Left, VerticalAlignment.Top);
+        }
+
+        private readonly List<RectF> _clefBounds = new();
+        private RectF[] _publishedClefBounds = Array.Empty<RectF>();
+
+        /// <summary>Last-drawn clef rectangles in GraphicsView coordinates.</summary>
+        public IReadOnlyList<RectF> ClefBounds => _publishedClefBounds;
+
+        /// <summary>Raised when the drawn clef rectangles change so the Music page can move its tap target.</summary>
+        public event EventHandler? ClefBoundsChanged;
+
+        private void RecordClefBounds(float staffTop, float staffBot)
+        {
+            if (_headerMetrics.ClefWidth <= 0)
+                return;
+
+            float top = staffTop - _layout.Sls * 0.4f;
+            float bottom = staffBot + _layout.Sls * 0.8f;
+            _clefBounds.Add(new RectF(
+                _headerMetrics.ClefX,
+                top,
+                _headerMetrics.ClefWidth,
+                Math.Max(8f, bottom - top)));
+        }
+
+        private void PublishClefBounds()
+        {
+            if (_publishedClefBounds.Length == _clefBounds.Count)
+            {
+                bool same = true;
+                for (int i = 0; i < _clefBounds.Count; i++)
+                {
+                    if (_clefBounds[i] != _publishedClefBounds[i])
+                    {
+                        same = false;
+                        break;
+                    }
+                }
+
+                if (same)
+                    return;
+            }
+
+            _publishedClefBounds = _clefBounds.ToArray();
+            ClefBoundsChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// True when a tap hits an expanded clef target. False when this instrument has only one clef.
+        /// </summary>
+        public bool HitTestClef(float x, float y)
+        {
+            if (!_session.CanToggleNotationClef)
+                return false;
+
+            foreach (var glyph in _publishedClefBounds)
+            {
+                RectF hit = ClefHitTargetLayout.Expand(glyph, _lastTimeSignatureBounds);
+                if (x >= hit.X && x <= hit.X + hit.Width && y >= hit.Y && y <= hit.Y + hit.Height)
+                    return true;
+            }
+
+            return false;
         }
 
         /// <summary>

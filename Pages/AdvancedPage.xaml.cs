@@ -65,6 +65,7 @@ namespace musicmate.Pages
 
         private async void OnNavigatePracticeClicked(object sender, EventArgs e)
         {
+            BackNavigationTunerPolicy.ApplyBackArrowToMusicPage();
             await Shell.Current.GoToAsync("//MusicPage");
         }
     }

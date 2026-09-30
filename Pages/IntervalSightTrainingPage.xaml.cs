@@ -44,6 +44,7 @@ namespace musicmate.Pages
         {
             try
             {
+                BackNavigationTunerPolicy.ApplyBackArrowToMusicPage();
                 await NavigationBusyService.GoToAsync("//MusicPage");
             }
             catch (Exception ex)

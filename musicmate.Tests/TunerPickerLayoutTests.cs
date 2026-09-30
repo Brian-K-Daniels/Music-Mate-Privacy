@@ -4,15 +4,16 @@ namespace musicmate.Tests;
 
 public class TunerPickerLayoutTests
 {
-    private const double PhoneRowWidth = 220;
+    /// <summary>Landscape Tuner instrument/note row (right panel), not a portrait page width.</summary>
+    private const double PhoneRowWidth = 360;
 
     public static TheoryData<string, double> LongInstrumentNames => new()
     {
-        { "Soprano Saxophone", 96 },
-        { "Eb Alto Saxophone", 88 },
-        { "Voice – Mezzo-soprano", 72 },
-        { "Concert Pitch", 64 },
-        { "Bb Clarinet", 58 },
+        { "Soprano Saxophone", 140 },
+        { "Eb Alto Saxophone", 128 },
+        { "Voice – Mezzo-soprano", 105 },
+        { "Concert Pitch", 93 },
+        { "Bb Clarinet", 84 },
     };
 
     [Theory]
@@ -27,9 +28,9 @@ public class TunerPickerLayoutTests
     }
 
     [Theory]
-    [InlineData(28)]
-    [InlineData(36)]
-    [InlineData(44)]
+    [InlineData(41)]
+    [InlineData(52)]
+    [InlineData(64)]
     public void NoteText_FitsPhoneWidthRow(double noteTextWidth)
     {
         var layout = TunerPickerLayout.Allocate(PhoneRowWidth, instrumentTextWidth: 90, noteTextWidth);
@@ -43,11 +44,11 @@ public class TunerPickerLayoutTests
     {
         var layout = TunerPickerLayout.Allocate(
             rowWidth: PhoneRowWidth,
-            instrumentTextWidth: 100,
-            noteTextWidth: 48);
+            instrumentTextWidth: 180,
+            noteTextWidth: 90);
         Assert.True(layout.FontSize < TunerPickerLayout.BaseFontSize);
-        Assert.True(TunerPickerLayout.TextFits(100, layout.InstrumentTextBudget, layout.FontSize));
-        Assert.True(TunerPickerLayout.TextFits(48, layout.NoteTextBudget, layout.FontSize));
+        Assert.True(TunerPickerLayout.TextFits(180, layout.InstrumentTextBudget, layout.FontSize));
+        Assert.True(TunerPickerLayout.TextFits(90, layout.NoteTextBudget, layout.FontSize));
     }
 
     [Fact]
@@ -55,8 +56,8 @@ public class TunerPickerLayoutTests
     {
         var layout = TunerPickerLayout.Allocate(
             PhoneRowWidth,
-            instrumentTextWidth: 72,
-            noteTextWidth: 36);
-        Assert.True(TunerPickerLayout.TextFits(72, layout.InstrumentTextBudget, layout.FontSize));
+            instrumentTextWidth: 105,
+            noteTextWidth: 52);
+        Assert.True(TunerPickerLayout.TextFits(105, layout.InstrumentTextBudget, layout.FontSize));
     }
 }

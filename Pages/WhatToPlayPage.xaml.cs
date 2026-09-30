@@ -1002,6 +1002,7 @@ namespace musicmate.Pages
 
         {
 
+            BackNavigationTunerPolicy.ApplyBackArrowToMusicPage();
             await NavigateToMusicAsync();
 
         }

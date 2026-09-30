@@ -123,6 +123,7 @@ namespace musicmate.Services
         public void ResetToFactoryDefaults()
         {
             DebugLog.WriteLine("[ResetOptionsTest] ResetToFactoryDefaults called.");
+            TunerMetronomeSettings.ClearPersisted();
             _suppressFactoryEvaluation = true;
             try
             {

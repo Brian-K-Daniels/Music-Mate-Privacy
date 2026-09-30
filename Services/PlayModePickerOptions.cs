@@ -553,24 +553,66 @@ namespace musicmate.Services
         }
 
         /// <summary>
-        /// True when MusicPage is being constructed for hamburger Tuner.
-        /// Session tune is the source of truth: the load mark can already have been
-        /// consumed by the time the page constructor runs.
+        /// True only while hamburger Tuner has marked the Music page entry that is
+        /// about to be shown. A leftover or persisted Tune of Tuner is not enough.
         /// </summary>
         public static bool ShouldPreserveTunerOnMusicPageConstruction(string? tune)
-            => IsTunerMode(tune);
+            => IsExplicitTunerOpenPending && IsTunerMode(tune);
 
         /// <summary>
-        /// The first Tuner visit creates MusicPage after Tuner is already selected.
-        /// That constructor must not restore the saved What to Play choice over Tuner.
+        /// Set only by hamburger Tuner (and its flyout fallback) before Music opens.
+        /// This is the only signal that may show the Tuner interface.
         /// </summary>
         private static int _tunerMusicLoadPending;
 
+        public static bool IsExplicitTunerOpenPending
+            => Volatile.Read(ref _tunerMusicLoadPending) > 0;
+
         public static void MarkTunerSelectedBeforeMusicPageLoad()
-            => Interlocked.Increment(ref _tunerMusicLoadPending);
+            => Interlocked.Exchange(ref _tunerMusicLoadPending, 1);
+
+        public static void ClearExplicitTunerOpen()
+            => Interlocked.Exchange(ref _tunerMusicLoadPending, 0);
 
         public static bool ConsumeTunerSelectedBeforeMusicPageLoad()
             => Interlocked.Exchange(ref _tunerMusicLoadPending, 0) > 0;
+
+        /// <summary>
+        /// Decides the Music page surface for this entry.
+        /// Returns true only when hamburger Tuner marked the entry; the session stays on Tuner.
+        /// Every other entry restores the saved music choice when Tune was left on Tuner.
+        /// </summary>
+        public static bool PrepareMusicPageForNavigation(
+            NoteSessionService session,
+            Func<string?>? getSelectedTune = null,
+            Action<string>? setSelectedTune = null)
+        {
+            ArgumentNullException.ThrowIfNull(session);
+            if (ConsumeTunerSelectedBeforeMusicPageLoad())
+            {
+                if (!IsTunerMode(session))
+                    ApplyOtherSelection(session, Tuner, _ => { });
+                return true;
+            }
+
+            RestoreMusicSurfaceFromTemporaryTuner(session, getSelectedTune, setSelectedTune);
+            return false;
+        }
+
+        /// <summary>
+        /// Clears a temporary Tuner display so the next Music visit shows the saved exercise.
+        /// Does not change the saved What to Play choice.
+        /// </summary>
+        public static void RestoreMusicSurfaceFromTemporaryTuner(
+            NoteSessionService session,
+            Func<string?>? getSelectedTune = null,
+            Action<string>? setSelectedTune = null)
+        {
+            ArgumentNullException.ThrowIfNull(session);
+            ApplyPersistedSelection(session, getSelectedTune, setSelectedTune);
+            if (IsTunerMode(session))
+                ApplyOtherSelection(session, NoteSessionService.ScaleSelectionByLevel, setSelectedTune);
+        }
 
         /// <summary>
         /// Restores Tune / scale / random / practice-tune state from the persisted

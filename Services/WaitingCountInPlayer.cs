@@ -70,7 +70,8 @@ namespace musicmate.Services
             Func<CancellationToken, Task>? afterClickAsync = null,
             Func<int>? getTempoBpm = null,
             Action? onFirstClickSounded = null,
-            string source = "COUNTIN")
+            string source = "COUNTIN",
+            Func<int>? getBeatsPerMeasure = null)
         {
             if (string.IsNullOrWhiteSpace(source))
                 source = "COUNTIN";
@@ -104,7 +105,7 @@ namespace musicmate.Services
 
             try
             {
-                beatsPerMeasure = Math.Max(1, beatsPerMeasure);
+                int activeBeats = Math.Max(1, getBeatsPerMeasure?.Invoke() ?? beatsPerMeasure);
                 int activeTempo = Math.Clamp(
                     getTempoBpm?.Invoke() ?? tempoBpm,
                     NoteSessionService.MinTempo,
@@ -141,7 +142,10 @@ namespace musicmate.Services
                         getTempoBpm?.Invoke() ?? tempoBpm,
                         NoteSessionService.MinTempo,
                         NoteSessionService.MaxTempo);
-                    if (tempo != activeTempo)
+                    int beatsNow = Math.Max(1, getBeatsPerMeasure?.Invoke() ?? activeBeats);
+                    bool tempoChanged = tempo != activeTempo;
+                    bool meterChanged = beatsNow != activeBeats;
+                    if (tempoChanged)
                     {
                         activeTempo = tempo;
                         WarmupClicks(
@@ -151,6 +155,13 @@ namespace musicmate.Services
                             unaccentedVolume,
                             accentedPitchHz,
                             unaccentedPitchHz);
+                    }
+
+                    if (meterChanged)
+                        activeBeats = beatsNow;
+
+                    if (tempoChanged || meterChanged)
+                    {
                         if (ct.IsCancellationRequested || Volatile.Read(ref _generation) != gen)
                             break;
                         clock.Restart();
@@ -170,7 +181,7 @@ namespace musicmate.Services
                     double errorMs = actualMs - intendedMs;
                     var click = WaitingCountInLogic.BuildClick(
                         beatIndex,
-                        beatsPerMeasure,
+                        activeBeats,
                         accentedVolume,
                         unaccentedVolume,
                         accentedPitchHz,
@@ -179,7 +190,7 @@ namespace musicmate.Services
                         activeTempo);
 
                     var (measureNumber, beatNumber) = WaitingCountInLogic.GetMeasureBeatNumbers(
-                        beatIndex, beatsPerMeasure);
+                        beatIndex, activeBeats);
 #if DEBUG
                     MetronomeBeatDiagnostics.LogBeat(
                         measureNumber, beatNumber, intendedMs, actualMs, errorMs, click.IsAccented);

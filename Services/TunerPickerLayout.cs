@@ -5,17 +5,18 @@ namespace musicmate.Services;
 /// </summary>
 public static class TunerPickerLayout
 {
-    public const float BaseFontSize = 11f;
-    public const float MinimumFontSize = 6.5f;
+    public const float BaseFontSize = 16f;
+    public const float MinimumFontSize = 8f;
     /// <summary>Border chrome horizontal padding (left + right), matches TunerPickerChrome Padding.</summary>
     public const double ChromeHorizontalPadding = 12;
     public const double SpinnerChevron = 16;
     /// <summary>Skia advance vs MAUI bold label rendering.</summary>
     public const double TextRenderSlack = 3;
-    public const double InstrumentLabelWidth = 26;
+    /// <summary>"Inst." at the Tuner label size.</summary>
+    public const double InstrumentLabelWidth = 50;
     /// <summary>"Note" label plus its Grid.Column left margin.</summary>
-    public const double NoteLabelWidth = 40;
-    public const double ColumnSpacing = 12;
+    public const double NoteLabelWidth = 56;
+    public const double ColumnSpacing = 18;
     public const double InstrumentShare = 0.60;
 
     public readonly record struct ChromeLayout(

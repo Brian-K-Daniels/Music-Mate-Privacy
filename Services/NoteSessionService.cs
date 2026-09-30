@@ -1234,11 +1234,98 @@ namespace musicmate.Services
         public InstrumentProfile CurrentInstrumentProfile => InstrumentCatalog.Resolve(_instrument);
         public string InstrumentDisplayName => CurrentInstrumentProfile.DisplayName;
         public string InstrumentKey => CurrentInstrumentProfile.InstrumentKey;
+        public const string NotationClefPreferencePrefix = "musicmate.NotationClef.";
+
+        public static string NotationClefPreferenceKey(string instrumentId)
+            => NotationClefPreferencePrefix + instrumentId;
+
         /// <summary>
         /// Clef used to place written pitches on the staff. Independent of
-        /// <see cref="InstrumentTransposeOffset"/>.
+        /// <see cref="InstrumentTransposeOffset"/>. A saved choice is used only when
+        /// this instrument allows that clef.
         /// </summary>
-        public Clef NotationClef => CurrentInstrumentProfile.DefaultClef;
+        public Clef NotationClef => ReadNotationClef(CurrentInstrumentProfile);
+
+        public bool CanToggleNotationClef => CurrentInstrumentProfile.CanToggleNotationClef;
+
+        /// <summary>Spoken name of the current clef, including the tap action when one exists.</summary>
+        public string NotationClefAccessibilityText
+        {
+            get
+            {
+                string current = NotationClef == Clef.Bass ? "Bass clef" : "Treble clef";
+                if (!CanToggleNotationClef)
+                    return current + ".";
+
+                string other = NotationClef == Clef.Bass ? "treble clef" : "bass clef";
+                return $"{current}. Tap to change to {other}.";
+            }
+        }
+
+        /// <summary>
+        /// Switches to the instrument's other notation clef and saves that choice.
+        /// Does not change pitches, transposition, or the notes already on the staff.
+        /// </summary>
+        /// <summary>
+        /// Play rewrites a transposing instrument as Concert Pitch so the staff matches
+        /// sounding pitch. Concert-pitch instruments, including a Euphonium clef the user
+        /// already chose, are left alone — switching them would replace that clef with
+        /// Concert Pitch's treble default.
+        /// Returns the instrument id to restore, or null when nothing changed.
+        /// </summary>
+        public string? BeginPlaybackInstrumentOverride()
+        {
+            if (InstrumentTransposeOffset == 0)
+                return null;
+
+            string saved = Instrument;
+            Instrument = "concert-pitch";
+            return saved;
+        }
+
+        public void EndPlaybackInstrumentOverride(string? savedInstrumentId)
+        {
+            if (string.IsNullOrEmpty(savedInstrumentId))
+                return;
+            Instrument = savedInstrumentId;
+        }
+
+        public void ToggleNotationClef()
+        {
+            var clefs = CurrentInstrumentProfile.NotationClefs;
+            if (clefs.Count < 2)
+                return;
+
+            var current = NotationClef;
+            int index = 0;
+            for (int i = 0; i < clefs.Count; i++)
+            {
+                if (clefs[i] == current)
+                {
+                    index = i;
+                    break;
+                }
+            }
+
+            var next = clefs[(index + 1) % clefs.Count];
+            SessionPreferences.Set(NotationClefPreferenceKey(CurrentInstrumentProfile.Id), next.ToString());
+            NotifyNotationClefChanged();
+        }
+
+        private Clef ReadNotationClef(InstrumentProfile profile)
+        {
+            string saved = SessionPreferences.Get(NotationClefPreferenceKey(profile.Id), string.Empty);
+            if (Enum.TryParse(saved, out Clef clef) && profile.AllowsNotationClef(clef))
+                return clef;
+            return profile.DefaultClef;
+        }
+
+        private void NotifyNotationClefChanged()
+        {
+            OnPropertyChanged(nameof(NotationClef));
+            OnPropertyChanged(nameof(CanToggleNotationClef));
+            OnPropertyChanged(nameof(NotationClefAccessibilityText));
+        }
         public string AutomaticNoteRangeDisplay => $"{LowestNote} - {HighestNote}";
         public IReadOnlyList<int> AvailableInstrumentMidis
             => InstrumentCatalog.BuildAvailableMidiSet(CurrentInstrumentProfile, ChildLevel);
@@ -1507,7 +1594,7 @@ namespace musicmate.Services
                 OnPropertyChanged(nameof(InstrumentDisplayName));
                 OnPropertyChanged(nameof(InstrumentKey));
                 OnPropertyChanged(nameof(InstrumentTransposeOffset));
-                OnPropertyChanged(nameof(NotationClef));
+                NotifyNotationClefChanged();
             }
         }
 
@@ -2482,7 +2569,10 @@ namespace musicmate.Services
                 {
                     var leavingPracticeTune = _tune == "Practice Tune" && value != "Practice Tune";
                     _tune = value;
-                    SessionPreferences.Set(PrefTuneKey, value);
+                    // Tuner is a temporary Music-page surface. Leaving the saved music
+                    // choice in place lets the next Music visit restore it.
+                    if (!string.Equals(value, "Tuner", StringComparison.Ordinal))
+                        SessionPreferences.Set(PrefTuneKey, value);
                     if (leavingPracticeTune && _keyBeforePracticeTune != null)
                     {
                         Key = _keyBeforePracticeTune;

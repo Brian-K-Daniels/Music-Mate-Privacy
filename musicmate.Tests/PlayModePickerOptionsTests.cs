@@ -86,16 +86,124 @@ public class PlayModePickerOptionsTests
     }
 
     [Fact]
-    public void MusicPageConstruction_KeepsTunerAfterTheLoadMarkWasAlreadyConsumed()
+    public void MusicPageConstruction_KeepsTunerOnlyWhileHamburgerOpenIsPending()
     {
+        PlayModePickerOptions.ClearExplicitTunerOpen();
         PlayModePickerOptions.MarkTunerSelectedBeforeMusicPageLoad();
-        Assert.True(PlayModePickerOptions.ConsumeTunerSelectedBeforeMusicPageLoad());
 
         Assert.True(PlayModePickerOptions.ShouldPreserveTunerOnMusicPageConstruction(
             PlayModePickerOptions.Tuner));
         Assert.False(PlayModePickerOptions.ShouldPreserveTunerOnMusicPageConstruction(
             "Selected Scale"));
+
+        Assert.True(PlayModePickerOptions.ConsumeTunerSelectedBeforeMusicPageLoad());
+        Assert.False(PlayModePickerOptions.ShouldPreserveTunerOnMusicPageConstruction(
+            PlayModePickerOptions.Tuner));
         Assert.False(PlayModePickerOptions.ShouldPreserveTunerOnMusicPageConstruction(null));
+    }
+
+    [Fact]
+    public void HamburgerMusic_ShowsNormalMusic_EvenWhenTuneWasTuner()
+    {
+        PlayModePickerOptions.ClearExplicitTunerOpen();
+        string? saved = "Major";
+        var session = new NoteSessionService { Tune = PlayModePickerOptions.Tuner };
+
+        bool showTuner = PlayModePickerOptions.PrepareMusicPageForNavigation(
+            session, () => saved, value => saved = value);
+
+        Assert.False(showTuner);
+        Assert.NotEqual(PlayModePickerOptions.Tuner, session.Tune);
+        Assert.Equal("Major", saved);
+    }
+
+    [Fact]
+    public void HamburgerTuner_ShowsTuner_AndDoesNotReplaceSavedMusic()
+    {
+        PlayModePickerOptions.ClearExplicitTunerOpen();
+        string? saved = "Major";
+        var session = new NoteSessionService { Tune = "Selected Scale" };
+        PlayModePickerOptions.MarkTunerSelectedBeforeMusicPageLoad();
+        PlayModePickerOptions.ApplyOtherSelection(session, PlayModePickerOptions.Tuner, value => saved = value);
+
+        bool showTuner = PlayModePickerOptions.PrepareMusicPageForNavigation(
+            session, () => saved, value => saved = value);
+
+        Assert.True(showTuner);
+        Assert.Equal(PlayModePickerOptions.Tuner, session.Tune);
+        Assert.Equal("Major", saved);
+    }
+
+    [Fact]
+    public void TunerThenMusic_ClearsTemporaryTuner_OnEveryLaterEntry()
+    {
+        PlayModePickerOptions.ClearExplicitTunerOpen();
+        string? saved = "Major";
+        var session = new NoteSessionService { Tune = "Selected Scale" };
+
+        PlayModePickerOptions.MarkTunerSelectedBeforeMusicPageLoad();
+        Assert.True(PlayModePickerOptions.PrepareMusicPageForNavigation(
+            session, () => saved, value => saved = value));
+        Assert.Equal(PlayModePickerOptions.Tuner, session.Tune);
+
+        PlayModePickerOptions.RestoreMusicSurfaceFromTemporaryTuner(
+            session, () => saved, value => saved = value);
+        Assert.NotEqual(PlayModePickerOptions.Tuner, session.Tune);
+
+        Assert.False(PlayModePickerOptions.PrepareMusicPageForNavigation(
+            session, () => saved, value => saved = value));
+        Assert.NotEqual(PlayModePickerOptions.Tuner, session.Tune);
+
+        session.Tune = PlayModePickerOptions.Tuner;
+        Assert.False(PlayModePickerOptions.PrepareMusicPageForNavigation(
+            session, () => saved, value => saved = value));
+        Assert.NotEqual(PlayModePickerOptions.Tuner, session.Tune);
+        Assert.False(PlayModePickerOptions.PrepareMusicPageForNavigation(
+            session, () => saved, value => saved = value));
+        Assert.NotEqual(PlayModePickerOptions.Tuner, session.Tune);
+    }
+
+    [Fact]
+    public void AppRestart_PersistedTunerTune_OpensNormalMusic()
+    {
+        PlayModePickerOptions.ClearExplicitTunerOpen();
+        var store = new Dictionary<string, object?> { ["musicmate.Tune"] = PlayModePickerOptions.Tuner };
+        string? saved = "Major";
+        SessionPreferences.TestStore = store;
+        try
+        {
+            var session = new NoteSessionService();
+            Assert.Equal(PlayModePickerOptions.Tuner, session.Tune);
+
+            bool showTuner = PlayModePickerOptions.PrepareMusicPageForNavigation(
+                session, () => saved, value => saved = value);
+
+            Assert.False(showTuner);
+            Assert.NotEqual(PlayModePickerOptions.Tuner, session.Tune);
+
+            var restarted = new NoteSessionService();
+            Assert.NotEqual(PlayModePickerOptions.Tuner, restarted.Tune);
+        }
+        finally
+        {
+            SessionPreferences.TestStore = null;
+            PlayModePickerOptions.ClearExplicitTunerOpen();
+        }
+    }
+
+    [Fact]
+    public void BackNavigationToMusic_DoesNotRestoreTuner()
+    {
+        PlayModePickerOptions.ClearExplicitTunerOpen();
+        string? saved = NoteSessionService.ScaleSelectionByLevel;
+        var session = new NoteSessionService { Tune = PlayModePickerOptions.Tuner };
+
+        bool showTuner = PlayModePickerOptions.PrepareMusicPageForNavigation(
+            session, () => saved, value => saved = value);
+
+        Assert.False(showTuner);
+        Assert.Equal("Selected Scale", session.Tune);
+        Assert.False(PlayModePickerOptions.IsExplicitTunerOpenPending);
     }
 
     [Fact]
@@ -830,5 +938,101 @@ public class PlayModePickerOptionsTests
         string expected)
     {
         Assert.Equal(expected, PlayModePickerOptions.AbbreviateDisplayedSelection(category, selection));
+    }
+
+    [Fact]
+    public void BackToMusic_WhileTuner_OpensAssortmentByLevel()
+    {
+        PlayModePickerOptions.ClearExplicitTunerOpen();
+        var session = new NoteSessionService { Tune = "Tuner", IsRandomMode = false };
+        string? persisted = "Major";
+
+        bool redirected = BackNavigationTunerPolicy.ApplyIfBackWouldOpenTuner(
+            session, "//MusicPage", value => persisted = value);
+
+        Assert.True(redirected);
+        Assert.False(PlayModePickerOptions.IsTunerMode(session));
+        Assert.Equal("Selected Scale", session.Tune);
+        Assert.Equal(ScaleSelectionMode.ByLevel, session.ScaleSelectionMode);
+        Assert.Equal(NoteSessionService.ScaleSelectionByLevel, persisted);
+        Assert.False(PlayModePickerOptions.IsExplicitTunerOpenPending);
+        Assert.False(BackNavigationTunerPolicy.WouldOpenTuner(
+            session.Tune, explicitTunerOpenPending: false, "//MusicPage"));
+    }
+
+    [Fact]
+    public void BackToMusic_WhileHamburgerMarkPending_ClearsTunerAndSelectsAssortment()
+    {
+        PlayModePickerOptions.ClearExplicitTunerOpen();
+        PlayModePickerOptions.MarkTunerSelectedBeforeMusicPageLoad();
+        var session = new NoteSessionService { Tune = "Selected Scale", IsRandomMode = false };
+        string? persisted = "Major";
+
+        bool redirected = BackNavigationTunerPolicy.ApplyIfBackWouldOpenTuner(
+            session, BackNavigationTunerPolicy.MusicPageTarget, value => persisted = value);
+
+        Assert.True(redirected);
+        Assert.False(PlayModePickerOptions.IsExplicitTunerOpenPending);
+        Assert.False(PlayModePickerOptions.IsTunerMode(session));
+        Assert.Equal(NoteSessionService.ScaleSelectionByLevel, persisted);
+        Assert.Equal(ScaleSelectionMode.ByLevel, session.ScaleSelectionMode);
+    }
+
+    [Theory]
+    [InlineData("//TunerEntry/TunerEntryPage")]
+    [InlineData("//TunerEntry")]
+    public void BackToTunerRoute_NeverOpensTuner(string target)
+    {
+        PlayModePickerOptions.ClearExplicitTunerOpen();
+        var session = new NoteSessionService { Tune = "Selected Scale", IsRandomMode = false };
+        string? persisted = "Major";
+
+        Assert.True(BackNavigationTunerPolicy.WouldOpenTuner(session.Tune, false, target));
+        Assert.True(BackNavigationTunerPolicy.ApplyIfBackWouldOpenTuner(
+            session, target, value => persisted = value));
+        Assert.False(PlayModePickerOptions.IsTunerMode(session));
+        Assert.Equal(NoteSessionService.ScaleSelectionByLevel, persisted);
+        Assert.Equal(ScaleSelectionMode.ByLevel, session.ScaleSelectionMode);
+    }
+
+    [Fact]
+    public void BackWithNoResolvedTarget_WhileTuner_DoesNotStayOnTuner()
+    {
+        PlayModePickerOptions.ClearExplicitTunerOpen();
+        var session = new NoteSessionService { Tune = "Tuner" };
+
+        Assert.True(BackNavigationTunerPolicy.ApplyIfBackWouldOpenTuner(session, navigationTarget: null, _ => { }));
+        Assert.False(PlayModePickerOptions.IsTunerMode(session));
+        Assert.Equal(ScaleSelectionMode.ByLevel, session.ScaleSelectionMode);
+    }
+
+    [Fact]
+    public void BackToAnotherPage_WhileTuner_DoesNotChangeTheExercise()
+    {
+        PlayModePickerOptions.ClearExplicitTunerOpen();
+        var session = new NoteSessionService { Tune = "Tuner" };
+
+        Assert.False(BackNavigationTunerPolicy.WouldOpenTuner(session.Tune, false, "//SettingsPage"));
+        Assert.False(BackNavigationTunerPolicy.ApplyIfBackWouldOpenTuner(
+            session, "//SettingsPage", _ => { }));
+        Assert.True(PlayModePickerOptions.IsTunerMode(session));
+    }
+
+    [Fact]
+    public void BackToMusic_WhenAlreadyOnMusic_LeavesTheExerciseAlone()
+    {
+        PlayModePickerOptions.ClearExplicitTunerOpen();
+        var session = new NoteSessionService
+        {
+            Tune = "Selected Scale",
+            IsRandomMode = false,
+        };
+        session.TryApplyScalePickerSelection("Major", out _);
+        string? persisted = "Major";
+
+        Assert.False(BackNavigationTunerPolicy.ApplyIfBackWouldOpenTuner(
+            session, "//MusicPage", value => persisted = value));
+        Assert.Equal("Major", persisted);
+        Assert.False(PlayModePickerOptions.IsTunerMode(session));
     }
 }

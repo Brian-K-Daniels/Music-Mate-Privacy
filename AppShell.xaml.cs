@@ -254,6 +254,9 @@ namespace musicmate
             _isNavigatingToMusic = true;
             try
             {
+                PlayModePickerOptions.ClearExplicitTunerOpen();
+                if (CurrentPage is MusicPage music)
+                    music.ShowNormalMusicInterface();
                 FlyoutIsPresented = false;
                 await GoToAsync("//MusicPage");
                 FlyoutIsPresented = false;
@@ -288,9 +291,11 @@ namespace musicmate
             {
                 LayoutTestTune.SetEnabled(false);
                 var session = ServiceHelper.GetService<NoteSessionService>();
+                // Mark before Tune changes so an already-visible Music page treats this
+                // as the explicit hamburger open and does not restore the music choice.
+                PlayModePickerOptions.MarkTunerSelectedBeforeMusicPageLoad();
                 if (session != null)
                     PlayModePickerOptions.ApplyOtherSelection(session, PlayModePickerOptions.Tuner);
-                PlayModePickerOptions.MarkTunerSelectedBeforeMusicPageLoad();
 
                 FlyoutIsPresented = false;
                 bool musicPageAlreadyCurrent = CurrentPage is MusicPage;
@@ -341,6 +346,40 @@ namespace musicmate
                 $"requested={target} current={current} canCancel={e.CanCancel} " +
                 $"musicNav={_isNavigatingToMusic} busy={_shellNavInProgress}");
 
+            // Hardware/shell Back can pop onto Tuner or onto Music still showing Tuner.
+            // That must open Music on Assortment by Level, never Tuner.
+            bool historyBack = e.Source is ShellNavigationSource.Pop or ShellNavigationSource.PopToRoot;
+            if (historyBack)
+            {
+                var session = ServiceHelper.GetService<NoteSessionService>();
+                if (session != null)
+                    BackNavigationTunerPolicy.ApplyIfBackWouldOpenTuner(session, target);
+
+                if (BackNavigationTunerPolicy.IsTunerEntryTarget(target))
+                {
+                    if (e.CanCancel)
+                        e.Cancel();
+
+                    if (_isNavigatingToMusic || _shellNavInProgress)
+                        return;
+
+                    BeginShellNavigationBusy(closeFlyout: true);
+                    MainThread.BeginInvokeOnMainThread(async () =>
+                    {
+                        try
+                        {
+                            await OpenMusicPageAsync();
+                        }
+                        catch (Exception ex)
+                        {
+                            Utils.Log($"[AppShell] Back away from Tuner ERROR: {ex}");
+                            CompleteShellNavigationBusy();
+                        }
+                    });
+                    return;
+                }
+            }
+
             if (target.IndexOf("TunerEntry", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 // Always divert Tuner flyout taps. If a Music navigation is already in flight,
@@ -383,10 +422,18 @@ namespace musicmate
                 if (e.CanCancel)
                     e.Cancel();
                 FlyoutIsPresented = false;
+                if (ShellNavigationTarget.CanonicalKey(target) == "Music"
+                    && CurrentPage is MusicPage music)
+                    music.ShowNormalMusicInterface();
                 if (_shellNavInProgress || NavigationBusyService.Instance.IsBusy)
                     CompleteShellNavigationBusy();
                 return;
             }
+
+            // Home, Back, and every other route into Music are not hamburger Tuner.
+            if (!_isNavigatingToMusic
+                && target.IndexOf("MusicPage", StringComparison.OrdinalIgnoreCase) >= 0)
+                PlayModePickerOptions.ClearExplicitTunerOpen();
 
             // Ignore stacked flyout taps while a navigation is already running.
             // Exception: Tuner divert starts busy early, then GoToAsync("//MusicPage") must proceed.

@@ -18,7 +18,7 @@ namespace musicmate.Services
                 [
                     "C",
                     "C, Flute Oboe Bassoon Trumpet Trombone Euphoneum Tuba Piano",
-                    "Flute", "Oboe", "Bassoon", "Trombone", "Euphonium", "Piano"
+                    "Flute", "Oboe", "Piano"
                 ]),
             new(
                 Id: "bb-clarinet",
@@ -127,7 +127,21 @@ namespace musicmate.Services
                 TransposeOffset: -12,
                 PracticalLowestNote: "E2",
                 PracticalHighestNote: "G4",
-                Aliases: ["Double Bass", "Contrabassoon", "C - 1 octave", "C - 1 octave,  Double Bass, Contrabassoon"]),
+                Aliases: ["Double Bass", "C - 1 octave", "C - 1 octave,  Double Bass, Contrabassoon"],
+                DefaultClef: Clef.Treble,
+                SupportedClefs: [Clef.Treble, Clef.Bass]),
+            // Sounds one octave below the written note. Bass clef only.
+            // Written Bb1–F4 sounds Bb0–F3.
+            new(
+                Id: "contrabassoon",
+                DisplayName: "Contrabassoon",
+                InstrumentKey: "C - 1 octave",
+                LegacyInstrumentValue: "Contrabassoon",
+                TransposeOffset: -12,
+                PracticalLowestNote: "Bb1",
+                PracticalHighestNote: "F4",
+                Aliases: ["Contrabassoon"],
+                DefaultClef: Clef.Bass),
             // Concert-band tuba: bass clef, sounds as written (not a Bb transposition).
             new(
                 Id: "tuba",
@@ -138,7 +152,58 @@ namespace musicmate.Services
                 PracticalLowestNote: "E2",
                 PracticalHighestNote: "C4",
                 Aliases: ["Tuba"],
-                DefaultClef: Clef.Bass),
+                DefaultClef: Clef.Bass,
+                SupportedClefs: [Clef.Bass, Clef.Treble]),
+            // Concert-pitch low instruments. Clef tap switches treble and bass only.
+            // Written pitches and sounding pitch stay the same.
+            new(
+                Id: "trombone",
+                DisplayName: "Trombone",
+                InstrumentKey: "C",
+                LegacyInstrumentValue: "Trombone",
+                TransposeOffset: 0,
+                PracticalLowestNote: "G3",
+                PracticalHighestNote: "C6",
+                Aliases: ["Trombone"],
+                DefaultClef: Clef.Treble,
+                SupportedClefs: [Clef.Treble, Clef.Bass]),
+            new(
+                Id: "cello",
+                DisplayName: "Cello",
+                InstrumentKey: "C",
+                LegacyInstrumentValue: "Cello",
+                TransposeOffset: 0,
+                PracticalLowestNote: "G3",
+                PracticalHighestNote: "C6",
+                Aliases: ["Cello"],
+                DefaultClef: Clef.Treble,
+                SupportedClefs: [Clef.Treble, Clef.Bass]),
+            // Sounds as written. Bass clef is the usual notation; treble is the same pitches.
+            // Practical range Bb1–Eb5.
+            new(
+                Id: "bassoon",
+                DisplayName: "Bassoon",
+                InstrumentKey: "C",
+                LegacyInstrumentValue: "Bassoon",
+                TransposeOffset: 0,
+                PracticalLowestNote: "Bb1",
+                PracticalHighestNote: "Eb5",
+                Aliases: ["Bassoon"],
+                DefaultClef: Clef.Bass,
+                SupportedClefs: [Clef.Bass, Clef.Treble]),
+            // Concert-pitch euphonium / baritone horn. Bass is the default notation.
+            // Treble is the same written pitches on the treble staff, not a Bb transposition.
+            new(
+                Id: "euphonium",
+                DisplayName: "Euphonium / Baritone",
+                InstrumentKey: "C",
+                LegacyInstrumentValue: "Euphonium",
+                TransposeOffset: 0,
+                PracticalLowestNote: "E2",
+                PracticalHighestNote: "Bb4",
+                Aliases: ["Euphonium", "Euphonium / Baritone", "Euphonium / Baritone Horn", "Baritone Horn"],
+                DefaultClef: Clef.Bass,
+                SupportedClefs: [Clef.Bass, Clef.Treble]),
             // Concert-pitch voice categories (transposition key C, offset 0).
             new(
                 Id: "voice-soprano",

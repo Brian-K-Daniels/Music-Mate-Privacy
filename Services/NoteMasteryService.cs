@@ -245,6 +245,7 @@ public sealed class NoteMasteryService
     private static bool PrefersBassClef(InstrumentProfile profile)
         => profile.DefaultClef == Clef.Bass
             || profile.Id is "double-bass"
+                or "contrabassoon"
                 or "voice-baritone"
                 or "voice-bass-baritone"
                 or "voice-bass";

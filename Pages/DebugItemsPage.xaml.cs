@@ -23,5 +23,8 @@ public partial class DebugItemsPage : ContentPage
     }
 
     private async void OnNavigatePracticeClicked(object? sender, EventArgs e)
-        => await Shell.Current.GoToAsync("//MusicPage");
+    {
+        BackNavigationTunerPolicy.ApplyBackArrowToMusicPage();
+        await Shell.Current.GoToAsync("//MusicPage");
+    }
 }

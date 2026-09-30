@@ -132,12 +132,15 @@ public class BassClefAndTubaTests : IDisposable
     }
 
     [Fact]
-    public void Trombone_StaysConcertPitchTrebleAlias()
+    public void Trombone_IsConcertPitch_AndCanUseEitherClef()
     {
         var trombone = InstrumentCatalog.Resolve("Trombone");
-        Assert.Equal("concert-pitch", trombone.Id);
+        Assert.Equal("trombone", trombone.Id);
         Assert.Equal(0, trombone.TransposeOffset);
         Assert.Equal(Clef.Treble, trombone.DefaultClef);
+        Assert.True(trombone.CanToggleNotationClef);
+        Assert.Contains(Clef.Bass, trombone.NotationClefs);
+        Assert.NotEqual("concert-pitch", trombone.Id);
     }
 
     [Fact]

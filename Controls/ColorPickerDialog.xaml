@@ -9,8 +9,8 @@
     x:Name="ColorPickerDialogRoot"
     IsVisible="False"
     BackgroundColor="#80000000"
-    HorizontalOptions="Center"
-    VerticalOptions="Center">
+    HorizontalOptions="Fill"
+    VerticalOptions="Fill">
 
   <ContentView.Resources>
     <Style TargetType="Picker">
@@ -21,155 +21,168 @@
     <Style TargetType="Button">
       <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
       <Setter Property="TextColor" Value="{DynamicResource ThemeButtonText}" />
-      <!-- Override app Button Padding (14,10) so compact dialog buttons are not clipped -->
-      <Setter Property="Padding" Value="10,6" />
-      <Setter Property="MinimumHeightRequest" Value="40" />
-      <Setter Property="MinimumWidthRequest" Value="40" />
+      <!-- Override app Button Padding (14,10) so dialog buttons are not clipped -->
+      <Setter Property="Padding" Value="12,6" />
+      <Setter Property="MinimumHeightRequest" Value="48" />
+      <Setter Property="MinimumWidthRequest" Value="48" />
+      <Setter Property="FontSize" Value="18" />
     </Style>
   </ContentView.Resources>
 
-  <ScrollView HorizontalOptions="Center" VerticalOptions="Center">
-    
-        <Grid x:Name="DialogPanel"
+  <Grid x:Name="DialogHost" HorizontalOptions="Fill" VerticalOptions="Fill">
+    <Grid x:Name="DialogPanel"
           HorizontalOptions="Center"
           VerticalOptions="Center"
-          Padding="24"
+          Padding="14,10"
           BackgroundColor="White"
-          MinimumWidthRequest="1000"
-          MaximumWidthRequest="1200"
-          MinimumHeightRequest="320"
-          MaximumHeightRequest="500">
-          <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-          </Grid.RowDefinitions>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-          </Grid.ColumnDefinitions>
+          RowDefinitions="Auto,Auto,Auto"
+          ColumnDefinitions="*">
 
-          <Label Grid.Row="0" Grid.Column="0"
-              Text="Pick a color and set whiteness with slider"
-              FontSize="10"
-              TextColor="#000000"
-              HorizontalOptions="Center"
-              Margin="0,0,0,12"/>
+      <Label x:Name="TitleLabel"
+             Grid.Row="0"
+             Text="Pick a color and set whiteness with slider"
+             FontSize="22"
+             TextColor="#000000"
+             HorizontalOptions="Center"
+             HorizontalTextAlignment="Center"
+             LineBreakMode="NoWrap"
+             Margin="0,0,0,8"/>
 
-          <Grid Grid.Row="1" Grid.Column="0" ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="0,0,0,8">
-            <Label Text="Color applies to"
-                   FontSize="10"
+      <!-- Landscape: the applies-to row and the color-band row sit side by side. -->
+      <Grid x:Name="ControlColumns"
+            Grid.Row="1"
+            ColumnDefinitions="280,*"
+            ColumnSpacing="16"
+            VerticalOptions="Center">
+
+        <VerticalStackLayout x:Name="AppliesColumn"
+                             Grid.Column="0"
+                             Spacing="12"
+                             VerticalOptions="Center">
+          <Label x:Name="AppliesToLabel"
+                 Text="Color applies to"
+                 FontSize="18"
+                 TextColor="#000000"
+                 LineBreakMode="NoWrap"
+                 HorizontalOptions="Start"/>
+          <Picker x:Name="ColorTargetPicker"
+                  Title="Item to color"
+                  FontSize="18"
+                  TextColor="#000000"
+                  TitleColor="#444444"
+                  BackgroundColor="#FFFFFF"
+                  HorizontalOptions="Fill"
+                  VerticalOptions="Center"/>
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+            <Label x:Name="ColorLabel"
+                   Text="Color"
+                   FontSize="18"
                    TextColor="#000000"
                    VerticalOptions="Center"
+                   HorizontalOptions="Start"
+                   LineBreakMode="NoWrap"
                    Grid.Column="0"/>
-            <Picker x:Name="ColorTargetPicker"
-                    Title="Item to color"
-                    FontSize="12"
-                    TextColor="#000000"
-                    TitleColor="#444444"
-                    BackgroundColor="#FFFFFF"
-                    Grid.Column="1"
-                    HorizontalOptions="Fill"/>
-          </Grid>
-
-          <!-- Row 2: ColorPicker + PreviewBox -->
-          <HorizontalStackLayout Grid.Row="2" Grid.Column="0"
-                                 HorizontalOptions="Center"
-                                 VerticalOptions="Center"
-                                 Spacing="12">
-            <mcp:ColorPicker x:Name="ColorPicker"
-                             HeightRequest="100"
-                             WidthRequest="180"
-                             HorizontalOptions="Start"
-                             VerticalOptions="Center"/>
-            <BoxView x:Name="PreviewBox"
-                     WidthRequest="60"
-                     HeightRequest="60"
-                     HorizontalOptions="Start"
-                     VerticalOptions="Center"
-                     BackgroundColor="{Binding PreviewColor, Source={x:Reference ColorPickerDialogRoot}, x:DataType=controls:ColorPickerDialog}"/>
-          </HorizontalStackLayout>
-
-          <!-- Row 3: Arrow buttons + OK button -->
-          <HorizontalStackLayout Grid.Row="3" Grid.Column="0"
-                                 HorizontalOptions="Center"
-                                 VerticalOptions="Center"
-                                 Spacing="8">
-            <Button x:Name="UpArrowButton"
-                    Text="▲"
-                    FontSize="14"
-                    Padding="0"
-                    WidthRequest="48" HeightRequest="48"
-                    Pressed="OnUpArrowPressed"
-                    Released="OnArrowReleased"/>
-            <Button x:Name="LeftArrowButton"
-                    Text="◀"
-                    FontSize="14"
-                    Padding="0"
-                    WidthRequest="48" HeightRequest="48"
-                    Pressed="OnLeftArrowPressed"
-                    Released="OnArrowReleased"/>
-            <Button x:Name="RightArrowButton"
-                    Text="▶"
-                    FontSize="14"
-                    Padding="0"
-                    WidthRequest="48" HeightRequest="48"
-                    Pressed="OnRightArrowPressed"
-                    Released="OnArrowReleased"/>
-            <Button x:Name="DownArrowButton"
-                    Text="▼"
-                    FontSize="14"
-                    Padding="0"
-                    WidthRequest="48" HeightRequest="48"
-                    Pressed="OnDownArrowPressed"
-                    Released="OnArrowReleased"/>
-            <Button x:Name="OkButton"
-                    Text="OK"
-                    Clicked="OnOkClicked"
-                    MinimumWidthRequest="80"
-                    HeightRequest="48"
-                    HorizontalOptions="Center"
-                    VerticalOptions="Center"/>
-            <Button Text="Close"
-                    Clicked="OnCloseClicked"
-                    MinimumWidthRequest="90"
-                    HeightRequest="48"
-                    HorizontalOptions="Center"
-                    VerticalOptions="Center"/>
-          </HorizontalStackLayout>
-
-          <!-- Whiteness slider labels and slider -->
-          <Grid Grid.Row="4" Grid.Column="0" Margin="0">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="Auto"/>
-              <ColumnDefinition Width="*"/>
-              <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <Label Text="Color"
-             FontSize="8"
-             TextColor="#000000"
-             VerticalOptions="Center"
-             HorizontalOptions="Start"
-             Grid.Column="0"/>
             <Slider x:Name="WhitenessSlider"
-                Grid.Column="1"
-                WidthRequest="180"
-                HorizontalOptions="Fill"
-                VerticalOptions="Center"
-                Minimum="0"
-                Maximum="1"
-                Value="0.8"
-                ThumbColor="DarkGray"
-                MinimumTrackColor="#00F000"
-                MaximumTrackColor="#8B4513"/>
-            <Label Text="White"
-             FontSize="8"
-             TextColor="#000000"
-             VerticalOptions="Center"
-             HorizontalOptions="End"
-             Grid.Column="2"/>
-          </Grid>     
-        </Grid>
-  </ScrollView>
+                    Grid.Column="1"
+                    HorizontalOptions="Fill"
+                    VerticalOptions="Center"
+                    MinimumHeightRequest="44"
+                    Minimum="0"
+                    Maximum="1"
+                    Value="0.8"
+                    ThumbColor="DarkGray"
+                    MinimumTrackColor="#00F000"
+                    MaximumTrackColor="#8B4513"/>
+            <Label x:Name="WhiteLabel"
+                   Text="White"
+                   FontSize="18"
+                   TextColor="#000000"
+                   VerticalOptions="Center"
+                   HorizontalOptions="End"
+                   LineBreakMode="NoWrap"
+                   Grid.Column="2"/>
+          </Grid>
+        </VerticalStackLayout>
+
+        <HorizontalStackLayout x:Name="ColorBandRow"
+                               Grid.Column="1"
+                               Spacing="12"
+                               HorizontalOptions="Fill"
+                               VerticalOptions="Center">
+          <mcp:ColorPicker x:Name="ColorPicker"
+                           HeightRequest="160"
+                           WidthRequest="240"
+                           HorizontalOptions="Fill"
+                           VerticalOptions="Center"/>
+          <BoxView x:Name="PreviewBox"
+                   WidthRequest="64"
+                   HeightRequest="64"
+                   HorizontalOptions="End"
+                   VerticalOptions="Center"
+                   BackgroundColor="{Binding PreviewColor, Source={x:Reference ColorPickerDialogRoot}, x:DataType=controls:ColorPickerDialog}"/>
+        </HorizontalStackLayout>
+      </Grid>
+
+      <!-- 8dp between arrows. 24dp before OK and before Close (triple the old 8dp gap). -->
+      <HorizontalStackLayout x:Name="ButtonRow"
+                             Grid.Row="2"
+                             HorizontalOptions="Center"
+                             VerticalOptions="Center"
+                             Spacing="0"
+                             Margin="0,10,0,0">
+        <Button x:Name="UpArrowButton"
+                Text="▲"
+                FontSize="20"
+                Padding="0"
+                Margin="0"
+                WidthRequest="48" HeightRequest="48"
+                Pressed="OnUpArrowPressed"
+                Released="OnArrowReleased"/>
+        <Button x:Name="LeftArrowButton"
+                Text="◀"
+                FontSize="20"
+                Padding="0"
+                Margin="8,0,0,0"
+                WidthRequest="48" HeightRequest="48"
+                Pressed="OnLeftArrowPressed"
+                Released="OnArrowReleased"/>
+        <Button x:Name="RightArrowButton"
+                Text="▶"
+                FontSize="20"
+                Padding="0"
+                Margin="8,0,0,0"
+                WidthRequest="48" HeightRequest="48"
+                Pressed="OnRightArrowPressed"
+                Released="OnArrowReleased"/>
+        <Button x:Name="DownArrowButton"
+                Text="▼"
+                FontSize="20"
+                Padding="0"
+                Margin="8,0,0,0"
+                WidthRequest="48" HeightRequest="48"
+                Pressed="OnDownArrowPressed"
+                Released="OnArrowReleased"/>
+        <Button x:Name="OkButton"
+                Text="OK"
+                FontSize="18"
+                Clicked="OnOkClicked"
+                Margin="24,0,0,0"
+                MinimumWidthRequest="88"
+                WidthRequest="88"
+                HeightRequest="48"
+                HorizontalOptions="Center"
+                VerticalOptions="Center"/>
+        <Button x:Name="CloseButton"
+                Text="Close"
+                FontSize="18"
+                Clicked="OnCloseClicked"
+                Margin="24,0,0,0"
+                MinimumWidthRequest="108"
+                WidthRequest="108"
+                HeightRequest="48"
+                HorizontalOptions="Center"
+                VerticalOptions="Center"/>
+      </HorizontalStackLayout>
+    </Grid>
+  </Grid>
 </ContentView>
