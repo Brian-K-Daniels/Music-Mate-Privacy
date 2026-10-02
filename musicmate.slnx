@@ -1,5 +1,7 @@
 <Solution>
   <Project Path="musicmate.csproj">
-    <Deploy Solution="Debug|*" />
+    <BuildType Solution="Release|*" Project="LocalRelease" />
+    <Deploy />
   </Project>
+  <Project Path="musicmate.Tests/musicmate.Tests.csproj" />
 </Solution>

@@ -3,6 +3,7 @@ using System;
 using System.IO;
 using SQLite;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using musicmate.Utilities;
 
@@ -12,6 +13,7 @@ namespace musicmate.Services
     {
         private readonly SQLiteAsyncConnection _db;
         private readonly string _dbPath;
+        public string DatabasePath => _dbPath;
 
         public NoteDatabase(string dbPath)
         {
@@ -31,11 +33,65 @@ namespace musicmate.Services
                 Utils.Log("NoteDatabase initialized on Google Pixel device.");
             }
             await _db.CreateTableAsync<NoteStat>();
+            await EnsureNoteStatColumnsAsync();
+        }
+
+        private async Task EnsureNoteStatColumnsAsync()
+        {
+            var columns = await _db.GetTableInfoAsync(nameof(NoteStat));
+            var names = new HashSet<string>(columns.Select(c => c.Name), StringComparer.OrdinalIgnoreCase);
+
+            async Task AddInt(string column, string sqlDefault = "0")
+            {
+                if (!names.Contains(column))
+                    await _db.ExecuteAsync(
+                        $"ALTER TABLE {nameof(NoteStat)} ADD COLUMN {column} INTEGER NOT NULL DEFAULT {sqlDefault}");
+            }
+
+            async Task AddReal(string column)
+            {
+                if (!names.Contains(column))
+                    await _db.ExecuteAsync(
+                        $"ALTER TABLE {nameof(NoteStat)} ADD COLUMN {column} REAL NOT NULL DEFAULT 0.0");
+            }
+
+            async Task AddText(string column)
+            {
+                if (!names.Contains(column))
+                    await _db.ExecuteAsync(
+                        $"ALTER TABLE {nameof(NoteStat)} ADD COLUMN {column} TEXT");
+            }
+
+            await AddInt(nameof(NoteStat.Correct));
+            await AddInt(nameof(NoteStat.Wrong));
+            await AddInt("PchRt");
+            await AddInt("PchWr");
+            await AddInt("TmgRt");
+            await AddInt("TmgWr");
+            await AddInt("OvrRt");
+            await AddInt("OvrWr");
+            await AddInt("RstRt");
+            await AddInt("RstWr");
+            await AddText(nameof(NoteStat.Accidental));
+            await AddText(nameof(NoteStat.NoteLetter));
+            await AddInt(nameof(NoteStat.Octave));
+            await AddReal(nameof(NoteStat.MsAverage));
+            await AddInt(nameof(NoteStat.MsCount));
+            await AddInt(nameof(NoteStat.Streak));
+            await AddInt("Mstrd");
         }
 
         public Task<List<NoteStat>> GetAllAsync()
         {
             return _db.Table<NoteStat>().ToListAsync();
+        }
+
+        /// <summary>Row count plus total attempts sum — used by statistics cache validation.</summary>
+        public async Task<StatisticsDbFingerprint> GetStatisticsFingerprintAsync()
+        {
+            var stats = await _db.Table<NoteStat>().ToListAsync();
+            int revision = stats.Sum(s => s.Correct + s.Wrong + s.Mastered);
+            return new StatisticsDbFingerprint(stats.Count, revision);
         }
 
         public Task<NoteStat> GetByWrittenNameAsync(string writtenName)
@@ -76,6 +132,40 @@ namespace musicmate.Services
 #else
             throw new InvalidOperationException("DeleteDatabaseAsync is only available in DEBUG builds.");
 #endif
+        }
+
+        /// <summary>
+        /// Deletes the oldest NoteStat rows (by WrittenName alphabetically as a proxy) until
+        /// the DB file is under <paramref name="maxBytes"/>. Does nothing if already within limit.
+        /// </summary>
+        public async Task PruneToSizeLimitAsync(long maxBytes)
+        {
+            try
+            {
+                var fileInfo = new FileInfo(_dbPath);
+                if (!fileInfo.Exists || fileInfo.Length <= maxBytes)
+                    return;
+
+                // Delete rows with the lowest correct+wrong totals first (least useful data)
+                while (true)
+                {
+                    fileInfo.Refresh();
+                    if (fileInfo.Length <= maxBytes) break;
+
+                    // Find and delete the row with fewest total attempts
+                    var oldest = await _db.Table<NoteStat>()
+                        .OrderBy(n => n.Correct + n.Wrong)
+                        .FirstOrDefaultAsync();
+
+                    if (oldest == null) break;
+
+                    await _db.DeleteAsync(oldest);
+                }
+            }
+            catch (Exception ex)
+            {
+                Utils.Log($"[NoteDatabase.PruneToSizeLimitAsync] {ex.Message}");
+            }
         }
     }
 }
