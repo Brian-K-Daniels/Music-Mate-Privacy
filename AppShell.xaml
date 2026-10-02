@@ -128,7 +128,7 @@
   </FlyoutItem>
 
   <!-- Same FlyoutItem pattern as other menu rows; page redirects into Music Tuner. -->
-  <FlyoutItem Title="Tuner" Route="TunerEntry">
+  <FlyoutItem Title="Tuner and Metronome" Route="TunerEntry">
     <ShellContent
         Title="Tuner"
         Route="TunerEntryPage"

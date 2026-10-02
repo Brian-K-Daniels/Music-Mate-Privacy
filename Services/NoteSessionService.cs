@@ -52,6 +52,24 @@ namespace musicmate.Services
         }
     }
 
+    /// <summary>
+    /// One microphone frame against one staff target.
+    /// Written pitches are what the player reads and fingers.
+    /// Concert pitches are sounding frequencies.
+    /// Expected concert is the written pitch transposed once.
+    /// Heard concert is the microphone pitch and is not transposed for the comparison.
+    /// Heard written exists only so the diagnostic can be read by the player.
+    /// </summary>
+    public readonly record struct PitchDomains(
+        string ExpectedWrittenPitch,
+        int ExpectedWrittenMidi,
+        string ExpectedConcertPitch,
+        int ExpectedConcertMidi,
+        string HeardConcertPitch,
+        int HeardConcertMidi,
+        string HeardWrittenPitch,
+        int HeardWrittenMidi);
+
     /// <summary>Per-note session aggregates flushed to <see cref="NoteStat"/> at session end.</summary>
     public struct SessionNoteAggregate
     {
@@ -3536,19 +3554,17 @@ namespace musicmate.Services
                         actualMs, timing.ExpectedMs, timing.LateToleranceMs))
                 {
                     var targetNote = NotesToDraw[idx];
-                    var expectedWrittenMidi = ResolveWrittenEvaluationMidi(targetNote);
                     string heardNote = "-";
                     int cents = 0;
                     bool latePitchMatch = false;
 
                     if (freq > 0 && pitchResult.HasValue)
                     {
-                        var detectedMidi = (int)Math.Round(69 + 12 * Math.Log(freq / 440.0, 2));
-                        var detMidiWritten = detectedMidi - GetInstrumentTransposeOffset();
-                        heardNote = MidiToNoteName(detMidiWritten, KeyUsesFlats(Key));
-                        cents = pitchResult.Value.cents;
-                        latePitchMatch = pitchResult.Value.correct
-                            && Mod12(expectedWrittenMidi) == Mod12(detMidiWritten);
+                        var lateDomains = DescribePitchDomains(targetNote, freq);
+                        heardNote = lateDomains.HeardWrittenPitch;
+                        cents = CentsFromExpectedConcert(freq, lateDomains.ExpectedConcertMidi);
+                        latePitchMatch = SameConcertPitchClass(lateDomains)
+                            && Math.Abs(cents) <= Tolerance;
                     }
 
                     // After a playing pause, do not score Late/Missed against the old origin —
@@ -3908,10 +3924,9 @@ namespace musicmate.Services
             if (cents == 0 && evalCents != 0)
                 cents = evalCents;
 
-            string expected = ResolveWrittenEvaluationName(NotesToDraw[CurrentNoteIndex]);
-            var detectedMidi = (int)Math.Round(69 + 12 * Math.Log(freq / 440.0, 2));
-            var detMidiWritten = detectedMidi - GetInstrumentTransposeOffset();
-            string heard = MidiToNoteName(detMidiWritten, KeyUsesFlats(Key));
+            var logged = DescribePitchDomains(NotesToDraw[CurrentNoteIndex], freq);
+            string expected = logged.ExpectedWrittenPitch;
+            string heard = logged.HeardWrittenPitch;
 
             if (timing is null && IsConductorOnsetGateEnabled())
             {
@@ -4095,18 +4110,7 @@ namespace musicmate.Services
             }
 
             string heardNote = "-";
-            if (freq > 0)
-            {
-                var midi = (int)Math.Round(69 + 12 * Math.Log(freq / 440.0, 2));
-                var detMidiWrit = midi - GetInstrumentTransposeOffset();
-                heardNote = MidiToNoteName(detMidiWrit, KeyUsesFlats(Key));
-            }
-#if DEBUG
-            _diagLastHeardNote = heardNote;
-#endif
-            string expectedNote = (CurrentNoteIndex < NotesToDraw.Count)
-                ? ResolveWrittenEvaluationName(NotesToDraw[CurrentNoteIndex])
-                : "-";
+            string expectedNote = "-";
 
             // Only allow the current note in the sequence to be marked correct
             int idx = CurrentNoteIndex;
@@ -4132,10 +4136,15 @@ namespace musicmate.Services
             {
 
             var targetNote = NotesToDraw[idx];
-            var expectedWrittenMidi = ResolveWrittenEvaluationMidi(targetNote);
-            var detectedMidi = (int)Math.Round(69 + 12 * Math.Log(freq / 440.0, 2));
-            var detMidiWritten = detectedMidi - GetInstrumentTransposeOffset();
-            var detectedPcWritten = Mod12(detMidiWritten);
+            var domains = DescribePitchDomains(targetNote, freq);
+            var expectedWrittenMidi = domains.ExpectedWrittenMidi;
+            var detMidiWritten = domains.HeardWrittenMidi;
+            var detectedPcWritten = Mod12(domains.HeardWrittenMidi);
+            expectedNote = domains.ExpectedWrittenPitch;
+            heardNote = domains.HeardWrittenPitch;
+#if DEBUG
+            _diagLastHeardNote = heardNote;
+#endif
 
             // After a note advances, ignore continuing detections of the previous pitch
             // class so residual audio is not scored as WrongPitch for the new target.
@@ -4162,7 +4171,7 @@ namespace musicmate.Services
 
             var curFeedback = NoteFeedbacks.TryGetValue(idx, out var v2) ? v2 : (Wrong: 0, Cents: 0);
             bool conductorGateEnabled = IsConductorOnsetGateEnabled();
-            bool pitchMatchesExpected = Mod12(expectedWrittenMidi) == detectedPcWritten;
+            bool pitchMatchesExpected = SameConcertPitchClass(domains);
             // Capture silence before MarkMusicalInput — CatchUp must not lose the pause gap.
             bool pauseWorthySilence = HasPauseWorthySilenceGap();
             bool windowAlreadyExpired = conductorGateEnabled && IsCurrentNoteWindowExpired();
@@ -4213,7 +4222,12 @@ namespace musicmate.Services
                         result,
                         fromDetectedPitch: true,
                         pauseWorthySilenceBeforeInput: pauseWorthySilence))
+                {
+                    // The staff index already moved. Refresh Expected so it is not
+                    // left on the note that just turned green or was skipped.
+                    SetPitchDiagnosticForCurrent(freq);
                     return true;
+                }
 
                 // Catch-up may have moved the target; refresh for the remainder of this call.
                 idx = CurrentNoteIndex;
@@ -4221,8 +4235,15 @@ namespace musicmate.Services
                     return false;
 
                 targetNote = NotesToDraw[idx];
-                expectedWrittenMidi = ResolveWrittenEvaluationMidi(targetNote);
-                expectedNote = ResolveWrittenEvaluationName(targetNote);
+                domains = DescribePitchDomains(targetNote, freq);
+                expectedWrittenMidi = domains.ExpectedWrittenMidi;
+                detMidiWritten = domains.HeardWrittenMidi;
+                detectedPcWritten = Mod12(domains.HeardWrittenMidi);
+                expectedNote = domains.ExpectedWrittenPitch;
+                heardNote = domains.HeardWrittenPitch;
+                bool refreshedClass = SameConcertPitchClass(domains);
+                int refreshedCents = CentsFromExpectedConcert(freq, domains.ExpectedConcertMidi);
+                result = (refreshedClass && Math.Abs(refreshedCents) <= Tolerance, refreshedCents);
                 timing = GetConductorNoteTiming(idx);
                 conductorExpectedBeat = timing.ExpectedBeat;
                 conductorExpectedMs = timing.ExpectedMs;
@@ -4236,8 +4257,7 @@ namespace musicmate.Services
             // Conductor absolute earliest-start: do not complete a note played far before its beat.
             if (conductorTooEarly)
             {
-                StatusService.Instance.StatusMessage =
-                    $"Expected: {expectedNote}, Heard: {heardNote}, {result.cents}¢ (too early), Notes: {NotesToDraw.Count}";
+                SetPitchDiagnostic(domains, result.cents, " (too early)");
 
                 // Only a meaningful, in-tolerance pitch match may create an Early candidate.
                 // Pitch-class-only / weak frames must not invent early attempts.
@@ -4258,7 +4278,7 @@ namespace musicmate.Services
                         actualMs,
                         actualMs - conductorExpectedMs,
                         freq,
-                        MidiToFreq(expectedWrittenMidi + GetInstrumentTransposeOffset()),
+                        MidiToFreq(domains.ExpectedConcertMidi),
                         result.cents,
                         _lastDetectionRms,
                         PitchDetectionService.LastDetectionClarity,
@@ -4349,7 +4369,7 @@ namespace musicmate.Services
                     actualMs,
                     actualMs - conductorExpectedMs,
                     freq,
-                    MidiToFreq(expectedWrittenMidi + GetInstrumentTransposeOffset()),
+                    MidiToFreq(domains.ExpectedConcertMidi),
                     result.cents,
                     _lastDetectionRms,
                     PitchDetectionService.LastDetectionClarity,
@@ -4383,8 +4403,7 @@ namespace musicmate.Services
                 if (inRestPhase)
                     RecordRestViolation(heardNote, actualMs);
 
-                StatusService.Instance.StatusMessage =
-                    $"Expected: {expectedNote}, Heard: {heardNote}, {result.cents}¢ (too early), Notes: {NotesToDraw.Count}";
+                SetPitchDiagnostic(domains, result.cents, " (too early)");
 
                 if (result.correct && IsMeaningfulGradeCandidate())
                 {
@@ -4397,7 +4416,7 @@ namespace musicmate.Services
                         actualMs,
                         actualMs - _rhythmGateUntilMs,
                         freq,
-                        MidiToFreq(expectedWrittenMidi + GetInstrumentTransposeOffset()),
+                        MidiToFreq(domains.ExpectedConcertMidi),
                         result.cents,
                         _lastDetectionRms,
                         PitchDetectionService.LastDetectionClarity,
@@ -4475,10 +4494,10 @@ namespace musicmate.Services
                 return false;
             }
 
-            StatusService.Instance.StatusMessage = $"Expected: {expectedNote}, Heard: {heardNote}, {result.cents}¢, Notes: {NotesToDraw.Count}";
+            SetPitchDiagnostic(domains, result.cents);
 
-            // Only match if the detected pitch class matches the current note's pitch class
-            if (Mod12(expectedWrittenMidi) != detectedPcWritten)
+            // Compare sounding pitch classes. Both sides are concert MIDI.
+            if (!SameConcertPitchClass(domains))
             {
                 if (!IsMeaningfulGradeCandidate())
                 {
@@ -4490,7 +4509,7 @@ namespace musicmate.Services
                         actualMs,
                         conductorGateEnabled ? actualMs - conductorExpectedMs : null,
                         freq,
-                        MidiToFreq(expectedWrittenMidi + GetInstrumentTransposeOffset()),
+                        MidiToFreq(domains.ExpectedConcertMidi),
                         result.cents,
                         _lastDetectionRms,
                         PitchDetectionService.LastDetectionClarity,
@@ -4515,7 +4534,7 @@ namespace musicmate.Services
                         actualMs,
                         conductorGateEnabled ? actualMs - conductorExpectedMs : null,
                         freq,
-                        MidiToFreq(expectedWrittenMidi + GetInstrumentTransposeOffset()),
+                        MidiToFreq(domains.ExpectedConcertMidi),
                         result.cents,
                         _lastDetectionRms,
                         PitchDetectionService.LastDetectionClarity,
@@ -4596,7 +4615,7 @@ namespace musicmate.Services
                     actualMs,
                     acceptOutcome.TimingErrorMs,
                     freq,
-                    MidiToFreq(expectedWrittenMidi + GetInstrumentTransposeOffset()),
+                    MidiToFreq(domains.ExpectedConcertMidi),
                     result.cents,
                     _lastDetectionRms,
                     PitchDetectionService.LastDetectionClarity,
@@ -4690,6 +4709,9 @@ namespace musicmate.Services
                     ArmRhythmGateAfterAdvance(idx);
                     // Every subsequent displayed note needs its own note-on event.
                     BeginAwaitingNoteOn();
+                    // The note that just turned green is no longer the target.
+                    // Expected must name the same note the staff now paints blue.
+                    SetPitchDiagnosticForCurrent(freq);
                 }
                 return true;
             }
@@ -5107,7 +5129,7 @@ namespace musicmate.Services
             bool samePitchNext =
                 CurrentNoteIndex < NotesToDraw.Count
                 && _lockedPitchClassAfterAdvance.HasValue
-                && Mod12(ResolveWrittenEvaluationMidi(NotesToDraw[CurrentNoteIndex]))
+                && Mod12(ExpectedWrittenMidiFromSpelling(NotesToDraw[CurrentNoteIndex]))
                    == _lockedPitchClassAfterAdvance.Value;
 
             _awaitingSamePitchRetrigger = samePitchNext;
@@ -5719,6 +5741,29 @@ namespace musicmate.Services
             => ResolveWrittenNoteName(note);
 
         /// <summary>
+        /// Text under a notehead. Staff position plus the key signature, so an A
+        /// in three flats is labeled Ab rather than A.
+        /// </summary>
+        public string WrittenNameForStaffLabel(GeneratedNote note)
+        {
+            if (note.IsRest)
+                return string.Empty;
+            if (string.IsNullOrWhiteSpace(note.SpelledName)
+                && (note.Letter < 'A' || note.Letter > 'G'))
+                return note.SpelledName ?? string.Empty;
+
+            try
+            {
+                var (key, scale) = GetNotationKeyAndScale();
+                return ResolveTargetPitch(note, key, scale).Name;
+            }
+            catch
+            {
+                return note.SpelledName ?? string.Empty;
+            }
+        }
+
+        /// <summary>
         /// Minimum McLeod NSDF clarity required before a frame may create an Early or
         /// WrongPitch attempt. When clarity telemetry is unavailable (0), the gate is skipped
         /// so unit tests that inject frequencies directly still work.
@@ -5739,40 +5784,157 @@ namespace musicmate.Services
             return true;
         }
 
+        /// <summary>
+        /// Staff spelling plus the key signature, then one instrument transposition.
+        /// The microphone frequency stays concert.
+        /// </summary>
+        public PitchDomains DescribePitchDomains(NoteInfo target, double freq)
+        {
+            string expectedWrittenPitch = ResolveWrittenEvaluationName(target);
+            int expectedWrittenMidi = ExpectedWrittenMidiFromSpelling(target, expectedWrittenPitch);
+            int offset = GetInstrumentTransposeOffset();
+            int expectedConcertMidi = expectedWrittenMidi + offset;
+            int heardConcertMidi = FrequencyToConcertMidi(freq);
+            int heardWrittenMidi = heardConcertMidi < 0 ? -1 : heardConcertMidi - offset;
+
+            bool writtenFlats = PreferFlatsForWrittenDisplay(expectedWrittenPitch);
+            bool concertFlats = PreferFlatsForConcertDisplay(expectedWrittenPitch);
+            string writtenLabel = string.IsNullOrWhiteSpace(expectedWrittenPitch) ? "-" : expectedWrittenPitch;
+            // A matching detection keeps the staff spelling (Cb5, not the enharmonic B4).
+            string heardWrittenPitch = heardWrittenMidi == expectedWrittenMidi
+                ? writtenLabel
+                : SpellMidi(heardWrittenMidi, writtenFlats);
+
+            return new PitchDomains(
+                writtenLabel,
+                expectedWrittenMidi,
+                SpellMidi(expectedConcertMidi, concertFlats),
+                expectedConcertMidi,
+                SpellMidi(heardConcertMidi, concertFlats),
+                heardConcertMidi,
+                heardWrittenPitch,
+                heardWrittenMidi);
+        }
+
+        /// <summary>
+        /// Written MIDI after the key signature has been applied to the staff spelling.
+        /// </summary>
+        public int ExpectedWrittenMidiFromSpelling(NoteInfo note, string? resolvedWrittenPitch = null)
+        {
+            string written = string.IsNullOrWhiteSpace(resolvedWrittenPitch)
+                ? ResolveWrittenEvaluationName(note)
+                : resolvedWrittenPitch;
+            if (!string.IsNullOrWhiteSpace(written) && written != "-")
+            {
+                try
+                {
+                    return NoteNameToMidi(written.Trim());
+                }
+                catch
+                {
+                    // Fall through to the stored MIDI.
+                }
+            }
+
+            return note.Midi;
+        }
+
+        public static int FrequencyToConcertMidi(double freq)
+        {
+            if (freq <= 0 || double.IsNaN(freq) || double.IsInfinity(freq))
+                return -1;
+            return (int)Math.Round(69 + 12 * Math.Log(freq / 440.0, 2));
+        }
+
+        public static int CentsFromExpectedConcert(double freq, int expectedConcertMidi)
+        {
+            if (freq <= 0 || expectedConcertMidi < 0)
+                return 0;
+            double expectedFreq = MidiToFreq(expectedConcertMidi);
+            if (expectedFreq <= 0)
+                return 0;
+            return (int)Math.Round(1200 * Math.Log(freq / expectedFreq, 2));
+        }
+
+        public static string FormatPitchDiagnostic(
+            PitchDomains domains, int cents, int noteCount, string? suffix = null)
+        {
+            string extra = string.IsNullOrEmpty(suffix) ? "" : suffix;
+            return
+                $"Expected: written {domains.ExpectedWrittenPitch} / concert {domains.ExpectedConcertPitch} | " +
+                $"Heard: concert {domains.HeardConcertPitch} / written {domains.HeardWrittenPitch}{extra}, " +
+                $"{cents}¢, Notes: {noteCount}";
+        }
+
+        /// <summary>
+        /// True when the microphone's concert pitch class is the expected concert pitch class.
+        /// The offset already stored on <paramref name="domains"/> is the single transposition.
+        /// </summary>
+        private static bool SameConcertPitchClass(PitchDomains domains)
+        {
+            if (domains.HeardConcertMidi < 0)
+                return false;
+            if (Mod12(domains.HeardConcertMidi) == Mod12(domains.ExpectedConcertMidi))
+                return true;
+
+            int offset = domains.ExpectedConcertMidi - domains.ExpectedWrittenMidi;
+            foreach (int enharmonicWritten in GetEnharmonicMidis(domains.ExpectedWrittenMidi))
+            {
+                if (Mod12(enharmonicWritten + offset) == Mod12(domains.HeardConcertMidi))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private void SetPitchDiagnostic(PitchDomains domains, int cents, string? suffix = null)
+            => StatusService.Instance.StatusMessage =
+                FormatPitchDiagnostic(domains, cents, NotesToDraw.Count, suffix);
+
+        private void SetPitchDiagnosticForCurrent(double freq, string? suffix = null)
+        {
+            if (freq <= 0 || CurrentNoteIndex < 0 || CurrentNoteIndex >= NotesToDraw.Count)
+                return;
+            var domains = DescribePitchDomains(NotesToDraw[CurrentNoteIndex], freq);
+            SetPitchDiagnostic(domains, CentsFromExpectedConcert(freq, domains.ExpectedConcertMidi), suffix);
+        }
+
+        private bool PreferFlatsForWrittenDisplay(string expectedWrittenPitch)
+        {
+            if (WrittenSpellingUsesSharp(expectedWrittenPitch))
+                return false;
+            if (WrittenSpellingUsesFlat(expectedWrittenPitch))
+                return true;
+            return KeyUsesFlats(Key);
+        }
+
+        private bool PreferFlatsForConcertDisplay(string expectedWrittenPitch)
+        {
+            if (WrittenSpellingUsesSharp(expectedWrittenPitch))
+                return false;
+            if (WrittenSpellingUsesFlat(expectedWrittenPitch))
+                return true;
+            return KeyUsesFlats(NormalizeKeyNameForSignature(GetConcertKey()));
+        }
+
+        private static bool WrittenSpellingUsesFlat(string pitch)
+            => pitch.Length > 1 && (pitch[1] == 'b' || pitch.Contains("bb", StringComparison.Ordinal));
+
+        private static bool WrittenSpellingUsesSharp(string pitch)
+            => pitch.Contains('#');
+
+        private static string SpellMidi(int midi, bool flats)
+            => midi < 0 ? "-" : MidiToNoteName(midi, flats);
+
         public (bool pitchClassMatch, bool withinCentsTolerance, int cents) EvaluatePitchMatch(double freq)
         {
             if (NotesToDraw.Count == 0 || CurrentNoteIndex >= NotesToDraw.Count || freq <= 0)
                 return (false, false, 0);
 
-            var target = NotesToDraw[CurrentNoteIndex];
-            var expectedWrittenMidi = ResolveWrittenEvaluationMidi(target);
-            var detMidi = (int)Math.Round(69 + 12 * Math.Log(freq / 440.0, 2));
-
-            // Transpose detected MIDI to written pitch for the selected instrument
-            var detMidiWritten = detMidi - GetInstrumentTransposeOffset();
-            var detPcWritten = Mod12(detMidiWritten);
-
-            // Compare to the written note's pitch class
-            var expectedPc = Mod12(expectedWrittenMidi);
-            var correctPc = detPcWritten == expectedPc;
-
-            // Enharmonic check: allow E4 == Fb4, etc.
-            bool enharmonicMatch = false;
-            if (!correctPc)
-            {
-                var enharmonicMidis = GetEnharmonicMidis(expectedWrittenMidi);
-                enharmonicMatch = enharmonicMidis.Any(m => Mod12(m) == detPcWritten);
-            }
-
-            var isPitchClassMatch = correctPc || enharmonicMatch;
-
-            // Cents vs the expected target frequency (not nearest chromatic of the detection).
-            int expectedConcertMidi = expectedWrittenMidi + GetInstrumentTransposeOffset();
-            double expectedFreq = MidiToFreq(expectedConcertMidi);
-            var cents = (int)Math.Round(1200 * Math.Log(freq / expectedFreq, 2));
-            var withinTolerance = Math.Abs(cents) <= Tolerance;
-
-            return (isPitchClassMatch, withinTolerance, cents);
+            var domains = DescribePitchDomains(NotesToDraw[CurrentNoteIndex], freq);
+            bool pitchClassMatch = SameConcertPitchClass(domains);
+            int cents = CentsFromExpectedConcert(freq, domains.ExpectedConcertMidi);
+            return (pitchClassMatch, Math.Abs(cents) <= Tolerance, cents);
         }
 
         public (bool correct, int cents) Evaluate(double freq)

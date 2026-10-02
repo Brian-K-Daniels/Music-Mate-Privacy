@@ -174,7 +174,14 @@ namespace musicmate.Services
                 return false;
             if (heardHz > 0 && (accentedClickHz > 0 || unaccentedClickHz > 0))
             {
-                // Frequency-aware path: reject only click self-sound / octave bleed.
+                // The beep is a fixed tone. It is never the expected pitch.
+                // Ignore a detection near that tone only while the beep is
+                // actually sounding, so McLeod cannot score the click itself.
+                // Once the beep has finished, a correct note is accepted even
+                // when it is one octave below the beep (written F#5 on a
+                // B♭ clarinet is concert E5; the unaccented beep is E6).
+                if (!withinSelfSoundSuppressWindow)
+                    return true;
                 return !IsNearCountInClickFrequency(heardHz, accentedClickHz, unaccentedClickHz);
             }
             // No frequency context → keep historical safe reject during suppress.

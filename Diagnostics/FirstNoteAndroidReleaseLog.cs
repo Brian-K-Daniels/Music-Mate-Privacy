@@ -25,6 +25,12 @@ public static class FirstNoteAndroidReleaseLog
     public static bool StillWaitingForFirstAccept
         => Volatile.Read(ref _firstNoteAccepted) == 0;
 
+    /// <summary>
+    /// First-note line that stays in release builds. Info-level on Android so a
+    /// logcat filter of MusicMateFirstNote shows why the opening note was dropped.
+    /// </summary>
+    public static void WriteLive(string line) => Emit(line);
+
     /// <summary>Debug-only trace. Release call sites are omitted.</summary>
     [System.Diagnostics.Conditional("DEBUG")]
     public static void WriteAlways(string stage, string detail)

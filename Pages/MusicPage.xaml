@@ -384,6 +384,23 @@
                       Clicked="OnTimeSignatureHitTargetClicked"
                       SemanticProperties.Description="Change time signature" />
 
+              <!-- Level readout: same pill as Play, far left of the staff. Width follows the level text. -->
+              <Border x:Name="TitleLevelLabel"
+                      BackgroundColor="#2E8B57"
+                      Stroke="#1F5C3A"
+                      StrokeThickness="1"
+                      Padding="0"
+                      InputTransparent="True"
+                      HorizontalOptions="Start"
+                      VerticalOptions="Start"
+                      Margin="8,2,0,0"
+                      ZIndex="10"
+                      IsVisible="{Binding Source={x:Reference musicPage}, Path=IsTitleLevelLabelVisible, x:DataType=pages:MusicPage}">
+                <Border.StrokeShape>
+                  <RoundRectangle CornerRadius="3" />
+                </Border.StrokeShape>
+              </Border>
+
               <!-- Compact Play/Stop (Music/Sight only; never visible in Tuner): far right of the staff, clear of the tempo marking. Sized in code. -->
               <Border x:Name="TitlePlayButton"
                       BackgroundColor="#2E8B57"

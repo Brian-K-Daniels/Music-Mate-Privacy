@@ -7108,7 +7108,9 @@ namespace musicmate.Drawables
                 var label = ResolveNoteNameLabelLayout(
                     x, ny, _layout.NoteHeadR, staffTop, staffBot,
                     safeTop, safeBottom, NoteNameMinEdgeClearancePx, nameScale);
-                canvas.DrawString(note.SpelledName, label.X, label.Y, label.Width, label.Height,
+                canvas.DrawString(
+                    _session.WrittenNameForStaffLabel(note),
+                    label.X, label.Y, label.Width, label.Height,
                     HorizontalAlignment.Center, VerticalAlignment.Top);
             }
             finally { canvas.RestoreState(); }

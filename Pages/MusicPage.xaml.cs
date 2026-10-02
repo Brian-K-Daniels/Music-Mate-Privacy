@@ -184,6 +184,14 @@ namespace musicmate.Pages
         private readonly CountInSessionGate _countInGate = new();
         private bool _waitingCountInActive;
         private int _waitingCountInGeneration;
+        private int _countInBeatsSounded;
+        private int _countInBeatNumber;
+        private double _countInBeepHz;
+        private long _countInBeepUntilTicks;
+        private DateTime? _countInEndedUtc;
+        private DateTime? _gradingActiveUtc;
+        private double _firstMicHzAfterCountIn;
+        private string? _lastCountInFirstNoteKey;
         /// <summary>Tracks IgnoreAudio edge for [AudioSuppress] OFF logging.</summary>
         private bool _audioSuppressWasActive;
         private int _startListeningEpoch;
@@ -213,6 +221,7 @@ namespace musicmate.Pages
         }
 
         private readonly PitchWindowAccumulator _pitchWindow = new();
+        private readonly FirstNoteListeningReadiness _firstNoteGate = new();
 
         private static readonly HashSet<string> FreeKeys = new() { "C", "F", "Bb", "G", "D" };
         private int _lastFreeKeyIndex = 0;
@@ -271,6 +280,7 @@ namespace musicmate.Pages
         }
         public bool IsTitlePlayButtonVisible =>
             TunerTitleChrome.IsPlayButtonVisible(_session?.Tune, _isRunning, _isPlaying);
+        public bool IsTitleLevelLabelVisible => _session?.Tune != "Tuner";
         public bool IsBottomPickersVisible => _session?.Tune != "Tuner";
         public bool IsBottomButtonRowVisible => _session?.Tune != "Tuner";
         public bool IsChildLevelSliderVisible => _session?.ChildLevel > 0 && _session.Tune != "Tuner";
@@ -676,17 +686,24 @@ namespace musicmate.Pages
                 StaffOverlayGrid.SizeChanged += (_, _) =>
                 {
                     UpdateTitlePlayButtonPosition();
+                    UpdateTitleLevelLabel();
                     ScheduleSyncTempoMarkingHitTarget();
                     ScheduleSyncTimeSignatureHitTarget();
                 };
                 StaffBorder.SizeChanged += (_, _) =>
                 {
                     UpdateTitlePlayButtonPosition();
+                    UpdateTitleLevelLabel();
                     ScheduleSyncTempoMarkingHitTarget();
                     ScheduleSyncTimeSignatureHitTarget();
                 };
-                SizeChanged += (_, _) => UpdateTitlePlayButtonPosition();
+                SizeChanged += (_, _) =>
+                {
+                    UpdateTitlePlayButtonPosition();
+                    UpdateTitleLevelLabel();
+                };
                 SetPlayButtonPlaying(false);
+                UpdateTitleLevelLabel();
 
                 // Tuner graphics setup
                 TunerBorder.BindingContext = _theme_service;
@@ -2312,16 +2329,10 @@ namespace musicmate.Pages
                 v3Drawable.UpperAlpha = 1f;
                 v3Drawable.LowerAlpha = 1f;
 
-                // Mark first non-rest note on upper staff as Current.
-                for (int i = 0; i < upperFlat.Count; i++)
-                {
-                    if (!upperFlat[i].IsRest)
-                    {
-                        v3Drawable.UpperNoteStates[i] = StaffNoteState.Current;
-                        v3Drawable.ActiveNoteIndex = i;
-                        break;
-                    }
-                }
+                // Current-note color means "play this now". Leave it pending until
+                // listening is armed so the opening note is not highlighted while
+                // the microphone and pitch window are still starting.
+                PaintFirstCurrentNoteIfGrading(v3Drawable, upperFlat);
 
                 // Populate session NotesToDraw from upper then lower.
                 // Tie continuations are engraved on the staff but are not separate
@@ -2415,6 +2426,30 @@ namespace musicmate.Pages
         /// <summary>
         /// Syncs note states from session progress on the two-staff display.
         /// </summary>
+        private void PaintFirstCurrentNoteIfGrading(StaffDrawable drawable, IReadOnlyList<GeneratedNote> notes)
+        {
+            if (drawable.UpperNoteStates == null)
+                return;
+
+            // Before Go, the opening note stays marked so the player can see it.
+            // After listening starts, that color waits until the pitch window is armed.
+            if (!FirstNoteListeningReadiness.ShouldPaintCurrentNote(
+                    _showCurrentNoteHighlight,
+                    _firstNoteGate.ShouldGradePitch,
+                    listeningSession: _listeningStartupActive || _listeningChromeShown || _isRunning))
+                return;
+
+            for (int i = 0; i < notes.Count; i++)
+            {
+                if (notes[i].IsRest)
+                    continue;
+                if (i < drawable.UpperNoteStates.Length)
+                    drawable.UpperNoteStates[i] = StaffNoteState.Current;
+                drawable.ActiveNoteIndex = i;
+                break;
+            }
+        }
+
         private void SyncStaffNoteStates()
         {
             if (_staffDrawable == null) return;
@@ -2758,6 +2793,49 @@ namespace musicmate.Pages
             UpdateTitlePlayButtonFontSize(fontSize, width, height);
         }
 
+        private void UpdateTitleLevelLabel()
+        {
+            if (TitleLevelLabel == null)
+                return;
+
+            int level = _session?.ChildLevel ?? 0;
+            string text = $"Level = {level}";
+            double height = MarginUtils.MmToDips(TitlePlayButtonHeightMm);
+            double minWidth = MarginUtils.MmToDips(TitlePlayButtonMinWidthMm);
+            const double inset = 2;
+            double innerH = Math.Max(1, height - TitlePlayButtonPadV * 2 - inset);
+            // Height sets the font, same as Play. Width grows with the level digits.
+            double fontSize = GetTitleFittedFontSize(text, 2000, innerH);
+            double textWidth = MeasureTitleUiTextWidth(text, fontSize);
+            double width = Math.Max(minWidth, textWidth + TitlePlayButtonPadH * 2 + inset);
+
+            TitleLevelLabel.WidthRequest = width;
+            TitleLevelLabel.HeightRequest = height;
+            TitleLevelLabel.MinimumWidthRequest = width;
+            TitleLevelLabel.MinimumHeightRequest = height;
+            TitleLevelLabel.HorizontalOptions = LayoutOptions.Start;
+            TitleLevelLabel.Margin = new Thickness(8, 2, 0, 0);
+            TitleLevelLabel.Content = new Label
+            {
+                Text = text,
+                FontSize = fontSize,
+                FontFamily = "OpenSansRegular",
+                FontAttributes = FontAttributes.Bold,
+                TextColor = Colors.Yellow,
+                InputTransparent = true,
+                WidthRequest = width,
+                HeightRequest = height,
+                HorizontalOptions = LayoutOptions.Fill,
+                VerticalOptions = LayoutOptions.Fill,
+                HorizontalTextAlignment = TextAlignment.Center,
+                VerticalTextAlignment = TextAlignment.Center,
+                LineBreakMode = LineBreakMode.NoWrap,
+                MaxLines = 1,
+                FontAutoScalingEnabled = false,
+                Padding = 0
+            };
+        }
+
         private static double MeasureTitleUiTextWidth(string text, double fontSize)
         {
             if (string.IsNullOrEmpty(text) || fontSize <= 0)
@@ -3070,13 +3148,16 @@ namespace musicmate.Pages
             {
                 _listeningChromeShown = false;
                 _listeningStartupActive = false;
+                _firstNoteGate.MarkCaptureStopped();
                 CancelBufferWatchdog();
             }
             else if (presentPlayingChrome)
             {
                 _listeningChromeShown = true;
                 _listeningStartupActive = false;
-                _showCurrentNoteHighlight = true;
+                // Play keeps the highlight. Listening waits until the pitch window
+                // can actually hear the first note.
+                _showCurrentNoteHighlight = keepPlayEnabled || _firstNoteGate.ShouldGradePitch;
                 CancelBufferWatchdog();
             }
             else
@@ -3107,7 +3188,9 @@ namespace musicmate.Pages
         private void UpdatePlayButtonVisibility()
         {
             OnPropertyChanged(nameof(IsTitlePlayButtonVisible));
+            OnPropertyChanged(nameof(IsTitleLevelLabelVisible));
             UpdateTitlePlayButtonPosition();
+            UpdateTitleLevelLabel();
         }
         /// <summary>
         /// "Listening…" is the idle capture label. The status bar shows the exercise name instead.
@@ -4376,6 +4459,7 @@ namespace musicmate.Pages
         private void UpdateChildLevelSliderDisplay()
         {
             OnPropertyChanged(nameof(IsChildLevelSliderVisible));
+            UpdateTitleLevelLabel();
             if (_session.ChildLevel <= 0) return;
 
             if (ChildLevelSliderValueLabel != null)
@@ -4533,6 +4617,21 @@ namespace musicmate.Pages
             _isPageVisible = true;
             if (appearAsTuner)
                 MaybeAutoStartTunerListening();
+
+            // Music can sit on screen for a fraction of a second before capture
+            // starts. Do not paint the opening note as current during that gap.
+            if (MusicListeningVisibility.ShouldScheduleAutoStartOnAppear(
+                    listeningPausedForHide: _listeningPausedForPageHide,
+                    userStoppedListening: _userStoppedListening,
+                    autoStart: _session.AutoStart,
+                    countInEnabled: WaitingCountInSettings.Enabled,
+                    isTuner: appearAsTuner,
+                    holdResult: _holdResultForChildSession))
+            {
+                _showCurrentNoteHighlight = false;
+                _lastFirstNoteLogKey = null;
+                _firstNoteGate.BeginSession(_session.PitchWindowSize);
+            }
 
             // Regenerate before AutoStart so random→scale changes refresh the staff.
             // When Repeat Same is on, restore the saved snapshot instead of re-randomizing key.
@@ -4866,15 +4965,7 @@ namespace musicmate.Pages
                 v3.ActiveNoteIndex = 0;
                 v3.UpperAlpha = 1f;
                 v3.LowerAlpha = 1f;
-                for (int i = 0; i < upperFlat.Count; i++)
-                {
-                    if (!upperFlat[i].IsRest)
-                    {
-                        v3.UpperNoteStates[i] = StaffNoteState.Current;
-                        v3.ActiveNoteIndex = i;
-                        break;
-                    }
-                }
+                PaintFirstCurrentNoteIfGrading(v3, upperFlat);
             }
             else
             {
@@ -5268,6 +5359,114 @@ namespace musicmate.Pages
             _isBelowThreshold = true;
         }
 
+        private string? _lastFirstNoteLogKey;
+
+        private void ArmFirstNoteHighlight()
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                if (!_firstNoteGate.ShouldGradePitch || !_isRunning)
+                    return;
+                if (_waitingCountInActive && !_countInGate.ListeningStarted)
+                    return;
+                if (PlayModePickerOptions.IsTunerMode(_session))
+                    return;
+
+                _showCurrentNoteHighlight = true;
+                try { SyncStaffNoteStates(); } catch { }
+            });
+        }
+
+        private void ResetCountInPitchTrace()
+        {
+            _countInBeatsSounded = 0;
+            _countInBeatNumber = 0;
+            _countInBeepHz = 0;
+            _countInBeepUntilTicks = 0;
+            _countInEndedUtc = null;
+            _gradingActiveUtc = null;
+            _firstMicHzAfterCountIn = 0;
+            _lastCountInFirstNoteKey = null;
+        }
+
+        private void NoteCountInBeep(int clickDurationMs, int beatsPerMeasure)
+        {
+            int beatIndex = _countInBeatsSounded;
+            _countInBeatsSounded++;
+            _countInBeatNumber = beatIndex + 1;
+            bool accent = WaitingCountInLogic.IsAccentedBeat(beatIndex, beatsPerMeasure);
+            _countInBeepHz = accent
+                ? WaitingCountInSettings.AccentedPitchHz
+                : WaitingCountInSettings.UnaccentedPitchHz;
+            long until = Environment.TickCount64 + Math.Max(0, clickDurationMs);
+            Volatile.Write(ref _countInBeepUntilTicks, until);
+        }
+
+        private bool IsCountInBeepSounding()
+            => Environment.TickCount64 < Volatile.Read(ref _countInBeepUntilTicks);
+
+        private void LogCountInFirstNote(double heardHz, string reason)
+        {
+            if (_session.NotesToDraw.Count == 0)
+                return;
+            var domains = _session.DescribePitchDomains(_session.NotesToDraw[0], heardHz);
+            double expectedHz = NoteSessionService.MidiToFreqPublic(domains.ExpectedConcertMidi);
+            string key = $"{reason}|{domains.HeardConcertPitch}|{expectedHz:F1}";
+            if (string.Equals(key, _lastCountInFirstNoteKey, StringComparison.Ordinal))
+                return;
+            _lastCountInFirstNoteKey = key;
+            string ended = _countInEndedUtc?.ToString("HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture) ?? "-";
+            string grading = _gradingActiveUtc?.ToString("HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture) ?? "-";
+            double firstMic = _firstMicHzAfterCountIn > 0 ? _firstMicHzAfterCountIn : heardHz;
+            string line =
+                "[CountInFirstNote] "
+                + $"active={(_waitingCountInActive ? "yes" : "no")} "
+                + $"beat={_countInBeatNumber} "
+                + $"beepHz={_countInBeepHz.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)} "
+                + $"countInEnded={ended} "
+                + $"gradingActive={grading} "
+                + $"firstMicHz={firstMic.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)} "
+                + $"expectedHz={expectedHz.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)} "
+                + $"stored={_session.NotesToDraw[0].Name}/{_session.NotesToDraw[0].Midi} "
+                + $"reason={reason}";
+            FirstNoteAndroidReleaseLog.WriteLive(line);
+            Utils.Log(line);
+        }
+
+        private void PublishFirstNoteDiagnostic(double freq, string reason, bool updateStatus, int? noteIndex = null)
+        {
+            int index = noteIndex ?? _session.CurrentNoteIndex;
+            if (index != 0 || _session.NotesToDraw.Count == 0)
+                return;
+
+            var domains = _session.DescribePitchDomains(_session.NotesToDraw[0], freq);
+            var diag = FirstNotePitchDiagnostic.FromDomains(
+                index,
+                domains,
+                _firstNoteGate.ListeningActive,
+                _firstNoteGate.AudioBuffersReceived,
+                PitchDetectionService.LastDetectionClarity,
+                reason);
+            string key = $"{reason}|{diag.ExpectedWrittenPitch}|{diag.HeardConcertPitch}";
+            if (string.Equals(key, _lastFirstNoteLogKey, StringComparison.Ordinal))
+                return;
+
+            _lastFirstNoteLogKey = key;
+            int cents = NoteSessionService.CentsFromExpectedConcert(freq, domains.ExpectedConcertMidi);
+            var stored = _session.NotesToDraw[0];
+            string line = diag.Format()
+                + $" cents={cents} stored={stored.Name}/{stored.Midi}";
+            FirstNoteAndroidReleaseLog.WriteLive(line);
+            Utils.Log(line);
+            if (!updateStatus || freq <= 0)
+                return;
+
+            StatusService.Instance.StatusMessage = NoteSessionService.FormatPitchDiagnostic(
+                domains,
+                NoteSessionService.CentsFromExpectedConcert(freq, domains.ExpectedConcertMidi),
+                _session.NotesToDraw.Count);
+        }
+
         private void OnAudioBlock(short[] pcm16)
         {
             if (Volatile.Read(ref _captureRouteLost) != 0)
@@ -5283,6 +5482,8 @@ namespace musicmate.Pages
             _session.SetLastDetectionTelemetry(rms);
             _session.ObserveLoudness(rms);
             NoteStartupBuffer();
+            if (_firstNoteGate.OnAudioBuffer(buf.Length))
+                ArmFirstNoteHighlight();
 
             // Don't accumulate audio during ignore period — ensures the first
             // detection after cooldown uses entirely fresh samples.
@@ -5350,14 +5551,26 @@ namespace musicmate.Pages
             if (ingest.Kind != PitchWindowIngestKind.WindowReady)
                 return;
 
-            // Hop-based overlap: shift the buffer by half so subsequent
-            // detections reuse the stable tail of the previous window,
-            // reducing transient/attack bias that causes flat readings.
-            _pitchWindow.HopHalf();
+            // A full window before listening is armed is not graded and is not hopped
+            // away. Capture that is not running yet must not leave a stale window
+            // behind for the next session to treat as the first note.
+            bool tuner = _session.Tune == "Tuner";
+            if (!_firstNoteGate.MayGradeMusicPitch(tuner))
+            {
+                if (!_firstNoteGate.ListeningActive)
+                    _pitchWindow.Reset();
+                else
+                    PublishFirstNoteDiagnostic(freq: 0, reason: "listening-not-ready", updateStatus: false);
+                return;
+            }
 
             var now = DateTime.UtcNow;
             if ((now - _lastProcess).TotalMilliseconds < _session.CooldownMs)
                 return;
+
+            // Hop only when this window will actually be analyzed. Hopping and
+            // then returning on cooldown threw away the first full window.
+            _pitchWindow.HopHalf();
 
             lock (_processLock)
             {
@@ -5439,21 +5652,34 @@ namespace musicmate.Pages
                             return;
 
                         var countInResult = _session.Evaluate(freq);
+                        if (_firstMicHzAfterCountIn <= 0)
+                            _firstMicHzAfterCountIn = freq;
+                        // Octave proximity to the beep only blocks while that beep
+                        // is sounding. It must not replace the expected note.
+                        bool beepSounding = IsCountInBeepSounding();
                         bool nearClick = WaitingCountInLogic.IsNearCountInClickFrequency(
                             freq,
                             WaitingCountInSettings.AccentedPitchHz,
                             WaitingCountInSettings.UnaccentedPitchHz);
+                        bool beepBlocking = beepSounding && nearClick;
                         if (!WaitingCountInLogic.ShouldAcceptFirstNoteToEndCountIn(
                                 countInResult.correct,
                                 countInActive: true,
                                 currentNoteIndex: 0,
-                                withinSelfSoundSuppressWindow: false,
+                                withinSelfSoundSuppressWindow: beepSounding,
                                 heardHz: freq,
                                 accentedClickHz: WaitingCountInSettings.AccentedPitchHz,
                                 unaccentedClickHz: WaitingCountInSettings.UnaccentedPitchHz)
-                            || !_countInGate.TryAcceptHeardPitch(countInResult.correct, nearClick))
+                            || !_countInGate.TryAcceptHeardPitch(countInResult.correct, beepBlocking))
                         {
-                            if (nearClick)
+                            string reject = !countInResult.correct
+                                ? "pitch-not-expected"
+                                : beepBlocking
+                                    ? "count-in-beep"
+                                    : "count-in-not-accepted";
+                            PublishFirstNoteDiagnostic(freq, reject, updateStatus: countInResult.correct == false);
+                            LogCountInFirstNote(freq, reject);
+                            if (beepBlocking)
                             {
                                 DebugLog.WriteLine(
                                     $"[CountIn] ignored click self-sound heardHz={freq:F1} correct={countInResult.correct}");
@@ -5475,6 +5701,9 @@ namespace musicmate.Pages
                         // Stop clicks and CLEAR suppress before scoring — a residual
                         // Suppress here would make UpdateFeedbackForCurrent reject the note
                         // and leave the session unable to accept pitches cleanly.
+                        _countInEndedUtc ??= DateTime.UtcNow;
+                        LogCountInFirstNote(freq, "accepted");
+                        PublishFirstNoteDiagnostic(freq, "accepted", updateStatus: false);
                         StopWaitingCountIn();
                         _session.ClearCountInClickSelfSoundSuppress("first note accepted — clear before score");
                         _session.StartListeningClock();
@@ -5514,17 +5743,28 @@ namespace musicmate.Pages
                         if (_session.IsAwaitingSamePitchRetrigger
                             && _session.CurrentNoteIndex < _session.NotesToDraw.Count)
                         {
-                            var expected = _session.ResolveWrittenEvaluationName(
-                                _session.NotesToDraw[_session.CurrentNoteIndex]);
-                            StatusService.Instance.StatusMessage =
-                                $"Expected: {expected} — tongue/re-attack for repeated note";
+                            var repeated = _session.DescribePitchDomains(
+                                _session.NotesToDraw[_session.CurrentNoteIndex], freq);
+                            StatusService.Instance.StatusMessage = NoteSessionService.FormatPitchDiagnostic(
+                                repeated,
+                                NoteSessionService.CentsFromExpectedConcert(freq, repeated.ExpectedConcertMidi),
+                                _session.NotesToDraw.Count,
+                                " — tongue/re-attack for repeated note");
                         }
                         return;
                     }
 
                     var result = _session.Evaluate(freq);
                     if (!_session.TryArmListeningClockOnFirstCorrectPitch(result.correct))
+                    {
+                        // A wrong or early frame must not start the clock, and must
+                        // not vanish. The status line shows what was expected.
+                        string reason = _session.CurrentNoteIndex != 0
+                            ? "clock-not-armed"
+                            : "pitch-not-expected";
+                        PublishFirstNoteDiagnostic(freq, reason, updateStatus: _session.CurrentNoteIndex == 0);
                         return;
+                    }
 
                     string expectedName = _session.CurrentNoteIndex < _session.NotesToDraw.Count
                         ? _session.ResolveWrittenEvaluationName(_session.NotesToDraw[_session.CurrentNoteIndex])
@@ -5534,7 +5774,17 @@ namespace musicmate.Pages
                         $"heardHz={freq:F1} correct={result.correct}");
 
                     // Only accept the note as correct if it matches the expected note (including octave) at the current index
-                    if (_session.UpdateFeedbackForCurrent(freq, result))
+                    int gradedIndex = _session.CurrentNoteIndex;
+                    bool graded = _session.UpdateFeedbackForCurrent(freq, result);
+                    if (gradedIndex == 0)
+                    {
+                        PublishFirstNoteDiagnostic(
+                            freq,
+                            graded && result.correct ? "accepted" : "not-accepted",
+                            updateStatus: false,
+                            gradedIndex);
+                    }
+                    if (graded)
                     {
                         if (result.correct)
                         {
@@ -5595,6 +5845,7 @@ namespace musicmate.Pages
             try { previous?.Dispose(); } catch { }
             var ct = cts.Token;
             _waitingCountInActive = true;
+            ResetCountInPitchTrace();
             session.MarkCountInStartUtc();
 
             try
@@ -5655,10 +5906,9 @@ namespace musicmate.Pages
                     externalCt: ct,
                     beforeClickAsync: (clickDurationMs, clickCt) =>
                     {
-                        // Do not arm IgnoreAudio per click. Time-based suppress blocked
-                        // on-beat first notes (most of each beat). Click self-sound is
-                        // filtered by frequency in the Count-In accept path instead.
-                        _ = clickDurationMs;
+                        // Do not arm IgnoreAudio per click. That window used to cover
+                        // most of the beat. Remember only this beep's own duration so
+                        // a note one octave below the beep can still be graded.
                         if (clickCt.IsCancellationRequested
                             || armedGeneration != Volatile.Read(ref _waitingCountInGeneration))
                             throw new OperationCanceledException();
@@ -5668,6 +5918,7 @@ namespace musicmate.Pages
                             throw new OperationCanceledException();
                         }
 
+                        NoteCountInBeep(clickDurationMs, beats);
                         return Task.CompletedTask;
                     },
                     getTempoBpm: () => Math.Clamp(
@@ -5679,11 +5930,14 @@ namespace musicmate.Pages
                         if (armedGeneration != Volatile.Read(ref _waitingCountInGeneration)
                             || ct.IsCancellationRequested)
                             return;
+                        _gradingActiveUtc ??= DateTime.UtcNow;
                         _countInGate.OnClickSounded();
                         BeginListeningAfterCountInClick(armedGeneration, startupGeneration, ct);
                     },
                     source: "COUNTIN");
 
+                _countInEndedUtc ??= DateTime.UtcNow;
+                _countInBeepUntilTicks = 0;
                 ListeningStartupLog.Write(ct.IsCancellationRequested
                     ? "COUNTIN: cancelled"
                     : "COUNTIN: completed");
@@ -6032,8 +6286,13 @@ namespace musicmate.Pages
                 return false;
             }
 
+            // Arm before the first callback. A synchronous first buffer must count
+            // toward the pitch window instead of being graded early or dropped.
+            _firstNoteGate.MarkCaptureRunning();
             if (_audio.TryStartCapture(OnAudioBlock, out error) && _audio.IsCapturing)
                 return true;
+
+            _firstNoteGate.MarkCaptureStopped();
 
             if (string.IsNullOrWhiteSpace(error))
                 error = "capture did not stay running";
@@ -6880,6 +7139,12 @@ namespace musicmate.Pages
                 {
                     startupGen = Interlocked.Increment(ref _listeningStartupGeneration);
                     Interlocked.Exchange(ref _loggedFirstBuffer, 0);
+                    // Close grading before permission and capture. The opening note
+                    // stays unhighlighted until a full analysis window has arrived.
+                    _lastFirstNoteLogKey = null;
+                    _firstNoteGate.BeginSession(_session.PitchWindowSize);
+                    _lastProcess = DateTime.MinValue;
+                    _showCurrentNoteHighlight = false;
                     SetButtonStates(true, presentPlayingChrome: false);
                     // Note generation can take longer than a buffer. Leave the
                     // first-buffer gate closed until capture/count-in actually starts,
