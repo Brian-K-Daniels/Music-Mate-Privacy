@@ -176,8 +176,12 @@ public class ClefToggleTests : IDisposable
         flute.ToggleNotationClef();
         Assert.Equal(Clef.Treble, flute.NotationClef);
 
-        Assert.Equal("concert-pitch", InstrumentCatalog.Resolve("Bass Guitar").Id);
+        Assert.Equal("bass-guitar", InstrumentCatalog.Resolve("Bass Guitar").Id);
         Assert.False(InstrumentCatalog.Resolve("Bass Guitar").CanToggleNotationClef);
+        Assert.Equal(Clef.Bass, InstrumentCatalog.Resolve("Bass Guitar").DefaultClef);
+        Assert.Equal("guitar", InstrumentCatalog.Resolve("Guitar").Id);
+        Assert.False(InstrumentCatalog.Resolve("Guitar").CanToggleNotationClef);
+        Assert.Equal(Clef.Treble, InstrumentCatalog.Resolve("Guitar").DefaultClef);
         Assert.Equal("concert-pitch", InstrumentCatalog.Resolve("Piano").Id);
         Assert.False(InstrumentCatalog.Resolve("Piano").CanToggleNotationClef);
 
@@ -260,6 +264,7 @@ public class ClefToggleTests : IDisposable
     [InlineData("bb-clarinet")]
     [InlineData("Flute")]
     [InlineData("Piano")]
+    [InlineData("Guitar")]
     [InlineData("Bass Guitar")]
     [InlineData("Baritone")]
     [InlineData("Contrabassoon")]

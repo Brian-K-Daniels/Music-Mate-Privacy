@@ -873,7 +873,7 @@ namespace musicmate.Pages
                 return;
             }
 
-            _pitchWindow.EnsureWindowSize(_session.PitchWindowSize);
+            _pitchWindow.EnsureWindowSize(_session.PitchAnalysisWindowSize);
             _pitchWindow.Reset();
             _gate.State = IntervalSingingExerciseState.WaitingForSinger;
             if (!_gate.TryStartCapture())
@@ -909,7 +909,7 @@ namespace musicmate.Pages
 
             var rms = PitchDetectionService.ComputeRms(buf);
             bool ignoreAudio = DateTime.UtcNow < _ignoreUntilUtc;
-            _pitchWindow.EnsureWindowSize(_session.PitchWindowSize);
+            _pitchWindow.EnsureWindowSize(_session.PitchAnalysisWindowSize);
             var ingest = _pitchWindow.Ingest(buf, rms, _session.RmsThreshold, ignoreAudio);
 
             if (ingest.Kind == PitchWindowIngestKind.BecameSilent)
@@ -934,7 +934,8 @@ namespace musicmate.Pages
 
                 _lastProcess = now;
                 double freq = PitchDetectionService.DetectPitchMcLeod(
-                    _pitchWindow.Buffer, _pitchWindow.WindowSize, _session.SampleRate);
+                    _pitchWindow.Buffer, _pitchWindow.WindowSize, _session.SampleRate,
+                    _session.PitchDetectionMinFrequencyHz);
                 freq *= Math.Pow(2, _session.PitchOffsetCents / 1200.0);
 
                 MainThread.BeginInvokeOnMainThread(() => ApplyDetectedFrequency(freq));

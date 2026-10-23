@@ -31,6 +31,8 @@ public class TunerVoiceInstrumentTests
     [InlineData("Bb Clarinet", -2)]
     [InlineData("F Horn", -7)]
     [InlineData("Concert Pitch", 0)]
+    [InlineData("Guitar", -12)]
+    [InlineData("Bass Guitar", -12)]
     public void NonVoiceInstrument_KeepsTransposition(string instrument, int expectedOffset)
     {
         Assert.False(TunerReferenceNoteCatalog.UsesConcertPitchOnTuner(instrument));

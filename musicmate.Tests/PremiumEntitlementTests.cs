@@ -118,6 +118,74 @@ public class PremiumEntitlementTests
         Assert.False(PremiumEntitlement.Resolve(true, purchases));
     }
 
+    [Fact]
+    public void AcknowledgedPremiumPurchase_IsNotSelectedForAcknowledgement()
+    {
+        var purchases = new[] { PurchasedAcknowledged("token-owned", PremiumProduct.Id) };
+
+        Assert.Empty(PremiumEntitlement.UnacknowledgedPremiumTokens(true, purchases));
+        Assert.True(PremiumEntitlement.Resolve(true, purchases));
+    }
+
+    [Fact]
+    public void UnacknowledgedPremiumPurchase_IsSelectedForAcknowledgement()
+    {
+        var purchases = new[] { PurchasedUnacknowledged("token-new", PremiumProduct.Id) };
+
+        Assert.Equal("token-new", Assert.Single(PremiumEntitlement.UnacknowledgedPremiumTokens(true, purchases)));
+        Assert.True(PremiumEntitlement.Resolve(true, purchases));
+    }
+
+    [Fact]
+    public void PendingPremiumPurchase_IsNotAcknowledged()
+    {
+        var purchases = new[] { PendingUnacknowledged("token-pending", PremiumProduct.Id) };
+
+        Assert.Empty(PremiumEntitlement.UnacknowledgedPremiumTokens(true, purchases));
+        Assert.False(PremiumEntitlement.Resolve(true, purchases));
+    }
+
+    [Fact]
+    public void UnacknowledgedUnrelatedProduct_IsNotAcknowledged()
+    {
+        var purchases = new[] { PurchasedUnacknowledged("token-other", "some_other_sku") };
+
+        Assert.Empty(PremiumEntitlement.UnacknowledgedPremiumTokens(true, purchases));
+        Assert.False(PremiumEntitlement.Resolve(true, purchases));
+    }
+
+    [Fact]
+    public void FailedAcknowledgement_IsRetriedOnNextSuccessfulQuery()
+    {
+        var stillUnacknowledged = new[] { PurchasedUnacknowledged("token-retry", PremiumProduct.Id) };
+
+        Assert.Equal(
+            "token-retry",
+            Assert.Single(PremiumEntitlement.UnacknowledgedPremiumTokens(true, stillUnacknowledged)));
+        Assert.True(PremiumEntitlement.Resolve(true, stillUnacknowledged));
+
+        // A failed acknowledgement does not mark the purchase acknowledged, so the next check retries.
+        Assert.Equal(
+            "token-retry",
+            Assert.Single(PremiumEntitlement.UnacknowledgedPremiumTokens(true, stillUnacknowledged)));
+
+        Assert.Empty(PremiumEntitlement.UnacknowledgedPremiumTokens(querySucceeded: false, stillUnacknowledged));
+        Assert.Null(PremiumEntitlement.Resolve(querySucceeded: false, stillUnacknowledged));
+
+        var acknowledged = new[] { PurchasedAcknowledged("token-retry", PremiumProduct.Id) };
+        Assert.Empty(PremiumEntitlement.UnacknowledgedPremiumTokens(true, acknowledged));
+        Assert.True(PremiumEntitlement.Resolve(true, acknowledged));
+    }
+
+    private static PremiumEntitlement.PurchaseInfo PurchasedAcknowledged(string token, params string[] productIds)
+        => new(productIds, PremiumEntitlement.PurchaseStatePurchased, IsAcknowledged: true, PurchaseToken: token);
+
+    private static PremiumEntitlement.PurchaseInfo PurchasedUnacknowledged(string token, params string[] productIds)
+        => new(productIds, PremiumEntitlement.PurchaseStatePurchased, IsAcknowledged: false, PurchaseToken: token);
+
+    private static PremiumEntitlement.PurchaseInfo PendingUnacknowledged(string token, params string[] productIds)
+        => new(productIds, PremiumEntitlement.PurchaseStatePending, IsAcknowledged: false, PurchaseToken: token);
+
     // Minimal stand-in for Preferences so the restore→empty-query case is explicit
     // without requiring a MAUI app host.
     private bool _prefIsPremium;

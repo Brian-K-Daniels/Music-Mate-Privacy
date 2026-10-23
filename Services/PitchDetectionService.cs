@@ -1,8 +1,56 @@
+using musicmate.Models;
 using musicmate.Utilities;
 namespace musicmate.Services
 {
     public class PitchDetectionService
     {
+        /// <summary>Historical McLeod search floor. Kept for instruments whose sounding range is at or above this.</summary>
+        public const int DefaultMinFrequencyHz = 60;
+
+        /// <summary>Hard floor matching the existing plausibility check in <see cref="DetectPitchMcLeod"/>.</summary>
+        public const int AbsoluteMinFrequencyHz = 30;
+
+        /// <summary>
+        /// Lowest frequency the detector should search for this instrument.
+        /// Stays at <see cref="DefaultMinFrequencyHz"/> unless the sounding practical floor
+        /// is below that, in which case it is lowered (with a semitone of headroom) so that
+        /// Bass Guitar E1 can be found without changing high-instrument search bounds.
+        /// </summary>
+        public static int MinDetectionFrequencyHz(InstrumentProfile profile)
+        {
+            int writtenLow = NoteSessionService.NoteNameToMidi(profile.PracticalLowestNote);
+            if (writtenLow < 0)
+                return DefaultMinFrequencyHz;
+
+            int soundingMidi = TunerReferenceNoteCatalog.ToConcertMidi(writtenLow, profile.TransposeOffset);
+            double hz = NoteSessionService.MidiToFreqPublic(soundingMidi);
+            if (hz >= DefaultMinFrequencyHz)
+                return DefaultMinFrequencyHz;
+
+            int needed = (int)Math.Floor(hz * Math.Pow(2.0, -1.0 / 12.0));
+            return Math.Clamp(needed, AbsoluteMinFrequencyHz, DefaultMinFrequencyHz);
+        }
+
+        /// <summary>
+        /// Analysis window large enough for <see cref="MinDetectionFrequencyHz"/>.
+        /// Existing instruments stay on the configured window; Bass Guitar E1 needs
+        /// more than the default 4096 samples (~3.8 periods at 41 Hz).
+        /// </summary>
+        public static int AnalysisWindowSize(
+            InstrumentProfile profile, int sampleRate, int configuredWindowSize)
+        {
+            int configured = Math.Max(1, configuredWindowSize);
+            int minHz = MinDetectionFrequencyHz(profile);
+            // Keep the configured window for instruments at or near the historical 60 Hz
+            // floor. Only E1-class lows need more than 4096 samples (~3.8 periods at 41 Hz).
+            if (minHz >= 50)
+                return configured;
+
+            sampleRate = Math.Max(1, sampleRate);
+            int eightPeriods = 8 * sampleRate / minHz;
+            return Math.Max(configured, eightPeriods);
+        }
+
         // Reusable buffers to avoid per-frame allocations.
         // Safe because callers serialise access via _processLock.
         private static float[]? _windowBuf;
@@ -21,7 +69,8 @@ namespace musicmate.Services
 
         // --- McLeod Pitch Method (MPM) implementation ---
         // Based on McLeod and Wyvill style NSDF + peak picking and parabolic interpolation.
-        public static float DetectPitchMcLeod(float[] buffer, int length, int sampleRate)
+        public static float DetectPitchMcLeod(
+            float[] buffer, int length, int sampleRate, int minFrequencyHz = DefaultMinFrequencyHz)
         {
             try
             {
@@ -54,7 +103,7 @@ namespace musicmate.Services
                 }
 
                 // Determine lag bounds: support very high freqs -> allow minLag = 2
-                int minFreq = 60;           // lowest frequency to detect (Hz) - conservative default
+                int minFreq = Math.Clamp(minFrequencyHz, AbsoluteMinFrequencyHz, Math.Max(AbsoluteMinFrequencyHz, sampleRate / 4));
                 int maxFreq = Math.Min(sampleRate / 2, 8000); // cap upper freq search for stability
                 int maxLag = Math.Min(length / 2, Math.Max(2, sampleRate / minFreq));
                 int minLag = Math.Max(2, sampleRate / maxFreq);
@@ -229,7 +278,7 @@ namespace musicmate.Services
                 double freq = sampleRate / refinedLag;
 
                 // Quick plausibility checks: frequency must be within expected range
-                if (freq < 30 || freq > sampleRate / 2.0)
+                if (freq < AbsoluteMinFrequencyHz || freq > sampleRate / 2.0)
                 {
                     LastDetectionClarity = 0f;
                     return 0;

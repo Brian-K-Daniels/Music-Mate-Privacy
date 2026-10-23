@@ -15,6 +15,9 @@ public class TunerReferenceNoteCatalogTests
     [InlineData("eb-alto-sax", 60, 51)]
     // F instrument (offset -7): written C4 → concert F3
     [InlineData("f-horn", 60, 53)]
+    // Guitar / bass guitar (offset -12): written C4 → concert C3
+    [InlineData("guitar", 60, 48)]
+    [InlineData("bass-guitar", 60, 48)]
     public void ConcertPitchPath_WrittenMidi_TransposeOnce(
         string instrumentId, int writtenMidi, int expectedConcertMidi)
     {

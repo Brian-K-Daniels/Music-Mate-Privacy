@@ -4630,7 +4630,7 @@ namespace musicmate.Pages
             {
                 _showCurrentNoteHighlight = false;
                 _lastFirstNoteLogKey = null;
-                _firstNoteGate.BeginSession(_session.PitchWindowSize);
+                _firstNoteGate.BeginSession(_session.PitchAnalysisWindowSize);
             }
 
             // Regenerate before AutoStart so random→scale changes refresh the staff.
@@ -5501,7 +5501,7 @@ namespace musicmate.Pages
             {
                 _audioSuppressWasActive = true;
             }
-            _pitchWindow.EnsureWindowSize(_session.PitchWindowSize);
+            _pitchWindow.EnsureWindowSize(_session.PitchAnalysisWindowSize);
             var ingest = _pitchWindow.Ingest(buf, rms, _session.RmsThreshold, ignoreAudio);
 
             if (ingest.Kind == PitchWindowIngestKind.IgnoredQuiet
@@ -5585,7 +5585,8 @@ namespace musicmate.Pages
                 _lastProcess = now;
 
                 double freq = PitchDetectionService.DetectPitchMcLeod(
-                    _pitchWindow.Buffer, _pitchWindow.WindowSize, _session.SampleRate);
+                    _pitchWindow.Buffer, _pitchWindow.WindowSize, _session.SampleRate,
+                    _session.PitchDetectionMinFrequencyHz);
                 freq = freq * Math.Pow(2, _session.PitchOffsetCents / 1200.0);
 
                 if (freq == 0)
@@ -7142,7 +7143,7 @@ namespace musicmate.Pages
                     // Close grading before permission and capture. The opening note
                     // stays unhighlighted until a full analysis window has arrived.
                     _lastFirstNoteLogKey = null;
-                    _firstNoteGate.BeginSession(_session.PitchWindowSize);
+                    _firstNoteGate.BeginSession(_session.PitchAnalysisWindowSize);
                     _lastProcess = DateTime.MinValue;
                     _showCurrentNoteHighlight = false;
                     SetButtonStates(true, presentPlayingChrome: false);

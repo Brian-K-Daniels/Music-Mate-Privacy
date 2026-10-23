@@ -375,13 +375,68 @@ namespace musicmate.Platforms.Android
                 {
                     infos.Add(new PremiumEntitlement.PurchaseInfo(
                         p.Products?.ToList() ?? new List<string>(),
-                        (int)p.PurchaseState));
+                        (int)p.PurchaseState,
+                        p.IsAcknowledged,
+                        p.PurchaseToken));
                 }
             }
 
             bool? entitlement = PremiumEntitlement.Resolve(succeeded, infos, productId);
+            if (succeeded)
+                AcknowledgeUnacknowledgedPremium(purchases, infos, productId);
             LogPurchaseQuery(code, succeeded, infos, entitlement);
             return new PurchaseQueryResult(succeeded, code, entitlement);
+        }
+
+        /// <summary>
+        /// Acknowledges Purchased, not-yet-acknowledged <paramref name="productId"/> rows from this
+        /// query. Failures are logged and do not change entitlement; the next successful query retries.
+        /// </summary>
+        private void AcknowledgeUnacknowledgedPremium(
+            IList<Purchase>? purchases,
+            IReadOnlyList<PremiumEntitlement.PurchaseInfo> infos,
+            string productId)
+        {
+            IReadOnlyList<string> tokens;
+            try
+            {
+                tokens = PremiumEntitlement.UnacknowledgedPremiumTokens(true, infos, productId);
+            }
+            catch (Exception ex)
+            {
+                LogFailure($"acknowledgement selection failed: {ex.Message}");
+                return;
+            }
+
+            if (tokens.Count == 0 || purchases == null)
+                return;
+
+            for (int i = 0; i < purchases.Count; i++)
+            {
+                try
+                {
+                    string? token = purchases[i].PurchaseToken;
+                    if (string.IsNullOrEmpty(token))
+                        continue;
+
+                    bool selected = false;
+                    for (int t = 0; t < tokens.Count; t++)
+                    {
+                        if (string.Equals(tokens[t], token, StringComparison.Ordinal))
+                        {
+                            selected = true;
+                            break;
+                        }
+                    }
+
+                    if (selected)
+                        AcknowledgePurchase(purchases[i]);
+                }
+                catch (Exception ex)
+                {
+                    LogFailure($"acknowledgement failed: {ex.Message}");
+                }
+            }
         }
 
         private static void ApplyPremiumEntitlement(bool owned)
@@ -438,17 +493,31 @@ namespace musicmate.Platforms.Android
 
         private void AcknowledgePurchase(Purchase purchase)
         {
-            if (purchase.IsAcknowledged)
+            try
             {
-                Log("acknowledgement result: skipped (already acknowledged)");
-                return;
+                if (purchase.IsAcknowledged)
+                {
+                    Log("acknowledgement result: skipped (already acknowledged)");
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(purchase.PurchaseToken))
+                {
+                    LogFailure("acknowledgement skipped: empty purchase token");
+                    return;
+                }
+
+                var ackParams = AcknowledgePurchaseParams.NewBuilder()
+                    .SetPurchaseToken(purchase.PurchaseToken)
+                    .Build();
+
+                _billingClient?.AcknowledgePurchase(ackParams, new AckListener());
             }
-
-            var ackParams = AcknowledgePurchaseParams.NewBuilder()
-                .SetPurchaseToken(purchase.PurchaseToken)
-                .Build();
-
-            _billingClient?.AcknowledgePurchase(ackParams, new AckListener());
+            catch (Exception ex)
+            {
+                // Leave the purchase unacknowledged so the next successful query can retry.
+                LogFailure($"acknowledgement failed: {ex.Message}");
+            }
         }
 
         private readonly record struct PurchaseQueryResult(

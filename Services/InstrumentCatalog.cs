@@ -130,6 +130,30 @@ namespace musicmate.Services
                 Aliases: ["Double Bass", "C - 1 octave", "C - 1 octave,  Double Bass, Contrabassoon"],
                 DefaultClef: Clef.Treble,
                 SupportedClefs: [Clef.Treble, Clef.Bass]),
+            // Sounds one octave below the written note. Treble clef only.
+            // Written E3–E7 sounds E2–E6. Acoustic, classical, and electric guitar.
+            new(
+                Id: "guitar",
+                DisplayName: "Guitar",
+                InstrumentKey: "C - 1 octave",
+                LegacyInstrumentValue: "Guitar",
+                TransposeOffset: -12,
+                PracticalLowestNote: "E3",
+                PracticalHighestNote: "E7",
+                Aliases: ["Guitar", "Acoustic Guitar", "Classical Guitar", "Electric Guitar"],
+                DefaultClef: Clef.Treble),
+            // Sounds one octave below the written note. Bass clef only.
+            // Written E2–G5 sounds E1–G4. Standard 4-string electric bass.
+            new(
+                Id: "bass-guitar",
+                DisplayName: "Bass Guitar",
+                InstrumentKey: "C - 1 octave",
+                LegacyInstrumentValue: "Bass Guitar",
+                TransposeOffset: -12,
+                PracticalLowestNote: "E2",
+                PracticalHighestNote: "G5",
+                Aliases: ["Bass Guitar", "Electric Bass"],
+                DefaultClef: Clef.Bass),
             // Sounds one octave below the written note. Bass clef only.
             // Written Bb1–F4 sounds Bb0–F3.
             new(

@@ -446,6 +446,18 @@ namespace musicmate.Services
                 }
             }
         }
+
+        /// <summary>McLeod search floor for the current instrument's sounding range.</summary>
+        public int PitchDetectionMinFrequencyHz
+            => PitchDetectionService.MinDetectionFrequencyHz(CurrentInstrumentProfile);
+
+        /// <summary>
+        /// Capture window used for pitch detection. Matches <see cref="PitchWindowSize"/>
+        /// except when the instrument sounds below the default 60 Hz floor.
+        /// </summary>
+        public int PitchAnalysisWindowSize
+            => PitchDetectionService.AnalysisWindowSize(
+                CurrentInstrumentProfile, SampleRate, PitchWindowSize);
         public int MinFrequency
         {
             get => _minFrequency;
@@ -5071,7 +5083,7 @@ namespace musicmate.Services
         public void SuppressCountInClickSelfSound(int clickDurationMs, string reason = "Count-In click")
         {
             int suppressMs = WaitingCountInLogic.ComputeSelfSoundSuppressMs(
-                clickDurationMs, PitchWindowSize, SampleRate);
+                clickDurationMs, PitchAnalysisWindowSize, SampleRate);
             var until = DateTime.UtcNow.AddMilliseconds(suppressMs);
             if (until > IgnoreAudioUntilUtc)
             {
@@ -5090,8 +5102,8 @@ namespace musicmate.Services
             string reason = "Count-In click")
         {
             int raw = WaitingCountInLogic.ComputeSelfSoundSuppressMs(
-                clickDurationMs, PitchWindowSize, SampleRate);
-            int minGap = WaitingCountInLogic.ComputeSelfSoundGuardMs(PitchWindowSize, SampleRate);
+                clickDurationMs, PitchAnalysisWindowSize, SampleRate);
+            int minGap = WaitingCountInLogic.ComputeSelfSoundGuardMs(PitchAnalysisWindowSize, SampleRate);
             int suppressMs = WaitingCountInLogic.CapSelfSoundSuppressMs(raw, msPerBeat, minGap);
             var until = DateTime.UtcNow.AddMilliseconds(suppressMs);
             if (until > IgnoreAudioUntilUtc)

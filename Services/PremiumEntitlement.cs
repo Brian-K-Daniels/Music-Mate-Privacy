@@ -13,9 +13,15 @@ public static class PremiumEntitlement
     public const int PurchaseStatePending = 2;
 
     /// <summary>
-    /// One row from <c>queryPurchasesAsync</c>: product ids on the purchase and its state.
+    /// One row from <c>queryPurchasesAsync</c>: product ids, purchase state, and acknowledgement.
     /// </summary>
-    public readonly record struct PurchaseInfo(IReadOnlyList<string> ProductIds, int PurchaseState);
+    /// <param name="IsAcknowledged">Play's acknowledged flag. Omitted rows are treated as not acknowledged.</param>
+    /// <param name="PurchaseToken">Token required to acknowledge. Empty when the query did not supply one.</param>
+    public readonly record struct PurchaseInfo(
+        IReadOnlyList<string> ProductIds,
+        int PurchaseState,
+        bool IsAcknowledged = false,
+        string? PurchaseToken = null);
 
     /// <summary>
     /// Resolves Premium from a completed purchase query.
@@ -44,14 +50,53 @@ public static class PremiumEntitlement
 
         foreach (var purchase in purchases)
         {
-            if (purchase.PurchaseState != PurchaseStatePurchased || purchase.ProductIds == null)
-                continue;
+            if (OwnsProduct(purchase, id))
+                return true;
+        }
 
-            for (int i = 0; i < purchase.ProductIds.Count; i++)
-            {
-                if (string.Equals(purchase.ProductIds[i], id, StringComparison.Ordinal))
-                    return true;
-            }
+        return false;
+    }
+
+    /// <summary>
+    /// Purchase tokens for <paramref name="premiumProductId"/> that are Purchased and not yet
+    /// acknowledged. Pending purchases, other products, already-acknowledged purchases, and
+    /// rows without a token are omitted. A failed query returns none so a later successful
+    /// query can retry. Acknowledgement does not change entitlement.
+    /// </summary>
+    public static IReadOnlyList<string> UnacknowledgedPremiumTokens(
+        bool querySucceeded,
+        IEnumerable<PurchaseInfo>? purchases,
+        string? premiumProductId = null)
+    {
+        if (!querySucceeded || purchases == null)
+            return Array.Empty<string>();
+
+        string id = string.IsNullOrEmpty(premiumProductId) ? PremiumProduct.Id : premiumProductId;
+        var tokens = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var purchase in purchases)
+        {
+            if (purchase.IsAcknowledged || !OwnsProduct(purchase, id))
+                continue;
+            if (string.IsNullOrEmpty(purchase.PurchaseToken))
+                continue;
+            if (seen.Add(purchase.PurchaseToken))
+                tokens.Add(purchase.PurchaseToken);
+        }
+
+        return tokens;
+    }
+
+    private static bool OwnsProduct(PurchaseInfo purchase, string productId)
+    {
+        if (purchase.PurchaseState != PurchaseStatePurchased || purchase.ProductIds == null)
+            return false;
+
+        for (int i = 0; i < purchase.ProductIds.Count; i++)
+        {
+            if (string.Equals(purchase.ProductIds[i], productId, StringComparison.Ordinal))
+                return true;
         }
 
         return false;
