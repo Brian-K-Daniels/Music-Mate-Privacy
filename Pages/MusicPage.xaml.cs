@@ -5291,8 +5291,8 @@ namespace musicmate.Pages
             _suppressSessionRegenerate = true;
             try
             {
-                // Transposing instruments are shown as Concert Pitch during Play.
-                // Concert-pitch instruments keep their saved notation clef (Euphonium bass/treble).
+                // Transposing instruments are shown as Concert Pitch during Play only when
+                // that keeps the selected clef. A bass clef stays on its own instrument.
                 _savedInstrumentIndexForPlayback = InstrumentPicker?.SelectedIndex ?? -1;
                 _savedInstrumentForPlayback = _session.BeginPlaybackInstrumentOverride();
                 if (_savedInstrumentForPlayback == null)
@@ -7605,139 +7605,52 @@ namespace musicmate.Pages
         private async Task PlayDisplayedAsync(CancellationToken ct)
         {
             var cancelled = false;
+            SequencedNotePlayback? sequence = null;
             try
             {
                 var rhythmSeq = TryGetAutoplayRhythmSequence();
+                int bpm = Math.Clamp(_session.Tempo, NoteSessionService.MinTempo, NoteSessionService.MaxTempo);
+                IReadOnlyList<PlaybackSlot> slots;
                 if (rhythmSeq != null && rhythmSeq.Count > 0)
                 {
                     PlaybackRhythmDiagnostics.LogRhythmSpan("sequence", rhythmSeq);
-
-                    var bpm = Math.Clamp(_session.Tempo, NoteSessionService.MinTempo, NoteSessionService.MaxTempo);
-                    var beatSeconds = 60.0 / bpm;
-                    int pitchCount = rhythmSeq.Count(n => !n.IsRest);
-                    int pitchIndex = 0;
-
-                    for (int i = 0; i < rhythmSeq.Count; i++)
-                    {
-                        ct.ThrowIfCancellationRequested();
-
-                        var ev = rhythmSeq[i];
-                        var totalSeconds = beatSeconds * ev.BeatDuration;
-                        var gapSeconds = Math.Min(0.02, totalSeconds * 0.05);
-                        var noteSeconds = Math.Max(0.05, totalSeconds - gapSeconds);
-
-                        StatusService.Instance.StatusMessage = ev.IsRest
-                            ? $"Rest {i + 1}/{rhythmSeq.Count}"
-                            : $"Playing note {pitchIndex + 1}/{pitchCount}: {ev.SpelledName}";
-
-                        await MainThread.InvokeOnMainThreadAsync(() =>
-                            ApplyAutoplayRhythmHighlight(i, rhythmSeq, pitchIndex));
-
-                        bool notePlayed = false;
-                        try
-                        {
-                            if (ev.IsRest)
-                                await Task.Delay(TimeSpan.FromSeconds(totalSeconds), ct);
-                            else
-                            {
-#if DEBUG
-                                if (ev.MidiNumber is ChromaticMidi61Diagnostics.MidiC4
-                                    or ChromaticMidi61Diagnostics.MidiCs4
-                                    or ChromaticMidi61Diagnostics.MidiD4)
-                                {
-                                    ChromaticMidi61Diagnostics.RecordPlayback(ev.MidiNumber, ev.SpelledName);
-                                    RefreshMidi61DiagnosticLabel();
-                                }
-#endif
-                                await _player.PlayAsync(new[] { ev.TargetFrequency }, noteSeconds, gapSeconds, 0.22f, ct);
-                                notePlayed = true;
-                                pitchIndex++;
-                            }
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            throw;
-                        }
-                        finally
-                        {
-                            await MainThread.InvokeOnMainThreadAsync(() =>
-                            {
-                                if (notePlayed && pitchIndex - 1 < _session.FeedbackViewModels.Count)
-                                {
-                                    int fb = pitchIndex - 1;
-                                    var cur = _session.FeedbackViewModels[fb];
-                                    _session.FeedbackViewModels[fb] = new FeedbackItem(fb, cur.WrongAttempts, 0, true);
-                                }
-
-                                _session.PlaybackHighlightIndex = null;
-                                StaffGraphicsView.Invalidate();
-                            });
-                        }
-                    }
-
-                    return;
+                    slots = PlaybackOnsetSchedule.FromGenerated(rhythmSeq, bpm);
                 }
-
-                if (_session.NotesToDraw.Count == 0)
-                    return;
-
-                var bpmLegacy = Math.Clamp(_session.Tempo, NoteSessionService.MinTempo, NoteSessionService.MaxTempo);
-                var beatSecondsLegacy = 60.0 / bpmLegacy;
-
-                for (int i = 0; i < _session.NotesToDraw.Count; i++)
+                else if (_session.NotesToDraw.Count > 0)
                 {
-                    ct.ThrowIfCancellationRequested();
-
-                    var note = _session.NotesToDraw[i];
-
-                    var durationBeats = note.Duration.HasValue
-                        ? note.Duration.Value.ToBeatValue()
-                        : 1.0;
-                    var totalSeconds = beatSecondsLegacy * durationBeats;
-                    var gapSeconds = Math.Min(0.02, totalSeconds * 0.05);
-                    var noteSeconds = Math.Max(0.05, totalSeconds - gapSeconds);
-
-                    StatusService.Instance.StatusMessage = $"Playing note {i + 1}/{_session.NotesToDraw.Count}: {note.Name}";
-
-                    await MainThread.InvokeOnMainThreadAsync(() =>
-                    {
-                        _session.PlaybackHighlightIndex = i;
-                        StaffGraphicsView.Invalidate();
-                    });
-
-                    bool notePlayed = false;
-                    try
-                    {
-#if DEBUG
-                        if (note.Midi is ChromaticMidi61Diagnostics.MidiC4
-                            or ChromaticMidi61Diagnostics.MidiCs4
-                            or ChromaticMidi61Diagnostics.MidiD4)
-                        {
-                            ChromaticMidi61Diagnostics.RecordPlayback(note.Midi, note.Name);
-                            RefreshMidi61DiagnosticLabel();
-                        }
-#endif
-                        await _player.PlayAsync(new[] { note.TargetFreq }, noteSeconds, gapSeconds, 0.22f, ct);
-                        notePlayed = true;
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    finally
-                    {
-                        await MainThread.InvokeOnMainThreadAsync(() =>
-                        {
-                            if (notePlayed && i < _session.FeedbackViewModels.Count)
-                            {
-                                var cur = _session.FeedbackViewModels[i];
-                                _session.FeedbackViewModels[i] = new FeedbackItem(i, cur.WrongAttempts, 0, true);
-                            }
-                            _session.PlaybackHighlightIndex = null;
-                            StaffGraphicsView.Invalidate();
-                        });
-                    }
+                    slots = PlaybackOnsetSchedule.FromSessionNotes(_session.NotesToDraw, bpm);
                 }
+                else
+                {
+                    return;
+                }
+
+                if (slots.Count == 0)
+                    return;
+
+                // Build the buffer before the clock starts, and leave the UI thread
+                // so a highlight cannot hold up the next onset.
+                await Task.Delay(1, ct).ConfigureAwait(false);
+                if (_player is AudioPlaybackService playback)
+                    sequence = playback.PrepareSequence(slots, 0.22f);
+
+                int pitchCount = slots.Count(slot => !slot.IsRest);
+                var pitchIndexBySlot = new int[slots.Count];
+                int pitched = 0;
+                for (int i = 0; i < slots.Count; i++)
+                {
+                    pitchIndexBySlot[i] = pitched;
+                    if (!slots[i].IsRest)
+                        pitched++;
+                }
+
+                await PlaybackOnsetSchedule.RunAsync(
+                    slots,
+                    startAudio: slot => RecordPlaybackDiagnostic(slot, rhythmSeq),
+                    highlight: slot => PostPlaybackSlotVisual(
+                        slot, pitchIndexBySlot[slot.Index], pitchCount, rhythmSeq),
+                    ct,
+                    onClockStarted: () => sequence?.Play()).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -7749,6 +7662,11 @@ namespace musicmate.Pages
             }
             finally
             {
+                if (_player is AudioPlaybackService playbackService)
+                    playbackService.ReleaseSequence(sequence);
+                else
+                    sequence?.Dispose();
+
                 await MainThread.InvokeOnMainThreadAsync(async () =>
                 {
                     _isPlaying = false;
@@ -7784,6 +7702,69 @@ namespace musicmate.Pages
                 }
             }
         }
+        private void PostPlaybackSlotVisual(
+            PlaybackSlot slot,
+            int pitchIndex,
+            int pitchCount,
+            IReadOnlyList<GeneratedNote>? rhythm)
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                try
+                {
+                    string name = rhythm != null && slot.Index < rhythm.Count
+                        ? rhythm[slot.Index].SpelledName
+                        : slot.Index < _session.NotesToDraw.Count
+                            ? _session.NotesToDraw[slot.Index].Name
+                            : "";
+                    int total = rhythm?.Count ?? _session.NotesToDraw.Count;
+                    StatusService.Instance.StatusMessage = slot.IsRest
+                        ? $"Rest {slot.Index + 1}/{Math.Max(1, total)}"
+                        : $"Playing note {pitchIndex + 1}/{Math.Max(1, pitchCount)}: {name}";
+
+                    if (rhythm != null)
+                        ApplyAutoplayRhythmHighlight(slot.Index, rhythm, pitchIndex);
+                    else
+                    {
+                        _session.PlaybackHighlightIndex = slot.IsRest ? null : slot.Index;
+                        StaffGraphicsView?.Invalidate();
+                    }
+
+                    if (!slot.IsRest)
+                    {
+                        int fb = rhythm != null ? pitchIndex : slot.Index;
+                        if (fb >= 0 && fb < _session.FeedbackViewModels.Count)
+                        {
+                            var cur = _session.FeedbackViewModels[fb];
+                            _session.FeedbackViewModels[fb] = new FeedbackItem(fb, cur.WrongAttempts, 0, true);
+                        }
+                    }
+                }
+                catch
+                {
+                    // Highlighting must not interrupt the audio clock.
+                }
+            });
+        }
+
+        private void RecordPlaybackDiagnostic(PlaybackSlot slot, IReadOnlyList<GeneratedNote>? rhythm)
+        {
+#if DEBUG
+            if (rhythm == null || slot.IsRest || slot.Index >= rhythm.Count)
+                return;
+            int midi = rhythm[slot.Index].MidiNumber;
+            if (midi is not (ChromaticMidi61Diagnostics.MidiC4
+                or ChromaticMidi61Diagnostics.MidiCs4
+                or ChromaticMidi61Diagnostics.MidiD4))
+                return;
+            ChromaticMidi61Diagnostics.RecordPlayback(midi, rhythm[slot.Index].SpelledName);
+            MainThread.BeginInvokeOnMainThread(RefreshMidi61DiagnosticLabel);
+#else
+            _ = slot;
+            _ = rhythm;
+#endif
+        }
+
         /// <summary>
         /// Saves session statistics and, for child-Practice sessions, a SessionResult.
         /// Returns the save outcome (including new child level when a level-up occurred).

@@ -177,7 +177,10 @@ public class BassoonContrabassoonTests : IDisposable
         Assert.Equal("F4", session.HighestNote);
 
         string? saved = session.BeginPlaybackInstrumentOverride();
-        Assert.Equal("contrabassoon", saved);
+        Assert.Null(saved);
+        Assert.Equal("contrabassoon", session.Instrument);
+        Assert.Equal(Clef.Bass, session.NotationClef);
+        Assert.Equal(-12, session.InstrumentTransposeOffset);
         session.EndPlaybackInstrumentOverride(saved);
         Assert.Equal("contrabassoon", session.Instrument);
         Assert.Equal(Clef.Bass, session.NotationClef);

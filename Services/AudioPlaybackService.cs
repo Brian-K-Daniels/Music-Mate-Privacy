@@ -12,6 +12,7 @@ namespace musicmate.Services
     {
         private readonly IAudioManager _audioManager;
         private CancellationTokenSource? _internalCts;
+        private SequencedNotePlayback? _sequence;
         private readonly object _gate = new();
         private const int SampleRate = AudioTonePcm.SampleRate;
         /// <summary>Android MediaPlayer is unreliable below ~20 ms of PCM.</summary>
@@ -678,13 +679,43 @@ namespace musicmate.Services
             BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(40), dataSize);
         }
 
+        internal SequencedNotePlayback PrepareSequence(IReadOnlyList<PlaybackSlot> slots, float volume)
+        {
+            var sequence = SequencedNotePlayback.Prepare(_audioManager, slots, volume);
+            SequencedNotePlayback? previous;
+            lock (_gate)
+            {
+                previous = _sequence;
+                _sequence = sequence;
+            }
+
+            if (!ReferenceEquals(previous, sequence))
+                previous?.Dispose();
+            return sequence;
+        }
+
+        internal void ReleaseSequence(SequencedNotePlayback? sequence)
+        {
+            lock (_gate)
+            {
+                if (ReferenceEquals(_sequence, sequence))
+                    _sequence = null;
+            }
+
+            sequence?.Dispose();
+        }
+
         public void CancelPlayback()
         {
+            SequencedNotePlayback? sequence;
             lock (_gate)
             {
                 try { _internalCts?.Cancel(); } catch { }
                 StopActiveAndroidTrack_NoLock();
+                sequence = _sequence;
             }
+
+            sequence?.Stop();
         }
     }
 }

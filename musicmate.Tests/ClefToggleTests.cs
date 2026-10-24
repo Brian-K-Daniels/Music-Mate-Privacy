@@ -298,10 +298,17 @@ public class ClefToggleTests : IDisposable
         session.NotesToDraw.Add(new NoteInfo { Midi = written, Name = "G3", TargetFreq = hz });
 
         string? saved = session.BeginPlaybackInstrumentOverride();
-        Assert.Equal("double-bass", saved);
-        Assert.Equal("concert-pitch", session.Instrument);
+        Assert.Null(saved);
+        Assert.Equal("double-bass", session.Instrument);
+        Assert.Equal(Clef.Bass, session.NotationClef);
+        Assert.Equal(-12, session.InstrumentTransposeOffset);
         Assert.Equal(written, session.NotesToDraw[0].Midi);
         Assert.Equal("G3", session.NotesToDraw[0].Name);
+        Assert.Equal(hz, TunerReferenceNoteCatalog.ConcertFrequencyHz(written, session.InstrumentTransposeOffset));
+        Assert.NotEqual(hz, TunerReferenceNoteCatalog.ConcertFrequencyHz(written, 0));
+        Assert.Equal(
+            ClefStaffPosition.StepsBelowMiddle(Clef.Bass, 'G', 3),
+            ClefStaffPosition.StepsBelowMiddle(session.NotationClef, 'G', 3));
 
         session.EndPlaybackInstrumentOverride(saved);
         Assert.Equal("double-bass", session.Instrument);
@@ -309,10 +316,190 @@ public class ClefToggleTests : IDisposable
         Assert.Equal(-12, session.InstrumentTransposeOffset);
         Assert.Equal(written, session.NotesToDraw[0].Midi);
         Assert.Equal(hz, session.NotesToDraw[0].TargetFreq);
+
+        saved = session.BeginPlaybackInstrumentOverride();
+        Assert.Null(saved);
+        Assert.Equal(Clef.Bass, session.NotationClef);
+        Assert.Equal(-12, session.InstrumentTransposeOffset);
+        session.EndPlaybackInstrumentOverride(saved);
+        Assert.Equal(Clef.Bass, session.NotationClef);
         Assert.Equal(-6, ClefStaffPosition.StepsBelowMiddle(Clef.Bass, 'C', 4));
         Assert.NotEqual(
             ClefStaffPosition.StepsBelowMiddle(Clef.Treble, 'G', 3),
             ClefStaffPosition.StepsBelowMiddle(session.NotationClef, 'G', 3));
+    }
+
+    [Fact]
+    public void BassGuitar_StaysInBassClefAcrossPlay()
+    {
+        var session = new NoteSessionService { Instrument = "Bass Guitar" };
+        Assert.Equal("bass-guitar", session.Instrument);
+        Assert.Equal(Clef.Bass, session.NotationClef);
+        Assert.False(session.CanToggleNotationClef);
+        Assert.Equal(-12, session.InstrumentTransposeOffset);
+
+        int written = NoteSessionService.NoteNameToMidi("E2");
+        double sounding = TunerReferenceNoteCatalog.ConcertFrequencyHz(written, -12);
+        session.NotesToDraw.Add(new NoteInfo { Midi = written, Name = "E2", TargetFreq = sounding });
+
+        string? saved = session.BeginPlaybackInstrumentOverride();
+        Assert.Null(saved);
+        Assert.Equal("bass-guitar", session.Instrument);
+        Assert.Equal(Clef.Bass, session.NotationClef);
+        Assert.Equal(-12, session.InstrumentTransposeOffset);
+        Assert.Equal(written, session.NotesToDraw[0].Midi);
+        Assert.Equal(sounding, TunerReferenceNoteCatalog.ConcertFrequencyHz(written, session.InstrumentTransposeOffset));
+        Assert.Equal(written - 12, TunerReferenceNoteCatalog.ToConcertMidi(written, session.InstrumentTransposeOffset));
+        Assert.Equal(
+            ClefStaffPosition.StepsBelowMiddle(Clef.Bass, 'E', 2),
+            ClefStaffPosition.StepsBelowMiddle(session.NotationClef, 'E', 2));
+
+        session.EndPlaybackInstrumentOverride(saved);
+        Assert.Equal(Clef.Bass, session.NotationClef);
+        Assert.Equal(-12, session.InstrumentTransposeOffset);
+    }
+
+    [Fact]
+    public void ExplicitClef_SurvivesRegeneration_WhenTheInstrumentAllowsIt()
+    {
+        var session = new NoteSessionService
+        {
+            Instrument = "Cello",
+            Key = "C",
+            Tune = "Major Scale",
+            ChildLevel = 10,
+        };
+        session.ToggleNotationClef();
+        Assert.Equal(Clef.Bass, session.NotationClef);
+
+        var gen = new MusicSequenceGenerator
+        {
+            Key = "C",
+            Scale = "Major",
+            LowestNote = "G3",
+            HighestNote = "C6",
+            TimeSignature = TimeSignature.FourFour,
+            MeasureCount = 2,
+            RhythmVarietyPercent = 0,
+            SmallestDuration = NoteDuration.Quarter,
+            RestChancePercent = 0,
+            AccidentalPercent = 0,
+            UseScaleOrder = true,
+            ChildLevel = 10,
+            RandomSeed = 3,
+        };
+        var notes = MusicSequenceGenerator.Flatten(gen.GenerateSequence())
+            .Where(n => !n.IsRest)
+            .ToList();
+        Assert.NotEmpty(notes);
+
+        session.NotesToDraw.Clear();
+        foreach (var note in notes)
+        {
+            session.NotesToDraw.Add(new NoteInfo
+            {
+                Midi = note.MidiNumber,
+                Name = note.SpelledName,
+                TargetFreq = note.TargetFrequency,
+            });
+        }
+
+        Assert.Equal(Clef.Bass, session.NotationClef);
+        Assert.Equal("cello", session.Instrument);
+        Assert.Equal(0, session.InstrumentTransposeOffset);
+        Assert.Equal("Bass", _store[NoteSessionService.NotationClefPreferenceKey("cello")]);
+        Assert.Equal(notes[0].MidiNumber, session.NotesToDraw[0].Midi);
+
+        session.Instrument = "bb-clarinet";
+        Assert.Equal(Clef.Treble, session.NotationClef);
+        Assert.Equal(-2, session.InstrumentTransposeOffset);
+
+        session.Instrument = "cello";
+        Assert.Equal(Clef.Bass, session.NotationClef);
+        Assert.Equal(0, session.InstrumentTransposeOffset);
+    }
+
+    [Theory]
+    [InlineData("Bass Guitar", "bass-guitar", Clef.Bass, -12)]
+    [InlineData("Contrabassoon", "contrabassoon", Clef.Bass, -12)]
+    [InlineData("Guitar", "guitar", Clef.Treble, -12)]
+    [InlineData("bb-clarinet", "bb-clarinet", Clef.Treble, -2)]
+    [InlineData("Flute", "concert-pitch", Clef.Treble, 0)]
+    public void FixedClef_RemainsThroughPlayback(
+        string selection, string instrumentId, Clef clef, int offset)
+    {
+        var session = new NoteSessionService { Instrument = selection };
+        Assert.Equal(instrumentId, session.Instrument);
+        Assert.Equal(clef, session.NotationClef);
+        Assert.Equal(offset, session.InstrumentTransposeOffset);
+        Assert.False(session.CanToggleNotationClef);
+
+        int written = NoteSessionService.NoteNameToMidi("C4");
+        session.NotesToDraw.Add(new NoteInfo
+        {
+            Midi = written,
+            Name = "C4",
+            TargetFreq = TunerReferenceNoteCatalog.ConcertFrequencyHz(written, offset),
+        });
+
+        string? saved = session.BeginPlaybackInstrumentOverride();
+        Assert.Equal(clef, session.NotationClef);
+        if (clef == Clef.Bass)
+        {
+            Assert.Null(saved);
+            Assert.Equal(instrumentId, session.Instrument);
+            Assert.Equal(offset, session.InstrumentTransposeOffset);
+        }
+
+        Assert.Equal(
+            written + session.InstrumentTransposeOffset,
+            TunerReferenceNoteCatalog.ToConcertMidi(written, session.InstrumentTransposeOffset));
+        Assert.Equal(written, session.NotesToDraw[0].Midi);
+
+        session.EndPlaybackInstrumentOverride(saved);
+        Assert.Equal(instrumentId, session.Instrument);
+        Assert.Equal(clef, session.NotationClef);
+        Assert.Equal(offset, session.InstrumentTransposeOffset);
+        Assert.Equal(
+            TunerReferenceNoteCatalog.ConcertFrequencyHz(written, offset),
+            TunerReferenceNoteCatalog.ConcertFrequencyHz(written, session.InstrumentTransposeOffset));
+    }
+
+    [Theory]
+    [InlineData("Tuba", Clef.Bass)]
+    [InlineData("Trombone", Clef.Treble)]
+    [InlineData("Cello", Clef.Treble)]
+    [InlineData("Bassoon", Clef.Bass)]
+    [InlineData("Euphonium", Clef.Bass)]
+    public void ConcertPitchClefChoice_RemainsThroughPlayback(string selection, Clef defaultClef)
+    {
+        var session = new NoteSessionService { Instrument = selection };
+        Assert.Equal(0, session.InstrumentTransposeOffset);
+        Assert.Equal(defaultClef, session.NotationClef);
+        AssertClefSurvivesPlayback(session);
+
+        session.ToggleNotationClef();
+        Assert.NotEqual(defaultClef, session.NotationClef);
+        AssertClefSurvivesPlayback(session);
+    }
+
+    private static void AssertClefSurvivesPlayback(NoteSessionService session)
+    {
+        Clef clef = session.NotationClef;
+        string instrumentId = session.Instrument;
+        int written = NoteSessionService.NoteNameToMidi("C4");
+        double hz = TunerReferenceNoteCatalog.ConcertFrequencyHz(written, 0);
+
+        string? saved = session.BeginPlaybackInstrumentOverride();
+        Assert.Null(saved);
+        Assert.Equal(instrumentId, session.Instrument);
+        Assert.Equal(clef, session.NotationClef);
+        Assert.Equal(0, session.InstrumentTransposeOffset);
+        Assert.Equal(hz, TunerReferenceNoteCatalog.ConcertFrequencyHz(written, session.InstrumentTransposeOffset));
+
+        session.EndPlaybackInstrumentOverride(saved);
+        Assert.Equal(instrumentId, session.Instrument);
+        Assert.Equal(clef, session.NotationClef);
     }
 
     private static void AssertPitchUnchanged(
