@@ -37,7 +37,8 @@ public static class PlaybackOnsetSchedule
     public static double OnsetAfterPause(double onsetMs, double pauseAtMs, double shiftMs)
         => onsetMs >= pauseAtMs - 0.0001 ? onsetMs + Math.Max(0.0, shiftMs) : onsetMs;
 
-    public static IReadOnlyList<PlaybackSlot> FromGenerated(IReadOnlyList<GeneratedNote> notes, int bpm)
+    public static IReadOnlyList<PlaybackSlot> FromGenerated(
+        IReadOnlyList<GeneratedNote> notes, int bpm, int transposeOffset)
     {
         var durations = new double[notes.Count];
         var rests = new bool[notes.Count];
@@ -45,14 +46,18 @@ public static class PlaybackOnsetSchedule
         for (int i = 0; i < notes.Count; i++)
         {
             durations[i] = notes[i].BeatDuration;
-            frequencies[i] = notes[i].TargetFrequency;
-            rests[i] = notes[i].IsRest || notes[i].TargetFrequency <= 0 || double.IsNaN(notes[i].TargetFrequency);
+            rests[i] = notes[i].IsRest || notes[i].MidiNumber <= 0;
+            // Written MIDI stays on the note. Sounding pitch adds the instrument offset once.
+            frequencies[i] = rests[i]
+                ? 0
+                : TunerReferenceNoteCatalog.ConcertFrequencyHz(notes[i].MidiNumber, transposeOffset);
         }
 
         return Build(durations, rests, frequencies, bpm);
     }
 
-    public static IReadOnlyList<PlaybackSlot> FromSessionNotes(IReadOnlyList<NoteInfo> notes, int bpm)
+    public static IReadOnlyList<PlaybackSlot> FromSessionNotes(
+        IReadOnlyList<NoteInfo> notes, int bpm, int transposeOffset)
     {
         var durations = new double[notes.Count];
         var rests = new bool[notes.Count];
@@ -60,8 +65,10 @@ public static class PlaybackOnsetSchedule
         for (int i = 0; i < notes.Count; i++)
         {
             durations[i] = notes[i].Duration?.ToBeatValue() ?? 1.0;
-            frequencies[i] = notes[i].TargetFreq;
-            rests[i] = notes[i].IsRest || notes[i].TargetFreq <= 0 || double.IsNaN(notes[i].TargetFreq);
+            rests[i] = notes[i].IsRest || notes[i].Midi <= 0;
+            frequencies[i] = rests[i]
+                ? 0
+                : TunerReferenceNoteCatalog.ConcertFrequencyHz(notes[i].Midi, transposeOffset);
         }
 
         return Build(durations, rests, frequencies, bpm);

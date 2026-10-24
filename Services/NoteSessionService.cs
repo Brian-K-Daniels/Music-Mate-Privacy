@@ -1297,28 +1297,13 @@ namespace musicmate.Services
         /// Does not change pitches, transposition, or the notes already on the staff.
         /// </summary>
         /// <summary>
-        /// Play may show a transposing instrument as Concert Pitch. Concert Pitch is
-        /// treble-only, so that swap is skipped when it would replace the clef the user
-        /// already selected (Double Bass or Bass Guitar in bass clef). Concert-pitch
-        /// instruments are left alone for the same reason. The instrument's transposition
-        /// and the notes already on the staff are not rewritten here.
-        /// Returns the instrument id to restore, or null when nothing changed.
+        /// Play keeps the selected instrument. Replacing it with Concert Pitch cleared
+        /// the transposition, so Guitar and the other transposing instruments sounded
+        /// at written pitch. The clef and the written notes stay as they are.
+        /// Returns null because nothing is changed.
         /// </summary>
         public string? BeginPlaybackInstrumentOverride()
-        {
-            if (InstrumentTransposeOffset == 0)
-                return null;
-
-            // NotationClef follows the current instrument. Concert Pitch cannot show a
-            // bass clef, so keep this instrument and the selected clef.
-            Clef selected = NotationClef;
-            if (ReadNotationClef(InstrumentCatalog.Resolve("concert-pitch")) != selected)
-                return null;
-
-            string saved = Instrument;
-            Instrument = "concert-pitch";
-            return saved;
-        }
+            => null;
 
         public void EndPlaybackInstrumentOverride(string? savedInstrumentId)
         {

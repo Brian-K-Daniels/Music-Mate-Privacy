@@ -110,15 +110,34 @@ public class ClefToggleTests : IDisposable
     }
 
     [Fact]
-    public void TransposingInstrument_StillUsesConcertPitchOnlyDuringPlayback()
+    public void TransposingInstrument_KeepsItsOffsetAndClefDuringPlayback()
     {
         var session = new NoteSessionService { Instrument = "bb-clarinet" };
         Assert.Equal(Clef.Treble, session.NotationClef);
+        Assert.Equal(-2, session.InstrumentTransposeOffset);
+        int written = NoteSessionService.NoteNameToMidi("C4");
+        session.NotesToDraw.Add(new NoteInfo
+        {
+            Midi = written,
+            Name = "C4",
+            TargetFreq = NoteSessionService.MidiToFreqPublic(written),
+        });
 
         string? saved = session.BeginPlaybackInstrumentOverride();
-        Assert.Equal("bb-clarinet", saved);
-        Assert.Equal("concert-pitch", session.Instrument);
+        Assert.Null(saved);
+        Assert.Equal("bb-clarinet", session.Instrument);
         Assert.Equal(Clef.Treble, session.NotationClef);
+        Assert.Equal(-2, session.InstrumentTransposeOffset);
+        Assert.Equal(written, session.NotesToDraw[0].Midi);
+        Assert.Equal("C4", session.NotesToDraw[0].Name);
+
+        var slots = PlaybackOnsetSchedule.FromSessionNotes(
+            session.NotesToDraw, session.Tempo, session.InstrumentTransposeOffset);
+        Assert.Equal(
+            TunerReferenceNoteCatalog.ConcertFrequencyHz(written, -2),
+            slots[0].FrequencyHz,
+            precision: 6);
+        Assert.Equal(written - 2, NoteSessionService.FrequencyToConcertMidi(slots[0].FrequencyHz));
 
         session.EndPlaybackInstrumentOverride(saved);
         Assert.Equal("bb-clarinet", session.Instrument);

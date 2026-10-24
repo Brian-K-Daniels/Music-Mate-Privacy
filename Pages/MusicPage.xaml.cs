@@ -5291,8 +5291,7 @@ namespace musicmate.Pages
             _suppressSessionRegenerate = true;
             try
             {
-                // Transposing instruments are shown as Concert Pitch during Play only when
-                // that keeps the selected clef. A bass clef stays on its own instrument.
+                // Keep the selected instrument so Play uses its transposition and clef.
                 _savedInstrumentIndexForPlayback = InstrumentPicker?.SelectedIndex ?? -1;
                 _savedInstrumentForPlayback = _session.BeginPlaybackInstrumentOverride();
                 if (_savedInstrumentForPlayback == null)
@@ -7614,11 +7613,13 @@ namespace musicmate.Pages
                 if (rhythmSeq != null && rhythmSeq.Count > 0)
                 {
                     PlaybackRhythmDiagnostics.LogRhythmSpan("sequence", rhythmSeq);
-                    slots = PlaybackOnsetSchedule.FromGenerated(rhythmSeq, bpm);
+                    slots = PlaybackOnsetSchedule.FromGenerated(
+                        rhythmSeq, bpm, _session.InstrumentTransposeOffset);
                 }
                 else if (_session.NotesToDraw.Count > 0)
                 {
-                    slots = PlaybackOnsetSchedule.FromSessionNotes(_session.NotesToDraw, bpm);
+                    slots = PlaybackOnsetSchedule.FromSessionNotes(
+                        _session.NotesToDraw, bpm, _session.InstrumentTransposeOffset);
                 }
                 else
                 {
