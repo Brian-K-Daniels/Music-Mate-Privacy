@@ -230,6 +230,34 @@ public class IntervalSingingTrainingLogicTests : IDisposable
     }
 
     [Theory]
+    [InlineData(IntervalSingingTrainingMode.SingInterval, "E4", "Correct — Major third (E4)")]
+    [InlineData(IntervalSingingTrainingMode.ImitateInterval, "E4", "Correct — Major third")]
+    [InlineData(IntervalSingingTrainingMode.HearAndIdentify, "Major third", "Correct — Major third")]
+    public void FormatCorrectResult_AlwaysIncludesIntervalName(
+        IntervalSingingTrainingMode mode, string label, string expected)
+    {
+        var pitches = new IntervalEarTrainingLogic.IntervalPitches(60, 64, 4, true);
+        Assert.Equal(expected, IntervalSingingTrainingLogic.FormatCorrectResult(mode, pitches, label));
+    }
+
+    [Fact]
+    public void KeepStatusOnReplay_AfterCorrectOrReveal_DoesNotReplaceIntervalName()
+    {
+        var pitches = new IntervalEarTrainingLogic.IntervalPitches(67, 74, 7, true);
+        string correct = IntervalSingingTrainingLogic.FormatCorrectResult(
+            IntervalSingingTrainingMode.HearAndIdentify, pitches);
+
+        Assert.Equal("Correct — Perfect fifth", correct);
+        Assert.True(IntervalSingingTrainingLogic.Shows(
+            IntervalSingingTrainingLogic.GetVisibleButtons(IntervalSingingTrainingMode.HearAndIdentify),
+            IntervalSingingTrainingLogic.VisibleButtons.HearAgain));
+        Assert.True(IntervalSingingTrainingLogic.KeepStatusOnReplay(succeeded: true, revealed: false));
+        Assert.True(IntervalSingingTrainingLogic.KeepStatusOnReplay(succeeded: false, revealed: true));
+        Assert.False(IntervalSingingTrainingLogic.KeepStatusOnReplay(succeeded: false, revealed: false));
+        Assert.NotEqual(IntervalSingingTrainingLogic.FormatIdentifyInstruction(), correct);
+    }
+
+    [Theory]
     [InlineData(IntervalSingingTrainingMode.SingInterval)]
     [InlineData(IntervalSingingTrainingMode.ImitateInterval)]
     [InlineData(IntervalSingingTrainingMode.HearAndIdentify)]

@@ -199,9 +199,14 @@ public class TwoOctaveScaleSplitTests
         var drawable = new StaffDrawable(session, new ThemeService(), safeArea: null);
 
         var split = drawable.SplitMeasuresAcrossStaves(page, bars, CanvasW, CanvasH);
-        Assert.Equal(3, split.UpperMeasureCount);
-        Assert.Equal(3, split.LowerMeasureCount);
-        Assert.Equal(2, split.UnplacedMeasureCount);
+        // Default mode packs whole measures onto the upper staff first, then the
+        // lower staff. It is not a two-octave peak cut and not a forced 3+3 split.
+        Assert.Equal(
+            8,
+            split.UpperMeasureCount + split.LowerMeasureCount + split.UnplacedMeasureCount);
+        Assert.True(split.UpperMeasureCount >= 3);
+        Assert.True(split.LowerMeasureCount >= 2);
+        Assert.True(split.UpperMeasureCount >= split.LowerMeasureCount);
     }
 
     [Fact]

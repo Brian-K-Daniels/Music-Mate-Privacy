@@ -15,6 +15,36 @@ public class ExtremeNoteNameLabelTests
     private const float MinClearance = StaffDrawable.NoteNameMinEdgeClearancePx;
 
     [Fact]
+    public void CurrentNoteNearStaffTop_AvoidsConductorCueByMovingBelow()
+    {
+        float staffTop = 80f, staffBot = 128f, noteR = 5f;
+        float noteY = staffTop;
+        float safeTop = 0f, safeBottom = 280f;
+
+        var preferred = StaffDrawable.ResolveNoteNameLabelLayout(
+            200f, noteY, noteR, staffTop, staffBot, safeTop, safeBottom);
+        Assert.Equal(StaffDrawable.NoteNameLabelSide.Above, preferred.Side);
+        Assert.True(StaffDrawable.NoteNameOverlapsConductorCue(preferred, staffTop, noteY, noteR));
+
+        var avoided = StaffDrawable.ResolveNoteNameLabelLayout(
+            200f, noteY, noteR, staffTop, staffBot, safeTop, safeBottom,
+            avoidConductorCue: true);
+        Assert.Equal(StaffDrawable.NoteNameLabelSide.Below, avoided.Side);
+        Assert.False(StaffDrawable.NoteNameOverlapsConductorCue(avoided, staffTop, noteY, noteR));
+        AssertLabelClearance(avoided, safeTop, safeBottom);
+        AssertNoNoteheadOverlap(avoided, 200f, noteY, noteR);
+    }
+
+    [Fact]
+    public void CurrentNoteWithoutAvoidFlag_StillUsesPreferredAbove()
+    {
+        float staffTop = 80f, staffBot = 128f, noteR = 5f;
+        var label = StaffDrawable.ResolveNoteNameLabelLayout(
+            200f, staffTop, noteR, staffTop, staffBot, 0f, 280f);
+        Assert.Equal(StaffDrawable.NoteNameLabelSide.Above, label.Side);
+    }
+
+    [Fact]
     public void OrdinaryMidStaffNote_KeepsPreferredOutsidePlacement()
     {
         // B4 at staff mid → prefer above (not below mid).

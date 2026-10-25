@@ -315,6 +315,7 @@ public class NoteOnGatingTests : IDisposable
             CooldownMs = 0,
         };
         session.Reset();
+        TimingTestSession.UseStrictTiming(session);
         session.Tune = "Tuner";
         session.Instrument = "concert-pitch";
         session.CooldownMs = 0;

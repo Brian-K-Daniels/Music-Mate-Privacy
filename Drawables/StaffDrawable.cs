@@ -1537,6 +1537,11 @@ namespace musicmate.Drawables
         private const float NoteNameAboveGap = 15f;
         private const float NoteNameBelowGap = 5f;
         private const float NoteNameBesideGap = 4f;
+        internal const float ConductorArrowHeight = 8f;
+        internal const float ConductorArrowWing = 8f;
+        internal const float ConductorArrowClearance = 2f;
+        internal const float ConductorTipStaffOffset = 1f;
+        internal const float ConductorLabelClearance = 2f;
 
         internal enum NoteNameLabelSide
         {
@@ -5526,9 +5531,15 @@ namespace musicmate.Drawables
                         && (nameDisplay == "All notes"
                             || (nameDisplay == "Current only" && state == StaffNoteState.Current));
                     if (showName)
+                    {
+                        bool avoidConductor = state == StaffNoteState.Current
+                            && _session.ShowConductorCues
+                            && _session.Tune != "Tuner"
+                            && !SingleStaffLayout;
                         DrawNoteName(
                             canvas, note, layout.X, ny, staffTop, staffBot, ink, fadeAlpha,
-                            dirtyRect.Y, dirtyRect.Y + dirtyRect.Height);
+                            dirtyRect.Y, dirtyRect.Y + dirtyRect.Height, avoidConductor);
+                    }
                 }
 
                 prevBeat = beat;
@@ -5840,14 +5851,13 @@ namespace musicmate.Drawables
             float? highestNoteHeadTop = null)
         {
             // Major (current-beat) cue only — minor beat markers were removed.
-            const float wing = 8.0f;
-            const float height = 8f;
-            float tipY = staffTop - 1f;
+            float wing = ConductorArrowWing;
+            float height = ConductorArrowHeight;
+            float tipY = staffTop - ConductorTipStaffOffset;
 
             // If the note head sits above the normal cue tip, park the tip just above the head.
-            const float clearance = 2f;
             if (highestNoteHeadTop.HasValue && highestNoteHeadTop.Value < tipY)
-                tipY = highestNoteHeadTop.Value - clearance;
+                tipY = highestNoteHeadTop.Value - ConductorArrowClearance;
 
             float baseY = tipY - height;
 
@@ -7097,7 +7107,7 @@ namespace musicmate.Drawables
 
         private void DrawNoteName(ICanvas canvas, GeneratedNote note, float x, float ny,
                                    float staffTop, float staffBot, Color ink, byte fadeAlpha,
-                                   float safeTop, float safeBottom)
+                                   float safeTop, float safeBottom, bool avoidConductorCue = false)
         {
             canvas.SaveState();
             try
@@ -7107,7 +7117,8 @@ namespace musicmate.Drawables
                 canvas.FontSize = 11f * nameScale;
                 var label = ResolveNoteNameLabelLayout(
                     x, ny, _layout.NoteHeadR, staffTop, staffBot,
-                    safeTop, safeBottom, NoteNameMinEdgeClearancePx, nameScale);
+                    safeTop, safeBottom, NoteNameMinEdgeClearancePx, nameScale,
+                    avoidConductorCue);
                 canvas.DrawString(
                     _session.WrittenNameForStaffLabel(note),
                     label.X, label.Y, label.Width, label.Height,
@@ -7122,6 +7133,29 @@ namespace musicmate.Drawables
         /// then beside the notehead if neither vertical side is safe.
         /// Does not move the note itself.
         /// </summary>
+        /// <summary>
+        /// Vertical band occupied by the red conductor chevron, matching
+        /// <see cref="DrawConductorArrow"/>.
+        /// </summary>
+        internal static (float Top, float Bottom) ResolveConductorCueVerticalBand(
+            float staffTop, float noteY, float noteHeadR)
+        {
+            float tipY = staffTop - ConductorTipStaffOffset;
+            float headTop = noteY - noteHeadR;
+            if (headTop < tipY)
+                tipY = headTop - ConductorArrowClearance;
+            float top = tipY - ConductorArrowHeight - ConductorLabelClearance;
+            float bottom = tipY + ConductorLabelClearance;
+            return (top, bottom);
+        }
+
+        internal static bool NoteNameOverlapsConductorCue(
+            NoteNameLabelLayout label, float staffTop, float noteY, float noteHeadR)
+        {
+            var (top, bottom) = ResolveConductorCueVerticalBand(staffTop, noteY, noteHeadR);
+            return label.Y < bottom && label.Y + label.Height > top;
+        }
+
         internal static NoteNameLabelLayout ResolveNoteNameLabelLayout(
             float noteX,
             float noteY,
@@ -7131,7 +7165,8 @@ namespace musicmate.Drawables
             float safeTop,
             float safeBottom,
             float minEdgeClearance = NoteNameMinEdgeClearancePx,
-            float sizeScale = 1f)
+            float sizeScale = 1f,
+            bool avoidConductorCue = false)
         {
             float scale = sizeScale > 0.01f ? sizeScale : 1f;
             float labelW = NoteNameLabelWidth * scale;
@@ -7143,10 +7178,17 @@ namespace musicmate.Drawables
             float belowY = noteY + noteHeadR + belowGap;
             float mid = (staffTop + staffBot) / 2f;
             bool preferBelow = noteY > mid;
+            var (cueTop, cueBottom) = ResolveConductorCueVerticalBand(staffTop, noteY, noteHeadR);
+
+            bool OverlapsConductor(float labelY)
+                => avoidConductorCue
+                   && labelY < cueBottom
+                   && labelY + labelH > cueTop;
 
             bool FitsVertically(float labelY)
                 => labelY >= safeTop + minEdgeClearance
-                   && labelY + labelH <= safeBottom - minEdgeClearance;
+                   && labelY + labelH <= safeBottom - minEdgeClearance
+                   && !OverlapsConductor(labelY);
 
             if (preferBelow)
             {

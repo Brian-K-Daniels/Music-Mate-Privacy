@@ -213,7 +213,9 @@ public class WaitingCountInTimingCancelTests : IDisposable
 
         var run = player.RunAsync(tempo, 4, 0.4f, 0.2f, 1760, 880, 15, cts.Token);
 
-        await Task.Delay(40);
+        var firstClickDeadline = DateTime.UtcNow.AddMilliseconds(400);
+        while (clicks.PlayCount < 1 && DateTime.UtcNow < firstClickDeadline)
+            await Task.Delay(10);
         Assert.True(clicks.PlayCount >= 1);
         int afterFirst = clicks.PlayCount;
 

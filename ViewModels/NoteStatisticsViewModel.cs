@@ -501,7 +501,7 @@ namespace musicmate.ViewModels
         }
 
         private string _selectedDatabase = NormalizeSelectedDatabase(
-            Preferences.Get("musicmate.SelectedStatsDb", "Note"));
+            SessionPreferences.Get("musicmate.SelectedStatsDb", "Note"));
 
         public string SelectedDatabase
         {
@@ -512,7 +512,7 @@ namespace musicmate.ViewModels
                 if (_selectedDatabase != value)
                 {
                     _selectedDatabase = value;
-                    Preferences.Set("musicmate.SelectedStatsDb", value);
+                    SessionPreferences.Set("musicmate.SelectedStatsDb", value);
                     OnPropertyChanged(nameof(SelectedDatabase));
                     OnPropertyChanged(nameof(IsNoteDatabase));
                     OnPropertyChanged(nameof(IsSessionDatabase));

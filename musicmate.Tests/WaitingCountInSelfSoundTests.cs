@@ -214,7 +214,7 @@ public class WaitingCountInSelfSoundTests : IDisposable
     [Fact]
     public void ExactSamePitchAsCountInTone_StillSuppressedDuringClick()
     {
-        var session = CreateSessionWithFirstMidi(81); // A6 == default accented Count-In Hz
+        var session = CreateSessionWithFirstMidi(93); // A6 == default accented Count-In Hz (MIDI 93)
         session.StartListeningClock();
         session.SuppressCountInClickSelfSound(clickDurationMs: 150);
 
@@ -259,6 +259,7 @@ public class WaitingCountInSelfSoundTests : IDisposable
             PitchWindowSize = 4096,
         };
         session.Reset();
+        TimingTestSession.UseStrictTiming(session);
         session.Tune = "Selected Scale";
         session.Instrument = "concert-pitch";
         session.CooldownMs = 0;

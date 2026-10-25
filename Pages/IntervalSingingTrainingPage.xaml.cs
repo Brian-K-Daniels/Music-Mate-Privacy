@@ -765,15 +765,15 @@ namespace musicmate.Pages
 
             if (_mode == IntervalSingingTrainingMode.HearAndIdentify)
             {
-                StatusLabel.Text = IntervalSingingTrainingLogic.FormatIdentifyInstruction();
+                if (!IntervalSingingTrainingLogic.KeepStatusOnReplay(_succeeded, _revealed))
+                    StatusLabel.Text = IntervalSingingTrainingLogic.FormatIdentifyInstruction();
                 if (!replay)
                     SetState(IntervalSingingExerciseState.WaitingForSinger);
                 ApplyStaffForState();
                 await PlayPitchesAsync(pitches, startOnly: false);
                 _gate.PlaybackActive = false;
                 if (_mode == IntervalSingingTrainingMode.HearAndIdentify
-                    && !_succeeded
-                    && !_revealed)
+                    && !IntervalSingingTrainingLogic.KeepStatusOnReplay(_succeeded, _revealed))
                 {
                     SetState(IntervalSingingExerciseState.WaitingForSinger);
                     StatusLabel.Text = "Which interval was that?";
@@ -784,9 +784,12 @@ namespace musicmate.Pages
             }
 
             bool startOnly = _mode == IntervalSingingTrainingMode.SingInterval;
-            StatusLabel.Text = _mode == IntervalSingingTrainingMode.ImitateInterval
-                ? IntervalSingingTrainingLogic.FormatImitateInstruction(pitches)
-                : IntervalSingingTrainingLogic.FormatSingInstruction(pitches);
+            if (!IntervalSingingTrainingLogic.KeepStatusOnReplay(_succeeded, _revealed))
+            {
+                StatusLabel.Text = _mode == IntervalSingingTrainingMode.ImitateInterval
+                    ? IntervalSingingTrainingLogic.FormatImitateInstruction(pitches)
+                    : IntervalSingingTrainingLogic.FormatSingInstruction(pitches);
+            }
             ApplyStaffForState();
             await PlayPitchesAsync(pitches, startOnly);
             _gate.PlaybackActive = false;
@@ -1017,10 +1020,7 @@ namespace musicmate.Pages
                 ? IntervalSingingExerciseState.Revealed
                 : IntervalSingingExerciseState.Correct);
             ApplyStaffForState();
-            StatusLabel.Text = IntervalSingingTrainingLogic.FormatPitchFeedback(
-                SungPitchVerdict.Correct, label);
-            if (_mode == IntervalSingingTrainingMode.ImitateInterval)
-                StatusLabel.Text = $"Correct — {IntervalEarTrainingCatalog.GetName(pitches.Semitones)}";
+            StatusLabel.Text = IntervalSingingTrainingLogic.FormatCorrectResult(_mode, pitches, label);
             UpdateActionButtons();
         }
 

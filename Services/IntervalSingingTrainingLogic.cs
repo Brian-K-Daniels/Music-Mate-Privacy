@@ -353,6 +353,28 @@ namespace musicmate.Services
             => "Listen, then tap the interval you heard.";
 
         /// <summary>
+        /// After a correct answer or reveal, Hear Again must not replace the status
+        /// that already shows the interval name.
+        /// </summary>
+        public static bool KeepStatusOnReplay(bool succeeded, bool revealed)
+            => succeeded || revealed;
+
+        /// <summary>
+        /// Status after a correct answer. Always keeps the interval name visible.
+        /// </summary>
+        public static string FormatCorrectResult(
+            IntervalSingingTrainingMode mode,
+            IntervalEarTrainingLogic.IntervalPitches pitches,
+            string? writtenTargetLabel = null)
+        {
+            string name = IntervalEarTrainingCatalog.GetName(pitches.Semitones);
+            if (mode == IntervalSingingTrainingMode.SingInterval
+                && !string.IsNullOrWhiteSpace(writtenTargetLabel))
+                return $"Correct — {name} ({writtenTargetLabel.Trim()})";
+            return $"Correct — {name}";
+        }
+
+        /// <summary>
         /// True when the singing-training staff should engrave the interval's two target notes.
         /// In Sing Interval mode the staff stays empty until the singer succeeds or taps Reveal.
         /// </summary>

@@ -384,6 +384,7 @@ public class PauseResumeTimingTests : IDisposable
             ChildLevel = 1,
         };
         session.Reset();
+        TimingTestSession.UseStrictTiming(session);
         session.Tune = "Selected Scale";
         session.Instrument = "concert-pitch";
         session.CooldownMs = 0;

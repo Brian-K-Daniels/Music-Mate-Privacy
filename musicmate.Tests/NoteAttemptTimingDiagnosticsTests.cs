@@ -104,6 +104,7 @@ public class NoteAttemptTimingDiagnosticsTests
             ChildLevel = 1,
         };
         session.Reset();
+        TimingTestSession.UseStrictTiming(session);
         session.Tune = "Selected Scale";
         session.Instrument = "concert-pitch";
         session.Tempo = bpm;

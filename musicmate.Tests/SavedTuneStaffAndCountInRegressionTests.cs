@@ -218,7 +218,7 @@ public class SavedTuneStaffAndCountInRegressionTests : IDisposable
     // ── Problem 2: Count-In / cue self-sound ───────────────────────────────
 
     [Fact]
-    public void MatchingPitch_DuringCountInSelfSoundWindow_BlocksWhenSamePitchClassAsClick()
+    public void MatchingPitch_DuringCountInSelfSoundWindow_AcceptsPlayerNoteTwoOctavesBelowClick()
     {
         var session = CreateSessionFirstMidi(64); // E4 — same pitch class as default unaccented E6 click
         session.StartListeningClock();
@@ -229,13 +229,15 @@ public class SavedTuneStaffAndCountInRegressionTests : IDisposable
         double freq = NoteSessionService.MidiToFreqPublic(64);
         var result = session.Evaluate(freq);
         Assert.True(result.correct);
-        Assert.False(
+        // E4 is two octaves below the E6 unaccented click. Click bleed is only
+        // rejected within one octave of the beep so a real player note can start
+        // Count-In on the beat.
+        Assert.True(
             WaitingCountInLogic.ShouldAcceptFirstNoteToEndCountIn(
                 result.correct, true, 0, session.ShouldIgnoreAudio(DateTime.UtcNow),
                 heardHz: freq,
                 accentedClickHz: WaitingCountInSettings.DefaultAccentedPitchHz,
                 unaccentedClickHz: WaitingCountInSettings.DefaultUnaccentedPitchHz));
-        Assert.Equal(0, session.CurrentNoteIndex);
     }
 
     [Fact]
@@ -439,6 +441,7 @@ public class SavedTuneStaffAndCountInRegressionTests : IDisposable
             PitchWindowSize = 4096,
         };
         session.Reset();
+        TimingTestSession.UseStrictTiming(session);
         session.Tune = "Practice Tune";
         session.Instrument = "concert-pitch";
         session.CooldownMs = 0;

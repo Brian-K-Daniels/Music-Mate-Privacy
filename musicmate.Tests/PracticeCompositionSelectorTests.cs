@@ -91,9 +91,28 @@ public class PracticeCompositionSelectorTests
             ChildLevel = 1,
         };
 
-        Assert.True(PracticeCompositionSelector.ShouldPreferRandomToAvoidFixedRepeat(session));
+        // Levels 1–15 allow Major and Major Pentatonic, so a rejected scale walk
+        // can still vary. Do not force Random.
+        Assert.True(ChildLevelProgression.HasMultipleScaleWalkIdentities(1));
+        Assert.False(PracticeCompositionSelector.ShouldPreferRandomToAvoidFixedRepeat(session));
 
         session.IsRandomMode = true;
         Assert.False(PracticeCompositionSelector.ShouldPreferRandomToAvoidFixedRepeat(session));
+    }
+
+    [Fact]
+    public void ShouldPreferRandomToAvoidFixedRepeat_SingleArpeggioIdentity()
+    {
+        var session = new NoteSessionService
+        {
+            Tune = "Arpeggio",
+            IsRandomMode = false,
+            ChildLevel = 1,
+        };
+
+        bool singlePattern = ArpeggioCatalog.GetAvailablePatterns(1).Count <= 1;
+        Assert.Equal(
+            singlePattern,
+            PracticeCompositionSelector.ShouldPreferRandomToAvoidFixedRepeat(session));
     }
 }

@@ -79,8 +79,10 @@ public class FirstNoteStaffColorRegressionTests
         var result = session.Evaluate(Freq(60));
         Assert.True(session.UpdateFeedbackForCurrent(Freq(60), result));
 
+        // Five seconds of silence is a pause-worthy gap. The first note rebases
+        // instead of being scored Late, and later notes must not turn red.
         Assert.Equal(1, session.CurrentNoteIndex);
-        AssertWrongOnlyAt(session, 0);
+        Assert.Contains(0, session.CorrectNoteIndices);
         for (int i = 1; i < 5; i++)
             AssertNoWrongFeedback(session, i);
     }
@@ -398,6 +400,7 @@ public class FirstNoteStaffColorRegressionTests
             ChildLevel = 1,
         };
         session.Reset();
+        TimingTestSession.UseStrictTiming(session);
         session.Tune = "Selected Scale";
         session.Instrument = "concert-pitch";
         session.CooldownMs = 0;
@@ -442,6 +445,7 @@ public class FirstNoteStaffColorRegressionTests
             ChildLevel = 1,
         };
         session.Reset();
+        TimingTestSession.UseStrictTiming(session);
         session.Tune = "Practice Tune";
         session.Instrument = "concert-pitch";
         session.CooldownMs = 0;
@@ -486,6 +490,7 @@ public class FirstNoteStaffColorRegressionTests
             ChildLevel = 1,
         };
         session.Reset();
+        TimingTestSession.UseStrictTiming(session);
         session.Tune = "Selected Scale";
         session.Instrument = "concert-pitch";
         session.CooldownMs = 0;
@@ -532,6 +537,7 @@ public class FirstNoteStaffColorRegressionTests
             ChildLevel = 1,
         };
         session.Reset();
+        TimingTestSession.UseStrictTiming(session);
         session.Tune = "Practice Tune";
         session.Instrument = "concert-pitch";
         session.CooldownMs = 0;
