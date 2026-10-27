@@ -3,7 +3,8 @@
     Play Console native debug symbols for .NET MAUI Android Release.
     The .NET Android SDK (36.1.x) does not emit native-debug-symbols.zip
     and does not embed BUNDLE-METADATA/com.android.tools.build.debugsymbols.
-    This target only archives .so files from the already-signed package.
+    This target packs only this build's unstripped libxamarin-app.dbg.so
+    files (renamed to libxamarin-app.so) from the same signed package.
     It does not change R8, trimming, AOT, ABIs, billing, or signing.
   -->
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-android' and '$(Configuration)' == 'Release'">
