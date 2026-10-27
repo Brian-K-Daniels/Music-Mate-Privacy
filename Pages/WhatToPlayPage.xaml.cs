@@ -759,8 +759,10 @@ namespace musicmate.Pages
                     onDecline: RevertScalesPickerSelection);
 
                 if (!purchased)
-
+                {
+                    RevertScalesPickerSelection();
                     return;
+                }
 
             }
 

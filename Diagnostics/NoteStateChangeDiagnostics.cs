@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
 using musicmate.Drawables;
 
 namespace musicmate.Diagnostics;
@@ -15,10 +16,18 @@ public static class NoteStateChangeDiagnostics
     public const string Tag = "[NoteStateDiag]";
 
     private static readonly object Gate = new();
+    private static readonly AsyncLocal<Action<string>?> TestSinkLocal = new();
     private static string? _logFilePath;
 
-    /// <summary>Test hook: capture lines without writing files.</summary>
-    internal static Action<string>? TestSink { get; set; }
+    /// <summary>
+    /// Test hook: capture lines without writing files.
+    /// Stored in <see cref="AsyncLocal{T}"/> so parallel tests cannot share a sink.
+    /// </summary>
+    internal static Action<string>? TestSink
+    {
+        get => TestSinkLocal.Value;
+        set => TestSinkLocal.Value = value;
+    }
 
     /// <summary>Absolute path to the rolling diagnostic log file (DEBUG builds).</summary>
     public static string LogFilePath
@@ -384,9 +393,10 @@ public static class NoteStateChangeDiagnostics
 
     private static void Write(string line)
     {
-        if (TestSink != null)
+        var sink = TestSink;
+        if (sink != null)
         {
-            TestSink(line);
+            sink(line);
             return;
         }
 

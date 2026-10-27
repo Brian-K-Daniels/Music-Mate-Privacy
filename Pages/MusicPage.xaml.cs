@@ -9526,7 +9526,10 @@ namespace musicmate.Pages
                 var purchased = await PremiumPromptHelper.ShowAsync(this,
                     onDecline: () => ScaleTunePicker.SelectedIndex = _lastValidScaleTuneIndex);
                 if (!purchased)
+                {
+                    ScaleTunePicker.SelectedIndex = _lastValidScaleTuneIndex;
                     return;
+                }
             }
 
             _lastValidScaleTuneIndex = sourcePicker.SelectedIndex;
@@ -9596,12 +9599,16 @@ namespace musicmate.Pages
 
             if (IsPremiumKey(shortKey) && !StatusService.Instance.IsPremiumUser)
             {
-                // onDecline: revert picker to last free key before closing the popup
+                // onDecline / failed purchase: revert picker so it cannot show E
+                // while session.Key stays on the last free key.
                 var purchased = await PremiumPromptHelper.ShowAsync(this,
                     onDecline: () => KeyPicker.SelectedIndex = _lastFreeKeyIndex);
 
                 if (!purchased)
+                {
+                    KeyPicker.SelectedIndex = _lastFreeKeyIndex;
                     return;
+                }
 
                 // Premium just purchased — allow the key through
             }

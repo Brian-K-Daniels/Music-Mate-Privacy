@@ -117,7 +117,10 @@ namespace musicmate.Pages
                         onDecline: () => picker.SelectedIndex = _lastFreeHighestIndex);
 
                     if (!purchased)
+                    {
+                        picker.SelectedIndex = _lastFreeHighestIndex;
                         return;
+                    }
 
                     _lastFreeHighestIndex = selIdx;
                 }
@@ -147,7 +150,10 @@ namespace musicmate.Pages
                         onDecline: () => picker.SelectedIndex = _lastFreeLowestIndex);
 
                     if (!purchased)
+                    {
+                        picker.SelectedIndex = _lastFreeLowestIndex;
                         return;
+                    }
 
                     _lastFreeLowestIndex = selIdx;
                 }

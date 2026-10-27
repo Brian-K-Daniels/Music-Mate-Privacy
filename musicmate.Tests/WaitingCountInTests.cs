@@ -368,6 +368,8 @@ public class WaitingCountInPlayerTests : IDisposable
         const int measureCount = 3;
         int beatCount = beatsPerMeasure * measureCount;
         // High-tempo spacing is still even if Windows timer jitter is a few extra ms.
+        // This bound is scheduler error against the post-warmup grid, not the
+        // player's pre-grid Task.Delay(1) (see InstantCountInClickService.Warmup).
         int toleranceMs = tempoBpm >= 150 ? 30 : 25;
 
         var run = player.RunAsync(tempoBpm, beatsPerMeasure, 0.4f, 0.2f, 1760, 880, 20, cts.Token);
@@ -460,6 +462,10 @@ public class WaitingCountInPlayerTests : IDisposable
         {
             _ = (accentedPitchHz, accentedVolume, unaccentedPitchHz, unaccentedVolume, durationMs);
             Interlocked.Increment(ref WarmupCount);
+            // The player starts its beat grid immediately after Warmup. Restart
+            // here so AllPlayTimesMs is not charged for RunAsync's pre-grid
+            // Task.Delay(1), which Windows often stretches to 15–32 ms under load.
+            _clock.Restart();
         }
 
         public Task PlayClickAsync(

@@ -20,9 +20,9 @@
     <Configurations>Debug;Release;LocalRelease</Configurations>
 
     <!-- Versions -->
-    <ApplicationDisplayVersion>1.31</ApplicationDisplayVersion>
-    <ApplicationVersion>31</ApplicationVersion>
-    <PackageVersion>1.31</PackageVersion>
+    <ApplicationDisplayVersion>1.33</ApplicationDisplayVersion>
+    <ApplicationVersion>33</ApplicationVersion>
+    <PackageVersion>1.33</PackageVersion>
 
     <WindowsPackageType>None</WindowsPackageType>
     <AllowUnsafeBlocks Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">true</AllowUnsafeBlocks>
@@ -184,6 +184,8 @@
       <Generator>MSBuild:Compile</Generator>
     </MauiXaml>
   </ItemGroup>
+
+  <Import Project="Platforms\Android\AndroidNativeDebugSymbols.targets" />
 
   <!-- Inject git commit + UTC build timestamp into BuildIdentificationMetadata.g.cs -->
   <Target Name="GenerateBuildIdentification" BeforeTargets="CoreCompile">

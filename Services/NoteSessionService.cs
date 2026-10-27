@@ -1836,11 +1836,13 @@ namespace musicmate.Services
 
             // Explicit Named scale from What To Play keeps the user's key; only Assortment by Level /
             // Random (and composition) should draw a fresh key from the level pool.
-            string newKey;
-            if (ScaleSelectionMode == ScaleSelectionMode.Named
+            bool honorNamedKey = ScaleSelectionMode == ScaleSelectionMode.Named
                 && string.Equals(Tune, "Selected Scale", StringComparison.Ordinal)
                 && !IsRandomMode
-                && !string.IsNullOrWhiteSpace(oldKey))
+                && !string.IsNullOrWhiteSpace(oldKey);
+
+            string newKey;
+            if (honorNamedKey)
             {
                 newKey = oldKey;
             }
@@ -1850,9 +1852,11 @@ namespace musicmate.Services
                     Tune ?? string.Empty, CurrentTune, newScale, keyPoolLevel, rng, preservedKey: oldKey);
             }
 
-            // Final validation before generation: never keep a key above the level's
-            // permitted difficulty (Practice Tune authored keys are exempt).
-            if (!string.Equals(Tune, "Practice Tune", StringComparison.Ordinal))
+            // Level-difficulty substitution must not override an explicit Named key
+            // (or a Practice Tune authored key). That was replacing E Major at L31
+            // with G after Go, while the picker still said E.
+            if (!string.Equals(Tune, "Practice Tune", StringComparison.Ordinal)
+                && !honorNamedKey)
             {
                 newKey = KeyDifficultyRules.EnsureKeyAllowedAtLevel(
                     newKey, newScale, keyPoolLevel, rng);

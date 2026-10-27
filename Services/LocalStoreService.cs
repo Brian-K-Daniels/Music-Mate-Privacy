@@ -22,12 +22,12 @@ namespace musicmate.Services
             return Task.FromResult<bool?>(val);
         }
 
-        public Task<bool> PurchaseAsync(string productId)
+        public Task<StorePurchaseResult> PurchaseAsync(string productId)
         {
             // Simulate a successful one-time purchase and persist locally
             Preferences.Set(PremiumProduct.PreferenceKey, true);
             StatusService.Instance.IsPremiumUser = true;
-            return Task.FromResult(true);
+            return Task.FromResult(StorePurchaseResult.Success());
         }
 
         public Task<bool> RestorePurchasesAsync()

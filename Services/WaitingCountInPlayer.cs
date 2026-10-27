@@ -21,6 +21,18 @@ namespace musicmate.Services
         private int _activeLoopId;
         private string _activeSource = "COUNTIN";
 
+        private static readonly AsyncLocal<Func<Stopwatch, double, CancellationToken, Task>?> WaitUntilOverrideLocal = new();
+
+        /// <summary>
+        /// Test hook that replaces wall-clock waiting. Stored in <see cref="AsyncLocal{T}"/>
+        /// so parallel tests cannot share a wait strategy.
+        /// </summary>
+        internal static Func<Stopwatch, double, CancellationToken, Task>? WaitUntilOverrideForTests
+        {
+            get => WaitUntilOverrideLocal.Value;
+            set => WaitUntilOverrideLocal.Value = value;
+        }
+
         public WaitingCountInPlayer(ICountInClickService clicks)
         {
             _clicks = clicks;
@@ -317,6 +329,13 @@ namespace musicmate.Services
         /// </summary>
         internal static async Task WaitUntilAsync(Stopwatch clock, double targetMs, CancellationToken ct)
         {
+            var testWait = WaitUntilOverrideForTests;
+            if (testWait != null)
+            {
+                await testWait(clock, targetMs, ct).ConfigureAwait(false);
+                return;
+            }
+
             while (true)
             {
                 ct.ThrowIfCancellationRequested();

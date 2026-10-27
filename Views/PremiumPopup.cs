@@ -1,7 +1,6 @@
 using CommunityToolkit.Maui.Views;
 using Microsoft.Maui.Controls.Shapes;
 using musicmate.Services;
-using musicmate.Utilities;
 
 namespace musicmate.Views;
 
@@ -13,6 +12,11 @@ public class PremiumPopup : Popup
 
     private readonly IStoreService? _storeService;
     private readonly Action? _onDecline;
+    private readonly Label _errorLabel;
+    private readonly Button _buyButton;
+    private readonly Border _chrome;
+    private readonly double _baseHeight;
+    private bool _purchaseInProgress;
 
     /// <param name="onDecline">
     /// Optional action invoked when the user taps "No thanks, continue free".
@@ -28,7 +32,7 @@ public class PremiumPopup : Popup
         double density = info.Density > 0 ? info.Density : 1;
         double screenW = info.Width / density;
         double popupW = Math.Min(screenW * 0.82, 480);
-        const double popupH = 280;   // raised to give button rows room for descenders
+        const double popupH = 320;
 
         var titleLabel = new Label
         {
@@ -50,7 +54,19 @@ public class PremiumPopup : Popup
             VerticalOptions = LayoutOptions.Center
         };
 
-        var buyButton = new Button
+        _errorLabel = new Label
+        {
+            Text = "",
+            FontSize = 11,
+            TextColor = Color.FromArgb("#FFB4B4"),
+            HorizontalOptions = LayoutOptions.Center,
+            HorizontalTextAlignment = TextAlignment.Center,
+            VerticalOptions = LayoutOptions.Center,
+            LineBreakMode = LineBreakMode.WordWrap,
+            IsVisible = false
+        };
+
+        _buyButton = new Button
         {
             Text = "Buy Premium",
             BackgroundColor = Color.FromArgb("#8B4513"),
@@ -58,11 +74,11 @@ public class PremiumPopup : Popup
             CornerRadius = 6,
             FontAttributes = FontAttributes.Bold,
             FontSize = 13,
-            Padding = new Thickness(10, 10),  // vertical padding keeps descenders clear
+            Padding = new Thickness(10, 10),
             HorizontalOptions = LayoutOptions.Fill,
             VerticalOptions = LayoutOptions.Fill
         };
-        buyButton.Clicked += OnBuyPremiumClicked;
+        _buyButton.Clicked += OnBuyPremiumClicked;
 
         var declineButton = new Button
         {
@@ -73,7 +89,7 @@ public class PremiumPopup : Popup
             BorderWidth = 1,
             CornerRadius = 6,
             FontSize = 12,
-            Padding = new Thickness(10, 10),  // vertical padding keeps descenders clear
+            Padding = new Thickness(10, 10),
             HorizontalOptions = LayoutOptions.Fill,
             VerticalOptions = LayoutOptions.Fill
         };
@@ -84,30 +100,30 @@ public class PremiumPopup : Popup
             RowSpacing = 0,
             RowDefinitions =
             {
-                new RowDefinition { Height = GridLength.Star    }, // row 0 – top gap
-                new RowDefinition { Height = GridLength.Auto    }, // row 1 – title
-                new RowDefinition { Height = GridLength.Star    }, // row 2 – gap
-                new RowDefinition { Height = GridLength.Auto    }, // row 3 – subtitle
-                new RowDefinition { Height = GridLength.Star    }, // row 4 – gap
-                new RowDefinition { Height = new GridLength(52) }, // row 5 – Buy Premium
-                new RowDefinition { Height = GridLength.Star    }, // row 6 – gap
-                new RowDefinition { Height = new GridLength(52) }, // row 7 – Decline
+                new RowDefinition { Height = GridLength.Star    },
+                new RowDefinition { Height = GridLength.Auto    },
+                new RowDefinition { Height = GridLength.Star    },
+                new RowDefinition { Height = GridLength.Auto    },
+                new RowDefinition { Height = GridLength.Auto    },
+                new RowDefinition { Height = GridLength.Star    },
+                new RowDefinition { Height = new GridLength(52) },
+                new RowDefinition { Height = GridLength.Star    },
+                new RowDefinition { Height = new GridLength(52) },
 #if DEBUG || LOCAL_RELEASE
-                new RowDefinition { Height = GridLength.Star    }, // row 8 – gap (stub only)
-                new RowDefinition { Height = new GridLength(44) }, // row 9 – Restore (stub only)
+                new RowDefinition { Height = GridLength.Star    },
+                new RowDefinition { Height = new GridLength(44) },
 #endif
-                new RowDefinition { Height = GridLength.Star    }, // bottom gap
+                new RowDefinition { Height = GridLength.Star    },
             }
         };
 
         grid.Add(titleLabel, column: 0, row: 1);
         grid.Add(subtitleLabel, column: 0, row: 3);
-        grid.Add(buyButton, column: 0, row: 5);
-        grid.Add(declineButton, column: 0, row: 7);
+        grid.Add(_errorLabel, column: 0, row: 4);
+        grid.Add(_buyButton, column: 0, row: 6);
+        grid.Add(declineButton, column: 0, row: 8);
 
 #if DEBUG || LOCAL_RELEASE
-        // Stub builds – "Restore Purchases" resets the local premium flag so you
-        // can test the flow repeatedly without uninstalling.
         var restoreButton = new Button
         {
             Text = "🔄 Restore Purchases (debug)",
@@ -122,12 +138,14 @@ public class PremiumPopup : Popup
             VerticalOptions = LayoutOptions.Fill
         };
         restoreButton.Clicked += OnRestoreClicked;
-        grid.Add(restoreButton, column: 0, row: 9);
+        grid.Add(restoreButton, column: 0, row: 10);
 
-        double debugPopupH = popupH + 60;   // extra height for the extra button
+        _baseHeight = popupH + 60;
+#else
+        _baseHeight = popupH;
 #endif
 
-        Content = new Border
+        _chrome = new Border
         {
             BackgroundColor = Color.FromArgb("#1E1E1E"),
             Stroke = Color.FromArgb("#8B4513"),
@@ -135,32 +153,56 @@ public class PremiumPopup : Popup
             StrokeShape = new RoundRectangle { CornerRadius = new CornerRadius(10) },
             Padding = new Thickness(20, 14),
             WidthRequest = popupW,
-#if DEBUG || LOCAL_RELEASE
-            HeightRequest = debugPopupH,
-#else
-            HeightRequest   = popupH,
-#endif
+            HeightRequest = _baseHeight,
             Content = grid
         };
+        Content = _chrome;
     }
 
     private async void OnBuyPremiumClicked(object? sender, EventArgs e)
     {
-        if (_storeService != null)
+        if (_purchaseInProgress)
+            return;
+
+        _purchaseInProgress = true;
+        _buyButton.IsEnabled = false;
+        try
         {
-            var purchased = await _storeService.PurchaseAsync(PremiumProduct.Id);
-            if (purchased)
+            if (_storeService == null)
+            {
+                ShowError("Google Play Billing is not available in this build.");
+                return;
+            }
+
+            var result = await _storeService.PurchaseAsync(PremiumProduct.Id);
+            if (result.Succeeded)
             {
                 StatusService.Instance.IsPremiumUser = true;
                 PurchaseResult = true;
+                await SafeCloseAsync();
+                return;
             }
+
+            if (result.ShouldShowError)
+                ShowError(result.UserMessage!);
         }
-        await SafeCloseAsync();
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"BuyPremium error: {ex}");
+            ShowError("Google Play Billing could not start. Try again.");
+        }
+        finally
+        {
+            _purchaseInProgress = false;
+            _buyButton.IsEnabled = true;
+        }
     }
 
     private async void OnDeclineClicked(object? sender, EventArgs e)
     {
-        // Revert the triggering property before the popup closes
+        if (_purchaseInProgress)
+            return;
+
         _onDecline?.Invoke();
         await SafeCloseAsync();
     }
@@ -184,6 +226,13 @@ public class PremiumPopup : Popup
         await SafeCloseAsync();
     }
 #endif
+
+    private void ShowError(string message)
+    {
+        _errorLabel.Text = message;
+        _errorLabel.IsVisible = true;
+        _chrome.HeightRequest = _baseHeight + 36;
+    }
 
     /// <summary>
     /// Closes the popup safely. If a modal page is blocking closure (e.g. the Instrument

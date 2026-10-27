@@ -18,7 +18,7 @@ namespace musicmate.Platforms.Android
         private const string LogTag = "MusicMateBilling";
 
         private BillingClient? _billingClient;
-        private TaskCompletionSource<bool>? _purchaseTcs;
+        private TaskCompletionSource<StorePurchaseResult>? _purchaseTcs;
 
         // ── IStoreService ────────────────────────────────────────────────────
 
@@ -44,7 +44,7 @@ namespace musicmate.Platforms.Android
             return result.Entitlement;
         }
 
-        public async Task<bool> PurchaseAsync(string productId)
+        public async Task<StorePurchaseResult> PurchaseAsync(string productId)
         {
             Log($"PurchaseAsync start: requestedId={productId}, package={PackageName()}, "
                 + $"installerPlay={IsInstalledFromGooglePlay()}");
@@ -52,13 +52,20 @@ namespace musicmate.Platforms.Android
             string id = NormalizeProductId(productId);
             Log($"PurchaseAsync: product ID being queried={id}");
 
+            if (_billingClient == null || !_billingClient.IsReady)
+            {
+                LogFailure("PurchaseAsync: abort — billing client is not ready.");
+                return StorePurchaseResult.Failed(
+                    "Google Play Billing is not ready. Check your connection and try again.");
+            }
+
             // Already owned (common when reinstalling or USB-deploying a Release build).
             var existing = await QueryCurrentPurchasesAsync(id);
             if (existing.Entitlement is true)
             {
                 ApplyPremiumEntitlement(true);
                 Log("PurchaseAsync: already owned — granting Premium without billing flow.");
-                return true;
+                return StorePurchaseResult.AlreadyOwned();
             }
 
             var products = await QueryProductDetailsAsync(new[] { id });
@@ -67,17 +74,20 @@ namespace musicmate.Platforms.Android
             {
                 LogFailure("PurchaseAsync: abort — no product details "
                     + $"(package={PackageName()} must match Play Console app that owns '{id}').");
-                return false;
+                return StorePurchaseResult.Failed(
+                    "Google Play could not load Premium (music_mate_premium). " +
+                    "The product may not be available for this account yet.");
             }
 
             var activity = Microsoft.Maui.ApplicationModel.Platform.CurrentActivity;
             if (activity == null)
             {
                 LogFailure("PurchaseAsync: abort — CurrentActivity is null.");
-                return false;
+                return StorePurchaseResult.Failed(
+                    "Google Play Billing could not open. Return to the app and tap Get Premium again.");
             }
 
-            _purchaseTcs = new TaskCompletionSource<bool>();
+            _purchaseTcs = new TaskCompletionSource<StorePurchaseResult>();
 
             var flowParams = BillingFlowParams.NewBuilder()
                 .SetProductDetailsParamsList(new List<ProductDetailsParams>
@@ -88,23 +98,42 @@ namespace musicmate.Platforms.Android
                 })
                 .Build();
 
-            var launchResult = _billingClient!.LaunchBillingFlow(activity, flowParams);
+            var launchResult = _billingClient.LaunchBillingFlow(activity, flowParams);
             Log($"purchase launch response code={launchResult.ResponseCode}, "
                 + $"BillingResult debugMessage={launchResult.DebugMessage ?? "(null)"}");
+            if (launchResult.ResponseCode != BillingResponseCode.Ok)
+            {
+                string launchError = string.IsNullOrWhiteSpace(launchResult.DebugMessage)
+                    ? launchResult.ResponseCode.ToString()
+                    : launchResult.DebugMessage;
+                LogFailure($"PurchaseAsync: LaunchBillingFlow failed ({launchError}).");
+                return StorePurchaseResult.Failed(
+                    "Google Play Billing could not open the purchase sheet. Try again.");
+            }
 
             // Wait for OnPurchasesUpdated to signal completion (timeout 5 min)
             var completed = await Task.WhenAny(_purchaseTcs.Task,
                                                Task.Delay(TimeSpan.FromMinutes(5)));
-            if (completed == _purchaseTcs.Task && _purchaseTcs.Task.Result)
+            if (completed != _purchaseTcs.Task)
+            {
+                LogFailure("PurchaseAsync: timed out waiting for the purchase callback.");
+                return StorePurchaseResult.Failed(
+                    "Google Play Billing timed out. Try again.");
+            }
+
+            var result = _purchaseTcs.Task.Result;
+            if (result.Succeeded)
             {
                 ApplyPremiumEntitlement(true);
                 Log("PurchaseAsync: purchase callback succeeded — Premium granted.");
-                return true;
+                return result;
             }
-            LogFailure($"PurchaseAsync: failed or timed out "
-                + $"(callbackCompleted={completed == _purchaseTcs.Task}, "
-                + $"result={(completed == _purchaseTcs.Task ? _purchaseTcs.Task.Result.ToString() : "timeout")}).");
-            return false;
+
+            if (!result.Canceled)
+            {
+                LogFailure($"PurchaseAsync: failed ({result.UserMessage ?? "no message"}).");
+            }
+            return result;
         }
 
         public async Task<bool> RestorePurchasesAsync()
@@ -156,7 +185,7 @@ namespace musicmate.Platforms.Android
                         // Persist entitlement before acknowledging so it survives a crash
                         ApplyPremiumEntitlement(true);
                         AcknowledgePurchase(purchase);
-                        _purchaseTcs?.TrySetResult(true);
+                        _purchaseTcs?.TrySetResult(StorePurchaseResult.Success());
                         Log($"OnPurchasesUpdated: Premium purchased (responseCode={code}).");
                         return;
                     }
@@ -168,16 +197,19 @@ namespace musicmate.Platforms.Android
                 _ = CompleteAlreadyOwnedPurchaseAsync();
                 return;
             }
-            else if (code != BillingResponseCode.UserCancelled)
+            else if (code == BillingResponseCode.UserCancelled)
+            {
+                Log($"OnPurchasesUpdated: canceled (responseCode={code}).");
+                _purchaseTcs?.TrySetResult(StorePurchaseResult.UserCanceled());
+                return;
+            }
+            else
             {
                 LogFailure($"OnPurchasesUpdated: no Premium grant (responseCode={code}, "
                     + $"purchases={(purchases == null ? "null" : purchases.Count.ToString())}).");
             }
-            else
-            {
-                Log($"OnPurchasesUpdated: canceled (responseCode={code}).");
-            }
-            _purchaseTcs?.TrySetResult(false);
+            _purchaseTcs?.TrySetResult(StorePurchaseResult.Failed(
+                "Google Play Billing could not complete the purchase. Try again."));
         }
 
         private async Task CompleteAlreadyOwnedPurchaseAsync()
@@ -187,13 +219,16 @@ namespace musicmate.Platforms.Android
                 var result = await QueryCurrentPurchasesAsync(PremiumProduct.Id);
                 bool owned = result.Entitlement ?? true;
                 ApplyPremiumEntitlement(owned);
-                _purchaseTcs?.TrySetResult(owned);
+                _purchaseTcs?.TrySetResult(owned
+                    ? StorePurchaseResult.AlreadyOwned()
+                    : StorePurchaseResult.Failed(
+                        "Google Play said this item is already owned, but Premium could not be restored."));
             }
             catch (Exception ex)
             {
                 LogFailure($"CompleteAlreadyOwnedPurchaseAsync failed: {ex.Message} — granting Premium.");
                 ApplyPremiumEntitlement(true);
-                _purchaseTcs?.TrySetResult(true);
+                _purchaseTcs?.TrySetResult(StorePurchaseResult.AlreadyOwned());
             }
         }
 

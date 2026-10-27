@@ -2,6 +2,8 @@
 # Release already sets AndroidPackageFormat=aab in musicmate.csproj; this script
 # publishes explicitly to the Publish\ folder.
 # For on-device testing use Configuration=LocalRelease (APK), not this script.
+# Release also writes native-debug-symbols.zip beside the AAB for a separate
+# Play Console upload. That zip is not embedded in the AAB.
 #
 # Usage (from repo root or scripts):
 #   .\scripts\publish-play-aab.ps1

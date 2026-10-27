@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using Microsoft.Maui.Controls;
 using Microsoft.Maui.Graphics;
 using musicmate.Services;
 using Microsoft.Maui.Storage;
@@ -31,7 +33,13 @@ namespace musicmate.ViewModels
             BuyPremiumCommand = new Command(async () =>
             {
                 try { await BuyPremiumAsync(); }
-                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"BuyPremium error: {ex}"); }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"BuyPremium error: {ex}");
+                    await ShowPurchaseAlertAsync(
+                        "Premium",
+                        "Google Play Billing could not start. Try again.");
+                }
             });
             RestorePurchasesCommand = new Command(async () =>
             {
@@ -155,12 +163,16 @@ namespace musicmate.ViewModels
                     return;
                 }
 
-                var ok = await _storeService.PurchaseAsync(PremiumProduct.Id);
-                System.Diagnostics.Debug.WriteLine($"PurchaseAsync returned: {ok}");
-                if (ok)
+                var result = await _storeService.PurchaseAsync(PremiumProduct.Id);
+                System.Diagnostics.Debug.WriteLine($"PurchaseAsync returned: succeeded={result.Succeeded}");
+                if (result.Succeeded)
                 {
                     MainThread.BeginInvokeOnMainThread(() => IsPremium = true);
+                    return;
                 }
+
+                if (result.ShouldShowError)
+                    await ShowPurchaseAlertAsync("Premium", result.UserMessage!);
             }
             else
             {
@@ -168,9 +180,24 @@ namespace musicmate.ViewModels
                 // Stub builds: grant when no store is registered.
                 MainThread.BeginInvokeOnMainThread(() => IsPremium = true);
 #else
-                // Play Release: never grant premium without a store confirmation.
-                System.Diagnostics.Debug.WriteLine("BuyPremiumAsync: no store service — leaving non-premium.");
+                await ShowPurchaseAlertAsync(
+                    "Premium",
+                    "Google Play Billing is not available in this build.");
 #endif
+            }
+        }
+
+        private static async Task ShowPurchaseAlertAsync(string title, string message)
+        {
+            try
+            {
+                var page = Application.Current?.Windows.FirstOrDefault()?.Page;
+                if (page != null)
+                    await page.DisplayAlertAsync(title, message, "OK");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ShowPurchaseAlertAsync error: {ex}");
             }
         }
 

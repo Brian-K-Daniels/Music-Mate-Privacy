@@ -74,4 +74,55 @@ public class NoteStateChangeDiagnosticsTests
             NoteStateChangeDiagnostics.ResetForTests();
         }
     }
+
+    [Fact]
+    public void TestSink_DoesNotReceiveLogsFromAnotherThread()
+    {
+        var lines = new List<string>();
+        NoteStateChangeDiagnostics.TestSink = lines.Add;
+        try
+        {
+            TestExecutionIsolation.RunOnFreshThread(() =>
+            {
+                var ctx = new NoteStateChangeDiagnostics.NoteStateDiagContext(
+                    0, 10, 0, 0, "C4", 4, 1, "Selected Scale");
+                NoteStateChangeDiagnostics.LogWrongFeedback(
+                    "OtherThread",
+                    "OtherThread.cs",
+                    1,
+                    noteIndex: 9,
+                    expectedNote: "C4",
+                    detectedNote: "C4",
+                    wrongCountBefore: 0,
+                    wrongCountAfter: 1,
+                    cents: 0,
+                    ctx,
+                    "OtherThreadContamination");
+                NoteStateChangeDiagnostics.LogEvent(
+                    "CatchUpWithPitch",
+                    "CatchUp",
+                    "OtherThread.cs",
+                    2,
+                    ctx,
+                    "parallel catch-up");
+            });
+
+            var ctx = new NoteStateChangeDiagnostics.NoteStateDiagContext(
+                3, 500, 612, 1, "G4", 15, 5, "Practice Tune");
+            var feedback = new Dictionary<int, (int Wrong, int Cents)> { [2] = (1, 0) };
+            var state = StaffNoteStateResolver.Resolve(
+                2, 3, true, [], feedback, ctx, "A4", "test");
+
+            Assert.Equal(StaffNoteState.Wrong, state);
+            Assert.Single(lines);
+            Assert.Contains("Kind=StaffResolveWrong", lines[0]);
+            Assert.Contains("NoteIndex=2", lines[0]);
+            Assert.DoesNotContain(lines, line => line.Contains("OtherThreadContamination"));
+            Assert.DoesNotContain(lines, line => line.Contains("CatchUpWithPitch"));
+        }
+        finally
+        {
+            NoteStateChangeDiagnostics.ResetForTests();
+        }
+    }
 }

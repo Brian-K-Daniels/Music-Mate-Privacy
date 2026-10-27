@@ -19,6 +19,10 @@ public static class PremiumPromptHelper
     /// <returns><c>true</c> if the user successfully purchased premium (or already owned it); otherwise <c>false</c>.</returns>
     public static async Task<bool> ShowAsync(Page page, Action? onDecline = null)
     {
+        // Native picker dialogs sit on the modal stack and make the Premium popup
+        // flash closed before LaunchBillingFlow. Dismiss them first.
+        await DismissBlockingPickerAsync(page);
+
         // USB Release / cold start may not have finished restoring yet — re-check Play first.
         try
         {
@@ -37,5 +41,29 @@ public static class PremiumPromptHelper
         var popup = new PremiumPopup(onDecline);
         await page.ShowPopupAsync(popup);
         return popup.PurchaseResult;
+    }
+
+    private static async Task DismissBlockingPickerAsync(Page page)
+    {
+        try
+        {
+            page.Unfocus();
+        }
+        catch
+        {
+            // best effort
+        }
+
+        try
+        {
+            if (page.Navigation.ModalStack.Count > 0)
+                await page.Navigation.PopModalAsync(animated: false);
+        }
+        catch
+        {
+            // The picker may already have closed itself.
+        }
+
+        await Task.Delay(80);
     }
 }

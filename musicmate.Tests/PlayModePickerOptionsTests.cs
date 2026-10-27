@@ -166,6 +166,8 @@ public class PlayModePickerOptionsTests
     [Fact]
     public void AppRestart_PersistedTunerTune_OpensNormalMusic()
     {
+        // TestStore is AsyncLocal: this dictionary stays on this test's
+        // execution context even if a parallel test assigns another store.
         PlayModePickerOptions.ClearExplicitTunerOpen();
         var store = new Dictionary<string, object?> { ["musicmate.Tune"] = PlayModePickerOptions.Tuner };
         string? saved = "Major";

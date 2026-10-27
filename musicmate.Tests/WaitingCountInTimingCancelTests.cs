@@ -17,7 +17,11 @@ public class WaitingCountInTimingCancelTests : IDisposable
         _store.Clear();
     }
 
-    public void Dispose() => SessionPreferences.TestStore = null;
+    public void Dispose()
+    {
+        WaitingCountInPlayer.WaitUntilOverrideForTests = null;
+        SessionPreferences.TestStore = null;
+    }
 
         [Theory]
         [InlineData(30)]
@@ -118,17 +122,32 @@ public class WaitingCountInTimingCancelTests : IDisposable
             ? (_, _) => Task.CompletedTask
             : null;
 
-        var run = player.RunAsync(
-            tempoBpm, 4, 0.4f, 0.2f, 1760, 880, 15, cts.Token, beforeClickAsync: beforeClick);
-        await Task.Delay((int)Math.Round(msPerBeat * 5));
-        player.Stop();
-        await run;
+        var fourClicks = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        clicks.Played = () =>
+        {
+            if (clicks.PlayCount >= 4)
+                fourClicks.TrySetResult();
+        };
+
+        try
+        {
+            var run = player.RunAsync(
+                tempoBpm, 4, 0.4f, 0.2f, 1760, 880, 15, cts.Token, beforeClickAsync: beforeClick);
+            await fourClicks.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            player.Stop();
+            await run;
+        }
+        finally
+        {
+            clicks.Played = null;
+        }
 
         Assert.True(clicks.IntendedMs.Count >= 4);
+        Assert.Equal(clicks.IntendedMs.Count, clicks.BeatIndexes.Count);
         for (int i = 0; i < clicks.IntendedMs.Count; i++)
         {
             Assert.Equal(
-                WaitingCountInLogic.GetAbsoluteBeatStartMs(i, msPerBeat),
+                WaitingCountInLogic.GetAbsoluteBeatStartMs(clicks.BeatIndexes[i], msPerBeat),
                 clicks.IntendedMs[i],
                 precision: 3);
         }
@@ -208,27 +227,50 @@ public class WaitingCountInTimingCancelTests : IDisposable
         var clicks = new RecordingInstantClicks();
         var player = new WaitingCountInPlayer(clicks);
         using var cts = new CancellationTokenSource();
-        const int tempo = 60; // 1000 ms/beat
-        double msPerBeat = WaitingCountInLogic.MsPerBeat(tempo);
+        var firstClick = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        clicks.Played = () => firstClick.TrySetResult();
 
-        var run = player.RunAsync(tempo, 4, 0.4f, 0.2f, 1760, 880, 15, cts.Token);
+        // Beat 0 is due immediately. Later beats wait only for Stop/cancel so
+        // this test never races a wall-clock Delay against the 1000 ms grid.
+        WaitingCountInPlayer.WaitUntilOverrideForTests = WaitUntilCancelledAfterFirstBeatAsync;
+        try
+        {
+            var run = player.RunAsync(60, 4, 0.4f, 0.2f, 1760, 880, 15, cts.Token);
 
-        var firstClickDeadline = DateTime.UtcNow.AddMilliseconds(400);
-        while (clicks.PlayCount < 1 && DateTime.UtcNow < firstClickDeadline)
-            await Task.Delay(10);
-        Assert.True(clicks.PlayCount >= 1);
-        int afterFirst = clicks.PlayCount;
+            await firstClick.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            int afterFirst = clicks.PlayCount;
+            Assert.Equal(1, afterFirst);
 
-        // Stop well before the next grid slot (not in the final few ms where the
-        // scheduler has already committed the beat to the play queue).
-        await Task.Delay((int)Math.Round(msPerBeat * 0.55));
-        cts.Cancel();
-        player.Stop();
+            // Player is blocked in WaitUntil for beat 1. Stop must retire that
+            // pending wait so the beat never sounds.
+            cts.Cancel();
+            player.Stop();
+            await run.WaitAsync(TimeSpan.FromSeconds(2));
 
-        await Task.Delay((int)Math.Round(msPerBeat * 0.75));
-        await run;
+            Assert.Equal(afterFirst, clicks.PlayCount);
+        }
+        finally
+        {
+            clicks.Played = null;
+            WaitingCountInPlayer.WaitUntilOverrideForTests = null;
+        }
+    }
 
-        Assert.Equal(afterFirst, clicks.PlayCount);
+    private static async Task WaitUntilCancelledAfterFirstBeatAsync(
+        Stopwatch clock,
+        double targetMs,
+        CancellationToken ct)
+    {
+        _ = clock;
+        if (targetMs <= 0.5)
+            return;
+
+        var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var registration = ct.Register(() => cancelled.TrySetResult());
+        if (ct.IsCancellationRequested)
+            ct.ThrowIfCancellationRequested();
+        await cancelled.Task.WaitAsync(ct);
+        ct.ThrowIfCancellationRequested();
     }
 
     [Fact]
@@ -429,10 +471,12 @@ public class WaitingCountInTimingCancelTests : IDisposable
         private int _epoch;
             public List<double> PlayTimesMs { get; } = new();
             public List<double> IntendedMs { get; } = new();
+            public List<long> BeatIndexes { get; } = new();
             public List<int> LoopIds { get; } = new();
             public int PlayCount { get; private set; }
         public int StopCount { get; private set; }
         public int WarmupCount { get; private set; }
+        public Action? Played { get; set; }
 
         public void RestartClock()
         {
@@ -440,6 +484,7 @@ public class WaitingCountInTimingCancelTests : IDisposable
             {
                 PlayTimesMs.Clear();
                 IntendedMs.Clear();
+                BeatIndexes.Clear();
                 LoopIds.Clear();
                 _clock.Restart();
             }
@@ -482,11 +527,13 @@ public class WaitingCountInTimingCancelTests : IDisposable
                 if (schedule.HasValue)
                 {
                     IntendedMs.Add(schedule.Value.IntendedMs);
+                    BeatIndexes.Add(schedule.Value.BeatIndex);
                     LoopIds.Add(schedule.Value.LoopId);
                 }
                 PlayCount++;
             }
 
+            Played?.Invoke();
             return Task.CompletedTask;
         }
 

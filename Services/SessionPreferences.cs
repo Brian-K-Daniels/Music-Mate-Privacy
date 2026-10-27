@@ -1,3 +1,4 @@
+using System.Threading;
 using Microsoft.Maui.Storage;
 
 namespace musicmate.Services
@@ -9,8 +10,17 @@ namespace musicmate.Services
     /// </summary>
     internal static class SessionPreferences
     {
-        /// <summary>When non-null, all Get/Set/Remove go here instead of MAUI Preferences.</summary>
-        internal static Dictionary<string, object?>? TestStore { get; set; }
+        private static readonly AsyncLocal<Dictionary<string, object?>?> TestStoreLocal = new();
+
+        /// <summary>
+        /// When non-null, all Get/Set/Remove go here instead of MAUI Preferences.
+        /// Stored in <see cref="AsyncLocal{T}"/> so parallel tests keep separate stores.
+        /// </summary>
+        internal static Dictionary<string, object?>? TestStore
+        {
+            get => TestStoreLocal.Value;
+            set => TestStoreLocal.Value = value;
+        }
 
         public static string Get(string key, string defaultValue)
         {

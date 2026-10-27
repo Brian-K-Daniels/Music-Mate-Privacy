@@ -13,7 +13,11 @@ namespace musicmate.Services
         /// </summary>
         Task<bool?> IsPurchasedAsync(string productId);
 
-        Task<bool> PurchaseAsync(string productId);
+        /// <summary>
+        /// Starts the store purchase flow. Returns a structured result so the UI can
+        /// keep the prompt open and show a reason when Billing does not launch.
+        /// </summary>
+        Task<StorePurchaseResult> PurchaseAsync(string productId);
         Task<bool> RestorePurchasesAsync();
 
         /// <summary>
