@@ -38,8 +38,8 @@ public class AndroidReleaseR8ConfigTests
 
         Assert.Contains("<AndroidLinkMode>SdkOnly</AndroidLinkMode>", text);
         Assert.Contains("<AndroidLinkTool>r8</AndroidLinkTool>", text);
-        Assert.Contains("<ApplicationDisplayVersion>1.33</ApplicationDisplayVersion>", text);
-        Assert.Contains("<ApplicationVersion>33</ApplicationVersion>", text);
+        Assert.Contains("<ApplicationDisplayVersion>1.34</ApplicationDisplayVersion>", text);
+        Assert.Contains("<ApplicationVersion>34</ApplicationVersion>", text);
         Assert.Contains("<RuntimeIdentifiers Condition=\"$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'\">android-arm;android-arm64;android-x64</RuntimeIdentifiers>", text);
         Assert.DoesNotContain("AndroidLinkMode>Full", text);
         Assert.DoesNotContain("RunAOTCompilation>false", text);

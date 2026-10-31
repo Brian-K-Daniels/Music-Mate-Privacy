@@ -12,8 +12,8 @@ public class AndroidNativeDebugSymbolsConfigTests
     {
         string text = File.ReadAllText(FindRepoFile("musicmate.csproj"));
         Assert.Contains("<Import Project=\"Platforms\\Android\\AndroidNativeDebugSymbols.targets\" />", text);
-        Assert.Contains("<ApplicationDisplayVersion>1.33</ApplicationDisplayVersion>", text);
-        Assert.Contains("<ApplicationVersion>33</ApplicationVersion>", text);
+        Assert.Contains("<ApplicationDisplayVersion>1.34</ApplicationDisplayVersion>", text);
+        Assert.Contains("<ApplicationVersion>34</ApplicationVersion>", text);
     }
 
     [Fact]

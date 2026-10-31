@@ -19,14 +19,25 @@ namespace musicmate.Platforms.Android
 
         private BillingClient? _billingClient;
         private TaskCompletionSource<StorePurchaseResult>? _purchaseTcs;
+        private readonly BillingClientConnectionGate _connectionGate = new();
+        private readonly BillingConnectionHost _host;
+        private readonly object _clientLock = new();
+        private BillingStateListener? _activeListener;
+        private volatile bool _disposed;
+
+        public GooglePlayStoreService()
+        {
+            _host = new BillingConnectionHost(this);
+        }
 
         // ── IStoreService ────────────────────────────────────────────────────
 
         public async Task InitializeAsync()
         {
-            Log($"InitializeAsync: package={PackageName()}, installerPlay={IsInstalledFromGooglePlay()}");
-            _billingClient = BuildClient();
-            await ConnectAsync();
+            LogInfo($"InitializeAsync: package={PackageName()}, installerPlay={IsInstalledFromGooglePlay()}");
+            GetOrCreateClient();
+            var connect = await EnsureConnectedResultAsync().ConfigureAwait(false);
+            LogInfo($"InitializeAsync: connect status={connect.Status}, isReady={_billingClient?.IsReady}");
             // Do not write StatusService here. App.InitializePremiumStatus clears any
             // backup-restored local flag, then calls IsPurchasedAsync as the single source of truth.
         }
@@ -37,7 +48,7 @@ namespace musicmate.Platforms.Android
             // Installer package (Play Store vs USB/sideload) must not hide a real purchase —
             // Release USB debugging still needs Premium when the account already owns it.
             if (!IsInstalledFromGooglePlay())
-                Log("IsPurchasedAsync: not installed from Play Store (USB/sideload) — still querying Billing.");
+                LogInfo("IsPurchasedAsync: not installed from Play Store (USB/sideload) — still querying Billing.");
 
             string id = NormalizeProductId(productId);
             var result = await QueryCurrentPurchasesAsync(id);
@@ -46,17 +57,17 @@ namespace musicmate.Platforms.Android
 
         public async Task<StorePurchaseResult> PurchaseAsync(string productId)
         {
-            Log($"PurchaseAsync start: requestedId={productId}, package={PackageName()}, "
+            LogInfo($"PurchaseAsync start: requestedId={productId}, package={PackageName()}, "
                 + $"installerPlay={IsInstalledFromGooglePlay()}");
-            await EnsureConnectedAsync();
+            var connect = await EnsureConnectedResultAsync().ConfigureAwait(false);
             string id = NormalizeProductId(productId);
-            Log($"PurchaseAsync: product ID being queried={id}");
+            LogInfo($"PurchaseAsync: product ID being queried={id}");
 
-            if (_billingClient == null || !_billingClient.IsReady)
+            if (!connect.Succeeded || _billingClient == null || !_billingClient.IsReady)
             {
-                LogFailure("PurchaseAsync: abort — billing client is not ready.");
-                return StorePurchaseResult.Failed(
-                    "Google Play Billing is not ready. Check your connection and try again.");
+                LogFailure("PurchaseAsync: abort — billing client is not ready "
+                    + $"(status={connect.Status}, isReady={_billingClient?.IsReady}).");
+                return StorePurchaseResult.Failed(BillingPurchasePreconditions.NotReadyMessage);
             }
 
             // Already owned (common when reinstalling or USB-deploying a Release build).
@@ -64,42 +75,57 @@ namespace musicmate.Platforms.Android
             if (existing.Entitlement is true)
             {
                 ApplyPremiumEntitlement(true);
-                Log("PurchaseAsync: already owned — granting Premium without billing flow.");
+                LogInfo("PurchaseAsync: already owned — granting Premium without billing flow.");
                 return StorePurchaseResult.AlreadyOwned();
             }
 
             var products = await QueryProductDetailsAsync(new[] { id });
-            Log($"PurchaseAsync: number of products returned={products.Count}");
+            LogInfo($"PurchaseAsync: number of products returned={products.Count}");
             if (products.Count == 0)
             {
                 LogFailure("PurchaseAsync: abort — no product details "
                     + $"(package={PackageName()} must match Play Console app that owns '{id}').");
-                return StorePurchaseResult.Failed(
-                    "Google Play could not load Premium (music_mate_premium). " +
-                    "The product may not be available for this account yet.");
+                return StorePurchaseResult.Failed(BillingPurchasePreconditions.ProductMissingMessage);
             }
 
-            var activity = Microsoft.Maui.ApplicationModel.Platform.CurrentActivity;
-            if (activity == null)
+            _purchaseTcs = new TaskCompletionSource<StorePurchaseResult>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+            BillingResult? launchResult;
+            bool hasActivity;
+            try
+            {
+                (launchResult, hasActivity) = await BillingUiThread.InvokeAsync(() =>
+                {
+                    var activity = Microsoft.Maui.ApplicationModel.Platform.CurrentActivity;
+                    if (activity == null)
+                        return ((BillingResult?)null, false);
+
+                    var flowParams = BillingFlowParams.NewBuilder()
+                        .SetProductDetailsParamsList(new List<ProductDetailsParams>
+                        {
+                            ProductDetailsParams.NewBuilder()
+                                .SetProductDetails(products[0])
+                                .Build()
+                        })
+                        .Build();
+
+                    return (_billingClient!.LaunchBillingFlow(activity, flowParams), true);
+                }).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                LogFailure($"PurchaseAsync: LaunchBillingFlow dispatch failed ({ex.GetType().Name}).");
+                return StorePurchaseResult.Failed(BillingPurchasePreconditions.LaunchFailedMessage);
+            }
+
+            if (!hasActivity || launchResult == null)
             {
                 LogFailure("PurchaseAsync: abort — CurrentActivity is null.");
-                return StorePurchaseResult.Failed(
-                    "Google Play Billing could not open. Return to the app and tap Get Premium again.");
+                return StorePurchaseResult.Failed(BillingPurchasePreconditions.NoActivityMessage);
             }
 
-            _purchaseTcs = new TaskCompletionSource<StorePurchaseResult>();
-
-            var flowParams = BillingFlowParams.NewBuilder()
-                .SetProductDetailsParamsList(new List<ProductDetailsParams>
-                {
-                    ProductDetailsParams.NewBuilder()
-                        .SetProductDetails(products[0])
-                        .Build()
-                })
-                .Build();
-
-            var launchResult = _billingClient.LaunchBillingFlow(activity, flowParams);
-            Log($"purchase launch response code={launchResult.ResponseCode}, "
+            LogInfo($"purchase launch response code={launchResult.ResponseCode}, "
                 + $"BillingResult debugMessage={launchResult.DebugMessage ?? "(null)"}");
             if (launchResult.ResponseCode != BillingResponseCode.Ok)
             {
@@ -107,8 +133,7 @@ namespace musicmate.Platforms.Android
                     ? launchResult.ResponseCode.ToString()
                     : launchResult.DebugMessage;
                 LogFailure($"PurchaseAsync: LaunchBillingFlow failed ({launchError}).");
-                return StorePurchaseResult.Failed(
-                    "Google Play Billing could not open the purchase sheet. Try again.");
+                return StorePurchaseResult.Failed(BillingPurchasePreconditions.LaunchFailedMessage);
             }
 
             // Wait for OnPurchasesUpdated to signal completion (timeout 5 min)
@@ -117,15 +142,14 @@ namespace musicmate.Platforms.Android
             if (completed != _purchaseTcs.Task)
             {
                 LogFailure("PurchaseAsync: timed out waiting for the purchase callback.");
-                return StorePurchaseResult.Failed(
-                    "Google Play Billing timed out. Try again.");
+                return StorePurchaseResult.Failed(BillingPurchasePreconditions.LaunchTimeoutMessage);
             }
 
             var result = _purchaseTcs.Task.Result;
             if (result.Succeeded)
             {
                 ApplyPremiumEntitlement(true);
-                Log("PurchaseAsync: purchase callback succeeded — Premium granted.");
+                LogInfo("PurchaseAsync: purchase callback succeeded — Premium granted.");
                 return result;
             }
 
@@ -152,7 +176,7 @@ namespace musicmate.Platforms.Android
         public async Task<bool> CheckPremiumStatusAsync()
         {
             if (!IsInstalledFromGooglePlay())
-                Log("CheckPremiumStatusAsync: not installed from Play Store (USB/sideload) — still querying Billing.");
+                LogInfo("CheckPremiumStatusAsync: not installed from Play Store (USB/sideload) — still querying Billing.");
 
             var result = await QueryCurrentPurchasesAsync(PremiumProduct.Id);
             if (result.Entitlement is bool owned)
@@ -171,7 +195,7 @@ namespace musicmate.Platforms.Android
         public void OnPurchasesUpdated(BillingResult billingResult, IList<Purchase>? purchases)
         {
             var code = billingResult.ResponseCode;
-            Log($"purchase callback result: responseCode={code}, "
+            LogInfo($"purchase callback result: responseCode={code}, "
                 + $"BillingResult debugMessage={billingResult.DebugMessage ?? "(null)"}, "
                 + $"purchaseCount={(purchases == null ? "null" : purchases.Count.ToString())}");
 
@@ -186,20 +210,20 @@ namespace musicmate.Platforms.Android
                         ApplyPremiumEntitlement(true);
                         AcknowledgePurchase(purchase);
                         _purchaseTcs?.TrySetResult(StorePurchaseResult.Success());
-                        Log($"OnPurchasesUpdated: Premium purchased (responseCode={code}).");
+                        LogInfo($"OnPurchasesUpdated: Premium purchased (responseCode={code}).");
                         return;
                     }
                 }
             }
             else if (code == BillingResponseCode.ItemAlreadyOwned)
             {
-                Log("OnPurchasesUpdated: ItemAlreadyOwned — restoring Premium from current purchases.");
+                LogInfo("OnPurchasesUpdated: ItemAlreadyOwned — restoring Premium from current purchases.");
                 _ = CompleteAlreadyOwnedPurchaseAsync();
                 return;
             }
             else if (code == BillingResponseCode.UserCancelled)
             {
-                Log($"OnPurchasesUpdated: canceled (responseCode={code}).");
+                LogInfo($"OnPurchasesUpdated: canceled (responseCode={code}).");
                 _purchaseTcs?.TrySetResult(StorePurchaseResult.UserCanceled());
                 return;
             }
@@ -226,7 +250,7 @@ namespace musicmate.Platforms.Android
             }
             catch (Exception ex)
             {
-                LogFailure($"CompleteAlreadyOwnedPurchaseAsync failed: {ex.Message} — granting Premium.");
+                LogFailure($"CompleteAlreadyOwnedPurchaseAsync failed: {ex.GetType().Name} — granting Premium.");
                 ApplyPremiumEntitlement(true);
                 _purchaseTcs?.TrySetResult(StorePurchaseResult.AlreadyOwned());
             }
@@ -293,47 +317,65 @@ namespace musicmate.Platforms.Android
                 .Build();
         }
 
-        private Task ConnectAsync()
+        private Task<BillingConnectionResult> EnsureConnectedResultAsync()
         {
-            var tcs = new TaskCompletionSource<bool>();
-            _billingClient!.StartConnection(new BillingStateListener(
-                result =>
-                {
-                    string connectMessage =
-                        $"BillingClient connection result: responseCode={result.ResponseCode}, "
-                        + $"BillingResult debugMessage={result.DebugMessage ?? "(null)"}, "
-                        + $"isReady={_billingClient?.IsReady}";
-                    if (result.ResponseCode == BillingResponseCode.Ok)
-                        Log(connectMessage);
-                    else
-                        LogFailure(connectMessage);
-                    tcs.TrySetResult(result.ResponseCode == BillingResponseCode.Ok);
-                },
-                () =>
-                {
-                    LogFailure("Billing service disconnected.");
-                    tcs.TrySetResult(false);
-                }));
-            return tcs.Task;
+            if (_disposed)
+                return Task.FromResult(BillingConnectionResult.Failed("disposed", "Billing client was disposed."));
+
+            GetOrCreateClient();
+            return WaitForConnectionAsync();
+        }
+
+        private BillingClient GetOrCreateClient()
+        {
+            lock (_clientLock)
+            {
+                _billingClient ??= BuildClient();
+                return _billingClient;
+            }
+        }
+
+        private async Task<BillingConnectionResult> WaitForConnectionAsync()
+        {
+            var result = await _connectionGate.EnsureConnectedAsync(_host).ConfigureAwait(false);
+            if (result.Succeeded)
+            {
+                LogInfo($"EnsureConnectedAsync: status={result.Status}, detail={result.Detail ?? "(none)"}, "
+                    + $"isReady={_billingClient?.IsReady}");
+            }
+            else
+            {
+                LogFailure($"EnsureConnectedAsync: status={result.Status}, detail={result.Detail ?? "(none)"}, "
+                    + $"isReady={_billingClient?.IsReady}");
+            }
+
+            return result;
         }
 
         private async Task EnsureConnectedAsync()
         {
-            if (_billingClient == null)
-                _billingClient = BuildClient();
+            await EnsureConnectedResultAsync().ConfigureAwait(false);
+        }
 
-            if (!_billingClient.IsReady)
-                await ConnectAsync();
-
-            // One reconnect attempt if still not ready.
-            if (!_billingClient.IsReady)
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
             {
-                LogFailure("Billing client not ready after connect — rebuilding and retrying once.");
-                _billingClient = BuildClient();
-                await ConnectAsync();
+                _disposed = true;
+                bool connectionInProgress = _connectionGate.IsConnectionInProgress;
+                _connectionGate.MarkDisposed();
+                if (connectionInProgress)
+                {
+                    LogFailure("Dispose: BillingClient connection still in progress — not calling EndConnection.");
+                }
+                else
+                {
+                    try { _billingClient?.EndConnection(); }
+                    catch { /* ignore */ }
+                }
             }
 
-            Log($"EnsureConnectedAsync: isReady={_billingClient?.IsReady}");
+            base.Dispose(disposing);
         }
 
         private Task<(BillingResult Billing, IList<ProductDetails> Products)> QueryProductDetailsWithBillingAsync(
@@ -353,7 +395,7 @@ namespace musicmate.Platforms.Android
         private async Task<IList<ProductDetails>> QueryProductDetailsAsync(IEnumerable<string> productIds)
         {
             var idList = productIds.ToList();
-            Log($"product ID being queried=[{string.Join(',', idList)}], package={PackageName()}");
+            LogInfo($"product ID being queried=[{string.Join(',', idList)}], package={PackageName()}");
 
             var products = idList
                 .Select(id => QueryProductDetailsParams.Product.NewBuilder()
@@ -369,7 +411,7 @@ namespace musicmate.Platforms.Android
             // Listener API exposes BillingResult; the Task-only overload returns only product lists.
             var (billingResult, list) = await QueryProductDetailsWithBillingAsync(queryParams);
 
-            Log($"product query response code={billingResult?.ResponseCode}, "
+            LogInfo($"product query response code={billingResult?.ResponseCode}, "
                 + $"BillingResult debugMessage={billingResult?.DebugMessage ?? "(null)"}, "
                 + $"number of products returned={list.Count}");
             for (int i = 0; i < list.Count; i++)
@@ -400,7 +442,7 @@ namespace musicmate.Platforms.Android
             bool succeeded = code == BillingResponseCode.Ok;
             var purchases = purchasesResult.Purchases;
 
-            Log($"QueryCurrentPurchasesAsync BillingResult: responseCode={code}, "
+            LogInfo($"QueryCurrentPurchasesAsync BillingResult: responseCode={code}, "
                 + $"debugMessage={purchasesResult.Result?.DebugMessage ?? "(null)"}");
 
             var infos = new List<PremiumEntitlement.PurchaseInfo>();
@@ -482,7 +524,7 @@ namespace musicmate.Platforms.Android
             {
                 StatusService.Instance.IsPremiumUser = owned;
                 Preferences.Set(PremiumProduct.PreferenceKey, owned);
-                Log($"ApplyPremiumEntitlement: IsPremium={owned}");
+                LogInfo($"ApplyPremiumEntitlement: IsPremium={owned}");
             }
 
             if (MainThread.IsMainThread)
@@ -511,11 +553,14 @@ namespace musicmate.Platforms.Android
             }
             sb.Append("], entitlementDecision=");
             sb.Append(entitlement is null ? "unchanged (query failed)" : entitlement.Value.ToString());
-            Log(sb.ToString());
+            LogInfo(sb.ToString());
         }
 
         [Conditional("DEBUG")]
         private static void Log(string message) => Emit(global::Android.Util.LogPriority.Info, message);
+
+        /// <summary>Connection, launch, and query diagnostics visible in Release logcat (no tokens).</summary>
+        private static void LogInfo(string message) => Emit(global::Android.Util.LogPriority.Info, message);
 
         /// <summary>Billing failure that a published build should still record.</summary>
         private static void LogFailure(string message) => Emit(global::Android.Util.LogPriority.Warn, message);
@@ -565,6 +610,54 @@ namespace musicmate.Platforms.Android
         }
 
         // ── inner listener shims ─────────────────────────────────────────────
+
+        private sealed class BillingConnectionHost : IBillingConnectionHost
+        {
+            private readonly GooglePlayStoreService _svc;
+
+            public BillingConnectionHost(GooglePlayStoreService svc) => _svc = svc;
+
+            public bool IsReady => _svc._billingClient?.IsReady == true;
+
+            public void BeginStartConnection(IBillingConnectionObserver observer)
+            {
+                var client = _svc._billingClient
+                    ?? throw new InvalidOperationException("BillingClient is null.");
+
+                LogInfo("BillingClient StartConnection: beginning (single in-flight attempt).");
+                _svc._activeListener = new BillingStateListener(
+                    result =>
+                    {
+                        string connectMessage =
+                            $"BillingClient connection result: responseCode={result.ResponseCode}, "
+                            + $"BillingResult debugMessage={result.DebugMessage ?? "(null)"}, "
+                            + $"isReady={_svc._billingClient?.IsReady}";
+
+                        bool alreadyConnecting = BillingClientConnectionGate.IsAlreadyConnecting(
+                            result.ResponseCode.ToString(),
+                            result.DebugMessage);
+
+                        if (result.ResponseCode == BillingResponseCode.Ok)
+                            LogInfo(connectMessage);
+                        else if (alreadyConnecting)
+                            LogFailure(connectMessage + " — waiting for the in-flight connection (not rebuilding).");
+                        else
+                            LogFailure(connectMessage);
+
+                        observer.OnSetupFinished(
+                            result.ResponseCode == BillingResponseCode.Ok,
+                            result.ResponseCode.ToString(),
+                            result.DebugMessage);
+                    },
+                    () =>
+                    {
+                        LogFailure("Billing service disconnected.");
+                        observer.OnDisconnected();
+                    });
+
+                client.StartConnection(_svc._activeListener);
+            }
+        }
 
         private class BillingStateListener : Java.Lang.Object, IBillingClientStateListener
         {

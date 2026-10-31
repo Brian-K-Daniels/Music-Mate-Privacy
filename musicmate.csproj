@@ -20,9 +20,9 @@
     <Configurations>Debug;Release;LocalRelease</Configurations>
 
     <!-- Versions -->
-    <ApplicationDisplayVersion>1.33</ApplicationDisplayVersion>
-    <ApplicationVersion>33</ApplicationVersion>
-    <PackageVersion>1.33</PackageVersion>
+    <ApplicationDisplayVersion>1.34</ApplicationDisplayVersion>
+    <ApplicationVersion>34</ApplicationVersion>
+    <PackageVersion>1.34</PackageVersion>
 
     <WindowsPackageType>None</WindowsPackageType>
     <AllowUnsafeBlocks Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">true</AllowUnsafeBlocks>

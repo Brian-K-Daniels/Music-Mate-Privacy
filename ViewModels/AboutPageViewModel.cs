@@ -187,17 +187,38 @@ namespace musicmate.ViewModels
             }
         }
 
-        private static async Task ShowPurchaseAlertAsync(string title, string message)
+        internal static Task ShowPurchaseAlertAsync(string title, string message)
+            => ShowPurchaseAlertAsync(title, message, displayAlert: null, isMainThread: null, invokeOnMainThread: null);
+
+        /// <summary>
+        /// Surfaces About-page purchase errors on the UI thread. Tests inject displayAlert / thread hooks.
+        /// </summary>
+        internal static async Task ShowPurchaseAlertAsync(
+            string title,
+            string message,
+            Func<string, string, Task>? displayAlert,
+            Func<bool>? isMainThread,
+            Func<Func<Task>, Task>? invokeOnMainThread)
         {
             try
             {
-                var page = Application.Current?.Windows.FirstOrDefault()?.Page;
-                if (page != null)
-                    await page.DisplayAlertAsync(title, message, "OK");
+                await BillingUiThread.InvokeAsync(async () =>
+                {
+                    if (displayAlert != null)
+                    {
+                        await displayAlert(title, message).ConfigureAwait(false);
+                        return;
+                    }
+
+                    var page = Application.Current?.Windows.FirstOrDefault()?.Page
+                        ?? Shell.Current;
+                    if (page != null)
+                        await page.DisplayAlertAsync(title, message, "OK");
+                }, isMainThread, invokeOnMainThread).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"ShowPurchaseAlertAsync error: {ex}");
+                System.Diagnostics.Debug.WriteLine($"ShowPurchaseAlertAsync error: {ex.GetType().Name}");
             }
         }
 

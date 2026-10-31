@@ -93,6 +93,7 @@ public class PremiumBillingFlashRegressionTests
         Assert.Contains("ShowPurchaseAlertAsync", vm);
         Assert.Contains("DisplayAlertAsync", vm);
         Assert.Contains("result.ShouldShowError", vm);
+        Assert.Contains("BillingUiThread.InvokeAsync", vm);
     }
 
     [Fact]
@@ -134,8 +135,10 @@ public class PremiumBillingFlashRegressionTests
         Assert.Contains("StorePurchaseResult.Failed", text);
         Assert.Contains("if (activity == null)", text);
         Assert.Contains("LaunchBillingFlow(activity, flowParams)", text);
+        Assert.Contains("BillingUiThread.InvokeAsync", text);
         Assert.Contains("already owned — granting Premium without billing flow", text);
         Assert.Contains("StorePurchaseResult.UserCanceled()", text);
+        Assert.Contains("BillingClientConnectionGate", text);
     }
 
     private static string FindRepoFile(string relativePath)
