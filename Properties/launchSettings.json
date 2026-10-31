@@ -3,6 +3,10 @@
     "Windows Machine": {
       "commandName": "Project",
       "nativeDebugging": false
+    },
+    "Android": {
+      "commandName": "Project",
+      "targetFramework": "net10.0-android"
     }
   }
 }

@@ -1,0 +1,121 @@
+
+09-20 15:44:57.733 20070 20070 D MusicMateFirstNote: TEMPO TAP SYNC source=drawable-bounds margin=105,0 size=125x76 visible=True enabled=True inputTransparent=False
+z=20 drawableBounds=123,17,85x36
+09-20 15:45:03.610 20070 20070 I MusicMateFirstNote: TEMPO TAP HIT TARGET visible=True enabled=True inputTransparent=False w=125 h=76 margin=105,0 z=20 tempo=73
+09-20 15:45:03.610 20070 20070 D MusicMateFirstNote: TEMPO TAP HIT TARGET visible=True enabled=True inputTransparent=False w=125 h=76 margin=105,0 z=20 tempo=73
+09-20 15:45:03.612 20070 20070 I MusicMateFirstNote: TEMPO TAP OPEN STRIP IsTempoControlVisible=True tempo=73
+09-20 15:45:03.612 20070 20070 D MusicMateFirstNote: TEMPO TAP OPEN STRIP IsTempoControlVisible=True tempo=73
+09-20 15:45:06.182 20070 20070 I MusicMateFirstNote: TEMPO TAP HIT TARGET visible=True enabled=True inputTransparent=False w=125 h=76 margin=105,0 z=20 tempo=73
+09-20 15:45:06.182 20070 20070 D MusicMateFirstNote: TEMPO TAP HIT TARGET visible=True enabled=True inputTransparent=False w=125 h=76 margin=105,0 z=20 tempo=73
+09-20 15:45:06.183 20070 20070 I MusicMateFirstNote: TEMPO TAP OPEN STRIP IsTempoControlVisible=False tempo=73
+09-20 15:45:06.183 20070 20070 D MusicMateFirstNote: TEMPO TAP OPEN STRIP IsTempoControlVisible=False tempo=73
+09-20 15:45:08.412 20070 20070 I MusicMateFirstNote: TEMPO TAP HIT TARGET visible=True enabled=True inputTransparent=False w=125 h=76 margin=105,0 z=20 tempo=73
+09-20 15:45:08.412 20070 20070 D MusicMateFirstNote: TEMPO TAP HIT TARGET visible=True enabled=True inputTransparent=False w=125 h=76 margin=105,0 z=20 tempo=73
+09-20 15:45:08.413 20070 20070 I MusicMateFirstNote: TEMPO TAP OPEN STRIP IsTempoControlVisible=True tempo=73
+09-20 15:45:08.413 20070 20070 D MusicMateFirstNote: TEMPO TAP OPEN STRIP IsTempoControlVisible=True tempo=73
+09-20 15:45:11.323 20070 20070 I MusicMateFirstNote: TEMPO TAP HIT TARGET visible=True enabled=True inputTransparent=False w=125 h=76 margin=105,0 z=20 tempo=73
+09-20 15:45:11.323 20070 20070 D MusicMateFirstNote: TEMPO TAP HIT TARGET visible=True enabled=True inputTransparent=False w=125 h=76 margin=105,0 z=20 tempo=73
+09-20 15:45:11.323 20070 20070 I MusicMateFirstNote: TEMPO TAP OPEN STRIP IsTempoControlVisible=False tempo=73
+09-20 15:45:11.323 20070 20070 D MusicMateFirstNote: TEMPO TAP OPEN STRIP IsTempoControlVisible=False tempo=73
+09-20 15:45:14.139 20070 20070 I MusicMateFirstNote: TEMPO TAP HIT TARGET visible=True enabled=True inputTransparent=False w=125 h=76 margin=105,0 z=20 tempo=73
+09-20 15:45:14.139 20070 20070 D MusicMateFirstNote: TEMPO TAP HIT TARGET visible=True enabled=True inputTransparent=False w=125 h=76 margin=105,0 z=20 tempo=73
+09-20 15:45:14.140 20070 20070 I MusicMateFirstNote: TEMPO TAP OPEN STRIP IsTempoControlVisible=True tempo=73
+09-20 15:45:14.140 20070 20070 D MusicMateFirstNote: TEMPO TAP OPEN STRIP IsTempoControlVisible=True tempo=73
+PS C:\CSharp\Source Code\MusicMate\M004>s Stopwatch.GetTimestamp() / Stopwatch.Elapsed, rather than wall-clock time.
+
+The sound of one beat must not determine when the next beat is scheduled.
+
+If a beat is slightly late because the thread wakes late, the next beat should still aim for its original absolute scheduled time rather than carrying the error forward.
+
+Apply the same reliable timing mechanism to:
+
+Count-In
+
+Metronome
+
+Conductor Cue timing where appropriate
+
+Preserve accent behavior and existing beat duration/volume/pitch settings.
+
+Add diagnostic logging temporarily for each beat:
+
+beat number
+target elapsed ms
+actual elapsed ms
+timing error ms
+
+Example:
+
+Beat 3 target=2000.0 actual=2006.4 error=+6.4 ms
+
+This will let us see whether the problem is scheduling or audio playback.
+
+Test at least:
+
+30 BPM
+
+52 BPM
+
+60 BPM
+
+100 BPM
+
+130 BPM
+
+180 BPM
+
+Pay particular attention to the previously troublesome slow and fast tempos.
+
+Also check that:
+
+Count-In does not overlap with listening startup.
+
+Stop cancels the timing loop immediately.
+
+Restarting does not leave two metronome/count-in loops running.
+
+External microphone use does not affect beep timing.
+
+UI updates do not block or determine audio beat scheduling.
+
+Add regression tests for:
+
+no cumulative drift across multiple beats;
+
+Count-In and Metronome both using the same timing standard;
+
+Stop/restart does not create duplicate timers;
+
+timing remains within a reasonable tolerance at slow and fast BPM.
+
+Do not make unrelated changes.
+
+The most important phrase there is “absolute-time scheduler.” A loop that does beep → Task.Delay(interval) → beep will nearly always become uneven because the time taken to generate the beep and resume the task gets added to every beat.
+
+
+cp. The beeps in both metronome and count-in sound to have an extra supperposed beat that moves along from beat 1 to 2 to 3 to 4.
+
+Use this as the Cursor prompt:
+
+The Count-In and Metronome beeps now have a different problem.
+
+They sound as though there is an extra superimposed beat/click, and that extra beat seems to move relative to the main beat pattern — for example it appears near beat 1, then 2, then 3, then 4.
+
+This sounds more like two overlapping timing/audio sources with slightly different periods or start times than a simple uneven-spacing problem.
+
+Please investigate for duplicate beat generation.
+
+Check whether any of these can be running at the same time:
+
+Metronome timer + Count-In timer
+
+old timer + newly started timer
+
+Conductor Cue beat + Metronome beat
+
+UI timer + audio timer
+
+duplicate async loops after Stop/Go
+
+duplicate loops after Repeat or new tune
+

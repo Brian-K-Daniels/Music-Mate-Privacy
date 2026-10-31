@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Exclude premium entitlement from Auto Backup / device transfer so a reinstall
+  cannot restore a stale IsPremium flag from a previous install or DEBUG session.
+-->
+<full-backup-content>
+  <exclude domain="sharedpref" path="Microsoft.Maui.Storage.Preferences.xml" />
+</full-backup-content>

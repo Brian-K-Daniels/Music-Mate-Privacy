@@ -1,0 +1,37 @@
+<Project>
+  <!--
+    Play Console native debug symbols for .NET MAUI Android Release.
+    The .NET Android SDK (36.1.x) does not emit native-debug-symbols.zip
+    and does not embed BUNDLE-METADATA/com.android.tools.build.debugsymbols.
+    This target packs only this build's unstripped libxamarin-app.dbg.so
+    files (renamed to libxamarin-app.so) from the same signed package.
+    It does not change R8, trimming, AOT, ABIs, billing, or signing.
+  -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-android' and '$(Configuration)' == 'Release'">
+    <AndroidPackNativeDebugSymbolsArchive Condition="'$(AndroidPackNativeDebugSymbolsArchive)' == ''">true</AndroidPackNativeDebugSymbolsArchive>
+    <!-- Always use the TFM output folder. $(OutDir) can be empty or relative
+         when the target is invoked directly, and must not overwrite the
+         historical repo-root native-debug-symbols.zip. -->
+    <AndroidNativeDebugSymbolsZip Condition="'$(AndroidNativeDebugSymbolsZip)' == ''">$(MSBuildProjectDirectory)\bin\$(Configuration)\$(TargetFramework)\native-debug-symbols.zip</AndroidNativeDebugSymbolsZip>
+  </PropertyGroup>
+
+  <Target Name="PackAndroidNativeDebugSymbols"
+          AfterTargets="_Sign;SignAndroidPackage"
+          Condition="'$(TargetFramework)' == 'net10.0-android'
+                     and '$(Configuration)' == 'Release'
+                     and '$(AndroidPackNativeDebugSymbolsArchive)' == 'true'
+                     and '$(DesignTimeBuild)' != 'true'">
+    <PropertyGroup>
+      <_NativeSymbolsPackage Condition="'$(AndroidPackageFormat)' == 'aab' and '$(_AabFileSigned)' != ''">$(_AabFileSigned)</_NativeSymbolsPackage>
+      <_NativeSymbolsPackage Condition="'$(AndroidPackageFormat)' == 'aab' and '$(_NativeSymbolsPackage)' == ''">$(OutDir)$(ApplicationId)-Signed.aab</_NativeSymbolsPackage>
+      <_NativeSymbolsPackage Condition="'$(_NativeSymbolsPackage)' == '' and '$(ApkFileSigned)' != ''">$(ApkFileSigned)</_NativeSymbolsPackage>
+      <_NativeSymbolsPackage Condition="'$(_NativeSymbolsPackage)' == ''">$(OutDir)$(ApplicationId)-Signed.apk</_NativeSymbolsPackage>
+      <_NativeSymbolsSharedDir>$([System.String]::Copy('$(_AndroidApplicationSharedLibraryPath)').TrimEnd('\'))</_NativeSymbolsSharedDir>
+      <_NativeSymbolsSharedDir Condition="'$(_NativeSymbolsSharedDir)' == ''">$(IntermediateOutputPath)app_shared_libraries</_NativeSymbolsSharedDir>
+    </PropertyGroup>
+    <Error Condition="'$(_NativeSymbolsPackage)' == '' or !Exists('$(_NativeSymbolsPackage)')"
+           Text="Signed Android package not found for native debug symbols: '$(_NativeSymbolsPackage)'." />
+    <Message Importance="High" Text="Packing Play native-debug-symbols.zip from $(_NativeSymbolsPackage)" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\scripts\pack-native-debug-symbols.ps1&quot; -PackagePath &quot;$(_NativeSymbolsPackage)&quot; -OutputZip &quot;$(AndroidNativeDebugSymbolsZip)&quot; -AppSharedLibrariesDir &quot;$(_NativeSymbolsSharedDir)&quot;" />
+  </Target>
+</Project>

@@ -23,8 +23,8 @@
     </Style>
 
     <Style TargetType="Button">
-        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}" />
-        <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}" />
+        <Setter Property="TextColor" Value="{DynamicResource ThemeButtonText}" />
+        <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
         <Setter Property="FontFamily" Value="OpenSansRegular"/>
         <Setter Property="FontSize" Value="14"/>
         <Setter Property="BorderWidth" Value="0"/>
@@ -35,14 +35,24 @@
         <Setter Property="VisualStateManager.VisualStateGroups">
             <VisualStateGroupList>
                 <VisualStateGroup x:Name="CommonStates">
-                    <VisualState x:Name="Normal" />
+                    <VisualState x:Name="Normal">
+                        <VisualState.Setters>
+                            <Setter Property="TextColor" Value="{DynamicResource ThemeButtonText}" />
+                            <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
+                        </VisualState.Setters>
+                    </VisualState>
                     <VisualState x:Name="Disabled">
                         <VisualState.Setters>
                             <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource Gray950}, Dark={StaticResource Gray200}}" />
                             <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}" />
                         </VisualState.Setters>
                     </VisualState>
-                    <VisualState x:Name="PointerOver" />
+                    <VisualState x:Name="PointerOver">
+                        <VisualState.Setters>
+                            <Setter Property="TextColor" Value="{DynamicResource ThemeButtonText}" />
+                            <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
+                        </VisualState.Setters>
+                    </VisualState>
                 </VisualStateGroup>
             </VisualStateGroupList>
         </Setter>
@@ -382,11 +392,11 @@
     </Style>
 
     <Style TargetType="Shell" ApplyToDerivedTypes="True">
-        <Setter Property="Shell.BackgroundColor" Value="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource OffBlack}}" />
-        <Setter Property="Shell.ForegroundColor" Value="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource SecondaryDarkText}}" />
-        <Setter Property="Shell.TitleColor" Value="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource SecondaryDarkText}}" />
-        <Setter Property="Shell.DisabledColor" Value="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray950}}" />
-        <Setter Property="Shell.UnselectedColor" Value="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray200}}" />
+        <Setter Property="Shell.BackgroundColor" Value="{DynamicResource ThemePanelBackground}" />
+        <Setter Property="Shell.ForegroundColor" Value="{DynamicResource ThemeContrastingText}" />
+        <Setter Property="Shell.TitleColor" Value="{DynamicResource ThemeContrastingText}" />
+        <Setter Property="Shell.DisabledColor" Value="{DynamicResource ThemeContrastingText}" />
+        <Setter Property="Shell.UnselectedColor" Value="{DynamicResource ThemeContrastingText}" />
         <Setter Property="Shell.NavBarHasShadow" Value="False" />
         <Setter Property="Shell.TabBarBackgroundColor" Value="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Black}}" />
         <Setter Property="Shell.TabBarForegroundColor" Value="{AppThemeBinding Light={StaticResource Magenta}, Dark={StaticResource White}}" />
@@ -405,6 +415,48 @@
         <Setter Property="BarTextColor" Value="{AppThemeBinding Light={StaticResource Magenta}, Dark={StaticResource White}}" />
         <Setter Property="UnselectedTabColor" Value="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray950}}" />
         <Setter Property="SelectedTabColor" Value="{AppThemeBinding Light={StaticResource Gray950}, Dark={StaticResource Gray200}}" />
+    </Style>
+
+    <!-- Music-page back arrow used in Shell TitleViews (Settings Advanced pattern). -->
+    <Style x:Key="MusicNavBackButton" TargetType="Button">
+        <Setter Property="Text" Value="←" />
+        <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
+        <Setter Property="TextColor" Value="{DynamicResource ThemeContrastingText}" />
+        <Setter Property="FontSize" Value="18" />
+        <Setter Property="Padding" Value="12,0" />
+        <Setter Property="WidthRequest" Value="56" />
+        <Setter Property="MinimumWidthRequest" Value="56" />
+        <Setter Property="MinimumHeightRequest" Value="36" />
+        <Setter Property="HeightRequest" Value="36" />
+        <Setter Property="VerticalOptions" Value="Center" />
+        <Setter Property="FontAutoScalingEnabled" Value="False" />
+    </Style>
+
+    <!-- Circular gold frame for logo.png (masks the square white PNG background). -->
+    <Style x:Key="TitleLogoBorder" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
+        <Setter Property="WidthRequest" Value="32" />
+        <Setter Property="HeightRequest" Value="32" />
+        <Setter Property="StrokeThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="StrokeShape">
+            <Setter.Value>
+                <RoundRectangle CornerRadius="16" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="LargeLogoBorder" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="{DynamicResource ThemeButtonBackground}" />
+        <Setter Property="WidthRequest" Value="80" />
+        <Setter Property="HeightRequest" Value="80" />
+        <Setter Property="StrokeThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="StrokeShape">
+            <Setter.Value>
+                <RoundRectangle CornerRadius="40" />
+            </Setter.Value>
+        </Setter>
     </Style>
 
 </ResourceDictionary>
